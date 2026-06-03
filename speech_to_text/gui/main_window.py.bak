@@ -1,0 +1,836 @@
+"""
+Modern GUI Window for Speech-to-Text Transcription
+Contemporary design inspired by Slack, Discord, and modern web apps.
+"""
+
+import os
+import sys
+import logging
+from typing import Optional
+
+from PyQt5.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QRadioButton, QButtonGroup,
+    QFileDialog, QProgressBar, QMessageBox,
+    QScrollArea, QFrame
+)
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, QMimeData, QUrl
+from PyQt5.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent
+
+from speech_to_text import config
+from speech_to_text.hardware_detection import HardwareDetector
+
+logger = logging.getLogger(__name__)
+
+
+# Modern color palette
+COLORS = {
+    "bg_primary": "#0F1419",
+    "bg_secondary": "#1A1E27",
+    "bg_tertiary": "#2A2E37",
+    "accent": "#6366F1",
+    "accent_hover": "#818CF8",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "error": "#EF4444",
+    "text_primary": "#F3F4F6",
+    "text_secondary": "#9CA3AF",
+    "border": "#374151",
+}
+
+
+class ModernStyleSheet:
+    """Modern stylesheet definitions."""
+    
+    @staticmethod
+    def button_primary() -> str:
+        return f"""
+        QPushButton {{
+            background-color: {COLORS['accent']};
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: 600;
+            font-size: 13px;
+        }}
+        QPushButton:hover {{
+            background-color: {COLORS['accent_hover']};
+        }}
+        QPushButton:disabled {{
+            background-color: {COLORS['bg_tertiary']};
+            color: {COLORS['text_secondary']};
+        }}
+        """
+    
+    @staticmethod
+    def button_secondary() -> str:
+        return f"""
+        QPushButton {{
+            background-color: transparent;
+            color: {COLORS['text_primary']};
+            border: 1px solid {COLORS['border']};
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: 600;
+            font-size: 13px;
+        }}
+        QPushButton:hover {{
+            background-color: {COLORS['bg_tertiary']};
+            border-color: {COLORS['accent']};
+        }}
+        """
+    
+    @staticmethod
+    def button_danger() -> str:
+        return f"""
+        QPushButton {{
+            background-color: {COLORS['error']};
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: 600;
+            font-size: 13px;
+        }}
+        QPushButton:hover {{
+            background-color: #DC2626;
+        }}
+        """
+    
+    @staticmethod
+    def card() -> str:
+        return f"""
+        QFrame {{
+            background-color: {COLORS['bg_tertiary']};
+            border: 1px solid {COLORS['border']};
+            border-radius: 12px;
+            padding: 20px;
+        }}
+        """
+    
+    @staticmethod
+    def window() -> str:
+        return f"""
+        QMainWindow {{
+            background-color: {COLORS['bg_primary']};
+        }}
+        """
+
+
+class ModernCard(QFrame):
+    """Modern card widget with consistent styling."""
+    
+    def __init__(self, title: str = "", parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(ModernStyleSheet.card())
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        if title:
+            title_label = QLabel(title)
+            title_font = QFont()
+            title_font.setPointSize(13)
+            title_font.setBold(True)
+            title_label.setFont(title_font)
+            title_label.setStyleSheet(f"color: {COLORS['text_primary']};")
+            layout.addWidget(title_label)
+            layout.addSpacing(10)
+        
+        self.content_layout = QVBoxLayout()
+        self.content_layout.setSpacing(12)
+        layout.addLayout(self.content_layout)
+
+
+class TranscriptionThread(QThread):
+    """Worker thread for transcription."""
+    progress = pyqtSignal(str, int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, audio_file: str, model_size: str, device: str):
+        super().__init__()
+        self.audio_file = audio_file
+        self.model_size = model_size
+        self.device = device
+        self._is_running = True
+        logger.debug(f"TranscriptionThread created: file={os.path.basename(audio_file)}, model={model_size}, device={device}")
+
+    def run(self):
+        """Run transcription in thread."""
+        logger.info(f"TranscriptionThread started: {os.path.basename(self.audio_file)}")
+        try:
+            from speech_to_text.core.transcriber import Transcriber
+            
+            logger.debug("Initializing Transcriber...")
+            transcriber = Transcriber(
+                model_size=self.model_size,
+                device=self.device,
+                progress_callback=self.progress.emit
+            )
+            
+            if not transcriber.load_model():
+                logger.error("Failed to load transcription model")
+                self.error.emit("Failed to load model")
+                return
+            
+            if not self._is_running:
+                logger.info("Transcription cancelled before starting")
+                self.error.emit("Transcription cancelled")
+                return
+            
+            logger.info(f"Starting transcription...")
+            text = transcriber.transcribe(self.audio_file)
+            
+            if text is None:
+                logger.error("Transcription returned None")
+                self.error.emit("Transcription failed")
+                return
+            
+            logger.info(f"✓ Transcription successful ({len(text)} chars)")
+            formatted_text = transcriber.format_output(text)
+            output_file = self._get_output_path()
+            
+            logger.debug(f"Saving output to: {output_file}")
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(formatted_text)
+            
+            logger.info(f"✓ Transcription complete: {output_file}")
+            self.progress.emit("Complete!", 100)
+            self.finished.emit(output_file)
+            
+        except Exception as e:
+            logger.error(f"TranscriptionThread error: {e}", exc_info=True)
+            self.error.emit(str(e))
+    
+    def stop(self):
+        """Stop the thread."""
+        logger.debug("Stopping TranscriptionThread...")
+        self._is_running = False
+    
+    def _get_output_path(self) -> str:
+        """Get output file path."""
+        input_dir = os.path.dirname(self.audio_file)
+        output_file = os.path.join(input_dir, config.OUTPUT_FILENAME)
+        logger.debug(f"Output file path: {output_file}")
+        return output_file
+
+
+class MainWindow(QMainWindow):
+    """Modern main application window."""
+    
+    def __init__(self):
+        super().__init__()
+        logger.info("Initializing MainWindow...")
+        
+        self.setWindowTitle(f"{config.APP_NAME}")
+        self.setGeometry(100, 100, 900, 1200)
+        logger.debug(f"Window: {config.APP_NAME} (900x1200)")
+        
+        logger.debug("Detecting hardware...")
+        self.hardware = HardwareDetector()
+        self.selected_file: Optional[str] = None
+        self.transcription_thread: Optional[QThread] = None
+        
+        self.setStyleSheet(ModernStyleSheet.window())
+        logger.debug("UI initialized, building components...")
+        self._init_ui()
+        logger.info("✓ MainWindow ready")
+    
+    def _init_ui(self):
+        """Initialize modern UI."""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Header
+        main_layout.addWidget(self._create_header())
+        
+        # Scroll area for content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {COLORS['bg_primary']}; border: none; }}")
+        
+        scroll_widget = QWidget()
+        scroll_widget.setStyleSheet(f"background-color: {COLORS['bg_primary']};")
+        content_layout = QVBoxLayout(scroll_widget)
+        content_layout.setSpacing(20)
+        content_layout.setContentsMargins(32, 32, 32, 32)
+        
+        # Add content sections
+        content_layout.addWidget(self._create_file_section())
+        content_layout.addWidget(self._create_hardware_section())
+        content_layout.addWidget(self._create_model_section())
+        content_layout.addWidget(self._create_device_section())
+        content_layout.addWidget(self._create_progress_section())
+        content_layout.addWidget(self._create_controls_section())
+        
+        content_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        
+        main_layout.addWidget(scroll)
+    
+    def _create_header(self) -> QFrame:
+        """Create modern header."""
+        header = QFrame()
+        header.setStyleSheet(f"background: linear-gradient(135deg, {COLORS['accent']} 0%, #7C3AED 100%); border: none;")
+        header.setFixedHeight(120)
+        
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(32, 20, 32, 20)
+        layout.setSpacing(8)
+        
+        # Title
+        title = QLabel("🎙️ Speech-to-Text Transcriber")
+        title_font = QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        title.setStyleSheet(f"color: white;")
+        
+        # Subtitle
+        subtitle = QLabel("Convert audio and video to text using advanced AI")
+        subtitle_font = QFont()
+        subtitle_font.setPointSize(11)
+        subtitle.setFont(subtitle_font)
+        subtitle.setStyleSheet(f"color: rgba(255, 255, 255, 0.9);")
+        
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addStretch()
+        
+        return header
+    
+    def _create_file_section(self) -> ModernCard:
+        """Create modern file selection section."""
+        card = ModernCard("📁 Step 1: Select Your File")
+        
+        # File drop zone
+        self.drop_zone = QFrame()
+        self.drop_zone.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS['bg_secondary']};
+                border: 2px dashed {COLORS['border']};
+                border-radius: 8px;
+                padding: 40px;
+            }}
+        """)
+        self.drop_zone.setAcceptDrops(True)
+        self.drop_zone.dragEnterEvent = self._drag_enter_event
+        self.drop_zone.dropEvent = self._drop_event
+        
+        drop_layout = QVBoxLayout(self.drop_zone)
+        drop_layout.setAlignment(Qt.AlignCenter)
+        drop_layout.setSpacing(10)
+        
+        drop_icon = QLabel("⬆️")
+        drop_icon.setFont(QFont("Arial", 48))
+        drop_icon.setAlignment(Qt.AlignCenter)
+        
+        drop_text = QLabel("Drag and drop your audio or video file here")
+        drop_text.setFont(QFont("Arial", 12, QFont.Bold))
+        drop_text.setStyleSheet(f"color: {COLORS['text_primary']};")
+        drop_text.setAlignment(Qt.AlignCenter)
+        
+        drop_hint = QLabel("Supported: MP3, WAV, M4A, FLAC, OGG, MP4, MKV")
+        drop_hint.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+        drop_hint.setAlignment(Qt.AlignCenter)
+        
+        drop_layout.addWidget(drop_icon)
+        drop_layout.addWidget(drop_text)
+        drop_layout.addWidget(drop_hint)
+        
+        card.content_layout.addWidget(self.drop_zone)
+        
+        # File info
+        self.file_label = QLabel("No file selected")
+        self.file_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+        card.content_layout.addWidget(self.file_label)
+        
+        # Browse button
+        browse_btn = QPushButton("📂 Browse for File")
+        browse_btn.setMinimumHeight(44)
+        browse_btn.setStyleSheet(ModernStyleSheet.button_secondary())
+        browse_btn.clicked.connect(self._browse_file)
+        card.content_layout.addWidget(browse_btn)
+        
+        return card
+    
+    def _create_hardware_section(self) -> ModernCard:
+        """Create hardware information section."""
+        card = ModernCard("💻 System Information")
+        
+        info = self.hardware.get_hardware_info()
+        device, reason = self.hardware.get_device_recommendation()
+        
+        # Stats layout
+        stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(20)
+        
+        for emoji, label, value in [
+            ("⚙️", "CPU Cores", str(info['cpu_cores'])),
+            ("💾", "RAM", f"{info['ram_gb']} GB"),
+            ("🎮", "GPU", info['gpu_name']),
+        ]:
+            stat_frame = QFrame()
+            stat_frame.setStyleSheet(f"background-color: {COLORS['bg_secondary']}; border-radius: 8px; padding: 12px;")
+            stat_layout = QVBoxLayout(stat_frame)
+            stat_layout.setSpacing(4)
+            
+            stat_emoji = QLabel(emoji)
+            stat_emoji.setFont(QFont("Arial", 20))
+            stat_emoji.setAlignment(Qt.AlignCenter)
+            
+            stat_label = QLabel(label)
+            stat_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px; text-align: center;")
+            stat_label.setAlignment(Qt.AlignCenter)
+            
+            stat_value = QLabel(value)
+            stat_value.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: 600; text-align: center;")
+            stat_value.setAlignment(Qt.AlignCenter)
+            
+            stat_layout.addWidget(stat_emoji)
+            stat_layout.addWidget(stat_label)
+            stat_layout.addWidget(stat_value)
+            
+            stats_layout.addWidget(stat_frame)
+        
+        card.content_layout.addLayout(stats_layout)
+        
+        # Recommendation
+        rec_frame = QFrame()
+        rec_frame.setStyleSheet(f"background-color: {COLORS['bg_secondary']}; border-left: 3px solid {COLORS['accent']}; border-radius: 4px; padding: 12px;")
+        rec_layout = QVBoxLayout(rec_frame)
+        rec_layout.setContentsMargins(8, 0, 0, 0)
+        
+        rec_title = QLabel("💡 Recommendation")
+        rec_title.setStyleSheet(f"color: {COLORS['accent']}; font-weight: 600;")
+        rec_layout.addWidget(rec_title)
+        
+        rec_text = QLabel(reason)
+        rec_text.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+        rec_text.setWordWrap(True)
+        rec_layout.addWidget(rec_text)
+        
+        card.content_layout.addWidget(rec_frame)
+        
+        return card
+    
+    def _create_model_section(self) -> ModernCard:
+        """Create model selection section."""
+        card = ModernCard("🧠 Step 2: Select AI Model")
+        
+        self.model_group = QButtonGroup()
+        self.model_radios = {}
+        
+        for i, (model_name, model_info) in enumerate(config.MODELS.items()):
+            # Create model card
+            model_card = QFrame()
+            is_recommended = model_info['recommended']
+            if is_recommended:
+                model_card.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {COLORS['bg_secondary']};
+                        border: 2px solid {COLORS['accent']};
+                        border-radius: 8px;
+                        padding: 12px;
+                    }}
+                """)
+            else:
+                model_card.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {COLORS['bg_secondary']};
+                        border: 1px solid {COLORS['border']};
+                        border-radius: 8px;
+                        padding: 12px;
+                    }}
+                """)
+            
+            model_layout = QVBoxLayout(model_card)
+            model_layout.setSpacing(8)
+            
+            # Header row
+            header_layout = QHBoxLayout()
+            
+            radio = QRadioButton()
+            radio.setChecked(is_recommended)
+            radio.toggled.connect(self._update_time_estimate)
+            self.model_group.addButton(radio, i)
+            self.model_radios[model_name] = radio
+            header_layout.addWidget(radio)
+            
+            # Model name
+            name_label = QLabel(f"{model_info['name']}")
+            name_font = QFont()
+            name_font.setBold(True)
+            name_label.setFont(name_font)
+            name_label.setStyleSheet(f"color: {COLORS['text_primary']};")
+            header_layout.addWidget(name_label)
+            
+            if is_recommended:
+                badge = QLabel("Recommended")
+                badge.setStyleSheet(f"background-color: {COLORS['accent']}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;")
+                header_layout.addWidget(badge)
+            
+            header_layout.addStretch()
+            model_layout.addLayout(header_layout)
+            
+            # Stats row
+            stats_layout = QHBoxLayout()
+            for stat_label, stat_value in [
+                ("Speed:", model_info['time_estimate']),
+                ("RAM:", model_info['ram_required']),
+                ("Accuracy:", f"{model_info['accuracy_score']}/100"),
+            ]:
+                stat_widget = QLabel(f"{stat_label} {stat_value}")
+                stat_widget.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+                stats_layout.addWidget(stat_widget)
+            stats_layout.addStretch()
+            model_layout.addLayout(stats_layout)
+            
+            # Description
+            desc = QLabel(model_info['description'])
+            desc.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+            desc.setWordWrap(True)
+            model_layout.addWidget(desc)
+            
+            card.content_layout.addWidget(model_card)
+        
+        return card
+    
+    def _create_device_section(self) -> ModernCard:
+        """Create device selection section."""
+        card = ModernCard("⚡ Step 3: Select Compute Device")
+        
+        self.device_group = QButtonGroup()
+        
+        # CPU option
+        cpu_card = QFrame()
+        cpu_card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS['bg_secondary']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 8px;
+                padding: 12px;
+            }}
+        """)
+        cpu_layout = QVBoxLayout(cpu_card)
+        cpu_layout.setSpacing(6)
+        
+        cpu_header = QHBoxLayout()
+        cpu_radio = QRadioButton()
+        cpu_radio.setChecked(True)
+        cpu_radio.toggled.connect(self._update_time_estimate)
+        self.device_group.addButton(cpu_radio, 0)
+        cpu_header.addWidget(cpu_radio)
+        
+        cpu_label = QLabel("💻 CPU Processing")
+        cpu_label.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: 600;")
+        cpu_header.addWidget(cpu_label)
+        
+        cpu_header.addStretch()
+        cpu_layout.addLayout(cpu_header)
+        
+        cpu_desc = QLabel("Recommended for most systems. Slower but compatible with all hardware.")
+        cpu_desc.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+        cpu_desc.setWordWrap(True)
+        cpu_layout.addWidget(cpu_desc)
+        
+        card.content_layout.addWidget(cpu_card)
+        
+        # GPU option
+        gpu_card = QFrame()
+        gpu_enabled = self.hardware.has_gpu
+        if gpu_enabled:
+            gpu_card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {COLORS['bg_secondary']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 8px;
+                    padding: 12px;
+                }}
+            """)
+        else:
+            gpu_card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {COLORS['bg_secondary']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 8px;
+                    padding: 12px;
+                    opacity: 0.5;
+                }}
+            """)
+        
+        gpu_layout = QVBoxLayout(gpu_card)
+        gpu_layout.setSpacing(6)
+        
+        gpu_header = QHBoxLayout()
+        gpu_radio = QRadioButton()
+        gpu_radio.setEnabled(gpu_enabled)
+        gpu_radio.toggled.connect(self._update_time_estimate)
+        self.device_group.addButton(gpu_radio, 1)
+        gpu_header.addWidget(gpu_radio)
+        
+        gpu_label = QLabel("🎮 GPU Processing (NVIDIA CUDA)")
+        gpu_label.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: 600;")
+        gpu_header.addWidget(gpu_label)
+        
+        if gpu_enabled:
+            gpu_badge = QLabel("Much Faster!")
+            gpu_badge.setStyleSheet(f"background-color: {COLORS['success']}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;")
+            gpu_header.addWidget(gpu_badge)
+        
+        gpu_header.addStretch()
+        gpu_layout.addLayout(gpu_header)
+        
+        if gpu_enabled:
+            gpu_desc = QLabel("Significantly faster transcription. Requires NVIDIA GPU with CUDA support.")
+        else:
+            gpu_desc = QLabel("⚠️ NVIDIA GPU not detected. CPU processing will be used.")
+            gpu_desc.setStyleSheet(f"color: {COLORS['warning']};")
+        
+        gpu_desc.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+        gpu_desc.setWordWrap(True)
+        gpu_layout.addWidget(gpu_desc)
+        
+        card.content_layout.addWidget(gpu_card)
+        
+        return card
+    
+    def _create_progress_section(self) -> ModernCard:
+        """Create progress section."""
+        card = ModernCard("⏱️ Progress & Estimate")
+        
+        # Estimate
+        self.estimate_label = QLabel("Select a file and model to see time estimate")
+        self.estimate_label.setStyleSheet(f"color: {COLORS['accent']}; font-weight: 600; font-size: 14px;")
+        card.content_layout.addWidget(self.estimate_label)
+        
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMinimumHeight(8)
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {COLORS['bg_secondary']};
+                border: none;
+                border-radius: 4px;
+                text-align: center;
+            }}
+            QProgressBar::chunk {{
+                background-color: {COLORS['accent']};
+                border-radius: 4px;
+            }}
+        """)
+        card.content_layout.addWidget(self.progress_bar)
+        
+        # Status
+        self.progress_label = QLabel("Ready to transcribe")
+        self.progress_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
+        card.content_layout.addWidget(self.progress_label)
+        
+        return card
+    
+    def _create_controls_section(self) -> ModernCard:
+        """Create control buttons section."""
+        card = ModernCard()
+        
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(12)
+        
+        self.transcribe_btn = QPushButton("🚀 Start Transcription")
+        self.transcribe_btn.setMinimumHeight(48)
+        self.transcribe_btn.setFont(QFont("Arial", 12, QFont.Bold))
+        self.transcribe_btn.setStyleSheet(ModernStyleSheet.button_primary())
+        self.transcribe_btn.clicked.connect(self._start_transcription)
+        
+        self.cancel_btn = QPushButton("⏹️ Cancel")
+        self.cancel_btn.setMinimumHeight(48)
+        self.cancel_btn.setFont(QFont("Arial", 12, QFont.Bold))
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setStyleSheet(ModernStyleSheet.button_danger())
+        self.cancel_btn.clicked.connect(self._cancel_transcription)
+        
+        button_layout.addWidget(self.transcribe_btn)
+        button_layout.addWidget(self.cancel_btn)
+        
+        card.content_layout.addLayout(button_layout)
+        
+        return card
+    
+    def _drag_enter_event(self, event: QDragEnterEvent):
+        """Handle drag enter event."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self.drop_zone.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {COLORS['bg_secondary']};
+                    border: 2px dashed {COLORS['accent']};
+                    border-radius: 8px;
+                    padding: 40px;
+                }}
+            """)
+    
+    def _drop_event(self, event: QDropEvent):
+        """Handle drop event."""
+        self.drop_zone.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS['bg_secondary']};
+                border: 2px dashed {COLORS['border']};
+                border-radius: 8px;
+                padding: 40px;
+            }}
+        """)
+        
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        if files:
+            self._select_file(files[0])
+    
+    def _browse_file(self):
+        """Browse for audio file."""
+        logger.info("File browse dialog opened")
+        file_filter = "Audio/Video Files (" + " ".join(config.SUPPORTED_FORMATS) + ")"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Audio or Video File",
+            "",
+            file_filter
+        )
+        
+        if file_path:
+            logger.info(f"File selected: {os.path.basename(file_path)}")
+            self._select_file(file_path)
+        else:
+            logger.debug("File selection cancelled by user")
+    
+    def _select_file(self, file_path: str):
+        """Select and display file."""
+        logger.info(f"File selected: {file_path}")
+        self.selected_file = file_path
+        filename = os.path.basename(file_path)
+        
+        try:
+            file_size = os.path.getsize(file_path) / (1024 * 1024)
+            logger.debug(f"File size: {file_size:.1f} MB")
+            self.file_label.setText(f"✓ {filename} ({file_size:.1f} MB)")
+        except Exception as e:
+            logger.error(f"Error getting file size: {e}")
+            self.file_label.setText(f"✓ {filename}")
+        
+        self.file_label.setStyleSheet(f"color: {COLORS['success']}; font-weight: 600;")
+        self._update_time_estimate()
+    
+    def _update_time_estimate(self):
+        """Update estimated processing time."""
+        if not self.selected_file:
+            logger.debug("No file selected - cannot estimate time")
+            self.estimate_label.setText("⏱️ Select a file and model to see estimate")
+            return
+        
+        try:
+            model_idx = self.model_group.checkedId()
+            if model_idx < 0:
+                model_idx = 0
+            model_name = list(config.MODELS.keys())[model_idx]
+            
+            device = "cuda" if self.device_group.checkedId() == 1 else "cpu"
+            
+            file_size_mb = os.path.getsize(self.selected_file) / (1024 * 1024)
+            estimated_audio_minutes = int(file_size_mb)
+            
+            logger.debug(f"Estimating time: model={model_name}, device={device}, size={estimated_audio_minutes}min")
+            estimate = self.hardware.estimate_time(estimated_audio_minutes, model_name, device)
+            
+            self.estimate_label.setText(
+                f"⏱️ {estimate['hours_display']} • {model_name.upper()} • {device.upper()}"
+            )
+        except Exception as e:
+            logger.error(f"Error updating time estimate: {e}")
+            self.estimate_label.setText(f"⏱️ Could not estimate: {str(e)}")
+    
+    def _start_transcription(self):
+        """Start transcription process."""
+        if not self.selected_file:
+            logger.warning("User clicked start without selecting a file")
+            QMessageBox.warning(self, "No File", "Please select an audio file first")
+            return
+        
+        logger.info(f"Starting transcription: {os.path.basename(self.selected_file)}")
+        
+        model_idx = self.model_group.checkedId()
+        if model_idx < 0:
+            model_idx = 0
+        model_name = list(config.MODELS.keys())[model_idx]
+        
+        logger.debug(f"Selected model: {model_name}")
+        can_run, reason = self.hardware.can_run_model(model_name)
+        if not can_run:
+            logger.error(f"Cannot run model {model_name}: {reason}")
+            QMessageBox.critical(self, "System Error", f"Cannot run {model_name} model:\n\n{reason}")
+            return
+        
+        device = "cuda" if self.device_group.checkedId() == 1 else "cpu"
+        logger.info(f"Using device: {device}")
+        
+        self.transcribe_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        logger.debug("UI updated: transcribe disabled, cancel enabled")
+        
+        logger.debug("Creating TranscriptionThread...")
+        self.transcription_thread = TranscriptionThread(
+            self.selected_file,
+            model_name,
+            device
+        )
+        self.transcription_thread.progress.connect(self._update_progress)
+        self.transcription_thread.finished.connect(self._transcription_finished)
+        self.transcription_thread.error.connect(self._transcription_error)
+        logger.debug("Starting transcription thread...")
+        self.transcription_thread.start()
+        logger.info("Transcription thread started")
+    
+    def _cancel_transcription(self):
+        """Cancel transcription."""
+        logger.info("User cancelled transcription")
+        if self.transcription_thread:
+            logger.debug("Stopping transcription thread...")
+            self.transcription_thread.stop()
+            self.transcription_thread.terminate()
+            self.transcription_thread.wait()
+            logger.debug("Transcription thread stopped")
+        
+        self.transcribe_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.progress_label.setText("❌ Cancelled")
+        self.progress_bar.setValue(0)
+    
+    def _update_progress(self, message: str, percentage: int):
+        """Update progress display."""
+        logger.debug(f"Progress: {percentage}% - {message}")
+        self.progress_label.setText(f"⏳ {message}")
+        self.progress_bar.setValue(percentage)
+    
+    def _transcription_finished(self, output_file: str):
+        """Handle transcription completion."""
+        logger.info(f"✓ Transcription finished: {output_file}")
+        self.transcribe_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.progress_label.setText("✅ Transcription complete!")
+        self.progress_bar.setValue(100)
+        
+        msg = f"✅ Transcription complete!\n\nOutput saved to:\n{output_file}"
+        QMessageBox.information(self, "Success", msg)
+    
+    def _transcription_error(self, error_msg: str):
+        """Handle transcription error."""
+        logger.error(f"Transcription error: {error_msg}")
+        self.transcribe_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.progress_label.setText("❌ Error during transcription")
+        
+        QMessageBox.critical(self, "Transcription Error", f"Error:\n\n{error_msg}")
