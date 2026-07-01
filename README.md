@@ -1,244 +1,109 @@
-# Speech-to-Text Transcriber
+# Hebrew Audio Transcriber
 
-A professional-grade Python application for transcribing audio to text using OpenAI's Whisper model with a PyQt5 GUI. Supports multiple languages and model sizes with hardware-aware optimization.
+A desktop application that transcribes Hebrew audio and video into text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) behind a PyQt5 GUI. Everything runs locally — no audio ever leaves your machine.
 
-## ✅ Project Status: PRODUCTION READY
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
-- ✅ All 5 bugs fixed and verified
-- ✅ 43/44 tests passing (42% coverage)
-- ✅ Professional package structure
-- ✅ Clean project organization
-- ✅ Ready for deployment
+## Overview
 
----
+Point it at an audio or video file, and it walks you through a 3-step wizard: pick the file, pick a Whisper model, and transcribe. Along the way it does the things a transcription tool should but often doesn't:
 
-## 📦 Project Structure
+- **Real hardware-aware recommendations** — the suggested model is computed from your actual CPU/RAM and the file's real (probed) duration against a measured, per-machine calibration benchmark, not a guessed constant.
+- **Honest progress reporting** — the progress bar tracks real audio position as Whisper decodes it, and surfaces what's happening internally (e.g. a segment being re-decoded at a different temperature) instead of appearing to freeze.
+- **Crash isolation** — transcription runs in a separate OS process from the GUI, working around a real Windows DLL conflict between PyQt5 and CTranslate2 (see [Architecture](#architecture)).
+- **Graceful failure handling** — errors and cancellation return you to model selection with an inline message, never a disruptive popup.
 
-```
-speech-to-text-transcriber/
-├── speech_to_text/              # Main package
-│   ├── __init__.py
-│   ├── config.py                # Configuration & model definitions
-│   ├── hardware_detection.py    # Hardware capability detection
-│   ├── main.py                  # Application entry point
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── dependencies.py      # Automatic dependency management
-│   │   └── transcriber.py       # Core transcription logic
-│   └── gui/
-│       ├── __init__.py
-│       └── main_window.py       # PyQt5 main window & UI
-│
-├── tests/                        # Comprehensive test suite (43 tests)
-│   ├── conftest.py
-│   ├── test_config.py
-│   ├── test_dependencies.py
-│   ├── test_hardware_detection.py
-│   ├── test_transcriber.py
-│   ├── test_integration.py
-│   ├── test_main.py
-│   └── test_gui.py
-│
-├── docs/                         # Documentation
-│   └── [documentation files]
-│
-├── setup.py                      # Package installation
-├── pyproject.toml               # Modern Python project config
-├── pytest.ini                   # Test configuration
-├── .gitignore                   # Git ignore rules
-├── README.md                    # This file
-├── requirements.txt             # Production dependencies
-└── requirements-dev.txt         # Development dependencies
-```
+## Architecture
 
-## 🚀 Quick Start
+![Architecture diagram](docs/architecture.png)
 
-### Prerequisites
-- Python 3.9 or higher
-- pip (Python package installer)
+The GUI (PyQt5, main process) hands off the actual transcription to a background OS process via `multiprocessing`, communicating over a queue. This isn't incidental — PyQt5 and CTranslate2 each bundle their own copy of `MSVCP140.dll` on Windows, and loading both into one process causes an intermittent access-violation crash. Isolating the transcription work into its own process sidesteps it entirely.
 
-### Installation
+The diagram is editable at [`docs/architecture.drawio`](docs/architecture.drawio) (open with [diagrams.net](https://app.diagrams.net)).
+
+## Installation
+
+**Requirements:** Python 3.9+, pip, Windows (primary target platform).
 
 ```bash
-# Navigate to project directory
-cd speech-to-text-transcriber
+git clone https://github.com/KoganTheDev/hebrew-audio-transcriber.git
+cd hebrew-audio-transcriber
 
-# Create virtual environment (recommended)
 python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Unix/macOS
+.venv\Scripts\activate
 
-# Install in development mode
 pip install -e .
+```
 
-# For development (includes testing tools)
+For development (tests, linting):
+
+```bash
 pip install -r requirements-dev.txt
 ```
 
-### Run the Application
+> **Note:** faster-whisper requires the Microsoft Visual C++ Redistributable (x64). If the app fails to start with a DLL-related error, install it from [aka.ms/vs/17/release/vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe).
 
-**GUI Mode:**
+## Usage
+
 ```bash
-speech-to-text
-# or
 python -m speech_to_text.main
 ```
 
-**Programmatic Usage:**
-```python
-from speech_to_text.core.transcriber import Transcriber
-from speech_to_text.hardware_detection import HardwareDetector
+or, on Windows, run `run.bat` / `run.ps1` directly. After `pip install -e .`, the `speech-to-text` console command is also available.
 
-# Detect hardware
-detector = HardwareDetector()
-device, reason = detector.get_device_recommendation()
+**Workflow:**
+1. **Select Audio File** — drag a file into the drop zone (or click to browse). Your CPU/RAM/GPU are shown alongside the file's real duration.
+2. **Choose Model** — pick from the five Whisper model sizes below; the app pre-selects the highest-accuracy model that will still finish within a reasonable time on your hardware.
+3. **Transcribe** — watch live progress, or cancel and return to model selection at any point. On completion, the transcript is saved next to the source file.
 
-# Create transcriber
-transcriber = Transcriber(model_size="small", device=device)
-transcriber.load_model()
+### Model sizes
 
-# Transcribe
-result = transcriber.transcribe("audio_file.mp3")
-print(result)
+| Model | Description | RAM required |
+|---|---|---|
+| Tiny | Ultra-fast, lowest quality | 1 GB |
+| Base | Good balance of speed and quality | 2 GB |
+| Small | Better accuracy for Hebrew | 3 GB |
+| Medium | High accuracy (default recommendation) | 5 GB |
+| Large | Highest accuracy, slowest | 8 GB |
+
+Actual processing time isn't fixed — it's estimated from a one-time benchmark run on your own CPU the first time the app launches, then scaled by model size and the file's real duration.
+
+## Project Structure
+
+```
+speech_to_text/
+├── main.py                    # Entry point: logging setup, dependency checks, launches the GUI
+├── config.py                  # Model definitions and app-wide constants
+├── hardware_detection.py      # CPU/RAM/GPU probing, model recommendation, time estimation
+├── core/
+│   ├── transcriber.py         # Wraps faster_whisper.WhisperModel
+│   ├── worker.py              # Runs transcription in a separate OS process
+│   ├── calibration.py         # One-time hardware benchmark (also runs out-of-process)
+│   └── dependencies.py        # Installs missing runtime dependencies on first launch
+└── gui/
+    ├── main_window.py         # Main window, wizard navigation, transcription lifecycle
+    ├── threads.py             # QThread bridge between the GUI and the background process
+    ├── steps/                 # One module per wizard step (file select / model select / transcribe)
+    ├── theme.py                # Colors, fonts, QSS stylesheet builders
+    ├── icons.py                 # Tabler icon SVGs, rendered to QPixmap
+    └── audio_utils.py           # Real audio/video duration probing (via PyAV)
+
+tests/                          # pytest suite covering config, hardware detection, transcriber, and integration
+docs/
+├── architecture.drawio         # Editable source for the architecture diagram
+└── architecture.png            # Rendered diagram (embedded above)
 ```
 
----
-
-## 🎯 Key Features
-
-- **Multiple Whisper Models**: tiny, base, small, medium, large
-- **Hardware Detection**: CPU/GPU detection with automatic optimization
-- **Intelligent Time Estimation**: Based on hardware capabilities and file size
-- **Professional GUI**: PyQt5 interface with real-time progress
-- **Audio Formatting**: Automatic sentence splitting and formatting
-- **Multi-language Support**: Hebrew and extensible to other languages
-- **Comprehensive Testing**: 43 tests with 42% code coverage
-
-## 🧪 Testing
-
-Run the comprehensive test suite:
+## Testing
 
 ```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=speech_to_text --cov-report=html
-
-# Run specific test module
-pytest tests/test_transcriber.py -v
-
-# Run matching pattern
-pytest tests/ -k "hardware" -v
+pytest                                    # full suite
+pytest --cov=speech_to_text --cov-report=html   # with coverage report
+pytest tests/test_transcriber.py -v       # a single module
 ```
 
-**Coverage Summary:**
-- Config & Core: 85-100%
-- Hardware Detection: 71%
-- Transcriber: 86%
-- Integration Tests: 100%
+## License
 
----
-
-## 📚 Core Modules
-
-### `speech_to_text.config`
-- Application configuration
-- Model definitions (5 Whisper models)
-- Default settings and constants
-
-### `speech_to_text.hardware_detection`
-- Hardware capability detection
-- Time estimation
-- Device recommendation
-
-### `speech_to_text.core.transcriber`
-- Audio transcription logic
-- Model loading
-- Output formatting
-
-### `speech_to_text.gui.main_window`
-- PyQt5 user interface
-- File selection
-- Progress tracking
-- Model/device selection
-
----
-
-## 🔧 Development
-
-### Code Quality
-
-```bash
-# Code formatting
-black speech_to_text/
-
-# Import sorting
-isort speech_to_text/
-
-# Linting
-flake8 speech_to_text/
-
-# Type checking
-mypy speech_to_text/
-```
-
-### Contributing
-
-1. Create feature branch
-2. Implement changes in `speech_to_text/`
-3. Add tests in `tests/`
-4. Run `pytest` to verify
-5. Submit pull request
-
----
-
-## 🐛 Bug Fixes & Improvements
-
-**Recent Fixes (v2.0.0):**
-- ✅ Fixed KeyError on GUI startup
-- ✅ Fixed silent audio handling
-- ✅ Fixed model index bounds checking
-- ✅ Fixed time estimation formula
-- ✅ Fixed segment spacing in output
-- ✅ Restructured to professional package
-- ✅ Added 43 comprehensive tests
-
----
-
-## 📋 Requirements
-
-**Production** (`requirements.txt`):
-```
-faster-whisper>=0.10.0
-PyQt5>=5.15.0
-tqdm>=4.60.0
-psutil>=5.9.0
-```
-
-**Development** (`requirements-dev.txt`):
-```
-pytest>=7.0.0
-pytest-cov>=4.0.0
-pytest-mock>=3.10.0
-black>=22.0.0
-flake8>=4.0.0
-isort>=5.10.0
-mypy>=0.950
-```
-
----
-
-## 📞 Support
-
-For issues and questions:
-1. Check [existing issues](../../issues)
-2. Review test files for usage examples
-3. Create issue with reproduction steps
-
----
-
-**Version**: 2.0.0
-**Status**: ✅ Production Ready
-**Python**: 3.9+
-**License**: MIT (see [LICENSE](LICENSE))
+MIT — see [LICENSE](LICENSE).
