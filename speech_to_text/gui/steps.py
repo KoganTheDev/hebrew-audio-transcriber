@@ -10,7 +10,7 @@ from enum import Enum
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QRadioButton, QButtonGroup,
-    QFileDialog, QProgressBar, QFrame, QScrollArea,
+    QFileDialog, QProgressBar, QFrame,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
@@ -174,7 +174,7 @@ class FileSelectStep(QFrame):
         size_mb = os.path.getsize(file_path) / (1024 * 1024)
         self.file_icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success']))
         self.file_icon.show()
-        self.file_label.setText(f"{filename} • {duration_min}m {duration_sec}s • {size_mb:.1f} MB")
+        self.file_label.setText(f"{filename} | {duration_min}m {duration_sec}s | {size_mb:.1f} MB")
         self.file_label.setStyleSheet(theme.text_qss("success", "font-weight: 600;"))
 
         # Emit signal with file and duration
@@ -265,12 +265,16 @@ class ModelSelectStep(QFrame):
         super().__init__(parent)
         self.hardware = hardware
         self.audio_duration = 0
-        self._desc_labels = {}  # model_name -> QLabel showing "description • Est: ..."
+        self._desc_labels = {}  # model_name -> QLabel showing "description | Est: ..."
+        self._cards = {}        # model_name -> QFrame card
+        self._badges = {}       # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
+        self._user_touched_model = False  # True once the user manually picks a model
+        self._syncing = False   # True while we're programmatically re-checking a radio
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(Spacing.LG)
-        layout.setContentsMargins(Spacing.XL, Spacing.XL, Spacing.XL, Spacing.XL)
+        layout.setSpacing(Spacing.SM)
+        layout.setContentsMargins(Spacing.XL, Spacing.MD, Spacing.XL, Spacing.MD)
 
         # Title
         title = QLabel("Choose Model")
@@ -278,23 +282,18 @@ class ModelSelectStep(QFrame):
         title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(title)
 
-        # Scroll area for model options
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(theme.scroll_area_qss())
-
-        scroll_widget = QWidget()
-        scroll_widget.setStyleSheet(theme.frame_bg_qss("bg_primary"))
-        models_layout = QVBoxLayout(scroll_widget)
-        models_layout.setSpacing(Spacing.SM + 2)
-        # Right margin keeps card borders clear of the scrollbar track.
-        models_layout.setContentsMargins(0, 0, Spacing.SM, 0)
+        # All model cards are laid out directly (no scroll area) — sized to
+        # fit every option in the fixed window without needing to scroll.
+        models_layout = QVBoxLayout()
+        models_layout.setSpacing(Spacing.XS + 2)
+        models_layout.setContentsMargins(0, 0, 0, 0)
 
         # Model selection
         self.model_group = QButtonGroup()
         self.model_radios = {}
-        recommended_model, _ = hardware.recommend_model()
+        recommended_model, _ = hardware.recommend_model(self.audio_duration)
         self.selected_model = recommended_model
+        self._current_recommended = recommended_model
 
         for i, (model_name, model_info) in enumerate(config.MODELS.items()):
             model_card = self._create_model_card(
@@ -303,16 +302,17 @@ class ModelSelectStep(QFrame):
             )
             models_layout.addWidget(model_card)
 
-        models_layout.addStretch()
-        scroll.setWidget(scroll_widget)
-
-        layout.addWidget(scroll)
+        layout.addLayout(models_layout)
         layout.addStretch()
 
     def _on_radio_toggled(self, name: str, checked: bool) -> None:
         if checked:
             self.selected_model = name
             self.model_selected.emit(name)
+            if not self._syncing:
+                # A real click (not our own programmatic re-sync) — stop
+                # auto-following the recommendation as it updates.
+                self._user_touched_model = True
 
     def _create_model_card(self, idx: int, name: str, info: dict, is_recommended: bool = False) -> QFrame:
         """Create and return a model selection card with radio button and details."""
@@ -322,7 +322,7 @@ class ModelSelectStep(QFrame):
         card.setStyleSheet(theme.card_qss(object_name, recommended=is_recommended))
 
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(Spacing.MD, Spacing.SM + 2, Spacing.MD, Spacing.SM + 2)
+        layout.setContentsMargins(Spacing.MD, Spacing.XS, Spacing.MD, Spacing.XS)
         layout.setSpacing(Spacing.MD)
 
         # Radio button
@@ -348,7 +348,7 @@ class ModelSelectStep(QFrame):
         time_est, _ = self.hardware.estimate_transcription_time(self.audio_duration, name)
         time_str = self.hardware.get_time_estimate_display(time_est)
 
-        desc_label = QLabel(f"{desc} • Est: {time_str}")
+        desc_label = QLabel(f"{desc} | Est: {time_str}")
         desc_label.setFont(Fonts.CAPTION)
         desc_label.setStyleSheet(theme.text_qss("text_secondary"))
         text_layout.addWidget(desc_label)
@@ -357,23 +357,51 @@ class ModelSelectStep(QFrame):
         layout.addLayout(text_layout)
         layout.addStretch()
 
-        # Recommended badge
-        if is_recommended:
-            badge = QLabel("RECOMMENDED")
-            badge.setStyleSheet(theme.badge_qss())
-            layout.addWidget(badge)
+        # Recommended badge — always created so update_audio_duration can
+        # show/hide it as the real recommendation shifts, instead of only
+        # ever reflecting the recommendation computed at construction time.
+        badge = QLabel("RECOMMENDED")
+        badge.setStyleSheet(theme.badge_qss())
+        badge.setVisible(is_recommended)
+        layout.addWidget(badge)
+        self._badges[name] = badge
 
-        card.setFixedHeight(70)
+        card.setFixedHeight(56)
+        self._cards[name] = card
         return card
 
     def update_audio_duration(self, seconds: int) -> None:
-        """Recompute and refresh only the time-estimate text per model card, in place."""
+        """
+        Recompute time estimates and the real recommendation in place, once
+        the actual audio duration (and possibly a freshly finished hardware
+        calibration) is known.
+        """
         self.audio_duration = seconds
         for name, label in self._desc_labels.items():
             info = config.MODELS[name]
             time_est, _ = self.hardware.estimate_transcription_time(seconds, name)
             time_str = self.hardware.get_time_estimate_display(time_est)
-            label.setText(f"{info.get('description', '')} • Est: {time_str}")
+            label.setText(f"{info.get('description', '')} | Est: {time_str}")
+
+        recommended_model, _ = self.hardware.recommend_model(seconds)
+        self._apply_recommendation(recommended_model)
+
+    def _apply_recommendation(self, recommended_model: str) -> None:
+        """Move the RECOMMENDED badge/border to recommended_model and, if the
+        user hasn't manually picked a model yet, follow it with the selection."""
+        if recommended_model == self._current_recommended:
+            return
+        self._current_recommended = recommended_model
+
+        for name, card in self._cards.items():
+            is_rec = (name == recommended_model)
+            card.setStyleSheet(theme.card_qss(f"modelCard_{name}", recommended=is_rec))
+            self._badges[name].setVisible(is_rec)
+
+        if not self._user_touched_model:
+            self._syncing = True
+            self.model_radios[recommended_model].setChecked(True)
+            self._syncing = False
 
 
 class TranscriptionStep(QFrame):
@@ -465,7 +493,7 @@ class TranscriptionStep(QFrame):
 
     def set_file_info(self, filename: str, model: str):
         """Set file and model info for display."""
-        self.file_info.setText(f"{filename} • Model: {model.title()}")
+        self.file_info.setText(f"{filename} | Model: {model.title()}")
 
     def update_progress(self, status: str, percentage: int):
         """Update progress bar and status."""

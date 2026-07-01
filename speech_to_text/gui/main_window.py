@@ -20,6 +20,7 @@ from PyQt5.QtGui import QFont, QIcon
 from speech_to_text import config
 from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.core.worker import run_transcription_process
+from speech_to_text.core.calibration import run_calibration_process
 from speech_to_text.gui import theme
 from speech_to_text.gui.theme import COLORS, Fonts
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
@@ -116,6 +117,54 @@ class TranscriptionThread(QThread):
         return output_file
 
 
+class CalibrationThread(QThread):
+    """
+    Runs the one-time hardware calibration benchmark in the background.
+
+    Only actually benchmarks on first run — HardwareDetector already loads
+    a cached result synchronously if one exists, in which case MainWindow
+    won't even start this thread. Same subprocess-isolation reasoning as
+    TranscriptionThread: this loads faster-whisper, so it can't safely share
+    a process with PyQt5.
+    """
+    calibrated = pyqtSignal(float)
+    failed = pyqtSignal(str)
+
+    def __init__(self, cpu_cores: int):
+        super().__init__()
+        self.cpu_cores = cpu_cores
+        self._process: Optional[multiprocessing.Process] = None
+
+    def run(self):
+        logger.info("Starting background hardware calibration...")
+        try:
+            result_queue: multiprocessing.Queue = multiprocessing.Queue()
+            self._process = multiprocessing.Process(
+                target=run_calibration_process,
+                args=(self.cpu_cores, result_queue),
+                daemon=True,
+            )
+            self._process.start()
+
+            while True:
+                try:
+                    kind, payload = result_queue.get(timeout=0.5)
+                    if kind == "ok":
+                        logger.info(f"Calibration finished: {payload:.4f}s/audio-s")
+                        self.calibrated.emit(payload)
+                    else:
+                        logger.warning(f"Calibration failed: {payload}")
+                        self.failed.emit(payload)
+                    return
+                except queue.Empty:
+                    if not self._process.is_alive():
+                        self.failed.emit("Calibration process exited unexpectedly")
+                        return
+        except Exception as e:
+            logger.error(f"CalibrationThread error: {e}", exc_info=True)
+            self.failed.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     """Main application window - lightweight tool interface."""
 
@@ -137,6 +186,7 @@ class MainWindow(QMainWindow):
         self.selected_file: Optional[str] = None
         self.selected_model: Optional[str] = None
         self.audio_duration: int = 0
+        self.calibration_thread: Optional[QThread] = None
 
         # Build UI
         self._init_ui()
@@ -144,7 +194,26 @@ class MainWindow(QMainWindow):
         # Center on screen
         self.center_on_screen()
 
+        # Kick off the one-time hardware calibration in the background, if no
+        # cached result was already loaded by HardwareDetector. Runs while
+        # the user is still picking a file, so real numbers are usually
+        # ready before they reach the model-select step.
+        if self.hardware.tiny_seconds_per_audio_second is None:
+            self.calibration_thread = CalibrationThread(self.hardware.cpu_count)
+            self.calibration_thread.calibrated.connect(self._on_calibration_done)
+            self.calibration_thread.failed.connect(self._on_calibration_failed)
+            self.calibration_thread.start()
+
         logger.info("✓ MainWindow ready")
+
+    def _on_calibration_done(self, tiny_seconds_per_audio_second: float):
+        """Apply a finished background calibration and refresh any visible estimates."""
+        self.hardware.set_calibration(tiny_seconds_per_audio_second)
+        self.model_step.update_audio_duration(self.audio_duration)
+        logger.debug("Refreshed model time estimates with calibrated values")
+
+    def _on_calibration_failed(self, message: str):
+        logger.warning(f"Hardware calibration failed, keeping placeholder estimates: {message}")
 
     def center_on_screen(self):
         """Center window on screen."""
@@ -221,8 +290,9 @@ class MainWindow(QMainWindow):
 
         # Back and Next are given the same fixed size — minimum-size alone
         # lets each button grow to fit its own text/icon, so their rendered
-        # widths drifted apart (e.g. "  Back" + icon vs "Next" + icon).
-        nav_btn_size = (100, 36)
+        # widths drifted apart (e.g. "  Back" + icon vs "Next" + icon). Wide
+        # enough for next_btn's longest state too ("New File" + icon).
+        nav_btn_size = (130, 36)
 
         # Back button
         self.back_btn = QPushButton()
@@ -327,8 +397,12 @@ class MainWindow(QMainWindow):
         logger.info(f"Transcription complete: {output_file}")
         self.transcription_step.show_result(output_file)
 
-        # Show completion options
+        # Show completion options. This reuses next_btn, so its icon/layout
+        # need to switch too — a forward arrow reads as "proceed to the next
+        # step", which is misleading for what's actually a reset action.
         self.next_btn.setText("New File")
+        self.next_btn.setLayoutDirection(Qt.LeftToRight)
+        self.next_btn.setIcon(QIcon(svg_to_pixmap(ICONS["file_plus"], 16, COLORS['bg_primary'])))
         self.next_btn.show()
         self.next_btn.clicked.disconnect()
         self.next_btn.clicked.connect(self._reset)
@@ -349,6 +423,8 @@ class MainWindow(QMainWindow):
         self.back_btn.hide()
         self.next_btn.setEnabled(False)
         self.next_btn.setText("Next")
+        self.next_btn.setLayoutDirection(Qt.RightToLeft)
+        self.next_btn.setIcon(QIcon(svg_to_pixmap(ICONS["arrow_right"], 16, COLORS['bg_primary'])))
         self.next_btn.show()
         self.next_btn.clicked.disconnect()
         self.next_btn.clicked.connect(self._go_next)

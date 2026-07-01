@@ -209,42 +209,6 @@ def result_panel_qss(object_name: str) -> str:
     """
 
 
-def scroll_area_qss() -> str:
-    """
-    Styled QScrollArea + QScrollBar — without this, Qt falls back to the native
-    OS scrollbar (a light gray/white widget on Windows), which reads as a
-    rendering glitch against a dark theme and its arrow buttons visually clip
-    into adjacent card borders.
-    """
-    return f"""
-    QScrollArea {{
-        background-color: {COLORS['bg_primary']};
-        border: none;
-    }}
-    QScrollBar:vertical {{
-        background: {COLORS['bg_primary']};
-        width: 10px;
-        margin: 0px;
-    }}
-    QScrollBar::handle:vertical {{
-        background: {COLORS['border_light']};
-        border-radius: 5px;
-        min-height: 24px;
-    }}
-    QScrollBar::handle:vertical:hover {{
-        background: {COLORS['accent']};
-    }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-        height: 0px;
-        background: none;
-        border: none;
-    }}
-    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-        background: none;
-    }}
-    """
-
-
 def gradient_text_pixmap(
     text: str,
     font: QFont,

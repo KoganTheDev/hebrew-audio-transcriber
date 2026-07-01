@@ -178,9 +178,10 @@ GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) â
 # ============================================================================
 # Transcription time estimation factors and hardware thresholds
 
-# Speed factors for each model relative to real-time
-# Higher value = faster relative to input audio
-# Tiny is fastest, Large is slowest
+# Placeholder speed factors, used only until the real per-machine
+# calibration benchmark (speech_to_text.core.calibration) finishes on first
+# run â€” see HardwareDetector.estimate_transcription_time. Not used once a
+# real measurement is available.
 SPEED_FACTORS = {
     "tiny": 2.5,      # 2.5x real-time (10 min audio = ~4 min processing)
     "small": 1.8,     # 1.8x real-time
@@ -188,9 +189,6 @@ SPEED_FACTORS = {
     "medium": 0.65,   # 0.65x real-time (slower than real-time)
     "large": 0.35,    # 0.35x real-time (very slow)
 }
-
-# GPU acceleration multiplier (how much faster with GPU)
-GPU_SPEED_MULTIPLIER = 3.5      # GPU is ~3.5x faster than CPU
 
 # CPU baseline for normalization
 # Used to scale time estimates across different CPU core counts

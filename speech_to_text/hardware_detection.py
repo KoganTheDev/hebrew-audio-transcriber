@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Tuple, Optional
 
 from speech_to_text import config
+from speech_to_text.core.calibration import RELATIVE_COMPUTE_COST, load_cached_tiny_rtf
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,24 @@ class HardwareDetector:
         self.has_gpu = self._detect_gpu()
         self.gpu_name = self._get_gpu_name()
         self.os_name = platform.system()
-        
+
+        # Real measured transcription speed on this machine (seconds of tiny-
+        # model processing per second of audio), used by
+        # estimate_transcription_time instead of guessed constants. None
+        # until a calibration benchmark has run — see set_calibration() and
+        # speech_to_text.core.calibration.
+        self.tiny_seconds_per_audio_second: Optional[float] = load_cached_tiny_rtf(self.cpu_count)
+
         logger.info(f"Hardware: OS={self.os_name}, GPU={'Yes' if self.has_gpu else 'No'}")
         if self.has_gpu:
             logger.info(f"GPU Model: {self.gpu_name}")
+        if self.tiny_seconds_per_audio_second is not None:
+            logger.debug(f"Loaded cached calibration: {self.tiny_seconds_per_audio_second:.4f}s/audio-s")
+
+    def set_calibration(self, tiny_seconds_per_audio_second: float) -> None:
+        """Record a fresh calibration result (see CalibrationThread)."""
+        self.tiny_seconds_per_audio_second = tiny_seconds_per_audio_second
+        logger.debug(f"Calibration applied: {tiny_seconds_per_audio_second:.4f}s/audio-s")
         
     def _detect_gpu(self) -> bool:
         """Check if NVIDIA GPU is available."""
@@ -181,48 +196,90 @@ class HardwareDetector:
         
         return True, f"✓ System has enough RAM ({self.ram_gb:.1f}GB)"
     
-    def recommend_model(self) -> Tuple[str, str]:
+    # Absolute wall-clock ceiling we're willing to let the recommended model
+    # take, once a real audio duration + calibrated speed are known. Fixed
+    # (not a multiplier of the audio's own length) so the recommendation
+    # actually depends on file length: short files can afford the most
+    # accurate model since it'll still finish quickly in absolute terms,
+    # while long files get pushed toward faster models to stay under the
+    # same ceiling.
+    RECOMMENDED_TIME_BUDGET_SECONDS = 2 * 3600  # 2 hours
+
+    def recommend_model(self, audio_duration_seconds: int = 0) -> Tuple[str, str]:
         """
-        Recommend best model based on hardware.
+        Recommend the highest-accuracy model this machine (and, once known,
+        this specific file) can realistically handle.
+
+        Walks models from highest to lowest accuracy_score and returns the
+        first one that (a) fits in available RAM (can_run_model) and, once
+        we have a real audio duration and a calibrated per-machine speed
+        (see core.calibration), (b) is estimated to finish within
+        RECOMMENDED_TIME_BUDGET_SECONDS. Device (GPU) is not considered —
+        transcription always runs on CPU in this app (see
+        TranscriptionThread).
+
+        Before a file is picked or before calibration finishes, real timing
+        can't be evaluated yet, so the choice falls back to RAM fit only.
+
         Returns: (model_size, reason)
         """
-        if self.has_gpu:
-            return "small", "GPU available - good speed/accuracy balance"
-        elif self.cpu_count >= 8:
-            return "base", "8+ CPU cores - balanced model recommended"
-        elif self.cpu_count >= 6:
-            return "small", "6+ CPU cores - faster model recommended"
-        else:
-            return "tiny", "Limited CPU cores - fastest model recommended"
+        have_real_timing = audio_duration_seconds > 0 and self.tiny_seconds_per_audio_second is not None
+
+        ordered = sorted(
+            config.MODELS.items(), key=lambda kv: kv[1]["accuracy_score"], reverse=True
+        )
+
+        for model_name, _ in ordered:
+            can_run, _ = self.can_run_model(model_name)
+            if not can_run:
+                continue
+
+            if have_real_timing:
+                estimated_seconds, _ = self.estimate_transcription_time(audio_duration_seconds, model_name)
+                if estimated_seconds > self.RECOMMENDED_TIME_BUDGET_SECONDS:
+                    continue
+                budget_min = self.RECOMMENDED_TIME_BUDGET_SECONDS / 60
+                return model_name, f"Highest accuracy estimated to finish within ~{budget_min:.0f}m"
+
+            return model_name, f"Highest accuracy this machine's RAM can support ({self.ram_gb:.1f}GB)"
+
+        # Nothing fit (e.g. not even enough RAM for 'tiny') — fall back to
+        # the cheapest model anyway, since some result is better than none.
+        return "tiny", "Minimum viable option for this hardware"
     
     def estimate_transcription_time(self, audio_duration_seconds: int, model_size: str) -> Tuple[int, str]:
         """
         Estimate transcription time based on audio duration, model, and hardware.
-        
+
+        Uses a real measured benchmark (self.tiny_seconds_per_audio_second,
+        from speech_to_text.core.calibration) scaled to the requested model
+        size by relative parameter count, rather than guessed constants.
+        Transcription always runs on CPU in this app (see TranscriptionThread
+        — device is hardcoded to "cpu"), so this does not factor in GPU speed
+        even if a GPU is present.
+
         Args:
             audio_duration_seconds: Length of audio in seconds
             model_size: Model size (tiny, small, base, medium, large)
-        
+
         Returns:
             (estimated_seconds, reason_string)
         """
-        # Speed factors: how many seconds of audio processed per second of real time
-        # Higher = faster (from config.SPEED_FACTORS)
-        base_speed = config.SPEED_FACTORS.get(model_size, 1.0)
-        
-        # Apply GPU boost if available (from config.GPU_SPEED_MULTIPLIER)
-        if self.has_gpu:
-            speed = base_speed * config.GPU_SPEED_MULTIPLIER
-            device_desc = f"GPU ({self.gpu_name or 'NVIDIA'})"
-        else:
-            # Scale by CPU cores (normalized to baseline from config.BASELINE_CPU_CORES)
-            # This prevents overly optimistic estimates on low-core systems.
-            cpu_factor = self.cpu_count / float(config.BASELINE_CPU_CORES)
-            speed = base_speed * cpu_factor
+        if self.tiny_seconds_per_audio_second is not None:
+            relative_cost = RELATIVE_COMPUTE_COST.get(model_size, RELATIVE_COMPUTE_COST["medium"])
+            seconds_per_audio_second = self.tiny_seconds_per_audio_second * relative_cost
             device_desc = f"{self.cpu_count} CPU cores"
-        
-        # Calculate time with overhead
-        processing_time = audio_duration_seconds / speed
+        else:
+            # Calibration hasn't finished yet (first run only — see
+            # CalibrationThread). Use a conservative placeholder so the UI has
+            # something to show; it's replaced automatically once the
+            # background calibration completes.
+            base_speed = config.SPEED_FACTORS.get(model_size, 1.0)
+            cpu_factor = self.cpu_count / float(config.BASELINE_CPU_CORES)
+            seconds_per_audio_second = 1.0 / (base_speed * cpu_factor)
+            device_desc = f"{self.cpu_count} CPU cores (estimating…)"
+
+        processing_time = audio_duration_seconds * seconds_per_audio_second
         estimated_seconds = int(processing_time + config.TRANSCRIPTION_OVERHEAD_SECONDS)
         
         # Generate reason string
@@ -236,7 +293,7 @@ class HardwareDetector:
             mins = (estimated_seconds % 3600) // 60
             time_str = f"{hours}h {mins}m"
         
-        reason = f"Model: {model_size.title()} • Device: {device_desc} • Audio: {audio_min:.1f}m → ~{time_str}"
+        reason = f"Model: {model_size.title()} | Device: {device_desc} | Audio: {audio_min:.1f}m → ~{time_str}"
         
         logger.debug(f"Time estimation: {reason}")
         
