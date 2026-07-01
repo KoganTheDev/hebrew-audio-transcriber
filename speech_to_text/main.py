@@ -112,18 +112,17 @@ def main():
     except OSError as e:
         logger.error(f"OSError during application startup: {e}", exc_info=True)
         if "DLL" in str(e) or "dynamic link library" in str(e):
-            logger.critical("Native DLL loading failed - missing or conflicting C++ runtime dependencies")
-            print("\n" + "=" * 70)
-            print("ERROR: Native DLL Loading Failed")
-            print("=" * 70)
-            print("\nThis usually means a required Visual C++ runtime DLL is missing")
-            print("or a different copy bundled by PyQt5/faster-whisper conflicts with it.")
-            print("\nPossible solutions:")
-            print("1. Install/repair the Microsoft Visual C++ Redistributable (x64):")
-            print("   https://aka.ms/vs/17/release/vc_redist.x64.exe")
-            print("\n2. Or reinstall PyQt5 and faster-whisper:")
-            print("   pip install --upgrade --force-reinstall PyQt5 faster-whisper")
-            print("=" * 70)
+            logger.critical(
+                "Native DLL loading failed - missing or conflicting C++ runtime "
+                "dependencies.\n"
+                "This usually means a required Visual C++ runtime DLL is missing, "
+                "or a different copy bundled by PyQt5/faster-whisper conflicts with it.\n"
+                "Possible solutions:\n"
+                "  1. Install/repair the Microsoft Visual C++ Redistributable (x64):\n"
+                "     https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
+                "  2. Or reinstall PyQt5 and faster-whisper:\n"
+                "     pip install --upgrade --force-reinstall PyQt5 faster-whisper"
+            )
             sys.exit(1)
         else:
             logger.error(f"Unexpected OSError: {e}", exc_info=True)
