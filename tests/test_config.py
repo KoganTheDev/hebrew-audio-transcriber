@@ -40,7 +40,7 @@ class TestConfig:
     
     def test_app_configuration(self):
         """Test application configuration."""
-        assert config.APP_NAME == "Speech-to-Text Transcriber"
+        assert config.APP_NAME == "Hebrew Audio Transcriber"
         assert config.APP_VERSION == "2.0.0"
         assert config.WINDOW_WIDTH > 0
         assert config.WINDOW_HEIGHT > 0

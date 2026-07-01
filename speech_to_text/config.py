@@ -3,6 +3,8 @@ Speech-to-Text Application - Configuration Module
 Centralized configuration for the application.
 """
 
+import os
+
 # ============================================================================
 # Model Configuration with detailed pros/cons
 # ============================================================================
@@ -115,10 +117,13 @@ DEFAULT_MODEL = "medium"
 # Application Configuration
 # ============================================================================
 
-APP_NAME = "Speech-to-Text Transcriber"
+APP_NAME = "Hebrew Audio Transcriber"
 APP_VERSION = "2.0.0"
+APP_ID = "speechtotext.transcriber.2"  # Windows AppUserModelID, for correct taskbar icon grouping
 WINDOW_WIDTH = 950
 WINDOW_HEIGHT = 800
+
+ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")
 
 # ============================================================================
 # Transcription Settings

@@ -37,5 +37,6 @@ setup(
         ],
     },
     include_package_data=True,
+    package_data={"speech_to_text": ["assets/*.ico"]},
     zip_safe=False,
 )

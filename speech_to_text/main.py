@@ -15,14 +15,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from speech_to_text import config
 from speech_to_text.core.dependencies import ensure_dependencies
 
-# Setup logging with standard format (ISO 8601 timestamps, detailed info)
+# Setup logging: fixed-width, column-aligned format with millisecond precision
+# and source location (file:line) — easy to scan and to grep by level/module.
+LOG_FORMAT = (
+    "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)-32s "
+    "%(filename)s:%(lineno)d - %(message)s"
+)
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    format=LOG_FORMAT,
+    datefmt=DATE_FORMAT,
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("speech_to_text.log")
+        logging.FileHandler("speech_to_text.log", encoding="utf-8")
     ]
 )
 logger = logging.getLogger(__name__)
@@ -45,11 +52,26 @@ def main():
         sys.exit(1)
     
     logger.info("✓ All dependencies available")
+
+    # Import faster-whisper (ctranslate2) before PyQt5. Both bundle their own
+    # copy of MSVCP140.dll on Windows; whichever loads into the process first
+    # wins the name and the other side reuses it. Importing PyQt5 first causes
+    # a hard access-violation crash (0xc0000005) inside PyQt5's older bundled
+    # copy as soon as ctranslate2 loads a model later — confirmed by reproducing
+    # it both ways. This import order avoids the conflict; do not reorder it.
+    try:
+        import faster_whisper  # noqa: F401
+        logger.debug("faster_whisper imported (establishes DLL load order before PyQt5)")
+    except ImportError as e:
+        logger.error(f"Failed to import faster_whisper: {e}", exc_info=True)
+        sys.exit(1)
+
     logger.info("Initializing GUI...")
-    
+
     # Import PyQt5 after dependencies are ensured
     try:
         from PyQt5.QtWidgets import QApplication, QMessageBox
+        from PyQt5.QtGui import QIcon
         from speech_to_text.gui.main_window import MainWindow
         logger.debug("PyQt5 imports successful")
     except ImportError as e:
@@ -57,11 +79,24 @@ def main():
         sys.exit(1)
     
     try:
+        # On Windows, the taskbar groups/icons processes by AppUserModelID
+        # rather than by window icon alone. Without setting our own, Windows
+        # falls back to python.exe's icon in the taskbar even though the
+        # title bar shows the correct one.
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.APP_ID)
+                logger.debug(f"Set AppUserModelID: {config.APP_ID}")
+            except Exception as e:
+                logger.warning(f"Could not set AppUserModelID: {e}")
+
         # Create and run application
         logger.debug("Creating QApplication...")
         app = QApplication(sys.argv)
+        app.setWindowIcon(QIcon(config.ICON_PATH))
         logger.debug("QApplication created successfully")
-        
+
         logger.debug("Creating MainWindow...")
         window = MainWindow()
         logger.debug("MainWindow instance created")
@@ -77,17 +112,17 @@ def main():
     except OSError as e:
         logger.error(f"OSError during application startup: {e}", exc_info=True)
         if "DLL" in str(e) or "dynamic link library" in str(e):
-            logger.critical("PyTorch DLL loading failed - missing C++ runtime dependencies")
+            logger.critical("Native DLL loading failed - missing or conflicting C++ runtime dependencies")
             print("\n" + "=" * 70)
-            print("ERROR: PyTorch DLL Loading Failed")
+            print("ERROR: Native DLL Loading Failed")
             print("=" * 70)
-            print("\nThis error typically means PyTorch requires additional system libraries.")
+            print("\nThis usually means a required Visual C++ runtime DLL is missing")
+            print("or a different copy bundled by PyQt5/faster-whisper conflicts with it.")
             print("\nPossible solutions:")
-            print("1. Install Visual C++ Redistributable:")
-            print("   https://support.microsoft.com/en-us/help/2977003")
-            print("\n2. Or try reinstalling torch:")
-            print("   pip install --upgrade --force-reinstall torch")
-            print("\n3. Or use CPU-only version (might already be installed)")
+            print("1. Install/repair the Microsoft Visual C++ Redistributable (x64):")
+            print("   https://aka.ms/vs/17/release/vc_redist.x64.exe")
+            print("\n2. Or reinstall PyQt5 and faster-whisper:")
+            print("   pip install --upgrade --force-reinstall PyQt5 faster-whisper")
             print("=" * 70)
             sys.exit(1)
         else:
