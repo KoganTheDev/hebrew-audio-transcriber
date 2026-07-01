@@ -15,8 +15,8 @@ Point it at an audio or video file, and it walks you through a 3-step wizard: pi
 
 ## Screenshots
 
-| File Selection | Transcribing |
-|---|---|
+| File Selection                                            | Transcribing                                           |
+| --------------------------------------------------------- | ------------------------------------------------------ |
 | ![File selection screen](docs/screenshot-file-select.png) | ![Transcribing screen](docs/screenshot-transcribe.png) |
 
 ## Architecture
