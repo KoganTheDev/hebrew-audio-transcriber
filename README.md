@@ -1,6 +1,6 @@
 # Hebrew Audio Transcriber
 
-A desktop application that transcribes Hebrew audio and video into text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) behind a PyQt5 GUI. Everything runs locally — no audio ever leaves your machine.
+A desktop application that transcribes Hebrew audio and video into text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) behind a PyQt5 GUI. Everything runs locally: no audio ever leaves your machine.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -10,16 +10,16 @@ A desktop application that transcribes Hebrew audio and video into text, using [
 
 Point it at an audio or video file, and it walks you through a 3-step wizard: pick the file, pick a Whisper model, and transcribe. Along the way it does the things a transcription tool should but often doesn't:
 
-- **Real hardware-aware recommendations** — the suggested model is computed from your actual CPU/RAM and the file's real (probed) duration against a measured, per-machine calibration benchmark, not a guessed constant.
-- **Honest progress reporting** — the progress bar tracks real audio position as Whisper decodes it, and surfaces what's happening internally (e.g. a segment being re-decoded at a different temperature) instead of appearing to freeze.
-- **Crash isolation** — transcription runs in a separate OS process from the GUI, working around a real Windows DLL conflict between PyQt5 and CTranslate2 (see [Architecture](#architecture)).
-- **Graceful failure handling** — errors and cancellation return you to model selection with an inline message, never a disruptive popup.
+- **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the file's real (probed) duration against a measured, per-machine calibration benchmark, not a guessed constant.
+- **Honest progress reporting**: the progress bar tracks real audio position as Whisper decodes it, and surfaces what's happening internally (e.g. a segment being re-decoded at a different temperature) instead of appearing to freeze.
+- **Crash isolation**: transcription runs in a separate OS process from the GUI, working around a real Windows DLL conflict between PyQt5 and CTranslate2 (see [Architecture](#architecture)).
+- **Graceful failure handling**: errors and cancellation return you to model selection with an inline message, never a disruptive popup.
 
 ## Architecture
 
-![Architecture diagram](docs/architecture.png)
+![Architecture diagram](docs/architecture.jpg)
 
-The GUI (PyQt5, main process) hands off the actual transcription to a background OS process via `multiprocessing`, communicating over a queue. This isn't incidental — PyQt5 and CTranslate2 each bundle their own copy of `MSVCP140.dll` on Windows, and loading both into one process causes an intermittent access-violation crash. Isolating the transcription work into its own process sidesteps it entirely.
+The GUI (PyQt5, main process) hands off the actual transcription to a background OS process via `multiprocessing`, communicating over a queue. This isn't incidental: PyQt5 and CTranslate2 each bundle their own copy of `MSVCP140.dll` on Windows, and loading both into one process causes an intermittent access-violation crash. Isolating the transcription work into its own process sidesteps it entirely.
 
 The diagram is editable at [`docs/architecture.drawio`](docs/architecture.drawio) (open with [diagrams.net](https://app.diagrams.net)).
 
@@ -54,9 +54,9 @@ python -m speech_to_text.main
 or, on Windows, run `run.bat` / `run.ps1` directly. After `pip install -e .`, the `speech-to-text` console command is also available.
 
 **Workflow:**
-1. **Select Audio File** — drag a file into the drop zone (or click to browse). Your CPU/RAM/GPU are shown alongside the file's real duration.
-2. **Choose Model** — pick from the five Whisper model sizes below; the app pre-selects the highest-accuracy model that will still finish within a reasonable time on your hardware.
-3. **Transcribe** — watch live progress, or cancel and return to model selection at any point. On completion, the transcript is saved next to the source file.
+1. **Select Audio File**: drag a file into the drop zone (or click to browse). Your CPU/RAM/GPU are shown alongside the file's real duration.
+2. **Choose Model**: pick from the five Whisper model sizes below; the app pre-selects the highest-accuracy model that will still finish within a reasonable time on your hardware.
+3. **Transcribe**: watch live progress, or cancel and return to model selection at any point. On completion, the transcript is saved next to the source file.
 
 ### Model sizes
 
@@ -68,7 +68,7 @@ or, on Windows, run `run.bat` / `run.ps1` directly. After `pip install -e .`, th
 | Medium | High accuracy (default recommendation) | 5 GB |
 | Large | Highest accuracy, slowest | 8 GB |
 
-Actual processing time isn't fixed — it's estimated from a one-time benchmark run on your own CPU the first time the app launches, then scaled by model size and the file's real duration.
+Actual processing time isn't fixed: it's estimated from a one-time benchmark run on your own CPU the first time the app launches, then scaled by model size and the file's real duration.
 
 ## Project Structure
 
@@ -93,7 +93,7 @@ speech_to_text/
 tests/                          # pytest suite covering config, hardware detection, transcriber, and integration
 docs/
 ├── architecture.drawio         # Editable source for the architecture diagram
-└── architecture.png            # Rendered diagram (embedded above)
+└── architecture.jpg            # Rendered diagram (embedded above)
 ```
 
 ## Testing
@@ -106,4 +106,4 @@ pytest tests/test_transcriber.py -v       # a single module
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
