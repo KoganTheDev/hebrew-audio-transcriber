@@ -8,7 +8,7 @@ import logging
 from enum import Enum
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QRadioButton, QButtonGroup,
     QFileDialog, QProgressBar, QFrame, QScrollArea,
 )
@@ -37,19 +37,32 @@ class FileSelectStep(QFrame):
 
     file_selected = pyqtSignal(str, int)  # file_path, duration_seconds
 
-    def __init__(self, parent=None):
+    def __init__(self, hardware: HardwareDetector, parent=None):
         super().__init__(parent)
+        self.hardware = hardware
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.LG)
         layout.setContentsMargins(Spacing.XL, Spacing.XL, Spacing.XL, Spacing.XL)
 
-        # Title
-        title = QLabel("Select Audio File")
+        # Title — "Specs" now, since the system-info table is the first
+        # thing on this page.
+        title = QLabel("Specs")
         title.setFont(Fonts.TITLE)
         title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(title)
+
+        # System info table — shown here (above the drop zone) since it's
+        # relevant context before the user even picks a file or model.
+        hw_table = self._create_hardware_table()
+        layout.addWidget(hw_table)
+
+        # Subheading for the drop zone below.
+        file_heading = QLabel("Select Audio File")
+        file_heading.setFont(Fonts.SUBTITLE_BOLD)
+        file_heading.setStyleSheet(theme.text_qss("text_primary"))
+        layout.addWidget(file_heading)
 
         # Drop zone - large and spacious. Also acts as the browse button: the
         # whole area is clickable to open a file dialog, in addition to drag-and-drop.
@@ -71,11 +84,11 @@ class FileSelectStep(QFrame):
 
         # Folder icon
         icon_label = QLabel()
-        icon_pixmap = svg_to_pixmap(ICONS["folder"], 64, COLORS['accent'])
+        icon_pixmap = svg_to_pixmap(ICONS["folder"], 48, COLORS['accent'])
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setMaximumHeight(70)
+        icon_label.setMaximumHeight(52)
         drop_layout.addWidget(icon_label)
 
         # Main text
@@ -167,6 +180,81 @@ class FileSelectStep(QFrame):
         # Emit signal with file and duration
         self.file_selected.emit(file_path, self.selected_duration)
 
+    def _create_hardware_table(self) -> QFrame:
+        """Create a compact tabular system-info display (CPU / RAM / GPU)."""
+        card = QFrame()
+        card.setObjectName("hardwareCard")
+        card.setStyleSheet(theme.hardware_card_qss("hardwareCard"))
+
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
+        outer.setSpacing(Spacing.XS)
+        # No in-card header here — the page title above the card already
+        # reads "Specs", so a repeated label inside would be redundant.
+
+        # Table: one cell per metric, each with its own header/value split by
+        # a divider line, and vertical divider lines between cells — a real
+        # row/column grid rather than plain text spread across a bare card.
+        hw_info = self.hardware.get_hardware_info()
+        gpu_text = hw_info['gpu_name'] if hw_info['has_gpu'] else "No GPU"
+        columns = [
+            ("CPU CORES", str(hw_info['cpu_cores'])),
+            ("RAM", f"{hw_info['ram_gb']} GB"),
+            ("GPU", gpu_text),
+        ]
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(0)
+        grid.setVerticalSpacing(0)
+
+        for i, (label, value) in enumerate(columns):
+            col = i * 2  # odd columns hold vertical divider lines
+            grid.addWidget(self._create_table_cell(label, value), 0, col)
+            if i < len(columns) - 1:
+                grid.addWidget(self._vline(), 0, col + 1)
+
+        outer.addLayout(grid)
+
+        return card
+
+    def _create_table_cell(self, label: str, value: str) -> QWidget:
+        """One table cell: header label, a divider line, then the value."""
+        cell = QWidget()
+        cell.setStyleSheet("background: transparent;")
+        cell_layout = QVBoxLayout(cell)
+        cell_layout.setContentsMargins(Spacing.MD, 0, Spacing.MD, 0)
+        cell_layout.setSpacing(Spacing.XS)
+
+        label_widget = QLabel(label)
+        label_widget.setFont(Fonts.CAPTION)
+        label_widget.setStyleSheet(theme.text_qss("text_tertiary"))
+        label_widget.setAlignment(Qt.AlignCenter)
+        cell_layout.addWidget(label_widget)
+
+        cell_layout.addWidget(self._hline())
+
+        value_widget = QLabel(value)
+        value_widget.setFont(Fonts.BODY_BOLD)
+        value_widget.setStyleSheet(theme.text_qss("text_primary"))
+        value_widget.setAlignment(Qt.AlignCenter)
+        cell_layout.addWidget(value_widget)
+
+        return cell
+
+    @staticmethod
+    def _hline() -> QFrame:
+        line = QFrame()
+        line.setFixedHeight(1)
+        line.setStyleSheet(f"background-color: {COLORS['border_light']};")
+        return line
+
+    @staticmethod
+    def _vline() -> QFrame:
+        line = QFrame()
+        line.setFixedWidth(1)
+        line.setStyleSheet(f"background-color: {COLORS['border_light']};")
+        return line
+
 
 class ModelSelectStep(QFrame):
     """Step 2: Model Selection with recommendation and time estimates."""
@@ -189,10 +277,6 @@ class ModelSelectStep(QFrame):
         title.setFont(Fonts.TITLE)
         title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(title)
-
-        # Hardware info card
-        hw_card = self._create_hardware_card()
-        layout.addWidget(hw_card)
 
         # Scroll area for model options
         scroll = QScrollArea()
@@ -229,38 +313,6 @@ class ModelSelectStep(QFrame):
         if checked:
             self.selected_model = name
             self.model_selected.emit(name)
-
-    def _create_hardware_card(self) -> QFrame:
-        """Create and return a hardware information display card."""
-        card = QFrame()
-        card.setObjectName("hardwareCard")
-        card.setStyleSheet(theme.hardware_card_qss("hardwareCard"))
-
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
-
-        # Settings icon
-        icon_label = QLabel()
-        icon_pixmap = svg_to_pixmap(ICONS["settings"], 24, COLORS['accent'])
-        icon_label.setPixmap(icon_pixmap)
-        icon_label.setStyleSheet("background: transparent;")
-        icon_label.setFixedSize(30, 30)
-        card_layout.addWidget(icon_label)
-
-        # Hardware info
-        hw_info = self.hardware.get_hardware_info()
-        gpu_text = hw_info['gpu_name'] if hw_info['has_gpu'] else "No GPU"
-        info_text = f"{hw_info['cpu_cores']} CPU cores • {hw_info['ram_gb']}GB RAM • {gpu_text}"
-
-        info_label = QLabel(info_text)
-        info_label.setFont(Fonts.BODY)
-        info_label.setStyleSheet(theme.text_qss("text_secondary"))
-        card_layout.addWidget(info_label)
-
-        card_layout.addStretch()
-        card.setFixedHeight(50)
-
-        return card
 
     def _create_model_card(self, idx: int, name: str, info: dict, is_recommended: bool = False) -> QFrame:
         """Create and return a model selection card with radio button and details."""

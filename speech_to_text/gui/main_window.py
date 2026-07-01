@@ -197,7 +197,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         # Create steps
-        self.file_step = FileSelectStep()
+        self.file_step = FileSelectStep(self.hardware)
         self.file_step.file_selected.connect(self._on_file_selected)
 
         self.model_step = ModelSelectStep(self.hardware)
@@ -219,13 +219,17 @@ class MainWindow(QMainWindow):
         nav_layout = QHBoxLayout(nav_widget)
         nav_layout.setSpacing(8)
 
+        # Back and Next are given the same fixed size — minimum-size alone
+        # lets each button grow to fit its own text/icon, so their rendered
+        # widths drifted apart (e.g. "  Back" + icon vs "Next" + icon).
+        nav_btn_size = (100, 36)
+
         # Back button
         self.back_btn = QPushButton()
         back_pixmap = svg_to_pixmap(ICONS["arrow_left"], 16, COLORS['text_primary'])
         self.back_btn.setIcon(QIcon(back_pixmap))
         self.back_btn.setText("  Back")
-        self.back_btn.setMinimumHeight(36)
-        self.back_btn.setMinimumWidth(80)
+        self.back_btn.setFixedSize(*nav_btn_size)
         self.back_btn.setFont(Fonts.BODY_BOLD)
         self.back_btn.setStyleSheet(theme.button_secondary_qss())
         self.back_btn.clicked.connect(self._go_back)
@@ -239,8 +243,7 @@ class MainWindow(QMainWindow):
         next_pixmap = svg_to_pixmap(ICONS["arrow_right"], 16, COLORS['bg_primary'])
         self.next_btn.setIcon(QIcon(next_pixmap))
         self.next_btn.setLayoutDirection(Qt.RightToLeft)
-        self.next_btn.setMinimumHeight(36)
-        self.next_btn.setMinimumWidth(80)
+        self.next_btn.setFixedSize(*nav_btn_size)
         self.next_btn.setFont(Fonts.BODY_BOLD)
         self.next_btn.setStyleSheet(theme.button_primary_qss())
         self.next_btn.clicked.connect(self._go_next)
