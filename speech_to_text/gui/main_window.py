@@ -43,11 +43,12 @@ class TranscriptionThread(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, audio_file: str, model_size: str, device: str):
+    def __init__(self, audio_file: str, model_size: str, device: str, audio_duration_seconds: float = 0):
         super().__init__()
         self.audio_file = audio_file
         self.model_size = model_size
         self.device = device
+        self.audio_duration_seconds = audio_duration_seconds
         self._is_running = True
         self._process: Optional[multiprocessing.Process] = None
         logger.debug(f"TranscriptionThread created: {os.path.basename(audio_file)}")
@@ -56,7 +57,9 @@ class TranscriptionThread(QThread):
         """Launch the worker process and relay its progress/result as signals."""
         logger.info(f"TranscriptionThread started")
         try:
-            self.progress.emit("Initializing...", 5)
+            # Kept below run_transcription_process's own first emission (2%)
+            # so the bar only ever moves forward — see its phase breakdown.
+            self.progress.emit("Starting...", 1)
             output_file = self._get_output_path()
 
             progress_queue: multiprocessing.Queue = multiprocessing.Queue()
@@ -65,19 +68,35 @@ class TranscriptionThread(QThread):
             self._process = multiprocessing.Process(
                 target=run_transcription_process,
                 args=(self.audio_file, self.model_size, self.device, output_file,
-                      progress_queue, result_queue),
+                      progress_queue, result_queue, self.audio_duration_seconds),
                 daemon=True,
             )
             self._process.start()
 
             while self._is_running:
-                try:
-                    kind, *payload = progress_queue.get(timeout=0.2)
-                    if kind == "progress":
-                        message, percent = payload
-                        self.progress.emit(message, percent)
-                except queue.Empty:
-                    pass
+                # Drain every progress message currently queued (not just
+                # one) before checking for a result. Otherwise, if the
+                # worker process finishes quickly, several trailing
+                # messages (e.g. "Saving output file...", 97 then
+                # "Complete!", 100) can already be sitting in the queue
+                # alongside the "finished" result — relaying only the first
+                # one and then returning left the bar visibly stuck below
+                # 100% even though the run had actually completed.
+                got_any = False
+                while True:
+                    try:
+                        kind, *payload = progress_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    got_any = True
+                    self._relay_progress_message(kind, payload)
+
+                if not got_any:
+                    try:
+                        kind, *payload = progress_queue.get(timeout=0.2)
+                        self._relay_progress_message(kind, payload)
+                    except queue.Empty:
+                        pass
 
                 try:
                     kind, payload = result_queue.get_nowait()
@@ -103,6 +122,24 @@ class TranscriptionThread(QThread):
         finally:
             if self._process and self._process.is_alive():
                 self._process.terminate()
+
+    def _relay_progress_message(self, kind: str, payload: list) -> None:
+        """
+        Relay one progress_queue message as the progress signal.
+
+        "progress" messages carry a real percentage. "status" messages (see
+        core.worker._RetryStatusLogHandler) only describe background
+        activity — e.g. faster-whisper retrying a hard-to-decode segment at
+        a higher temperature — without a known percentage yet, so they're
+        emitted with percent=-1 as a sentinel meaning "update the status
+        text, but don't move the bar" (see TranscriptionStep.update_progress).
+        """
+        if kind == "progress":
+            message, percent = payload
+            self.progress.emit(message, percent)
+        elif kind == "status":
+            (message,) = payload
+            self.progress.emit(message, -1)
 
     def stop(self):
         """Stop the thread and terminate the worker process if running."""
@@ -306,6 +343,20 @@ class MainWindow(QMainWindow):
         self.back_btn.hide()
         nav_layout.addWidget(self.back_btn)
 
+        # Cancel button — only shown during Step.TRANSCRIPTION, in the same
+        # slot as Back (which is hidden at that point). Stops the worker
+        # process and returns to Choose Model rather than closing the app.
+        self.cancel_btn = QPushButton()
+        cancel_pixmap = svg_to_pixmap(ICONS["x"], 16, COLORS['text_primary'])
+        self.cancel_btn.setIcon(QIcon(cancel_pixmap))
+        self.cancel_btn.setText("  Cancel")
+        self.cancel_btn.setFixedSize(*nav_btn_size)
+        self.cancel_btn.setFont(Fonts.BODY_BOLD)
+        self.cancel_btn.setStyleSheet(theme.button_secondary_qss())
+        self.cancel_btn.clicked.connect(self._cancel_transcription)
+        self.cancel_btn.hide()
+        nav_layout.addWidget(self.cancel_btn)
+
         nav_layout.addStretch()
 
         # Next button
@@ -372,20 +423,24 @@ class MainWindow(QMainWindow):
 
     def _start_transcription(self):
         """Start transcription thread."""
+        self.model_step.clear_error()
         self.current_step = Step.TRANSCRIPTION
         self.stacked_widget.setCurrentIndex(2)
         self.back_btn.hide()
         self.next_btn.hide()
+        self.cancel_btn.show()
 
         filename = os.path.basename(self.selected_file)
         self.transcription_step.set_file_info(filename, self.selected_model)
+        self.transcription_step.start()
 
         logger.info(f"Starting transcription: {filename} with {self.selected_model} model")
 
         self.transcription_thread = TranscriptionThread(
             self.selected_file,
             self.selected_model,
-            "cpu"  # Auto-detect would go here
+            "cpu",  # Auto-detect would go here
+            self.audio_duration,  # real PyAV-measured duration, for accurate progress
         )
         self.transcription_thread.progress.connect(self.transcription_step.update_progress)
         self.transcription_thread.finished.connect(self._on_transcription_complete)
@@ -395,6 +450,11 @@ class MainWindow(QMainWindow):
     def _on_transcription_complete(self, output_file: str):
         """Handle transcription completion."""
         logger.info(f"Transcription complete: {output_file}")
+        self.cancel_btn.hide()
+        self.transcription_step.stop()
+        # Force the bar to a definitive 100% on completion, regardless of
+        # whether every trailing progress message was relayed in time.
+        self.transcription_step.update_progress("Complete!", 100)
         self.transcription_step.show_result(output_file)
 
         # Show completion options. This reuses next_btn, so its icon/layout
@@ -408,13 +468,57 @@ class MainWindow(QMainWindow):
         self.next_btn.clicked.connect(self._reset)
 
     def _on_transcription_error(self, error_msg: str):
-        """Handle transcription error."""
+        """
+        Handle a genuine transcription failure (not a user cancel — that's
+        handled separately by _cancel_transcription).
+
+        Shows an inline banner on the Choose Model step instead of a modal
+        QMessageBox, and returns there (rather than all the way back to
+        file selection) so the user can retry — e.g. with a smaller model —
+        without having to re-pick the file.
+        """
         logger.error(f"Transcription error: {error_msg}")
-        QMessageBox.critical(self, "Transcription Error", error_msg)
-        self._reset()
+        self.cancel_btn.hide()
+        self.transcription_step.stop()
+        self.model_step.show_error(error_msg)
+        self._return_to_model_select()
+
+    def _cancel_transcription(self):
+        """Stop a running transcription and return to Choose Model."""
+        logger.info("Transcription cancelled by user")
+        self.transcription_step.stop()
+        if self.transcription_thread:
+            # Disconnect first: stop() causes the thread to emit its own
+            # "Transcription cancelled" error signal, which we don't want
+            # routed through _on_transcription_error (that's for genuine
+            # failures only).
+            self.transcription_thread.error.disconnect(self._on_transcription_error)
+            self.transcription_thread.finished.disconnect(self._on_transcription_complete)
+            self.transcription_thread.stop()
+            self.transcription_thread.wait()
+        self.cancel_btn.hide()
+        self._return_to_model_select()
+
+    def _return_to_model_select(self):
+        """Go back to the Choose Model step, keeping the selected file/model."""
+        self.current_step = Step.MODEL_SELECT
+        self.stacked_widget.setCurrentIndex(1)
+        self.back_btn.show()
+        self.back_btn.setEnabled(True)
+        self.next_btn.setText("Next")
+        self.next_btn.setLayoutDirection(Qt.RightToLeft)
+        self.next_btn.setIcon(QIcon(svg_to_pixmap(ICONS["arrow_right"], 16, COLORS['bg_primary'])))
+        self.next_btn.show()
+        self.next_btn.setEnabled(self.selected_model is not None)
+        try:
+            self.next_btn.clicked.disconnect()
+        except TypeError:
+            pass  # already disconnected (e.g. no prior completion state)
+        self.next_btn.clicked.connect(self._go_next)
 
     def _reset(self):
         """Reset to file selection."""
+        self.model_step.clear_error()
         self.current_step = Step.FILE_SELECT
         self.stacked_widget.setCurrentIndex(0)
         self.selected_file = None

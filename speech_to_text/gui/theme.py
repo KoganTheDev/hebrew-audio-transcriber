@@ -20,6 +20,7 @@ COLORS = {
     "accent_hover": "#D99B6B",
     "accent_dark": "#A8672F",
     "success": "#7A9B6E",
+    "error": "#B5544A",
     "text_primary": "#EDEAE4",
     "text_secondary": "#A8A29A",
     "text_tertiary": "#6E6A63",
@@ -110,10 +111,12 @@ def text_qss(color_key: str, extra: str = "") -> str:
     return f"color: {COLORS[color_key]}; background: transparent; {extra}"
 
 
-def card_qss(object_name: str, recommended: bool = False) -> str:
+def card_qss(object_name: str, selected: bool = False) -> str:
     # ID selector (#name) — a bare 'QFrame {...}' selector would also match QLabel,
     # since QLabel subclasses QFrame in Qt, leaking the border/background onto child text.
-    border_color = COLORS['accent'] if recommended else COLORS['border']
+    # 'selected' means this card's radio button is the one currently picked —
+    # not necessarily the recommended one, which gets its own separate badge.
+    border_color = COLORS['accent'] if selected else COLORS['border']
     return f"""
     QFrame#{object_name} {{
         background-color: {COLORS['bg_tertiary']};
@@ -195,6 +198,21 @@ def hardware_card_qss(object_name: str) -> str:
     QFrame#{object_name} {{
         background-color: {COLORS['bg_tertiary']};
         border-radius: 10px;
+    }}
+    """
+
+
+def error_banner_qss(object_name: str) -> str:
+    """
+    Inline error banner — shown in place of a modal QMessageBox popup so a
+    failed transcription doesn't interrupt the user with a blocking dialog.
+    """
+    return f"""
+    QFrame#{object_name} {{
+        background-color: {COLORS['bg_tertiary']};
+        border: 1px solid {COLORS['error']};
+        border-left: 3px solid {COLORS['error']};
+        border-radius: 8px;
     }}
     """
 

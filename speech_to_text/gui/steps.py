@@ -4,6 +4,7 @@ Wizard step widgets for the Speech-to-Text Transcriber GUI.
 """
 
 import os
+import time
 import logging
 from enum import Enum
 
@@ -12,7 +13,7 @@ from PyQt5.QtWidgets import (
     QLabel, QRadioButton, QButtonGroup,
     QFileDialog, QProgressBar, QFrame,
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 
 from speech_to_text import config
@@ -282,6 +283,30 @@ class ModelSelectStep(QFrame):
         title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(title)
 
+        # Error banner — shown inline (instead of a modal popup) if a
+        # transcription attempt fails and the user is sent back here to
+        # retry. Hidden until show_error() is called.
+        self.error_banner = QFrame()
+        self.error_banner.setObjectName("modelErrorBanner")
+        self.error_banner.setStyleSheet(theme.error_banner_qss("modelErrorBanner"))
+        self.error_banner.hide()
+        error_layout = QHBoxLayout(self.error_banner)
+        error_layout.setContentsMargins(Spacing.SM, Spacing.XS, Spacing.SM, Spacing.XS)
+        error_layout.setSpacing(Spacing.XS)
+
+        error_icon = QLabel()
+        error_icon.setPixmap(svg_to_pixmap(ICONS["alert_triangle"], 16, COLORS['error']))
+        error_icon.setStyleSheet("background: transparent;")
+        error_layout.addWidget(error_icon)
+
+        self.error_label = QLabel()
+        self.error_label.setFont(Fonts.CAPTION)
+        self.error_label.setStyleSheet(theme.text_qss("error"))
+        self.error_label.setWordWrap(True)
+        error_layout.addWidget(self.error_label, 1)
+
+        layout.addWidget(self.error_banner)
+
         # All model cards are laid out directly (no scroll area) — sized to
         # fit every option in the fixed window without needing to scroll.
         models_layout = QVBoxLayout()
@@ -305,21 +330,36 @@ class ModelSelectStep(QFrame):
         layout.addLayout(models_layout)
         layout.addStretch()
 
+    def show_error(self, message: str) -> None:
+        """Show an inline failure banner (used instead of a modal popup)."""
+        self.error_label.setText(f"Transcription failed: {message}")
+        self.error_banner.show()
+
+    def clear_error(self) -> None:
+        self.error_banner.hide()
+
     def _on_radio_toggled(self, name: str, checked: bool) -> None:
         if checked:
             self.selected_model = name
             self.model_selected.emit(name)
+            self._apply_selection(name)
             if not self._syncing:
                 # A real click (not our own programmatic re-sync) — stop
                 # auto-following the recommendation as it updates.
                 self._user_touched_model = True
+
+    def _apply_selection(self, name: str) -> None:
+        """Move the accent border to whichever card's radio is currently picked."""
+        for card_name, card in self._cards.items():
+            card.setStyleSheet(theme.card_qss(f"modelCard_{card_name}", selected=(card_name == name)))
 
     def _create_model_card(self, idx: int, name: str, info: dict, is_recommended: bool = False) -> QFrame:
         """Create and return a model selection card with radio button and details."""
         card = QFrame()
         object_name = f"modelCard_{name}"
         card.setObjectName(object_name)
-        card.setStyleSheet(theme.card_qss(object_name, recommended=is_recommended))
+        # Initially, the recommended model is also the selected one.
+        card.setStyleSheet(theme.card_qss(object_name, selected=is_recommended))
 
         layout = QHBoxLayout(card)
         layout.setContentsMargins(Spacing.MD, Spacing.XS, Spacing.MD, Spacing.XS)
@@ -387,16 +427,21 @@ class ModelSelectStep(QFrame):
         self._apply_recommendation(recommended_model)
 
     def _apply_recommendation(self, recommended_model: str) -> None:
-        """Move the RECOMMENDED badge/border to recommended_model and, if the
-        user hasn't manually picked a model yet, follow it with the selection."""
+        """
+        Move the RECOMMENDED badge to recommended_model and, if the user
+        hasn't manually picked a model yet, follow it with the selection.
+
+        The accent border is a separate concept (see _apply_selection) —
+        it always tracks whichever card's radio is actually checked, not
+        the recommendation, so a manually-picked model stays highlighted
+        even after the recommendation moves elsewhere.
+        """
         if recommended_model == self._current_recommended:
             return
         self._current_recommended = recommended_model
 
-        for name, card in self._cards.items():
-            is_rec = (name == recommended_model)
-            card.setStyleSheet(theme.card_qss(f"modelCard_{name}", recommended=is_rec))
-            self._badges[name].setVisible(is_rec)
+        for name, badge in self._badges.items():
+            badge.setVisible(name == recommended_model)
 
         if not self._user_touched_model:
             self._syncing = True
@@ -406,6 +451,13 @@ class ModelSelectStep(QFrame):
 
 class TranscriptionStep(QFrame):
     """Step 3: Transcription progress and results."""
+
+    # Once this many seconds pass with no real percentage movement, the
+    # elapsed*(100-pct)/pct projection is stale (it was only ever valid for
+    # the pace measured up to the last real update) and left unchecked
+    # balloons into an obviously-wrong, ever-growing number. Switch to an
+    # honest "calculating..." instead of trusting it past this point.
+    STALL_SECONDS = 5
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -437,6 +489,15 @@ class TranscriptionStep(QFrame):
         self.progress_bar.setStyleSheet(theme.progress_bar_qss())
         self.progress_bar.setMinimumHeight(28)
         layout.addWidget(self.progress_bar)
+
+        # Animates value changes instead of snapping instantly — real
+        # progress can arrive in uneven bursts (faster-whisper only reports
+        # a segment once it's fully decoded, which can include several
+        # temperature-retry attempts), so a big jump reads as "catching up"
+        # rather than a glitch when it's smoothed over ~500ms.
+        self._progress_animation = QPropertyAnimation(self.progress_bar, b"value", self)
+        self._progress_animation.setDuration(500)
+        self._progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
         # Status and times
         self.status_label = QLabel("Initializing...")
@@ -490,18 +551,123 @@ class TranscriptionStep(QFrame):
         layout.addStretch()
 
         self.start_time = None
+        self._last_percentage = 0
+        self._last_percent_change_time = None
+        self._status_base = ""
+        self._dot_phase = 0
+        # Ticks once a second so the elapsed/remaining time and a "still
+        # working" heartbeat keep moving even during real backend gaps with
+        # no new progress message (e.g. while the model is still loading, or
+        # a long segment is still being decoded) — otherwise the UI looks
+        # frozen even though work is genuinely happening in the background
+        # process.
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._tick)
 
     def set_file_info(self, filename: str, model: str):
         """Set file and model info for display."""
         self.file_info.setText(f"{filename} | Model: {model.title()}")
 
+    def start(self):
+        """Reset the display for a fresh run and start the elapsed-time ticker."""
+        self.start_time = time.time()
+        self._last_percentage = 0
+        self._last_percent_change_time = self.start_time
+        self._status_base = "Initializing"
+        self._dot_phase = 0
+        self.progress_bar.setValue(0)
+        self.status_label.setText("Initializing...")
+        self.time_label.setText("Elapsed: 0:00")
+        self.result_widget.hide()
+        self._timer.start()
+
+    def stop(self):
+        """Stop the elapsed-time ticker (run finished, failed, or was cancelled)."""
+        self._timer.stop()
+
+    def _tick(self):
+        if self.start_time is None:
+            return
+        # Cycle a trailing "", ".", "..", "..." suffix on the status text as
+        # a heartbeat — visible proof the app is alive even when the backend
+        # hasn't sent a new message this second.
+        self._dot_phase = (self._dot_phase + 1) % 4
+        self.status_label.setText(self._status_base + "." * self._dot_phase)
+        self._refresh_time_label(time.time() - self.start_time)
+
     def update_progress(self, status: str, percentage: int):
-        """Update progress bar and status."""
-        self.progress_bar.setValue(percentage)
+        """
+        Update status text and, for real percentage updates, the progress
+        bar and elapsed/estimated-remaining time.
+
+        percentage == -1 is a status-only sentinel (see
+        TranscriptionThread._relay_progress_message): faster-whisper is
+        doing real work — decoding a segment, retrying it at a different
+        temperature — but we don't have a new, trustworthy percentage yet,
+        so only the descriptive text is updated; the bar and ETA are left
+        exactly where they were.
+        """
+        self._status_base = status.rstrip(".")
+        self._dot_phase = 0
         self.status_label.setText(status)
+
+        if percentage >= 0:
+            if percentage != self._last_percentage:
+                self._animate_progress_to(percentage)
+            self._last_percentage = percentage
+            self._last_percent_change_time = time.time()
+
+        if self.start_time is not None:
+            self._refresh_time_label(time.time() - self.start_time)
+
+    def _animate_progress_to(self, percentage: int) -> None:
+        self._progress_animation.stop()
+        self._progress_animation.setStartValue(self.progress_bar.value())
+        self._progress_animation.setEndValue(percentage)
+        self._progress_animation.start()
+
+    def _refresh_time_label(self, elapsed: float) -> None:
+        """
+        Recompute elapsed + estimated-remaining from the last known progress
+        percentage. Called both on every real progress update and on every
+        1-second tick, so "Est. remaining" stays visible and keeps counting
+        down throughout the whole run instead of only appearing momentarily
+        each time a backend message arrives.
+
+        If the percentage hasn't moved in a while (STALL_SECONDS), the
+        elapsed*(100-pct)/pct projection is no longer trustworthy — it was
+        only ever a snapshot of the pace up to the last real update, and
+        without correction it balloons the longer a single hard-to-decode
+        segment takes. Showing "calculating..." is more honest than a
+        confidently-wrong, ever-growing number.
+        """
+        percentage = self._last_percentage
+        since_last_change = (
+            elapsed if self._last_percent_change_time is None
+            else time.time() - self._last_percent_change_time
+        )
+
+        if percentage <= 0:
+            self.time_label.setText(f"Elapsed: {self._format_mmss(elapsed)}")
+        elif since_last_change > self.STALL_SECONDS:
+            self.time_label.setText(
+                f"Elapsed: {self._format_mmss(elapsed)}  |  Est. remaining: calculating..."
+            )
+        else:
+            # Simple linear projection from work done so far.
+            remaining = elapsed * (100 - percentage) / percentage
+            self.time_label.setText(
+                f"Elapsed: {self._format_mmss(elapsed)}  |  Est. remaining: {self._format_mmss(remaining)}"
+            )
+
+    @staticmethod
+    def _format_mmss(seconds: float) -> str:
+        total = max(int(seconds), 0)
+        minutes, secs = divmod(total, 60)
+        return f"{minutes}:{secs:02d}"
 
     def show_result(self, file_path: str):
         """Show completion result."""
         self.result_widget.show()
-        filename = os.path.basename(file_path)
-        self.result_path.setText(f"Saved to:\n{filename}")
+        self.result_path.setText(f"Saved to:\n{os.path.abspath(file_path)}")
