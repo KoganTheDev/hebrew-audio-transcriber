@@ -8,20 +8,20 @@ A desktop application that transcribes Hebrew audio and video into text, using [
 
 ## Overview
 
-Point it at an audio or video file, and it walks you through a 3-step wizard: pick the file, pick a Whisper model, and transcribe. Along the way it does the things a transcription tool should but often doesn't:
+Point it at an audio or video file, and it walks you through a 3-step wizard: pick the file, pick a Whisper model, and transcribe.
+- **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the file's duration.
+- **Text file saving location:** The text file is saved automatically to the same directory form which the audio comes from for easy access.
 
-- **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the file's real (probed) duration against a measured, per-machine calibration benchmark, not a guessed constant.
-- **Honest progress reporting**: the progress bar tracks real audio position as Whisper decodes it, and surfaces what's happening internally (e.g. a segment being re-decoded at a different temperature) instead of appearing to freeze.
-- **Crash isolation**: transcription runs in a separate OS process from the GUI, working around a real Windows DLL conflict between PyQt5 and CTranslate2 (see [Architecture](#architecture)).
-- **Graceful failure handling**: errors and cancellation return you to model selection with an inline message, never a disruptive popup.
+
+## Screenshots
+
+| File Selection | Transcribing |
+|---|---|
+| ![File selection screen](docs/screenshot-file-select.png) | ![Transcribing screen](docs/screenshot-transcribe.png) |
 
 ## Architecture
 
 ![Architecture diagram](docs/architecture.jpg)
-
-The GUI (PyQt5, main process) hands off the actual transcription to a background OS process via `multiprocessing`, communicating over a queue. This isn't incidental: PyQt5 and CTranslate2 each bundle their own copy of `MSVCP140.dll` on Windows, and loading both into one process causes an intermittent access-violation crash. Isolating the transcription work into its own process sidesteps it entirely.
-
-The diagram is editable at [`docs/architecture.drawio`](docs/architecture.drawio) (open with [diagrams.net](https://app.diagrams.net)).
 
 ## Installation
 
@@ -42,8 +42,6 @@ For development (tests, linting):
 ```bash
 pip install -r requirements-dev.txt
 ```
-
-> **Note:** faster-whisper requires the Microsoft Visual C++ Redistributable (x64). If the app fails to start with a DLL-related error, install it from [aka.ms/vs/17/release/vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe).
 
 ## Usage
 
