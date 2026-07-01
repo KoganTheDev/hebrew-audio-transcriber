@@ -1,316 +1,207 @@
 <mxfile host="app.diagrams.net" agent="Claude Code" version="24.7.5">
   <diagram name="Hebrew Audio Transcriber - Architecture" id="architecture-diagram">
-    <mxGraphModel dx="2200" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1700" math="0" shadow="0">
+    <mxGraphModel dx="2200" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1950" pageHeight="900" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <!-- ================= TITLE ================= -->
-        <mxCell id="title1" value="Hebrew Audio Transcriber — High-Level Architecture (UML Component Diagram)" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="10" width="1000" height="30" as="geometry" />
+        <!-- =========================================================
+             DIAGRAM 1 — SYSTEM ARCHITECTURE (UML COMPONENT DIAGRAM)
+             Dependency edges: dashed line, open arrowhead, «stereotype» label
+             ========================================================= -->
+        <mxCell id="d1_title" value="System Architecture — UML Component Diagram" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="600" height="30" as="geometry" />
         </mxCell>
 
-        <!-- ================= PACKAGE BOUNDARIES (background) ================= -->
-        <mxCell id="pkgGui" value="&lt;&lt;process&gt;&gt; PyQt5 GUI Process  (python -m speech_to_text)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef4fc;strokeColor=#6c8ebf;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="40" y="60" width="1010" height="600" as="geometry" />
+        <!-- Package: GUI Process -->
+        <mxCell id="d1_pkgGui" value="«process» GUI Process (PyQt5, main thread)" style="shape=folder;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;tabWidth=260;tabHeight=26;tabPosition=left;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="620" height="500" as="geometry" />
         </mxCell>
 
-        <mxCell id="pkgProc" value="&lt;&lt;process&gt;&gt; Background OS Process  (multiprocessing.Process, spawned per run)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e5;strokeColor=#d79b00;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="1100" y="60" width="560" height="600" as="geometry" />
+        <mxCell id="d1_main" value="main.py&#10;«entry point»" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="250" y="120" width="200" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="pkgSteps" value="gui/steps/ package" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f9ff;strokeColor=#6c8ebf;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;fontStyle=0;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="70" y="190" width="580" height="180" as="geometry" />
+        <mxCell id="d1_mainwindow" value="MainWindow" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="250" y="210" width="200" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="pkgThreads" value="gui/threads.py — QThread bridge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f9ff;strokeColor=#6c8ebf;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;fontStyle=0;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="70" y="410" width="580" height="150" as="geometry" />
+        <mxCell id="d1_steps" value="Wizard Steps&#10;(File Select → Choose Model → Transcribe)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="90" y="340" width="220" height="70" as="geometry" />
         </mxCell>
 
-        <!-- ================= GUI PROCESS COMPONENTS ================= -->
-        <mxCell id="main_py" value="main.py&#10;(entry point)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="70" y="100" width="160" height="60" as="geometry" />
+        <mxCell id="d1_threadbridge" value="QThread Bridge&#10;(TranscriptionThread, CalibrationThread)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="390" y="340" width="220" height="70" as="geometry" />
         </mxCell>
 
-        <mxCell id="main_window" value="MainWindow&#10;(gui/main_window.py)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="270" y="100" width="180" height="60" as="geometry" />
+        <mxCell id="d1_hw" value="HardwareDetector" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="90" y="470" width="220" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="hw_detect" value="HardwareDetector&#10;(hardware_detection.py)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="490" y="100" width="200" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="config_py" value="config.py&#10;(MODELS, constants)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="730" y="100" width="160" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="file_step" value="FileSelectStep" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="90" y="230" width="160" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="model_step" value="ModelSelectStep" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="270" y="230" width="160" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="transcribe_step" value="TranscriptionStep" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="450" y="230" width="160" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="ui_support" value="theme.py · icons.py · audio_utils.py&#10;(styling, SVG icons, PyAV duration probe)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="660" y="230" width="230" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="thread_transcribe" value="TranscriptionThread&#10;«QThread»" style="shape=component;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="90" y="450" width="250" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="thread_calib" value="CalibrationThread&#10;«QThread»" style="shape=component;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="370" y="450" width="250" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- ================= GUI PROCESS ARROWS ================= -->
-        <mxCell id="e_main_window" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;elbow=vertical;" edge="1" parent="1" source="main_py" target="main_window">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_main_window_lbl" value="creates" style="text;html=1;fontSize=10;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="235" y="105" width="50" height="20" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_window_steps" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="main_window" target="pkgSteps">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_window_steps_lbl" value="hosts in QStackedWidget" style="text;html=1;fontSize=10;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="300" y="165" width="160" height="20" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_window_hw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="main_window" target="hw_detect">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_window_hw_lbl" value="uses" style="text;html=1;fontSize=10;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="455" y="105" width="40" height="20" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_window_threads" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.15;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="main_window" target="pkgThreads">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_window_threads_lbl" value="creates + starts" style="text;html=1;fontSize=10;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="140" y="380" width="110" height="20" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_model_hw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=1;exitY=0.3;entryX=0;entryY=0.7;" edge="1" parent="1" source="model_step" target="hw_detect">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_model_hw_lbl" value="recommend_model() / estimate_transcription_time()" style="text;html=1;fontSize=9;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="440" y="175" width="260" height="20" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_steps_config" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=1;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="pkgSteps" target="config_py">
+        <mxCell id="d1_e_main" value="«creates»" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d1_main" target="d1_mainwindow">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_steps_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="transcribe_step" target="ui_support">
+        <mxCell id="d1_e_steps" value="«hosts»" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d1_mainwindow" target="d1_steps">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- ================= BACKGROUND PROCESS COMPONENTS ================= -->
-        <mxCell id="worker_py" value="core/worker.py&#10;run_transcription_process()" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1130" y="100" width="500" height="65" as="geometry" />
-        </mxCell>
-
-        <mxCell id="calib_py" value="core/calibration.py&#10;run_calibration_process()" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1130" y="185" width="500" height="65" as="geometry" />
-        </mxCell>
-
-        <mxCell id="transcriber_py" value="core/transcriber.py&#10;Transcriber" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1130" y="270" width="500" height="65" as="geometry" />
-        </mxCell>
-
-        <mxCell id="deps_py" value="core/dependencies.py" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="1130" y="355" width="230" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="fw_model" value="faster_whisper.WhisperModel&#10;«external library»" style="shape=component;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1130" y="440" width="500" height="65" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_worker_transcriber" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="worker_py" target="transcriber_py">
+        <mxCell id="d1_e_bridge" value="«creates, starts»" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d1_mainwindow" target="d1_threadbridge">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_worker_transcriber_lbl" value="load_model() / transcribe()" style="text;html=1;fontSize=9;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="1370" y="245" width="180" height="20" as="geometry" />
-        </mxCell>
 
-        <mxCell id="e_calib_transcriber" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="calib_py" target="transcriber_py">
+        <mxCell id="d1_e_hw" value="«uses»" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d1_steps" target="d1_hw">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_calib_transcriber_lbl" value="benchmarks tiny model" style="text;html=1;fontSize=9;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="1140" y="250" width="160" height="20" as="geometry" />
+
+        <!-- Package: Background Process -->
+        <mxCell id="d1_pkgProc" value="«process» Background OS Process (multiprocessing.Process, spawned per run)" style="shape=folder;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;tabWidth=340;tabHeight=26;tabPosition=left;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="760" y="70" width="420" height="420" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_transcriber_fw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="transcriber_py" target="fw_model">
+        <mxCell id="d1_transcriber" value="Transcriber&#10;(core/transcriber.py)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="850" y="180" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d1_whisper" value="faster_whisper.WhisperModel&#10;«external library»" style="shape=component;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="850" y="340" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d1_e_wraps" value="«wraps»" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d1_transcriber" target="d1_whisper">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_transcriber_fw_lbl" value="wraps" style="text;html=1;fontSize=10;" vertex="1" parent="1" connectable="0">
-          <mxGeometry x="1355" y="410" width="60" height="20" as="geometry" />
-        </mxCell>
 
-        <!-- ================= CROSS-PROCESS BRIDGE ================= -->
-        <mxCell id="queue_note" value="progress_queue / result_queue&#10;(multiprocessing.Queue)&#10;kinds: &quot;progress&quot;, &quot;status&quot;, &quot;finished&quot;, &quot;error&quot;" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;size=14;" vertex="1" parent="1">
-          <mxGeometry x="680" y="500" width="290" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_thread_to_proc" value="spawns multiprocessing.Process(target=run_transcription_process / run_calibration_process)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1;exitY=0.35;entryX=0;entryY=0.35;fontSize=9;" edge="1" parent="1" source="pkgThreads" target="pkgProc">
+        <!-- Bridge between the two processes: two parallel elbowed dependency edges routed entirely through the empty gap between packages -->
+        <mxCell id="d1_e_spawn" value="«spawns» multiprocessing.Process&#10;(target=run_transcription_process /&#10;run_calibration_process)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=9;exitX=1;exitY=0.3;entryX=0;entryY=0.3;" edge="1" parent="1" source="d1_threadbridge" target="d1_transcriber">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1060" y="480" />
+              <mxPoint x="700" y="368" />
             </Array>
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="e_proc_to_thread" value="polls queue → emits Qt signal (progress / finished / error)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=0;exitY=0.65;entryX=1;entryY=0.65;fontSize=9;" edge="1" parent="1" source="pkgProc" target="pkgThreads">
+        <mxCell id="d1_e_queueback" value="progress_queue / result_queue&#10;(&quot;progress&quot;, &quot;status&quot;, &quot;finished&quot;, &quot;error&quot;)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;dashed=1;fontSize=9;exitX=1;exitY=0.75;entryX=0;entryY=0.75;startArrow=open;startFill=0;" edge="1" parent="1" source="d1_threadbridge" target="d1_transcriber">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1060" y="560" />
+              <mxPoint x="730" y="392" />
             </Array>
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="dll_note" value="Why a separate process?&#10;PyQt5 and ctranslate2 each bundle their own MSVCP140.dll on Windows.&#10;Loading both in one process caused an intermittent 0xC0000005&#10;access-violation crash — isolating faster-whisper into its own&#10;OS process sidesteps the conflict entirely." style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;size=14;align=left;spacingLeft=6;" vertex="1" parent="1">
-          <mxGeometry x="1100" y="580" width="560" height="80" as="geometry" />
+        <mxCell id="d1_note" value="Why a separate OS process?&#10;PyQt5 and ctranslate2 each bundle their own MSVCP140.dll on Windows.&#10;Loading both in one process caused an intermittent access-violation crash (0xC0000005) —&#10;isolating faster-whisper into its own process sidesteps the conflict entirely." style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;size=14;align=left;spacingLeft=8;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="460" y="600" width="500" height="80" as="geometry" />
         </mxCell>
 
-        <!-- ================= SECTION 2: WHISPER INTERNALS ================= -->
-        <mxCell id="title2" value="Inside faster-whisper — WhisperModel.transcribe() Pipeline (wrapped by core/transcriber.py, runs inside the background process above)" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="700" width="1400" height="30" as="geometry" />
+        <!-- Legend -->
+        <mxCell id="d1_legend_title" value="Legend" style="text;html=1;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="710" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_leg1" value="GUI process component" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_leg2" value="QThread bridge" style="shape=component;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="260" y="740" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_leg3" value="Background process component" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="480" y="740" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_leg4" value="External library" style="shape=component;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="740" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_leg5" value="- - -&gt;  «dependency» (uses / creates / spawns)" style="text;html=1;fontSize=10;align=left;" vertex="1" parent="1">
+          <mxGeometry x="920" y="748" width="320" height="20" as="geometry" />
         </mxCell>
 
-        <mxCell id="pkgWhisper" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaf7ea;strokeColor=#82b366;dashed=1;verticalAlign=top;" vertex="1" parent="1">
-          <mxGeometry x="40" y="750" width="1620" height="440" as="geometry" />
+        <!-- =========================================================
+             DIAGRAM 2 — WHISPER DECODE PIPELINE (UML ACTIVITY DIAGRAM)
+             Control-flow edges: solid line, filled arrowhead
+             ========================================================= -->
+        <mxCell id="d2_title" value="Whisper Decode Pipeline — UML Activity Diagram" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="20" width="560" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_subtitle" value="(inside faster_whisper.WhisperModel.transcribe(), wrapped by Transcriber — left)" style="text;html=1;fontSize=11;fontStyle=2;align=left;verticalAlign=middle;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="48" width="560" height="20" as="geometry" />
         </mxCell>
 
-        <mxCell id="audio_file" value="Audio / Video File&#10;(.mp3 .wav .mp4 .mkv ...)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;size=14;" vertex="1" parent="1">
-          <mxGeometry x="70" y="850" width="160" height="60" as="geometry" />
+        <mxCell id="d2_init" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#2d2d2d;strokeColor=#2d2d2d;" vertex="1" parent="1">
+          <mxGeometry x="1445" y="90" width="30" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="feature_ex" value="Feature Extractor&#10;log-Mel Spectrogram" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="280" y="850" width="180" height="60" as="geometry" />
+        <mxCell id="d2_a1" value="Extract Features&#10;(log-Mel spectrogram)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="150" width="240" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="encoder" value="Encoder&#10;(Transformer audio encoder)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="510" y="850" width="180" height="60" as="geometry" />
+        <mxCell id="d2_a2" value="Encode Audio&#10;(Transformer encoder)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="250" width="240" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="vad" value="VAD Filter (optional)&#10;skips silent stretches" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="740" y="850" width="180" height="60" as="geometry" />
+        <mxCell id="d2_a3" value="Filter Silence (VAD)&#10;«optional»" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="350" width="240" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="segmenter" value="Window Segmenter&#10;seek loop, ~30s windows" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="970" y="850" width="190" height="60" as="geometry" />
+        <mxCell id="d2_region" value="*[for each ~30s window]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="440" width="280" height="230" as="geometry" />
         </mxCell>
 
-        <mxCell id="loopBox" value="For each ~30s window (generate_segments loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;fontSize=11;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="1220" y="800" width="420" height="270" as="geometry" />
+        <mxCell id="d2_a4" value="Decode at Temperature&#10;(beam search)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="470" width="240" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="decoder" value="Decoder — generate_with_fallback()&#10;beam search @ temperature" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="840" width="360" height="60" as="geometry" />
+        <mxCell id="d2_decision" value="Thresholds met?&#10;(compression ratio,&#10;avg logprob)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="560" width="160" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="decision" value="compression_ratio ≤ threshold&#10;AND avg_logprob ≥ threshold ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1290" y="930" width="280" height="90" as="geometry" />
+        <mxCell id="d2_a5" value="Assemble Segment&#10;(text, start, end)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="710" width="240" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_decision_retry" value="No: retry at next temperature&#10;(0.0→0.2→0.4→0.6→0.8→1.0)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;exitX=0;exitY=0.5;entryX=0;entryY=1;fontSize=9;" edge="1" parent="1" source="decision" target="decoder">
+        <mxCell id="d2_final_outer" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#2d2d2d;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="800" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_final_inner" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#2d2d2d;strokeColor=#2d2d2d;" vertex="1" parent="1">
+          <mxGeometry x="1446" y="806" width="18" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d2_e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_init" target="d2_a1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_a1" target="d2_a2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_a2" target="d2_a3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_a3" target="d2_a4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_a4" target="d2_decision">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_e_no" value="[no] retry at next temperature&#10;0.0 → 0.2 → 0.4 → 0.6 → 0.8 → 1.0" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=9;exitX=0;exitY=0.5;entryX=0;entryY=1;" edge="1" parent="1" source="d2_decision" target="d2_a4">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1240" y="975" />
-              <mxPoint x="1240" y="870" />
+              <mxPoint x="1310" y="605" />
+              <mxPoint x="1310" y="530" />
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <mxCell id="temp_note" value="Each window restarts at temperature 0.0 —&#10;independent audio content per window means&#10;a prior window's retry has no predictive value;&#10;starting greedy every time maximizes quality." style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;size=12;align=left;spacingLeft=6;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="1040" width="360" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="segment_asm" value="Segment Assembler&#10;tokens → Segment(text, start, end)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="970" y="1090" width="220" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="output_segments" value="Transcribed Segments&#10;(lazily-yielded generator)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;size=14;" vertex="1" parent="1">
-          <mxGeometry x="680" y="1090" width="220" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_audio_feat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="audio_file" target="feature_ex">
+        <mxCell id="d2_e_yes" value="[yes] (or all temperatures exhausted →&#10;best-of-all-attempts result used)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=9;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_decision" target="d2_a5">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_feat_enc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="feature_ex" target="encoder">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_enc_vad" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="encoder" target="vad">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_vad_seg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="vad" target="segmenter">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_seg_loop" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="segmenter" target="decoder">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_decoder_decision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="decoder" target="decision">
+        <mxCell id="d2_e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="d2_a5" target="d2_final_outer">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_decision_asm" value="Yes (or all temperatures exhausted →&#10;best-of-all-attempts result used)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.5;exitY=1;entryX=1;entryY=0.3;fontSize=9;" edge="1" parent="1" source="decision" target="segment_asm">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1430" y="1120" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="d2_note1" value="Every window restarts at temperature 0.0:&#10;chunks are independent audio, so a prior&#10;chunk's retry has no predictive value —&#10;starting greedy every time maximizes quality." style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;size=12;align=left;spacingLeft=6;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="470" width="280" height="80" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_asm_out" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="segment_asm" target="output_segments">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="d2_note2" value="Each retry, and each new window starting&#10;(&quot;Processing segment at ...&quot;), is logged at&#10;DEBUG and forwarded live to the GUI as&#10;status text (core/worker.py&#10;_RetryStatusLogHandler) — the retry loop&#10;is never silent to the user." style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;size=12;align=left;spacingLeft=6;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="570" width="280" height="100" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_out_transcriber" value="iterated lazily in Transcriber.transcribe();&#10;each segment.end / total_duration → real progress %" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=0.3;exitY=0;entryX=0.2;entryY=1;fontSize=9;" edge="1" parent="1" source="output_segments" target="transcriber_py">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="760" y="760" />
-              <mxPoint x="1200" y="760" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <mxCell id="e_decoder_log" value="DEBUG log: &quot;Processing segment at ...&quot;,&#10;&quot;Compression ratio threshold is not met...&quot;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=1;exitY=0.2;entryX=0;entryY=0.5;fontSize=9;" edge="1" parent="1" source="decoder" target="log_note">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="log_note" value="Forwarded live to the GUI as status text via&#10;_RetryStatusLogHandler (core/worker.py), so a&#10;retrying/stalled window is no longer silent." style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;size=12;align=left;spacingLeft=6;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="1120" width="360" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- ================= LEGEND ================= -->
-        <mxCell id="legend_title" value="Legend" style="text;html=1;fontSize=13;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="1220" width="100" height="20" as="geometry" />
-        </mxCell>
-
-        <mxCell id="leg1" value="GUI process (PyQt5, main thread)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="40" y="1250" width="260" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="leg2" value="QThread bridge (gui/threads.py)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="320" y="1250" width="260" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="leg3" value="Background OS process (core/*)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="600" y="1250" width="260" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="leg4" value="faster-whisper / Whisper internals" style="shape=component;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="880" y="1250" width="260" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="leg5" value="External library / data artifact" style="shape=component;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1160" y="1250" width="260" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="leg6" value="Note / decision / queue" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;size=10;" vertex="1" parent="1">
-          <mxGeometry x="1440" y="1250" width="220" height="40" as="geometry" />
+        <mxCell id="d2_out" value="Transcribed Segments&#10;(yielded lazily; each segment.end / total&#10;duration drives the real progress %)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;size=12;align=left;spacingLeft=6;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1520" y="795" width="280" height="60" as="geometry" />
         </mxCell>
 
       </root>
