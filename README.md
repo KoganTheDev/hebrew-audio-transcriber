@@ -10,7 +10,7 @@ A desktop application that transcribes Hebrew audio and video into text, using [
 
 Point it at an audio or video file, and it walks you through a 3-step wizard: pick the file, pick a Whisper model, and transcribe.
 - **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the file's duration.
-- **Text file saving location:** The text file is saved automatically to the same directory form which the audio comes from for easy access.
+- **Text file saving location:** The text file is saved automatically to the same directory from which the audio comes from for easy access.
 
 
 ## Screenshots
