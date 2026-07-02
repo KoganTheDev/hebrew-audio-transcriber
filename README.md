@@ -19,7 +19,7 @@ Point it at an audio or video file, and it walks you through a 3-step wizard: pi
 | --------------------------------------------------------- | ------------------------------------------------------ |
 | ![File selection screen](docs/screenshot-file-select.png) | ![model picking screen](docs/screenshot-model-picking.png) |
 
-## Architecture
+## Flow Chart
 
 ![Architecture diagram](docs/architecture.jpg)
 
