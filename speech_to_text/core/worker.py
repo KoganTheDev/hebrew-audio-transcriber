@@ -28,11 +28,11 @@ logger = logging.getLogger(__name__)
 # human-readable status messages instead of leaving the UI silent.
 _RETRY_LOG_PATTERNS = [
     (re.compile(r"^Processing segment at (.+)$"),
-     lambda m: f"Analyzing audio near {m.group(1)}..."),
+     lambda m: ("status_analyzing", {"time": m.group(1)})),
     (re.compile(r"^Compression ratio threshold is not met with temperature ([\d.]+)"),
-     lambda m: f"Unclear audio — retrying at a higher decoding temperature ({m.group(1)})..."),
+     lambda m: ("status_retry_compression", {"temp": m.group(1)})),
     (re.compile(r"^Log probability threshold is not met with temperature ([\d.]+)"),
-     lambda m: f"Low-confidence result — retrying at a higher decoding temperature ({m.group(1)})..."),
+     lambda m: ("status_retry_logprob", {"temp": m.group(1)})),
 ]
 
 
@@ -53,10 +53,10 @@ class _RetryStatusLogHandler(logging.Handler):
             raw = record.getMessage()
         except Exception:
             return
-        for pattern, to_message in _RETRY_LOG_PATTERNS:
+        for pattern, to_key_params in _RETRY_LOG_PATTERNS:
             match = pattern.match(raw)
             if match:
-                self._progress_queue.put(("status", to_message(match)))
+                self._progress_queue.put(("status",) + to_key_params(match))
                 return
 
 
@@ -72,12 +72,17 @@ def run_transcription_process(
     """
     Entry point for the child process. Must stay import-light (no PyQt5).
 
-    Puts ("progress", message, percent) tuples on progress_queue for real
-    percentage updates, and ("status", message) tuples for text-only
-    updates (see _RetryStatusLogHandler) that describe background activity
-    without claiming a percentage that isn't actually known yet. Puts a
-    single final ("finished", output_file) or ("error", message) on
-    result_queue before exiting.
+    All human-readable text crosses the process boundary as (i18n key,
+    params) pairs, never rendered strings - this process doesn't know the
+    UI language, and the GUI renders keys at display time (which also lets
+    a mid-run language toggle re-render the live status).
+
+    Puts ("progress", key, params, percent) tuples on progress_queue for
+    real percentage updates, and ("status", key, params) tuples for
+    text-only updates (see _RetryStatusLogHandler) that describe background
+    activity without claiming a percentage that isn't actually known yet.
+    Puts a single final ("finished", output_file) or ("error", key, params)
+    on result_queue before exiting.
 
     Overall progress bar phase breakdown (all emitted percentages are on
     this single 0-100 scale, so they only ever move forward):
@@ -88,12 +93,13 @@ def run_transcription_process(
       100%    done
     """
     try:
-        progress_queue.put(("progress", "Initializing...", 2))
+        progress_queue.put(("progress", "w_initializing", {}, 2))
 
         from speech_to_text.core.transcriber import Transcriber
 
-        def emit_progress(message: str, percent: int) -> None:
-            progress_queue.put(("progress", message, percent))
+        def emit_progress(message, percent: int) -> None:
+            key, params = message
+            progress_queue.put(("progress", key, params, percent))
 
         transcriber = Transcriber(
             model_size=model_size,
@@ -102,7 +108,7 @@ def run_transcription_process(
         )
 
         if not transcriber.load_model():
-            result_queue.put(("error", "Failed to load transcription model"))
+            result_queue.put(("error", "err_load_model", {}))
             return
 
         # DEBUG is required for faster-whisper to even emit the
@@ -119,19 +125,19 @@ def run_transcription_process(
             fw_logger.removeHandler(retry_handler)
 
         if text is None:
-            result_queue.put(("error", "Transcription failed"))
+            result_queue.put(("error", "err_transcription_failed", {}))
             return
 
-        emit_progress("Formatting output...", 92)
+        emit_progress(("w_formatting", {}), 92)
         formatted_text = transcriber.format_output(text)
 
-        emit_progress("Saving output file...", 97)
+        emit_progress(("w_saving", {}), 97)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(formatted_text)
 
-        emit_progress("Complete!", 100)
+        emit_progress(("w_complete", {}), 100)
         result_queue.put(("finished", output_file))
 
     except Exception as e:
         logger.error(f"Transcription worker process error: {e}", exc_info=True)
-        result_queue.put(("error", str(e)))
+        result_queue.put(("error", "err_generic", {"detail": str(e)}))

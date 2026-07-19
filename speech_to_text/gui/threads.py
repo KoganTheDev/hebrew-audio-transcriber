@@ -31,9 +31,12 @@ class TranscriptionThread(QThread):
     PyQt5 each bundle their own MSVCP140.dll on Windows, and loading both in
     one process causes an intermittent native crash.
     """
-    progress = pyqtSignal(str, int)
+    # progress/error carry (i18n key, format params) rather than rendered
+    # text - the worker process doesn't know the UI language, and rendering
+    # at display time lets a mid-run language toggle re-render live status.
+    progress = pyqtSignal(str, dict, int)
     finished = pyqtSignal(str)
-    error = pyqtSignal(str)
+    error = pyqtSignal(str, dict)
 
     def __init__(self, audio_file: str, model_size: str, device: str, audio_duration_seconds: float = 0):
         super().__init__()
@@ -51,7 +54,7 @@ class TranscriptionThread(QThread):
         try:
             # Kept below run_transcription_process's own first emission (2%)
             # so the bar only ever moves forward — see its phase breakdown.
-            self.progress.emit("Starting...", 1)
+            self.progress.emit("w_starting_thread", {}, 1)
             output_file = self._get_output_path()
 
             progress_queue: multiprocessing.Queue = multiprocessing.Queue()
@@ -91,26 +94,27 @@ class TranscriptionThread(QThread):
                         pass
 
                 try:
-                    kind, payload = result_queue.get_nowait()
+                    kind, *payload = result_queue.get_nowait()
                     if kind == "finished":
                         logger.info("✓ Transcription complete")
-                        self.finished.emit(payload)
+                        self.finished.emit(payload[0])
                     else:
-                        logger.error(f"Transcription worker error: {payload}")
-                        self.error.emit(payload)
+                        key, params = payload
+                        logger.error(f"Transcription worker error: {key} {params}")
+                        self.error.emit(key, params)
                     return
                 except queue.Empty:
                     pass
 
                 if not self._process.is_alive() and result_queue.empty():
-                    self.error.emit("Transcription worker process exited unexpectedly")
+                    self.error.emit("err_worker_exited", {})
                     return
 
-            self.error.emit("Transcription cancelled")
+            self.error.emit("err_cancelled", {})
 
         except Exception as e:
             logger.error(f"TranscriptionThread error: {e}", exc_info=True)
-            self.error.emit(str(e))
+            self.error.emit("err_generic", {"detail": str(e)})
         finally:
             if self._process and self._process.is_alive():
                 self._process.terminate()
@@ -125,13 +129,15 @@ class TranscriptionThread(QThread):
         a higher temperature — without a known percentage yet, so they're
         emitted with percent=-1 as a sentinel meaning "update the status
         text, but don't move the bar" (see TranscriptionStep.update_progress).
+
+        This thread only relays (key, params) pairs; it never renders text.
         """
         if kind == "progress":
-            message, percent = payload
-            self.progress.emit(message, percent)
+            key, params, percent = payload
+            self.progress.emit(key, params, percent)
         elif kind == "status":
-            (message,) = payload
-            self.progress.emit(message, -1)
+            key, params = payload
+            self.progress.emit(key, params, -1)
 
     def stop(self):
         """Stop the thread and terminate the worker process if running."""

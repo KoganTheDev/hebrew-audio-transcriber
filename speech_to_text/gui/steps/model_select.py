@@ -10,6 +10,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from speech_to_text import config
 from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.gui import theme
+from speech_to_text.gui.i18n import t, model_text, is_rtl
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 
@@ -26,8 +27,12 @@ class ModelSelectStep(QFrame):
         self.hardware = hardware
         self.audio_duration = 0
         self._desc_labels = {}  # model_name -> QLabel showing "description | Est: ..."
+        self._time_strs = {}    # model_name -> last computed time-estimate display string
+        self._name_labels = {}  # model_name -> QLabel showing the model name
         self._cards = {}        # model_name -> QFrame card
         self._badges = {}       # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
+        self._error_key = None      # (key, params) of the last shown error, for retranslation
+        self._error_params = {}
         self._user_touched_model = False  # True once the user manually picks a model
         self._syncing = False   # True while we're programmatically re-checking a radio
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
@@ -37,10 +42,10 @@ class ModelSelectStep(QFrame):
         layout.setContentsMargins(Spacing.XL, Spacing.MD, Spacing.XL, Spacing.MD)
 
         # Title
-        title = QLabel("Choose Model")
-        title.setFont(Fonts.TITLE)
-        title.setStyleSheet(theme.text_qss("text_primary"))
-        layout.addWidget(title)
+        self.title = QLabel(t("choose_model"))
+        self.title.setFont(Fonts.TITLE)
+        self.title.setStyleSheet(theme.text_qss("text_primary"))
+        layout.addWidget(self.title)
 
         # Error banner — shown inline (instead of a modal popup) if a
         # transcription attempt fails and the user is sent back here to
@@ -89,12 +94,20 @@ class ModelSelectStep(QFrame):
         layout.addLayout(models_layout)
         layout.addStretch()
 
-    def show_error(self, message: str) -> None:
-        """Show an inline failure banner (used instead of a modal popup)."""
-        self.error_label.setText(f"Transcription failed: {message}")
+    def show_error(self, key: str, params: dict) -> None:
+        """
+        Show an inline failure banner (used instead of a modal popup).
+        Takes an i18n key + params (see TranscriptionThread.error) so the
+        banner can be re-rendered if the language is toggled while shown.
+        """
+        self._error_key = key
+        self._error_params = dict(params)
+        self.error_label.setText(t("transcription_failed", message=t(key, **params)))
         self.error_banner.show()
 
     def clear_error(self) -> None:
+        self._error_key = None
+        self._error_params = {}
         self.error_banner.hide()
 
     def _on_radio_toggled(self, name: str, checked: bool) -> None:
@@ -137,19 +150,22 @@ class ModelSelectStep(QFrame):
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
 
-        model_label = QLabel(name.title())
+        # Explicit absolute alignment (see _card_text_alignment): without
+        # it each QLabel aligns by its own text's content direction (Latin
+        # model names one way, Hebrew descriptions the other), scattering
+        # the card's text block in RTL mode.
+        model_label = QLabel(model_text(name, "name"))
         model_label.setFont(Fonts.BODY_BOLD)
         model_label.setStyleSheet(theme.text_qss("text_primary"))
+        model_label.setAlignment(self._card_text_alignment())
         text_layout.addWidget(model_label)
+        self._name_labels[name] = model_label
 
         # Description + time estimate (kept up to date via update_audio_duration)
-        desc = info.get('description', '')
-        time_est, _ = self.hardware.estimate_transcription_time(self.audio_duration, name)
-        time_str = self.hardware.get_time_estimate_display(time_est)
-
-        desc_label = QLabel(f"{desc} | Est: {time_str}")
+        desc_label = QLabel(self._desc_text(name))
         desc_label.setFont(Fonts.CAPTION)
         desc_label.setStyleSheet(theme.text_qss("text_secondary"))
+        desc_label.setAlignment(self._card_text_alignment())
         text_layout.addWidget(desc_label)
         self._desc_labels[name] = desc_label
 
@@ -159,7 +175,7 @@ class ModelSelectStep(QFrame):
         # Recommended badge — always created so update_audio_duration can
         # show/hide it as the real recommendation shifts, instead of only
         # ever reflecting the recommendation computed at construction time.
-        badge = QLabel("RECOMMENDED")
+        badge = QLabel(t("recommended_badge"))
         badge.setStyleSheet(theme.badge_qss())
         badge.setVisible(is_recommended)
         layout.addWidget(badge)
@@ -176,14 +192,60 @@ class ModelSelectStep(QFrame):
         calibration) is known.
         """
         self.audio_duration = seconds
-        for name, label in self._desc_labels.items():
-            info = config.MODELS[name]
-            time_est, _ = self.hardware.estimate_transcription_time(seconds, name)
-            time_str = self.hardware.get_time_estimate_display(time_est)
-            label.setText(f"{info.get('description', '')} | Est: {time_str}")
+        self._refresh_desc_labels(recompute=True)
 
         recommended_model, _ = self.hardware.recommend_model(seconds)
         self._apply_recommendation(recommended_model)
+
+    def _desc_text(self, name: str) -> str:
+        """
+        Compose one card's "description | Est: ..." line in the current
+        language. The time estimate is cached: a language toggle only
+        re-renders text, so it must not re-run (and re-log) the hardware
+        estimator - only update_audio_duration recomputes.
+        """
+        time_str = self._time_strs.get(name)
+        if time_str is None:
+            time_est, _ = self.hardware.estimate_transcription_time(self.audio_duration, name)
+            time_str = self.hardware.get_time_estimate_display(time_est)
+            self._time_strs[name] = time_str
+        return t("model_desc_est", desc=model_text(name, "description"), time=time_str)
+
+    def _refresh_desc_labels(self, recompute: bool = False) -> None:
+        if recompute:
+            self._time_strs.clear()
+        for name, label in self._desc_labels.items():
+            label.setText(self._desc_text(name))
+
+    @staticmethod
+    def _card_text_alignment():
+        """
+        Visual (absolute) alignment that puts card text next to the radio
+        button in the current language: right in Hebrew's mirrored layout,
+        left in English. AlignLeading doesn't work here - QLabel resolves
+        it against each label's own text direction, so Latin model names
+        and Hebrew descriptions end up on different sides (verified
+        empirically).
+        """
+        side = Qt.AlignRight if is_rtl() else Qt.AlignLeft
+        return side | Qt.AlignAbsolute | Qt.AlignVCenter
+
+    def retranslate(self) -> None:
+        """Re-render all text in the current UI language (live toggle)."""
+        self.title.setText(t("choose_model"))
+        alignment = self._card_text_alignment()
+        for name, label in self._name_labels.items():
+            label.setText(model_text(name, "name"))
+            label.setAlignment(alignment)
+        for label in self._desc_labels.values():
+            label.setAlignment(alignment)
+        for badge in self._badges.values():
+            badge.setText(t("recommended_badge"))
+        self._refresh_desc_labels()
+        if self._error_key is not None:
+            self.error_label.setText(
+                t("transcription_failed", message=t(self._error_key, **self._error_params))
+            )
 
     def _apply_recommendation(self, recommended_model: str) -> None:
         """

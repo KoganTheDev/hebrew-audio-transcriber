@@ -77,14 +77,19 @@ def button_primary_qss() -> str:
     """
 
 
-def button_secondary_qss() -> str:
+def button_secondary_qss(padding: str = "8px 18px") -> str:
+    """
+    padding: override for small fixed-size buttons (e.g. the header
+    language toggle passes "2px 4px" - the default 18px side padding plus
+    the 2px border would leave almost no room for text in a ~50px button).
+    """
     return f"""
     QPushButton {{
         background-color: transparent;
         color: {COLORS['text_primary']};
         border: 2px solid {COLORS['border_light']};
         border-radius: 8px;
-        padding: 8px 18px;
+        padding: {padding};
         font-weight: 700;
         font-size: 12px;
     }}

@@ -44,7 +44,7 @@ class Transcriber:
         logger.debug(f"Transcriber initialized: model={model_size}, device={device}, lang={language}")
         
     @staticmethod
-    def _default_callback(message: str, progress: int):
+    def _default_callback(message, progress: int):
         """Default progress callback."""
         pass
         
@@ -59,7 +59,10 @@ class Transcriber:
             # Loading-model phase occupies 5-15% of the overall progress bar
             # (see run_transcription_process in core/worker.py for the full
             # phase breakdown).
-            self.progress_callback(f"Loading {self.model_size} model...", 5)
+            # Progress messages are (i18n key, params) tuples, not text -
+            # this module runs in the worker process, which knows nothing
+            # about the UI language; the GUI renders keys at display time.
+            self.progress_callback(("w_loading_model", {"model": self.model_size}), 5)
 
             self.model = WhisperModel(
                 self.model_size,
@@ -69,12 +72,12 @@ class Transcriber:
             )
 
             logger.info(f"✓ Model loaded successfully: {self.model_size} ({self.device})")
-            self.progress_callback(f"Model loaded: {self.model_size}", 15)
+            self.progress_callback(("w_model_loaded", {"model": self.model_size}), 15)
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to load {self.model_size} model: {e}", exc_info=True)
-            self.progress_callback(f"Error loading model: {e}", 0)
+            self.progress_callback(("w_error_loading", {"detail": str(e)}), 0)
             return False
     
     def transcribe(self, audio_file: str, total_duration_seconds: float = 0) -> Optional[str]:
@@ -94,7 +97,7 @@ class Transcriber:
         """
         if not self.model:
             logger.error("Model not loaded - call load_model() first")
-            self.progress_callback("Model not loaded", 0)
+            self.progress_callback(("w_model_not_loaded", {}), 0)
             return None
 
         logger.info(f"Starting transcription: {audio_file}")
@@ -102,7 +105,7 @@ class Transcriber:
 
         try:
             # Transcribing phase occupies 15-90% of the overall progress bar.
-            self.progress_callback("Starting transcription...", 15)
+            self.progress_callback(("w_starting", {}), 15)
 
             segments, info = self.model.transcribe(
                 audio_file,
@@ -140,29 +143,29 @@ class Transcriber:
                 if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
                     # Real progress: how far into the audio this segment ends.
                     fraction = min(segment_end / total_duration_seconds, 1.0)
-                    message = (
-                        f"Transcribing audio... {_format_mmss(segment_end)} "
-                        f"/ {_format_mmss(total_duration_seconds)}"
-                    )
+                    message = ("w_transcribing_time", {
+                        "position": _format_mmss(segment_end),
+                        "total": _format_mmss(total_duration_seconds),
+                    })
                 else:
                     # No reliable duration to measure against (shouldn't
                     # normally happen — the GUI always probes the real
                     # duration first) — fall back to a soft, ever-increasing
                     # estimate that never claims to reach completion.
                     fraction = min(0.03 * segment_count, 0.95)
-                    message = f"Transcribing audio... segment {segment_count}"
+                    message = ("w_transcribing_seg", {"n": segment_count})
 
                 progress = 15 + int(fraction * 75)
                 self.progress_callback(message, progress)
 
             logger.info(f"✓ Transcription complete: {len(transcribed_text)} characters")
-            self.progress_callback("Transcription complete", 90)
+            self.progress_callback(("w_transcription_done", {}), 90)
             return transcribed_text
 
         except Exception as e:
             logger.error(f"Transcription failed: {e}", exc_info=True)
             logger.debug(f"Error details: {type(e).__name__}")
-            self.progress_callback(f"Error: {e}", 0)
+            self.progress_callback(("w_error", {"detail": str(e)}), 0)
             return None
     
     def format_output(self, text: str) -> str:

@@ -13,6 +13,7 @@ from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 from speech_to_text import config
 from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.gui import theme
+from speech_to_text.gui.i18n import t
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.audio_utils import get_audio_duration
@@ -36,10 +37,10 @@ class FileSelectStep(QFrame):
 
         # Title — "Specs" now, since the system-info table is the first
         # thing on this page.
-        title = QLabel("Specs")
-        title.setFont(Fonts.TITLE)
-        title.setStyleSheet(theme.text_qss("text_primary"))
-        layout.addWidget(title)
+        self.title = QLabel(t("specs_title"))
+        self.title.setFont(Fonts.TITLE)
+        self.title.setStyleSheet(theme.text_qss("text_primary"))
+        layout.addWidget(self.title)
 
         # System info table — shown here (above the drop zone) since it's
         # relevant context before the user even picks a file or model.
@@ -47,10 +48,10 @@ class FileSelectStep(QFrame):
         layout.addWidget(hw_table)
 
         # Subheading for the drop zone below.
-        file_heading = QLabel("Select Audio File")
-        file_heading.setFont(Fonts.SUBTITLE_BOLD)
-        file_heading.setStyleSheet(theme.text_qss("text_primary"))
-        layout.addWidget(file_heading)
+        self.file_heading = QLabel(t("select_audio_file"))
+        self.file_heading.setFont(Fonts.SUBTITLE_BOLD)
+        self.file_heading.setStyleSheet(theme.text_qss("text_primary"))
+        layout.addWidget(self.file_heading)
 
         # Drop zone - large and spacious. Also acts as the browse button: the
         # whole area is clickable to open a file dialog, in addition to drag-and-drop.
@@ -80,28 +81,28 @@ class FileSelectStep(QFrame):
         drop_layout.addWidget(icon_label)
 
         # Main text
-        main_text = QLabel("Drag your audio or video file here")
-        main_text.setFont(Fonts.BODY_BOLD)
-        main_text.setStyleSheet(theme.text_qss("text_primary"))
-        main_text.setAlignment(Qt.AlignCenter)
-        main_text.setMaximumHeight(20)
-        drop_layout.addWidget(main_text)
+        self.main_text = QLabel(t("drop_main"))
+        self.main_text.setFont(Fonts.BODY_BOLD)
+        self.main_text.setStyleSheet(theme.text_qss("text_primary"))
+        self.main_text.setAlignment(Qt.AlignCenter)
+        self.main_text.setMaximumHeight(20)
+        drop_layout.addWidget(self.main_text)
 
         # Supported formats
-        formats_text = QLabel("MP3, WAV, M4A, FLAC, OGG, MP4, MKV")
-        formats_text.setFont(Fonts.CAPTION)
-        formats_text.setStyleSheet(theme.text_qss("text_secondary"))
-        formats_text.setAlignment(Qt.AlignCenter)
-        formats_text.setMaximumHeight(16)
-        drop_layout.addWidget(formats_text)
+        self.formats_text = QLabel(t("drop_formats"))
+        self.formats_text.setFont(Fonts.CAPTION)
+        self.formats_text.setStyleSheet(theme.text_qss("text_secondary"))
+        self.formats_text.setAlignment(Qt.AlignCenter)
+        self.formats_text.setMaximumHeight(16)
+        drop_layout.addWidget(self.formats_text)
 
         # Alt text
-        alt_text = QLabel("or click anywhere here to browse")
-        alt_text.setFont(Fonts.CAPTION)
-        alt_text.setStyleSheet(theme.text_qss("text_tertiary"))
-        alt_text.setAlignment(Qt.AlignCenter)
-        alt_text.setMaximumHeight(16)
-        drop_layout.addWidget(alt_text)
+        self.alt_text = QLabel(t("drop_alt"))
+        self.alt_text.setFont(Fonts.CAPTION)
+        self.alt_text.setStyleSheet(theme.text_qss("text_tertiary"))
+        self.alt_text.setAlignment(Qt.AlignCenter)
+        self.alt_text.setMaximumHeight(16)
+        drop_layout.addWidget(self.alt_text)
 
         layout.addWidget(self.drop_zone)
 
@@ -114,7 +115,7 @@ class FileSelectStep(QFrame):
         self.file_icon.hide()
         file_info_row.addWidget(self.file_icon)
 
-        self.file_label = QLabel("No file selected")
+        self.file_label = QLabel(t("no_file_selected"))
         self.file_label.setFont(Fonts.BODY)
         self.file_label.setStyleSheet(theme.text_qss("text_secondary"))
         self.file_label.setMaximumHeight(18)
@@ -144,29 +145,60 @@ class FileSelectStep(QFrame):
             self._select_file(files[0])
 
     def _browse(self):
-        file_filter = "Audio/Video Files (" + " ".join(config.SUPPORTED_FORMATS) + ")"
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select File", "", file_filter)
+        file_filter = t("file_dialog_filter") + " (" + " ".join(config.SUPPORTED_FORMATS) + ")"
+        file_path, _ = QFileDialog.getOpenFileName(self, t("file_dialog_title"), "", file_filter)
         if file_path:
             self._select_file(file_path)
 
     def _select_file(self, file_path: str):
         self.selected_file = file_path
-        filename = os.path.basename(file_path)
 
         # Get duration
         self.selected_duration = get_audio_duration(file_path)
-        duration_min = self.selected_duration // 60
-        duration_sec = self.selected_duration % 60
 
         # Update display
-        size_mb = os.path.getsize(file_path) / (1024 * 1024)
         self.file_icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success']))
         self.file_icon.show()
-        self.file_label.setText(f"{filename} | {duration_min}m {duration_sec}s | {size_mb:.1f} MB")
+        self._render_file_label()
         self.file_label.setStyleSheet(theme.text_qss("success", "font-weight: 600;"))
 
         # Emit signal with file and duration
         self.file_selected.emit(file_path, self.selected_duration)
+
+    def _render_file_label(self):
+        """Render the selected-file info line in the current UI language."""
+        size_mb = os.path.getsize(self.selected_file) / (1024 * 1024)
+        self.file_label.setText(t(
+            "file_info",
+            filename=os.path.basename(self.selected_file),
+            minutes=self.selected_duration // 60,
+            seconds=self.selected_duration % 60,
+            size=f"{size_mb:.1f}",
+        ))
+
+    def reset(self):
+        """Clear the selected file and restore the placeholder label."""
+        self.selected_file = None
+        self.selected_duration = 0
+        self.file_icon.hide()
+        self.file_label.setText(t("no_file_selected"))
+        self.file_label.setStyleSheet(theme.text_qss("text_secondary"))
+
+    def retranslate(self):
+        """Re-render all text in the current UI language (live toggle)."""
+        self.title.setText(t("specs_title"))
+        self.file_heading.setText(t("select_audio_file"))
+        self.main_text.setText(t("drop_main"))
+        self.formats_text.setText(t("drop_formats"))
+        self.alt_text.setText(t("drop_alt"))
+        for key, label in self._hw_header_labels.items():
+            label.setText(t(key))
+        if self._hw_gpu_value_label is not None and not self._hw_has_gpu:
+            self._hw_gpu_value_label.setText(t("hw_no_gpu"))
+        if self.selected_file is not None:
+            self._render_file_label()
+        else:
+            self.file_label.setText(t("no_file_selected"))
 
     def _create_hardware_table(self) -> QFrame:
         """Create a compact tabular system-info display (CPU / RAM / GPU)."""
@@ -184,20 +216,25 @@ class FileSelectStep(QFrame):
         # a divider line, and vertical divider lines between cells — a real
         # row/column grid rather than plain text spread across a bare card.
         hw_info = self.hardware.get_hardware_info()
-        gpu_text = hw_info['gpu_name'] if hw_info['has_gpu'] else "No GPU"
+        self._hw_has_gpu = hw_info['has_gpu']
+        gpu_text = hw_info['gpu_name'] if hw_info['has_gpu'] else t("hw_no_gpu")
+        # Header labels are keyed by i18n key so retranslate() can re-render
+        # them; the GPU value cell is also tracked because "No GPU" is text.
+        self._hw_header_labels = {}
+        self._hw_gpu_value_label = None
         columns = [
-            ("CPU CORES", str(hw_info['cpu_cores'])),
-            ("RAM", f"{hw_info['ram_gb']} GB"),
-            ("GPU", gpu_text),
+            ("hw_cpu_cores", str(hw_info['cpu_cores'])),
+            ("hw_ram", f"{hw_info['ram_gb']} GB"),
+            ("hw_gpu", gpu_text),
         ]
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(0)
         grid.setVerticalSpacing(0)
 
-        for i, (label, value) in enumerate(columns):
+        for i, (label_key, value) in enumerate(columns):
             col = i * 2  # odd columns hold vertical divider lines
-            grid.addWidget(self._create_table_cell(label, value), 0, col)
+            grid.addWidget(self._create_table_cell(label_key, value), 0, col)
             if i < len(columns) - 1:
                 grid.addWidget(self._vline(), 0, col + 1)
 
@@ -205,7 +242,7 @@ class FileSelectStep(QFrame):
 
         return card
 
-    def _create_table_cell(self, label: str, value: str) -> QWidget:
+    def _create_table_cell(self, label_key: str, value: str) -> QWidget:
         """One table cell: header label, a divider line, then the value."""
         cell = QWidget()
         cell.setStyleSheet("background: transparent;")
@@ -213,11 +250,12 @@ class FileSelectStep(QFrame):
         cell_layout.setContentsMargins(Spacing.MD, 0, Spacing.MD, 0)
         cell_layout.setSpacing(Spacing.XS)
 
-        label_widget = QLabel(label)
+        label_widget = QLabel(t(label_key))
         label_widget.setFont(Fonts.CAPTION)
         label_widget.setStyleSheet(theme.text_qss("text_tertiary"))
         label_widget.setAlignment(Qt.AlignCenter)
         cell_layout.addWidget(label_widget)
+        self._hw_header_labels[label_key] = label_widget
 
         cell_layout.addWidget(self._hline())
 
@@ -226,6 +264,8 @@ class FileSelectStep(QFrame):
         value_widget.setStyleSheet(theme.text_qss("text_primary"))
         value_widget.setAlignment(Qt.AlignCenter)
         cell_layout.addWidget(value_widget)
+        if label_key == "hw_gpu":
+            self._hw_gpu_value_label = value_widget
 
         return cell
 

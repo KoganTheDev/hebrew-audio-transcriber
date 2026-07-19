@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QFrame
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 
 from speech_to_text.gui import theme
+from speech_to_text.gui.i18n import t
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 
@@ -34,11 +35,11 @@ class TranscriptionStep(QFrame):
         layout.setAlignment(Qt.AlignCenter)
 
         # Title
-        title = QLabel("Transcribing")
-        title.setFont(Fonts.TITLE)
-        title.setStyleSheet(theme.text_qss("text_primary"))
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        self.title = QLabel(t("transcribing_title"))
+        self.title.setFont(Fonts.TITLE)
+        self.title.setStyleSheet(theme.text_qss("text_primary"))
+        self.title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.title)
 
         # File info
         self.file_info = QLabel()
@@ -65,7 +66,7 @@ class TranscriptionStep(QFrame):
         self._progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
         # Status and times
-        self.status_label = QLabel("Initializing...")
+        self.status_label = QLabel(t("w_initializing"))
         self.status_label.setFont(Fonts.BODY_BOLD_SMALL)
         self.status_label.setStyleSheet(theme.text_qss("text_primary"))
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -96,11 +97,11 @@ class TranscriptionStep(QFrame):
         result_layout.addWidget(result_icon)
 
         # Success message
-        success_msg = QLabel("Transcription Complete!")
-        success_msg.setFont(Fonts.SUBTITLE_BOLD)
-        success_msg.setStyleSheet(theme.text_qss("success"))
-        success_msg.setAlignment(Qt.AlignCenter)
-        result_layout.addWidget(success_msg)
+        self.success_msg = QLabel(t("transcription_complete"))
+        self.success_msg.setFont(Fonts.SUBTITLE_BOLD)
+        self.success_msg.setStyleSheet(theme.text_qss("success"))
+        self.success_msg.setAlignment(Qt.AlignCenter)
+        result_layout.addWidget(self.success_msg)
 
         # File path
         self.result_path = QLabel()
@@ -118,7 +119,12 @@ class TranscriptionStep(QFrame):
         self.start_time = None
         self._last_percentage = 0
         self._last_percent_change_time = None
-        self._status_base = ""
+        # Status text is stored as an i18n key + params (not rendered text)
+        # so a mid-run language toggle can re-render the live status.
+        self._status_key = "w_initializing"
+        self._status_params = {}
+        self._file_info_args = None   # (filename, model) once a run starts
+        self._result_path_value = None
         self._dot_phase = 0
         # Ticks once a second so the elapsed/remaining time and a "still
         # working" heartbeat keep moving even during real backend gaps with
@@ -132,18 +138,20 @@ class TranscriptionStep(QFrame):
 
     def set_file_info(self, filename: str, model: str):
         """Set file and model info for display."""
-        self.file_info.setText(f"{filename} | Model: {model.title()}")
+        self._file_info_args = (filename, model)
+        self.file_info.setText(t("file_model_info", filename=filename, model=model.title()))
 
     def start(self):
         """Reset the display for a fresh run and start the elapsed-time ticker."""
         self.start_time = time.time()
         self._last_percentage = 0
         self._last_percent_change_time = self.start_time
-        self._status_base = "Initializing"
+        self._status_key = "w_initializing"
+        self._status_params = {}
         self._dot_phase = 0
         self.progress_bar.setValue(0)
-        self.status_label.setText("Initializing...")
-        self.time_label.setText("Elapsed: 0:00")
+        self.status_label.setText(t("w_initializing"))
+        self.time_label.setText(t("elapsed", elapsed="0:00"))
         self.result_widget.hide()
         self._timer.start()
 
@@ -158,13 +166,19 @@ class TranscriptionStep(QFrame):
         # a heartbeat — visible proof the app is alive even when the backend
         # hasn't sent a new message this second.
         self._dot_phase = (self._dot_phase + 1) % 4
-        self.status_label.setText(self._status_base + "." * self._dot_phase)
+        self.status_label.setText(self._render_status().rstrip(".") + "." * self._dot_phase)
         self._refresh_time_label(time.time() - self.start_time)
 
-    def update_progress(self, status: str, percentage: int):
+    def _render_status(self) -> str:
+        return t(self._status_key, **self._status_params)
+
+    def update_progress(self, status_key: str, params: dict, percentage: int):
         """
         Update status text and, for real percentage updates, the progress
         bar and elapsed/estimated-remaining time.
+
+        status_key/params identify an i18n message (rendered here, in the
+        current UI language - the worker only ever sends keys).
 
         percentage == -1 is a status-only sentinel (see
         TranscriptionThread._relay_progress_message): faster-whisper is
@@ -173,9 +187,10 @@ class TranscriptionStep(QFrame):
         so only the descriptive text is updated; the bar and ETA are left
         exactly where they were.
         """
-        self._status_base = status.rstrip(".")
+        self._status_key = status_key
+        self._status_params = dict(params)
         self._dot_phase = 0
-        self.status_label.setText(status)
+        self.status_label.setText(self._render_status())
 
         if percentage >= 0:
             if percentage != self._last_percentage:
@@ -214,17 +229,19 @@ class TranscriptionStep(QFrame):
         )
 
         if percentage <= 0:
-            self.time_label.setText(f"Elapsed: {self._format_mmss(elapsed)}")
+            self.time_label.setText(t("elapsed", elapsed=self._format_mmss(elapsed)))
         elif since_last_change > self.STALL_SECONDS:
-            self.time_label.setText(
-                f"Elapsed: {self._format_mmss(elapsed)}  |  Est. remaining: calculating..."
-            )
+            self.time_label.setText(t(
+                "elapsed_remaining",
+                elapsed=self._format_mmss(elapsed), remaining=t("calculating"),
+            ))
         else:
             # Simple linear projection from work done so far.
             remaining = elapsed * (100 - percentage) / percentage
-            self.time_label.setText(
-                f"Elapsed: {self._format_mmss(elapsed)}  |  Est. remaining: {self._format_mmss(remaining)}"
-            )
+            self.time_label.setText(t(
+                "elapsed_remaining",
+                elapsed=self._format_mmss(elapsed), remaining=self._format_mmss(remaining),
+            ))
 
     @staticmethod
     def _format_mmss(seconds: float) -> str:
@@ -234,5 +251,18 @@ class TranscriptionStep(QFrame):
 
     def show_result(self, file_path: str):
         """Show completion result."""
+        self._result_path_value = os.path.abspath(file_path)
         self.result_widget.show()
-        self.result_path.setText(f"Saved to:\n{os.path.abspath(file_path)}")
+        self.result_path.setText(t("saved_to", path=self._result_path_value))
+
+    def retranslate(self):
+        """Re-render all text in the current UI language (live toggle)."""
+        self.title.setText(t("transcribing_title"))
+        self.success_msg.setText(t("transcription_complete"))
+        self.status_label.setText(self._render_status())
+        if self._file_info_args is not None:
+            self.set_file_info(*self._file_info_args)
+        if self._result_path_value is not None:
+            self.result_path.setText(t("saved_to", path=self._result_path_value))
+        if self.start_time is not None:
+            self._refresh_time_label(time.time() - self.start_time)

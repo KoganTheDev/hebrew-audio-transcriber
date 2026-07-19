@@ -18,10 +18,12 @@ from PyQt5.QtGui import QFont, QIcon
 from speech_to_text import config
 from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.gui import theme
+from speech_to_text.gui import i18n
+from speech_to_text.gui.i18n import t
 from speech_to_text.gui.theme import COLORS, Fonts
-from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.steps import Step, FileSelectStep, ModelSelectStep, TranscriptionStep
 from speech_to_text.gui.threads import TranscriptionThread, CalibrationThread
+from speech_to_text.gui.widgets import IconTextButton
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +35,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         logger.info("Initializing MainWindow...")
 
-        self.setWindowTitle(config.APP_NAME)
+        self.setWindowTitle(t("app_title"))
         self.setWindowIcon(QIcon(config.ICON_PATH))
         self.move(100, 50)
         self.setFixedSize(config.GUI_WINDOW_WIDTH, config.GUI_WINDOW_HEIGHT)
@@ -105,15 +107,35 @@ class MainWindow(QMainWindow):
 
         # Title — centered, gradient-filled text (the one deliberate use of a
         # gradient in this theme, as a brand accent rather than a UI backdrop).
-        title = QLabel()
-        title_pixmap = theme.gradient_text_pixmap("Hebrew Audio Transcriber", Fonts.SUBTITLE_BOLD)
-        title.setPixmap(title_pixmap)
-        title.setStyleSheet("background: transparent;")
-        title.setAlignment(Qt.AlignCenter)
+        # Rendered as a pixmap, so retranslate() re-renders it on language switch.
+        self.title_label = QLabel()
+        self.title_label.setPixmap(theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD))
+        self.title_label.setStyleSheet("background: transparent;")
+        self.title_label.setAlignment(Qt.AlignCenter)
+
+        # EN/HE toggle at the trailing edge of the header (label shows the
+        # TARGET language). A same-width invisible spacer at the leading edge
+        # keeps the title optically centered.
+        lang_btn_width = 52
+        self.lang_btn = QPushButton()
+        self.lang_btn.setFixedSize(lang_btn_width, 30)
+        self.lang_btn.setFont(Fonts.CAPTION_BOLD)
+        self.lang_btn.setStyleSheet(theme.button_secondary_qss(padding="2px 4px"))
+        self.lang_btn.setCursor(Qt.PointingHandCursor)
+        self.lang_btn.clicked.connect(self._toggle_language)
+
+        header_spacer = QWidget()
+        header_spacer.setFixedWidth(lang_btn_width)
+        header_spacer.setStyleSheet("background: transparent;")
+
+        header_layout.addWidget(header_spacer)
         header_layout.addStretch()
-        header_layout.addWidget(title)
+        header_layout.addWidget(self.title_label)
         header_layout.addStretch()
+        header_layout.addWidget(self.lang_btn)
         main_layout.addWidget(header)
+
+        i18n.language_manager.language_changed.connect(self._on_language_changed)
 
         # Content area
         content_widget = QWidget()
@@ -155,14 +177,14 @@ class MainWindow(QMainWindow):
         # enough for next_btn's longest state too ("New File" + icon).
         nav_btn_size = (130, 36)
 
-        # Back button
-        self.back_btn = QPushButton()
-        back_pixmap = svg_to_pixmap(ICONS["arrow_left"], 16, COLORS['text_primary'])
-        self.back_btn.setIcon(QIcon(back_pixmap))
-        self.back_btn.setText("  Back")
+        # Back button (text/icon set per language by _retranslate_chrome).
+        # IconTextButton draws its own label so the icon side can be chosen
+        # visually, independent of layout direction (see gui/widgets.py).
+        self.back_btn = IconTextButton()
         self.back_btn.setFixedSize(*nav_btn_size)
         self.back_btn.setFont(Fonts.BODY_BOLD)
         self.back_btn.setStyleSheet(theme.button_secondary_qss())
+        self.back_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
         self.back_btn.clicked.connect(self._go_back)
         self.back_btn.hide()
         nav_layout.addWidget(self.back_btn)
@@ -170,32 +192,94 @@ class MainWindow(QMainWindow):
         # Cancel button — only shown during Step.TRANSCRIPTION, in the same
         # slot as Back (which is hidden at that point). Stops the worker
         # process and returns to Choose Model rather than closing the app.
-        self.cancel_btn = QPushButton()
-        cancel_pixmap = svg_to_pixmap(ICONS["x"], 16, COLORS['text_primary'])
-        self.cancel_btn.setIcon(QIcon(cancel_pixmap))
-        self.cancel_btn.setText("  Cancel")
+        self.cancel_btn = IconTextButton()
         self.cancel_btn.setFixedSize(*nav_btn_size)
         self.cancel_btn.setFont(Fonts.BODY_BOLD)
         self.cancel_btn.setStyleSheet(theme.button_secondary_qss())
+        self.cancel_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
         self.cancel_btn.clicked.connect(self._cancel_transcription)
         self.cancel_btn.hide()
         nav_layout.addWidget(self.cancel_btn)
 
         nav_layout.addStretch()
 
-        # Next button
-        self.next_btn = QPushButton("Next")
-        next_pixmap = svg_to_pixmap(ICONS["arrow_right"], 16, COLORS['bg_primary'])
-        self.next_btn.setIcon(QIcon(next_pixmap))
-        self.next_btn.setLayoutDirection(Qt.RightToLeft)
+        # Next button (text/icon set by _set_next_button_mode)
+        self.next_btn = IconTextButton()
         self.next_btn.setFixedSize(*nav_btn_size)
         self.next_btn.setFont(Fonts.BODY_BOLD)
         self.next_btn.setStyleSheet(theme.button_primary_qss())
+        self.next_btn.set_text_colors(COLORS['bg_primary'], disabled=COLORS['text_tertiary'])
         self.next_btn.clicked.connect(self._go_next)
         self.next_btn.setEnabled(False)
         nav_layout.addWidget(self.next_btn)
 
         main_layout.addWidget(nav_widget)
+
+        self._next_btn_mode = "next"
+        self._retranslate_chrome()
+
+    def _retranslate_chrome(self):
+        """(Re-)apply window title, header, and nav button text/icons/directions."""
+        self.setWindowTitle(t("app_title"))
+        self.title_label.setPixmap(theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD))
+        # Toggle shows the language it switches TO.
+        self.lang_btn.setText("עב" if i18n.get_language() == "en" else "EN")
+
+        rtl = i18n.is_rtl()
+        # Back's arrow points against the reading direction, on the leading
+        # side of the text: [← Back] mirrors to [חזרה →].
+        self.back_btn.setText(t("nav_back"))
+        self.back_btn.set_icon_spec("arrow_right" if rtl else "arrow_left",
+                                    side="right" if rtl else "left")
+
+        # Cancel's x sits on the leading side of the text in both languages.
+        self.cancel_btn.setText(t("nav_cancel"))
+        self.cancel_btn.set_icon_spec("x", side="right" if rtl else "left")
+
+        self._set_next_button_mode(self._next_btn_mode)
+
+    def _set_next_button_mode(self, mode: str):
+        """
+        Configure next_btn for its current role: "next" (forward arrow on
+        the trailing side, pointing along the reading direction) or
+        "new_file" (reset action after completion - plus-file icon on the
+        leading side, no directional claim).
+        """
+        self._next_btn_mode = mode
+        rtl = i18n.is_rtl()
+        if mode == "new_file":
+            # Reset action: plus-file icon on the leading side of the text.
+            self.next_btn.setText(t("nav_new_file"))
+            self.next_btn.set_icon_spec("file_plus", side="right" if rtl else "left")
+        else:
+            # Forward arrow on the trailing side of the text, pointing along
+            # the reading direction: [Next →] mirrors to [← הבא].
+            self.next_btn.setText(t("nav_next"))
+            self.next_btn.set_icon_spec("arrow_left" if rtl else "arrow_right",
+                                        side="left" if rtl else "right")
+
+    def _toggle_language(self):
+        i18n.set_language("he" if i18n.get_language() == "en" else "en")
+
+    def _on_language_changed(self, lang: str):
+        """Apply app-wide layout direction and re-render every visible string."""
+        from PyQt5.QtWidgets import QApplication
+        QApplication.instance().setLayoutDirection(
+            Qt.RightToLeft if lang == "he" else Qt.LeftToRight
+        )
+        self._retranslate_chrome()
+        for i in range(self.stacked_widget.count()):
+            self.stacked_widget.widget(i).retranslate()
+        # The RTL/LTR flip relocates the buttons (the toggle jumps to the
+        # opposite side of the header) without Qt sending them a Leave
+        # event, so the clicked button keeps its :hover styling until the
+        # mouse happens to pass over it again. Clear the stale under-mouse
+        # flag and re-polish so hover state matches reality.
+        for btn in self.findChildren(QPushButton):
+            btn.setAttribute(Qt.WA_UnderMouse, False)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
 
     def _on_file_selected(self, file_path: str, duration: int):
         """Handle file selection."""
@@ -237,7 +321,7 @@ class MainWindow(QMainWindow):
 
         elif self.current_step == Step.MODEL_SELECT:
             if not self.selected_model:
-                QMessageBox.warning(self, "No Model", "Please select a model")
+                QMessageBox.warning(self, t("no_model_title"), t("no_model_body"))
                 return
 
             # Proceed to transcription once the model is selected.
@@ -278,33 +362,32 @@ class MainWindow(QMainWindow):
         self.transcription_step.stop()
         # Force the bar to a definitive 100% on completion, regardless of
         # whether every trailing progress message was relayed in time.
-        self.transcription_step.update_progress("Complete!", 100)
+        self.transcription_step.update_progress("w_complete", {}, 100)
         self.transcription_step.show_result(output_file)
 
         # Show completion options. This reuses next_btn, so its icon/layout
         # need to switch too — a forward arrow reads as "proceed to the next
         # step", which is misleading for what's actually a reset action.
-        self.next_btn.setText("New File")
-        self.next_btn.setLayoutDirection(Qt.LeftToRight)
-        self.next_btn.setIcon(QIcon(svg_to_pixmap(ICONS["file_plus"], 16, COLORS['bg_primary'])))
+        self._set_next_button_mode("new_file")
         self.next_btn.show()
         self.next_btn.clicked.disconnect()
         self.next_btn.clicked.connect(self._reset)
 
-    def _on_transcription_error(self, error_msg: str):
+    def _on_transcription_error(self, error_key: str, error_params: dict):
         """
         Handle a genuine transcription failure (not a user cancel — that's
         handled separately by _cancel_transcription).
 
-        Shows an inline banner on the Choose Model step instead of a modal
-        QMessageBox, and returns there (rather than all the way back to
-        file selection) so the user can retry — e.g. with a smaller model —
-        without having to re-pick the file.
+        Receives an i18n key + params (rendered at display time, so the
+        banner survives a language toggle). Shows an inline banner on the
+        Choose Model step instead of a modal QMessageBox, and returns there
+        (rather than all the way back to file selection) so the user can
+        retry - e.g. with a smaller model - without having to re-pick the file.
         """
-        logger.error(f"Transcription error: {error_msg}")
+        logger.error(f"Transcription error: {error_key} {error_params}")
         self.cancel_btn.hide()
         self.transcription_step.stop()
-        self.model_step.show_error(error_msg)
+        self.model_step.show_error(error_key, error_params)
         self._return_to_model_select()
 
     def _cancel_transcription(self):
@@ -329,9 +412,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentIndex(1)
         self.back_btn.show()
         self.back_btn.setEnabled(True)
-        self.next_btn.setText("Next")
-        self.next_btn.setLayoutDirection(Qt.RightToLeft)
-        self.next_btn.setIcon(QIcon(svg_to_pixmap(ICONS["arrow_right"], 16, COLORS['bg_primary'])))
+        self._set_next_button_mode("next")
         self.next_btn.show()
         self.next_btn.setEnabled(self.selected_model is not None)
         try:
@@ -350,17 +431,11 @@ class MainWindow(QMainWindow):
         self.audio_duration = 0
         self.back_btn.hide()
         self.next_btn.setEnabled(False)
-        self.next_btn.setText("Next")
-        self.next_btn.setLayoutDirection(Qt.RightToLeft)
-        self.next_btn.setIcon(QIcon(svg_to_pixmap(ICONS["arrow_right"], 16, COLORS['bg_primary'])))
+        self._set_next_button_mode("next")
         self.next_btn.show()
         self.next_btn.clicked.disconnect()
         self.next_btn.clicked.connect(self._go_next)
-        self.file_step.file_label.setText("No file selected")
-        self.file_step.file_label.setStyleSheet(theme.text_qss("text_secondary"))
-        self.file_step.file_icon.hide()
-        self.file_step.selected_file = None
-        self.file_step.selected_duration = 0
+        self.file_step.reset()
         logger.debug("Reset to file selection step")
 
     def closeEvent(self, event):
@@ -377,6 +452,9 @@ def main():
     from PyQt5.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
+
+    i18n.apply_saved_language(app)
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

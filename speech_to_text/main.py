@@ -97,6 +97,12 @@ def main():
         app.setWindowIcon(QIcon(config.ICON_PATH))
         logger.debug("QApplication created successfully")
 
+        # Apply the persisted UI language (English on first-ever launch)
+        # before MainWindow is built, so every widget renders in the right
+        # language and layout direction from the start.
+        from speech_to_text.gui import i18n
+        i18n.apply_saved_language(app)
+
         logger.debug("Creating MainWindow...")
         window = MainWindow()
         logger.debug("MainWindow instance created")
