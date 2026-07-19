@@ -1,10 +1,12 @@
 # Hebrew Audio Transcriber
 
-A desktop application that transcribes Hebrew audio and video into text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) behind a PyQt5 GUI. Everything runs locally: no audio ever leaves your machine.
-
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![PyQt5](https://img.shields.io/badge/PyQt5-GUI-orange)
+![Speech to Text](https://img.shields.io/badge/speech--to--text-transcription-blueviolet)
+
+A desktop application that transcribes Hebrew audio and video into text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) behind a PyQt5 GUI. Everything runs locally: no audio ever leaves your machine.
 
 ## Overview
 
