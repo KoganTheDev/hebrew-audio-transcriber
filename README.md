@@ -9,7 +9,7 @@ A desktop application that transcribes Hebrew audio and video into text, using [
 ## Overview
 
 Point it at an audio or video file, and it walks you through a 3-step wizard: pick the file, pick a Whisper model, and transcribe.
-- **Bilingual interface (English / עברית)**: starts in English; the עב/EN button in the header switches the whole UI to a fully mirrored right-to-left Hebrew layout, live - even mid-transcription - and the choice is remembered between runs.
+- **Bilingual interface (English / עברית)**: starts in English; the עב/EN button in the header switches the whole UI to a fully mirrored right-to-left Hebrew layout, and the choice is remembered between runs.
 - **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the file's duration.
 - **Text file saving location:** The text file is saved automatically to the same directory from which the audio comes from for easy access.
 
@@ -51,7 +51,6 @@ pip install -r requirements-dev.txt
 python -m speech_to_text.main
 ```
 
-On Windows, `run.bat` is the double-click option, and `run.ps1` is the equivalent for terminals (`.\run.ps1`; Windows hands double-clicked `.ps1` files to whatever app the file association names, usually an editor, so making the script itself double-clickable takes a one-time "Open with" choice). Both prefer the `py` launcher over PATH's `python`, and both keep the console open with the reason when a launch fails. After `pip install -e .`, the `speech-to-text` console command is also available.
 
 **Workflow:**
 1. **Select Audio File**: drag a file into the drop zone (or click to browse). Your CPU/RAM/GPU are shown alongside the file's real duration.
