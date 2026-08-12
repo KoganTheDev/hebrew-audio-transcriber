@@ -56,6 +56,31 @@ class TestTranscriber:
         transcriber.progress_callback("Test message", 50)
         callback.assert_called_once_with("Test message", 50)
     
+    def test_model_repo_resolves_config_key_to_upstream_id(self):
+        """A config.MODELS key is our name for a model, not its address."""
+        assert Transcriber(model_size="ivrit-turbo").model_repo == \
+            "ivrit-ai/whisper-large-v3-turbo-ct2"
+        assert Transcriber(model_size="large").model_repo == "large-v3"
+
+    def test_model_repo_passes_through_unknown_names(self):
+        """
+        Lets the evaluation harness benchmark models that have no GUI card by
+        naming a raw Whisper size or repo id directly.
+        """
+        assert Transcriber(model_size="distil-large-v3").model_repo == "distil-large-v3"
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_load_model_uses_repo_not_key(self, mock_whisper_model_class):
+        """
+        The repo id, not our key, must reach faster-whisper - passing
+        "ivrit-turbo" would just 404.
+        """
+        transcriber = Transcriber(model_size="ivrit-turbo")
+        transcriber.load_model()
+
+        assert mock_whisper_model_class.call_args.args[0] == \
+            "ivrit-ai/whisper-large-v3-turbo-ct2"
+
     @patch('speech_to_text.core.transcriber.WhisperModel')
     def test_load_model_success(self, mock_whisper_model_class):
         """Test successful model loading."""

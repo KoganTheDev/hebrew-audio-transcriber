@@ -4,6 +4,7 @@ import logging
 
 from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QButtonGroup, QFrame,
+    QScrollArea, QWidget,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -71,11 +72,22 @@ class ModelSelectStep(QFrame):
 
         layout.addWidget(self.error_banner)
 
-        # All model cards are laid out directly (no scroll area) — sized to
-        # fit every option in the fixed window without needing to scroll.
-        models_layout = QVBoxLayout()
+        # The cards used to be laid out directly, sized so all five fit the
+        # fixed window without scrolling. Adding the two Hebrew-tuned models
+        # broke that: seven cards overflow a 600px window and the last ones
+        # became unreachable. They now live in a scroll area, which keeps every
+        # option reachable at any window size instead of silently clipping.
+        models_container = QWidget()
+        models_layout = QVBoxLayout(models_container)
         models_layout.setSpacing(Spacing.XS + 2)
         models_layout.setContentsMargins(0, 0, 0, 0)
+
+        models_scroll = QScrollArea()
+        models_scroll.setWidget(models_container)
+        models_scroll.setWidgetResizable(True)
+        models_scroll.setFrameShape(QFrame.NoFrame)
+        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        models_scroll.setStyleSheet("background: transparent;")
 
         # Model selection
         self.model_group = QButtonGroup()
@@ -91,8 +103,16 @@ class ModelSelectStep(QFrame):
             )
             models_layout.addWidget(model_card)
 
-        layout.addLayout(models_layout)
-        layout.addStretch()
+        models_layout.addStretch()
+        # Stretch factor 1: the scroll area takes the leftover vertical space
+        # rather than the trailing spacer, so the card list grows with the
+        # window instead of staying short and scrolling unnecessarily.
+        layout.addWidget(models_scroll, 1)
+
+        # Scroll the recommended card into view on first show. It is no longer
+        # guaranteed to be among the first few cards, and a user who never
+        # scrolls should still see what the app is recommending.
+        self._scroll_area = models_scroll
 
     def show_error(self, key: str, params: dict) -> None:
         """
@@ -197,6 +217,21 @@ class ModelSelectStep(QFrame):
         recommended_model, _ = self.hardware.recommend_model(seconds)
         self._apply_recommendation(recommended_model)
 
+    def showEvent(self, event) -> None:
+        """
+        Bring the recommended card into view whenever this step is shown.
+
+        With seven cards behind a scroll area the recommendation can start off
+        below the fold, and a user who doesn't scroll would never see it.
+        """
+        super().showEvent(event)
+        self._scroll_to_recommended()
+
+    def _scroll_to_recommended(self) -> None:
+        card = self._cards.get(self._current_recommended)
+        if card is not None:
+            self._scroll_area.ensureWidgetVisible(card)
+
     def _desc_text(self, name: str) -> str:
         """
         Compose one card's "description | Est: ..." line in the current
@@ -268,3 +303,4 @@ class ModelSelectStep(QFrame):
             self._syncing = True
             self.model_radios[recommended_model].setChecked(True)
             self._syncing = False
+            self._scroll_to_recommended()

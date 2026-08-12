@@ -8,9 +8,22 @@ import os
 # ============================================================================
 # Model Configuration with detailed pros/cons
 # ============================================================================
+#
+# The dict key is this app's identifier for a model (used by the GUI cards,
+# i18n.MODEL_STRINGS, RELATIVE_COMPUTE_COST and the settings we persist).
+# "repo" is what actually gets handed to faster-whisper's WhisperModel - either
+# a bare Whisper size or a HuggingFace repo id holding CTranslate2 weights.
+#
+# Those were the same string until Hebrew-specific models were added, which
+# forced them apart: "ivrit-turbo" is a stable local identifier, while
+# "ivrit-ai/whisper-large-v3-turbo-ct2" is an upstream address that can change.
+#
+# Entries are ordered by ascending accuracy_score - the GUI renders the cards in
+# this order, and tests assert the ordering holds.
 
 MODELS = {
     "tiny": {
+        "repo": "tiny",
         "name": "Tiny",
         "description": "Ultra-fast, lowest quality",
         "pros": [
@@ -30,6 +43,7 @@ MODELS = {
         "recommended": False,
     },
     "base": {
+        "repo": "base",
         "name": "Base",
         "description": "Good balance of speed and quality",
         "pros": [
@@ -49,6 +63,7 @@ MODELS = {
         "recommended": False,
     },
     "small": {
+        "repo": "small",
         "name": "Small",
         "description": "Better accuracy for Hebrew",
         "pros": [
@@ -68,50 +83,105 @@ MODELS = {
         "recommended": False,
     },
     "medium": {
+        "repo": "medium",
         "name": "Medium",
-        "description": "High accuracy, recommended default",
+        "description": "High accuracy general-purpose model",
         "pros": [
-            "✓ High accuracy for Hebrew (recommended!)",
+            "✓ Good accuracy across languages",
             "✓ Professional quality results",
             "✓ Good balance of quality/time",
-            "✓ Best choice for most users",
         ],
         "cons": [
             "✗ Longer processing (~20-24 hours)",
             "✗ Requires 5 GB RAM",
-            "✗ Not for immediate results",
+            "✗ Slower and less accurate on Hebrew than Ivrit Turbo",
         ],
         "time_estimate": "~20-24 hours",
         "ram_required": "5 GB",
         "accuracy_score": 4,
-        "best_for": "Professional quality (RECOMMENDED)",
-        "recommended": True,
+        "best_for": "General-purpose transcription",
+        "recommended": False,
     },
     "large": {
+        # Pinned explicitly. "large" is an alias whose target has moved between
+        # faster-whisper releases, so the bare name silently changed which model
+        # actually ran depending on the installed version.
+        "repo": "large-v3",
         "name": "Large",
-        "description": "Highest accuracy, very slow",
+        "description": "Best general-purpose model, very slow",
         "pros": [
-            "✓ Highest accuracy possible",
-            "✓ Best for critical/important content",
-            "✓ Excellent Hebrew support",
-            "✓ Fewest errors",
+            "✓ Highest accuracy of the general-purpose models",
+            "✓ Handles mixed-language audio well",
+            "✓ Fewest errors outside Hebrew",
         ],
         "cons": [
             "✗ Very slow (40+ hours)",
             "✗ High RAM requirement (8 GB)",
             "✗ May run out of memory on limited systems",
-            "✗ Not practical for most users",
+            "✗ Still trained mostly on non-Hebrew speech",
         ],
         "time_estimate": "~40+ hours",
         "ram_required": "8 GB",
+        "accuracy_score": 4.5,
+        "best_for": "Mixed-language or non-Hebrew content",
+        "recommended": False,
+    },
+    # ------------------------------------------------------------------
+    # Hebrew-specialised models (ivrit.ai).
+    #
+    # Everything above is stock OpenAI Whisper, trained overwhelmingly on
+    # English; Hebrew is a small slice of its training data, which is the root
+    # cause of the misheard-word problem this app exists to solve. ivrit.ai
+    # fine-tunes Whisper on hundreds of hours of transcribed Hebrew speech and
+    # publishes the result already converted to CTranslate2 - the exact format
+    # faster-whisper loads - so using them costs nothing but the download.
+    # ------------------------------------------------------------------
+    "ivrit-turbo": {
+        "repo": "ivrit-ai/whisper-large-v3-turbo-ct2",
+        "name": "Ivrit Turbo",
+        "description": "Hebrew-tuned, fast and accurate (recommended)",
+        "pros": [
+            "✓ Trained specifically on Hebrew speech",
+            "✓ Far fewer misheard Hebrew words than any model above",
+            "✓ Turbo decoder: faster than Medium despite being larger",
+            "✓ Best choice for Hebrew content",
+        ],
+        "cons": [
+            "✗ One-time 1.6 GB download on first use",
+            "✗ Requires 3 GB RAM",
+            "✗ Hebrew only - weaker on other languages than Large",
+        ],
+        "time_estimate": "~8-12 hours",
+        "ram_required": "3 GB",
         "accuracy_score": 5,
-        "best_for": "Highest quality, critical content",
+        "best_for": "Hebrew transcription (RECOMMENDED)",
+        "recommended": True,
+    },
+    "ivrit-large": {
+        "repo": "ivrit-ai/whisper-large-v3-ct2",
+        "name": "Ivrit Large",
+        "description": "Hebrew-tuned, highest accuracy, slow",
+        "pros": [
+            "✓ Most accurate Hebrew option available",
+            "✓ Best for critical or hard-to-hear recordings",
+        ],
+        "cons": [
+            "✗ One-time 3.1 GB download on first use",
+            "✗ Very slow (40+ hours)",
+            "✗ High RAM requirement (8 GB)",
+            "✗ Rarely worth it over Ivrit Turbo",
+        ],
+        "time_estimate": "~40+ hours",
+        "ram_required": "8 GB",
+        "accuracy_score": 5.5,
+        "best_for": "Critical Hebrew content",
         "recommended": False,
     },
 }
 
-# Default model (smart choice)
-DEFAULT_MODEL = "medium"
+# Default model. Hebrew-tuned, and its turbo decoder makes it faster than the
+# "medium" it replaced as well as considerably more accurate on Hebrew.
+DEFAULT_MODEL = "ivrit-turbo"
 
 # ============================================================================
 # Application Configuration

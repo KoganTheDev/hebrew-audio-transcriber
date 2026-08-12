@@ -20,6 +20,22 @@ except ImportError:
     psutil = None
 
 
+def _required_ram_gb(model_size: str, default: int = 5) -> int:
+    """
+    Parse a model's RAM requirement out of config.MODELS ("3 GB" -> 3).
+
+    config stores it as display text because that's what the model cards show.
+    Parsing it here keeps a single source of truth; an unparseable or unknown
+    entry falls back to the mid-range default rather than raising, since a
+    wrong estimate is much better than a crashed hardware probe.
+    """
+    entry = config.MODELS.get(model_size)
+    if not entry:
+        return default
+    digits = "".join(c for c in str(entry.get("ram_required", "")) if c.isdigit())
+    return int(digits) if digits else default
+
+
 class HardwareDetector:
     """Detects hardware specs and estimates processing time."""
     
@@ -138,6 +154,10 @@ class HardwareDetector:
             "small": {"cpu": 540, "cuda": 60},
             "medium": {"cpu": 1200, "cuda": 120},
             "large": {"cpu": 2400, "cuda": 240},
+            # Turbo's 4-layer decoder is what makes it cheaper than medium
+            # despite having more parameters overall.
+            "ivrit-turbo": {"cpu": 900, "cuda": 90},
+            "ivrit-large": {"cpu": 2400, "cuda": 240},
         }
         
         if model_size not in speeds:
@@ -181,16 +201,13 @@ class HardwareDetector:
         Check if system can run given model size.
         Returns: (can_run, reason)
         """
-        ram_required = {
-            "tiny": 1,
-            "base": 2,
-            "small": 3,
-            "medium": 5,
-            "large": 8,
-        }
-        
-        required = ram_required.get(model_size, 5)
-        
+        # Read from config.MODELS rather than a parallel table. A hardcoded
+        # copy here would silently report the wrong requirement for any model
+        # added later - and since recommend_model gates on this, an under-stated
+        # requirement means recommending a model the machine cannot actually
+        # load.
+        required = _required_ram_gb(model_size)
+
         if self.ram_gb < required:
             return False, f"Insufficient RAM: {self.ram_gb:.1f}GB available, {required}GB required"
         

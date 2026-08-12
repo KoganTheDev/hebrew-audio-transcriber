@@ -7,6 +7,7 @@ import os
 import logging
 from typing import Callable, List, Optional
 
+from speech_to_text import config
 from speech_to_text.core.segments import Segment, Word
 
 try:
@@ -32,9 +33,9 @@ class Transcriber:
     
     def __init__(
         self,
-        model_size: str = "medium",
+        model_size: str = config.DEFAULT_MODEL,
         device: str = "cpu",
-        language: str = "he",
+        language: str = config.LANGUAGE,
         progress_callback: Optional[Callable] = None
     ):
         self.model_size = model_size
@@ -43,6 +44,20 @@ class Transcriber:
         self.progress_callback = progress_callback or self._default_callback
         self.model = None
         logger.debug(f"Transcriber initialized: model={model_size}, device={device}, lang={language}")
+
+    @property
+    def model_repo(self) -> str:
+        """
+        The identifier faster-whisper actually loads.
+
+        config.MODELS keys are this app's own stable names; "repo" is the
+        upstream address (a bare Whisper size, or a HuggingFace repo holding
+        CTranslate2 weights). An unknown key falls through to itself so callers
+        can still pass a raw Whisper size or repo id directly - useful for the
+        evaluation harness, which benchmarks models that have no GUI card.
+        """
+        entry = config.MODELS.get(self.model_size)
+        return entry["repo"] if entry else self.model_size
         
     @staticmethod
     def _default_callback(message, progress: int):
@@ -66,9 +81,9 @@ class Transcriber:
             self.progress_callback(("w_loading_model", {"model": self.model_size}), 5)
 
             self.model = WhisperModel(
-                self.model_size,
+                self.model_repo,
                 device=self.device,
-                compute_type="int8",
+                compute_type=config.COMPUTE_TYPE,
                 download_root="./whisper_models"
             )
 
@@ -119,14 +134,14 @@ class Transcriber:
             segments, info = self.model.transcribe(
                 audio_file,
                 language=self.language,
-                beam_size=5,
+                beam_size=config.BEAM_SIZE,
                 # Per-word timings and confidences. Needed twice over: word
                 # boundaries are what let diarization attribute a speaker
                 # change that happens mid-segment, and word probabilities are
                 # what let the Hebrew correction pass touch only the words the
                 # model was unsure about.
                 word_timestamps=True,
-                vad_filter=True,
+                vad_filter=config.VAD_FILTER,
                 vad_parameters=dict(min_silence_duration_ms=500)
             )
 
