@@ -76,6 +76,12 @@ STRINGS = {
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
     "saved_to": {"en": "Saved to:\n{path}", "he": "נשמר אל:\n" + _RLM + "{path}"},
 
+    # Speaker name template written into the transcript file itself, not shown
+    # in the GUI. Rendered here and passed to the worker as data: core/ has no
+    # access to this module (see core/worker.py) and cannot translate anything.
+    # {n} is 1-based - "Speaker 0" reads like a bug to a non-programmer.
+    "speaker_label": {"en": "Speaker {n}", "he": "דובר {n}"},
+
     # --- Worker / thread progress messages (keys cross the process boundary) ---
     "w_starting_thread": {"en": "Starting...", "he": "מתחיל..."},
     "w_initializing": {"en": "Initializing...", "he": "מאתחל..."},

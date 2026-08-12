@@ -14,6 +14,10 @@ import os
 import re
 import logging
 import multiprocessing
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
+    from speech_to_text.core.options import TranscriptionOptions
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +66,10 @@ class _RetryStatusLogHandler(logging.Handler):
 
 def run_transcription_process(
     audio_file: str,
-    model_size: str,
-    device: str,
     output_file: str,
+    options: "TranscriptionOptions",
     progress_queue: "multiprocessing.Queue",
     result_queue: "multiprocessing.Queue",
-    audio_duration_seconds: float = 0,
 ) -> None:
     """
     Entry point for the child process. Must stay import-light (no PyQt5).
@@ -103,8 +105,9 @@ def run_transcription_process(
             progress_queue.put(("progress", key, params, percent))
 
         transcriber = Transcriber(
-            model_size=model_size,
-            device=device,
+            model_size=options.model_size,
+            device=options.device,
+            language=options.language,
             progress_callback=emit_progress,
         )
 
@@ -121,7 +124,9 @@ def run_transcription_process(
         retry_handler = _RetryStatusLogHandler(progress_queue)
         fw_logger.addHandler(retry_handler)
         try:
-            segments = transcriber.transcribe(audio_file, total_duration_seconds=audio_duration_seconds)
+            segments = transcriber.transcribe(
+                audio_file, total_duration_seconds=options.audio_duration_seconds
+            )
         finally:
             fw_logger.removeHandler(retry_handler)
 
@@ -130,7 +135,11 @@ def run_transcription_process(
             return
 
         emit_progress(("w_formatting", {}), 92)
-        formatted_text = formatting.render(segments)
+        formatted_text = formatting.render(
+            segments,
+            speaker_label=options.speaker_label,
+            timestamps=options.timestamps,
+        )
 
         emit_progress(("w_saving", {}), 97)
         with open(output_file, "w", encoding="utf-8") as f:

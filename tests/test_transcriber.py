@@ -4,8 +4,7 @@ Tests for transcriber module.
 
 import pytest
 from unittest.mock import MagicMock, patch, call
-from speech_to_text.core.formatting import format_plain, render
-from speech_to_text.core.segments import Segment, Word, plain_text
+from speech_to_text.core.segments import plain_text
 from speech_to_text.core.transcriber import Transcriber
 
 
@@ -235,35 +234,5 @@ class TestTranscriber:
         assert plain_text(result) == "Hello World"
 
 
-class TestFormatting:
-    """Rendering segments to the output transcript."""
-
-    def test_format_output_empty_text(self):
-        assert format_plain("") == ""
-
-    def test_format_output_single_sentence(self):
-        assert "Hello world." in format_plain("Hello world.")
-
-    def test_format_output_multiple_sentences(self):
-        result = format_plain("Hello world. This is a test. Great!")
-
-        lines = result.split("\n")
-        assert len(lines) == 3
-        assert "Hello world." in lines[0]
-        assert "This is a test." in lines[1]
-        assert "Great!" in lines[2]
-
-    def test_format_output_with_different_endings(self):
-        result = format_plain("Is this right? Yes! Maybe.")
-        assert len(result.split("\n")) == 3
-
-    def test_render_matches_pre_refactor_output(self):
-        """
-        The whole point of the Step 0 refactor: carrying structure through the
-        pipeline must not change a single byte of what gets written to disk.
-        """
-        segments = [
-            Segment(start=0.0, end=1.0, text="שלום עולם."),
-            Segment(start=1.0, end=2.0, text="מה שלומך?"),
-        ]
-        assert render(segments) == "שלום עולם.\nמה שלומך?"
+# Transcript rendering is covered in tests/test_formatting.py - it grew its own
+# module once timestamps, turn merging and bidi control characters arrived.

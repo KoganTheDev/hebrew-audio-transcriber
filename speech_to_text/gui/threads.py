@@ -15,8 +15,10 @@ from typing import Optional
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from speech_to_text import config
+from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.core.worker import run_transcription_process
 from speech_to_text.core.calibration import run_calibration_process
+from speech_to_text.gui.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +40,43 @@ class TranscriptionThread(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str, dict)
 
-    def __init__(self, audio_file: str, model_size: str, device: str, audio_duration_seconds: float = 0):
+    def __init__(
+        self,
+        audio_file: str,
+        model_size: str,
+        device: str,
+        audio_duration_seconds: float = 0,
+        options: Optional[TranscriptionOptions] = None,
+    ):
         super().__init__()
         self.audio_file = audio_file
-        self.model_size = model_size
-        self.device = device
-        self.audio_duration_seconds = audio_duration_seconds
+        # Settings travel to the worker as one picklable object rather than a
+        # long positional argument list forwarded through Process(args=...).
+        # model_size/device/audio_duration_seconds stay as explicit arguments
+        # because they are what callers actually vary per run.
+        self.options = options or TranscriptionOptions()
+        self.options.model_size = model_size
+        self.options.device = device
+        self.options.audio_duration_seconds = audio_duration_seconds
+        # Speaker labels must be rendered here, in the GUI process: the worker
+        # has no access to i18n and does not know the UI language.
+        if self.options.speaker_label is None and self.options.identify_speakers:
+            self.options.speaker_label = t("speaker_label")
         self._is_running = True
         self._process: Optional[multiprocessing.Process] = None
         logger.debug(f"TranscriptionThread created: {os.path.basename(audio_file)}")
+
+    @property
+    def model_size(self) -> str:
+        return self.options.model_size
+
+    @property
+    def device(self) -> str:
+        return self.options.device
+
+    @property
+    def audio_duration_seconds(self) -> float:
+        return self.options.audio_duration_seconds
 
     def run(self):
         """Launch the worker process and relay its progress/result as signals."""
@@ -62,8 +92,8 @@ class TranscriptionThread(QThread):
 
             self._process = multiprocessing.Process(
                 target=run_transcription_process,
-                args=(self.audio_file, self.model_size, self.device, output_file,
-                      progress_queue, result_queue, self.audio_duration_seconds),
+                args=(self.audio_file, output_file, self.options,
+                      progress_queue, result_queue),
                 daemon=True,
             )
             self._process.start()
