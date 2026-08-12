@@ -3,28 +3,35 @@ Main window for the Speech-to-Text Transcriber GUI.
 3-step flow: Select File → Choose Model → Transcribe
 """
 
+import logging
 import os
 import sys
-import logging
 from typing import Optional
 
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QMessageBox, QFrame, QStackedWidget, QDesktopWidget
-)
-from PyQt5.QtCore import QThread, Qt
+from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtWidgets import (
+    QDesktopWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from speech_to_text import config
 from speech_to_text.core.options import TranscriptionOptions
-from speech_to_text.hardware_detection import HardwareDetector
-from speech_to_text.gui import theme
-from speech_to_text.gui import i18n
+from speech_to_text.gui import i18n, theme
 from speech_to_text.gui.i18n import t
+from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.theme import COLORS, Fonts
-from speech_to_text.gui.steps import Step, FileSelectStep, ModelSelectStep, TranscriptionStep
-from speech_to_text.gui.threads import TranscriptionThread, CalibrationThread
+from speech_to_text.gui.threads import CalibrationThread, TranscriptionThread
 from speech_to_text.gui.widgets import IconTextButton
+from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 

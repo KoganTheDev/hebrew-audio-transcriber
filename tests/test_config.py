@@ -3,6 +3,7 @@ Tests for configuration module.
 """
 
 import pytest
+
 from speech_to_text import config
 
 

@@ -79,8 +79,12 @@ def transcribe_once(model_size: str, samples, duration: float) -> Dict:
         "segments": len(segments),
         "words": len(probabilities),
         "characters": len(text),
-        "mean_word_confidence": round(statistics.fmean(probabilities), 4) if probabilities else None,
-        "median_word_confidence": round(statistics.median(probabilities), 4) if probabilities else None,
+        "mean_word_confidence": (
+            round(statistics.fmean(probabilities), 4) if probabilities else None
+        ),
+        "median_word_confidence": (
+            round(statistics.median(probabilities), 4) if probabilities else None
+        ),
         "low_confidence_share": (
             round(sum(1 for p in probabilities if p < LOW_CONFIDENCE) / len(probabilities), 4)
             if probabilities else None

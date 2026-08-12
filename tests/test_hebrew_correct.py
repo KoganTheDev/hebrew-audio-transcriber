@@ -10,8 +10,12 @@ of these tests therefore assert that it does *nothing*.
 import pytest
 
 from speech_to_text.core.hebrew_correct import (
-    TermList, correct, normalize, strip_clitics, weighted_distance,
+    TermList,
+    correct,
+    strip_clitics,
+    weighted_distance,
 )
+from speech_to_text.core.hebrew_text import normalize_word
 from speech_to_text.core.segments import Segment, Word
 
 
@@ -30,10 +34,10 @@ def segment_of(*words):
 class TestNormalize:
 
     def test_nikud_removed(self):
-        assert normalize("שָׁלוֹם") == normalize("שלום")
+        assert normalize_word("שָׁלוֹם") == normalize_word("שלום")
 
     def test_final_forms_collapsed(self):
-        assert normalize("ירושלים")[-1] == normalize("ירושלימ")[-1]
+        assert normalize_word("ירושלים")[-1] == normalize_word("ירושלימ")[-1]
 
 
 class TestStripClitics:

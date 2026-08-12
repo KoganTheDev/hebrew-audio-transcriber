@@ -3,11 +3,11 @@ Core Transcription Module
 Handles the actual transcription process.
 """
 
-import os
 import logging
 from typing import Callable, List, Optional
 
 from speech_to_text import config
+from speech_to_text.core.formatting import format_mmss
 from speech_to_text.core.segments import Segment, Word
 
 try:
@@ -16,16 +16,6 @@ except ImportError:
     WhisperModel = None
 
 logger = logging.getLogger(__name__)
-
-
-def _format_mmss(seconds) -> str:
-    """Format a seconds count as m:ss, tolerating non-numeric input."""
-    try:
-        total = max(int(seconds), 0)
-    except (TypeError, ValueError):
-        return "0:00"
-    minutes, secs = divmod(total, 60)
-    return f"{minutes}:{secs:02d}"
 
 
 class Transcriber:
@@ -171,8 +161,8 @@ class Transcriber:
                     # Real progress: how far into the audio this segment ends.
                     fraction = min(segment_end / total_duration_seconds, 1.0)
                     message = ("w_transcribing_time", {
-                        "position": _format_mmss(segment_end),
-                        "total": _format_mmss(total_duration_seconds),
+                        "position": format_mmss(segment_end),
+                        "total": format_mmss(total_duration_seconds),
                     })
                 else:
                     # No reliable duration to measure against (shouldn't

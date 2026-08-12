@@ -10,8 +10,14 @@ whichever editor you happen to open and silently regresses everywhere else, so
 import pytest
 
 from speech_to_text.core.formatting import (
-    LRI, PDI, RLM,
-    format_hhmmss, format_plain, merge_turns, render, timestamp_prefix,
+    LRI,
+    PDI,
+    RLM,
+    format_hhmmss,
+    format_plain,
+    merge_turns,
+    render,
+    timestamp_prefix,
 )
 from speech_to_text.core.segments import Segment
 

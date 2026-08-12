@@ -10,22 +10,9 @@ differently".
 """
 
 import re
-import unicodedata
 from typing import List
 
-# Final (sofit) forms are positional variants, not distinct letters. A model
-# writing מ at the end of a word instead of ם has not misheard anything.
-FINAL_FORMS = {
-    "ך": "כ",
-    "ם": "מ",
-    "ן": "נ",
-    "ף": "פ",
-    "ץ": "צ",
-}
-
-# Hebrew points and cantillation: U+0591-U+05C7. Optional diacritics that carry
-# no information about which word was recognised.
-_NIKUD = re.compile(r"[֑-ׇ]")
+from speech_to_text.core.hebrew_text import BIDI_CONTROLS, normalize_word
 
 # Geresh/gershayim used in acronyms and loanwords, plus ASCII quotes that
 # transcription models place inconsistently.
@@ -40,20 +27,17 @@ _SPEAKER_LABEL = re.compile(r"(?m)^\s*(?:דובר|Speaker)\s*\d+\s*:")
 
 def normalize(text: str) -> str:
     """Reduce Hebrew text to what a word error rate should actually compare."""
-    text = unicodedata.normalize("NFC", text)
     # Drop our own rendering furniture first. A reference transcript is often
     # just a corrected copy of a saved run, so it arrives with timestamps and
     # speaker labels attached. Stripping punctuation alone would leave the
     # digits behind as bogus "words" and inflate the error rate.
     text = _TIMESTAMP.sub(" ", text)
     text = _SPEAKER_LABEL.sub(" ", text)
-    text = _NIKUD.sub("", text)
     text = _PUNCTUATION.sub(" ", text)
-    for final, base in FINAL_FORMS.items():
-        text = text.replace(final, base)
-    # Bidi control characters are layout, not content - our own renderer adds
-    # them deliberately (see core/formatting.py).
-    text = re.sub(r"[‎‏⁦-⁩‪-‮]", "", text)
+    # Nikud and final-form handling is shared with the correction pass, so the
+    # two cannot drift apart on what counts as the same word.
+    text = normalize_word(text)
+    text = BIDI_CONTROLS.sub("", text)
     return " ".join(text.split())
 
 

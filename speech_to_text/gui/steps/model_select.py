@@ -2,18 +2,26 @@
 
 import logging
 
-from PyQt5.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QButtonGroup, QFrame,
-    QScrollArea, QWidget, QCheckBox, QSpinBox,
-)
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QRadioButton,
+    QScrollArea,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from speech_to_text import config
-from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.gui import theme
-from speech_to_text.gui.i18n import t, model_text, is_rtl
-from speech_to_text.gui.theme import COLORS, Fonts, Spacing
+from speech_to_text.gui.i18n import is_rtl, model_text, t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+from speech_to_text.gui.theme import COLORS, Fonts, Spacing
+from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 

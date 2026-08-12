@@ -9,7 +9,11 @@ all.
 import math
 
 from tests.eval.hebrew_metrics import (
-    character_error_rate, edit_distance, normalize, tokens, word_error_rate,
+    character_error_rate,
+    edit_distance,
+    normalize,
+    tokens,
+    word_error_rate,
 )
 
 

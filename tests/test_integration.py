@@ -2,14 +2,16 @@
 Integration tests for the entire system.
 """
 
-import pytest
 import os
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from speech_to_text import config
-from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.core.formatting import render
 from speech_to_text.core.segments import plain_text
 from speech_to_text.core.transcriber import Transcriber
+from speech_to_text.hardware_detection import HardwareDetector
 
 
 class TestIntegration:

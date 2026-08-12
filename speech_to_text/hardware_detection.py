@@ -3,10 +3,10 @@ Hardware Detection Module
 Detects CPU/GPU specs and calculates estimated transcription time.
 """
 
+import logging
 import platform
 import subprocess
-import logging
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
 
 from speech_to_text import config
 from speech_to_text.core.calibration import RELATIVE_COMPUTE_COST, load_cached_tiny_rtf

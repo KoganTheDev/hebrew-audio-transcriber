@@ -9,10 +9,11 @@ cases below cover both directions.
 """
 
 import numpy as np
-import pytest
 
 from speech_to_text.core.audio_source import (
-    SAMPLE_RATE, is_true_stereo, to_mono,
+    SAMPLE_RATE,
+    is_true_stereo,
+    to_mono,
 )
 
 rng = np.random.default_rng(1234)

@@ -10,10 +10,10 @@ separate process (never importing PyQt5) sidesteps the conflict entirely,
 regardless of timing.
 """
 
-import os
-import re
 import logging
 import multiprocessing
+import os
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
@@ -201,8 +201,6 @@ def _transcribe_per_channel(transcriber, channels, options):
     cost is that transcription runs once per channel, roughly doubling the
     wall-clock time, which the GUI's estimate accounts for.
     """
-    from speech_to_text.core.segments import Segment
-
     per_channel_duration = options.audio_duration_seconds
     collected = []
     for index, channel in enumerate(channels[:2]):

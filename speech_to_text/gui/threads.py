@@ -6,18 +6,18 @@ a separate OS process, per the DLL-conflict note below) back into Qt
 signals — neither does any heavy lifting itself.
 """
 
-import os
 import logging
 import multiprocessing
+import os
 import queue
 from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from speech_to_text import config
+from speech_to_text.core.calibration import run_calibration_process
 from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.core.worker import run_transcription_process
-from speech_to_text.core.calibration import run_calibration_process
 from speech_to_text.gui.i18n import t
 
 logger = logging.getLogger(__name__)

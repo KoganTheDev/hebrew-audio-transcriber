@@ -41,9 +41,9 @@ Stdlib only, no PyQt5: this runs in the worker process.
 import logging
 import os
 import re
-import unicodedata
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from speech_to_text.core.hebrew_text import CLITICS, normalize_word
 from speech_to_text.core.segments import Segment
 
 logger = logging.getLogger(__name__)
@@ -84,14 +84,6 @@ _CONFUSION_GROUPS: Sequence[Tuple[str, float]] = (
     ("גז", 0.5),
 )
 
-# Final letters are positional variants of the same letter.
-_FINAL_FORMS = {"ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ"}
-
-# Stackable one-letter prefixes. Stripped before matching and reattached after,
-# so "ולירושלים" still matches the term "ירושלים".
-_CLITICS = "ובכלמשה"
-
-_NIKUD = re.compile(r"[֑-ׇ]")
 _HEBREW_WORD = re.compile(r"^[א-ת]+$")
 
 _SUBSTITUTION_COST: Dict[Tuple[str, str], float] = {}
@@ -100,15 +92,6 @@ for _group, _cost in _CONFUSION_GROUPS:
         for _b in _group:
             if _a != _b:
                 _SUBSTITUTION_COST.setdefault((_a, _b), _cost)
-
-
-def normalize(word: str) -> str:
-    """Strip nikud and collapse final forms, so spelling variants compare equal."""
-    word = unicodedata.normalize("NFC", word)
-    word = _NIKUD.sub("", word)
-    for final, base in _FINAL_FORMS.items():
-        word = word.replace(final, base)
-    return word
 
 
 def strip_clitics(word: str) -> Tuple[str, str]:
@@ -126,7 +109,7 @@ def strip_clitics(word: str) -> Tuple[str, str]:
     index = 0
     while (
         index < len(word)
-        and word[index] in _CLITICS
+        and word[index] in CLITICS
         and len(word) - index > 4
     ):
         index += 1
@@ -190,7 +173,7 @@ class TermList:
         # Keep the original spelling for output, key on the normalized form for
         # comparison.
         self.terms = [t.strip() for t in terms if t.strip()]
-        self._normalized = [(normalize(t), t) for t in self.terms]
+        self._normalized = [(normalize_word(t), t) for t in self.terms]
 
     def __len__(self) -> int:
         return len(self.terms)
@@ -231,7 +214,7 @@ class TermList:
         # clitic from a stem letter that happens to be one: קיסריה begins with
         # ק, but כיסריה - the very misrecognition we want to fix - begins with
         # כ, which is also a prefix. Whichever reading matches a term best wins.
-        candidates = clitic_splits(normalize(word))
+        candidates = clitic_splits(normalize_word(word))
 
         best: Optional[Tuple[str, float]] = None
         runner_up = float("inf")
@@ -300,7 +283,7 @@ def correct(
             trailing = word.text[len(word.text.rstrip()):]
             bare = word.text.strip()
 
-            if not _HEBREW_WORD.match(normalize(bare)):
+            if not _HEBREW_WORD.match(normalize_word(bare)):
                 continue
 
             match = terms.best_match(bare)

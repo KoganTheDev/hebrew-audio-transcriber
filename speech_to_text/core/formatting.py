@@ -78,13 +78,29 @@ def format_plain(text: str) -> str:
         return text
 
 
-def format_hhmmss(seconds: float) -> str:
-    """Format a seconds count as H:MM:SS, tolerating junk input."""
+def _total_seconds(seconds: float) -> int:
+    """Coerce to a non-negative whole second count, tolerating junk input."""
     try:
-        total = max(int(seconds), 0)
+        return max(int(seconds), 0)
     except (TypeError, ValueError):
-        total = 0
-    hours, remainder = divmod(total, 3600)
+        return 0
+
+
+def format_mmss(seconds: float) -> str:
+    """Format as m:ss - used for live progress, where hours would be noise."""
+    minutes, secs = divmod(_total_seconds(seconds), 60)
+    return f"{minutes}:{secs:02d}"
+
+
+def format_hhmmss(seconds: float) -> str:
+    """
+    Format as H:MM:SS - used for transcript timestamps.
+
+    Always includes the hour, unlike format_mmss: a transcript timestamp is a
+    position someone will scrub to, and "72:15" is harder to act on than
+    "1:12:15".
+    """
+    hours, remainder = divmod(_total_seconds(seconds), 3600)
     minutes, secs = divmod(remainder, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}"
 

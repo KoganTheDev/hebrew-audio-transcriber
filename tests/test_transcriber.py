@@ -2,8 +2,10 @@
 Tests for transcriber module.
 """
 
+from unittest.mock import MagicMock, call, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, call
+
 from speech_to_text.core.segments import plain_text
 from speech_to_text.core.transcriber import Transcriber
 

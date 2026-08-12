@@ -8,7 +8,9 @@ whole segment by its overall time span" approach smears them.
 """
 
 from speech_to_text.core.diarization import (
-    SpeakerSpan, assign_speakers, _best_speaker,
+    SpeakerSpan,
+    _best_speaker,
+    assign_speakers,
 )
 from speech_to_text.core.segments import Segment, Word
 
