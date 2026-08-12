@@ -271,6 +271,13 @@ AUDIO_MINUTES_PER_100MB = 12.5  # Approx 12.5 minutes of audio per 100MB
 # Model loading overhead (time before transcription begins)
 TRANSCRIPTION_OVERHEAD_SECONDS = 20
 
+# Speaker identification is a second full pass over the audio, on top of
+# transcription. Measured at ~0.29x realtime on a 4-core CPU with the
+# sherpa-onnx pyannote + campplus models, and scaled by core count where used.
+# It is not derived from the Whisper calibration benchmark: different models,
+# different compute profile.
+DIARIZATION_REALTIME_FACTOR = 0.3
+
 # ============================================================================
 # Dependency Installation Configuration
 # ============================================================================

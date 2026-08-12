@@ -61,6 +61,8 @@ STRINGS = {
     # --- Step 2: model selection ---
     "choose_model": {"en": "Choose Model", "he": "בחירת מודל"},
     "recommended_badge": {"en": "RECOMMENDED", "he": "מומלץ"},
+    "identify_speakers": {"en": "Identify speakers", "he": "זהה דוברים"},
+    "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
     "transcription_failed": {"en": "Transcription failed: {message}", "he": "התמלול נכשל: {message}"},
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
 
@@ -96,6 +98,22 @@ STRINGS = {
     },
     "w_transcribing_seg": {"en": "Transcribing audio... segment {n}", "he": "מתמלל אודיו... מקטע {n}"},
     "w_transcription_done": {"en": "Transcription complete", "he": "התמלול הסתיים"},
+    "w_analyzing_audio": {"en": "Analyzing audio...", "he": "מנתח את האודיו..."},
+    "w_stereo_detected": {
+        "en": "Separate channel per speaker detected - exact speaker labels",
+        "he": "זוהה ערוץ נפרד לכל דובר - זיהוי דוברים מדויק",
+    },
+    "w_identifying_speakers": {"en": "Identifying speakers...", "he": "מזהה דוברים..."},
+    "w_downloading_diarization": {
+        "en": "Downloading speaker models (one time, ~36 MB)...",
+        "he": "מוריד מודלים לזיהוי דוברים (חד-פעמי, כ-36 MB)...",
+    },
+    # Shown when diarization failed. The transcript itself is fine, so this is
+    # phrased as a missing extra rather than an error.
+    "w_speakers_unavailable": {
+        "en": "Speaker identification unavailable - transcript saved without labels",
+        "he": "זיהוי דוברים אינו זמין - התמלול נשמר ללא תוויות",
+    },
     "w_formatting": {"en": "Formatting output...", "he": "מעצב את הפלט..."},
     "w_saving": {"en": "Saving output file...", "he": "שומר את קובץ הפלט..."},
     "w_complete": {"en": "Complete!", "he": "הושלם!"},

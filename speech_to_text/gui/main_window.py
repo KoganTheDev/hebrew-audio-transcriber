@@ -16,6 +16,7 @@ from PyQt5.QtCore import QThread, Qt
 from PyQt5.QtGui import QFont, QIcon
 
 from speech_to_text import config
+from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.gui import theme
 from speech_to_text.gui import i18n
@@ -349,6 +350,10 @@ class MainWindow(QMainWindow):
             self.selected_model,
             "cpu",  # Auto-detect would go here
             self.audio_duration,  # real PyAV-measured duration, for accurate progress
+            options=TranscriptionOptions(
+                identify_speakers=self.model_step.identify_speakers,
+                num_speakers=self.model_step.num_speakers,
+            ),
         )
         self.transcription_thread.progress.connect(self.transcription_step.update_progress)
         self.transcription_thread.finished.connect(self._on_transcription_complete)

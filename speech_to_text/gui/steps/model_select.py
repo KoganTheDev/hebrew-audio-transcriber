@@ -4,7 +4,7 @@ import logging
 
 from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QButtonGroup, QFrame,
-    QScrollArea, QWidget,
+    QScrollArea, QWidget, QCheckBox, QSpinBox,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -82,6 +82,11 @@ class ModelSelectStep(QFrame):
         models_layout.setSpacing(Spacing.XS + 2)
         models_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Built before the cards, not after: each card's time estimate depends
+        # on whether speaker identification is on, so the controls have to
+        # exist before _desc_text runs.
+        speaker_row = self._build_speaker_row()
+
         models_scroll = QScrollArea()
         models_scroll.setWidget(models_container)
         models_scroll.setWidgetResizable(True)
@@ -108,11 +113,70 @@ class ModelSelectStep(QFrame):
         # rather than the trailing spacer, so the card list grows with the
         # window instead of staying short and scrolling unnecessarily.
         layout.addWidget(models_scroll, 1)
+        layout.addWidget(speaker_row)
 
         # Scroll the recommended card into view on first show. It is no longer
         # guaranteed to be among the first few cards, and a user who never
         # scrolls should still see what the app is recommending.
         self._scroll_area = models_scroll
+
+    def _build_speaker_row(self) -> QFrame:
+        """
+        The "identify speakers" toggle and speaker count.
+
+        Sits below the model list because it applies to the run as a whole
+        rather than to any one model. The count is a spin box rather than free
+        text because telling the clustering step exactly how many people are
+        present is the single biggest accuracy lever in diarization, and a
+        typo'd value would quietly degrade every label.
+        """
+        row = QFrame()
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(Spacing.SM)
+
+        self.identify_speakers_check = QCheckBox(t("identify_speakers"))
+        self.identify_speakers_check.setChecked(True)
+        self.identify_speakers_check.setFont(Fonts.BODY)
+        self.identify_speakers_check.setStyleSheet(theme.text_qss("text_primary"))
+        layout.addWidget(self.identify_speakers_check)
+
+        self.speaker_count_label = QLabel(t("speaker_count"))
+        self.speaker_count_label.setFont(Fonts.BODY)
+        self.speaker_count_label.setStyleSheet(theme.text_qss("text_secondary"))
+        layout.addWidget(self.speaker_count_label)
+
+        self.speaker_count_spin = QSpinBox()
+        # Lower bound 2: diarizing a single speaker is a contradiction, and the
+        # app is for conversations. Upper bound 10 keeps the clustering
+        # meaningful - beyond that the count is realistically unknown.
+        self.speaker_count_spin.setRange(2, 10)
+        self.speaker_count_spin.setValue(2)
+        self.speaker_count_spin.setFont(Fonts.BODY)
+        layout.addWidget(self.speaker_count_spin)
+
+        layout.addStretch()
+
+        self.identify_speakers_check.toggled.connect(self._on_identify_toggled)
+        self._on_identify_toggled(True)
+        return row
+
+    def _on_identify_toggled(self, enabled: bool) -> None:
+        """Speaker count is meaningless when identification is off."""
+        self.speaker_count_label.setEnabled(enabled)
+        self.speaker_count_spin.setEnabled(enabled)
+        # Speaker identification adds a second pass over the audio, so every
+        # card's time estimate changes with this toggle.
+        self._refresh_desc_labels(recompute=True)
+
+    @property
+    def identify_speakers(self) -> bool:
+        return self.identify_speakers_check.isChecked()
+
+    @property
+    def num_speakers(self) -> int:
+        return self.speaker_count_spin.value()
 
     def show_error(self, key: str, params: dict) -> None:
         """
@@ -241,7 +305,9 @@ class ModelSelectStep(QFrame):
         """
         time_str = self._time_strs.get(name)
         if time_str is None:
-            time_est, _ = self.hardware.estimate_transcription_time(self.audio_duration, name)
+            time_est, _ = self.hardware.estimate_transcription_time(
+                self.audio_duration, name, identify_speakers=self.identify_speakers
+            )
             time_str = self.hardware.get_time_estimate_display(time_est)
             self._time_strs[name] = time_str
         return t("model_desc_est", desc=model_text(name, "description"), time=time_str)
@@ -276,6 +342,8 @@ class ModelSelectStep(QFrame):
             label.setAlignment(alignment)
         for badge in self._badges.values():
             badge.setText(t("recommended_badge"))
+        self.identify_speakers_check.setText(t("identify_speakers"))
+        self.speaker_count_label.setText(t("speaker_count"))
         self._refresh_desc_labels()
         if self._error_key is not None:
             self.error_label.setText(

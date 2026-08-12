@@ -264,7 +264,12 @@ class HardwareDetector:
         # the cheapest model anyway, since some result is better than none.
         return "tiny", "Minimum viable option for this hardware"
     
-    def estimate_transcription_time(self, audio_duration_seconds: int, model_size: str) -> Tuple[int, str]:
+    def estimate_transcription_time(
+        self,
+        audio_duration_seconds: int,
+        model_size: str,
+        identify_speakers: bool = False,
+    ) -> Tuple[int, str]:
         """
         Estimate transcription time based on audio duration, model, and hardware.
 
@@ -297,6 +302,16 @@ class HardwareDetector:
             device_desc = f"{self.cpu_count} CPU cores (estimating…)"
 
         processing_time = audio_duration_seconds * seconds_per_audio_second
+
+        if identify_speakers:
+            # Diarization is a second full pass over the audio, independent of
+            # the Whisper model. Measured at ~0.3x realtime on 4 cores; scaled
+            # by core count on the same basis as the placeholder path above.
+            cpu_factor = config.BASELINE_CPU_CORES / max(self.cpu_count, 1)
+            processing_time += (
+                audio_duration_seconds * config.DIARIZATION_REALTIME_FACTOR * cpu_factor
+            )
+
         estimated_seconds = int(processing_time + config.TRANSCRIPTION_OVERHEAD_SECONDS)
         
         # Generate reason string
