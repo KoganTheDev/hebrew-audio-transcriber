@@ -32,11 +32,24 @@ htmlcov/
 
 # Project Specific
 whisper_models/
+diarization_models/
 transcription*.txt
+
+# Media. Never commit recordings - this repo is public, and the audio it
+# processes is real conversations. Keep this list in sync with
+# config.SUPPORTED_FORMATS; *.m4a in particular was missing while
+# mp4a_test/ already held ~18 MB of real recordings.
 *.mp4
+*.m4a
+*.m4v
 *.wav
 *.mp3
 *.ogg
+*.mkv
+*.flac
+
+# Local audio fixtures used for accuracy evaluation (see tests/eval/).
+mp4a_test/
 
 # Environment Variables
 .env
