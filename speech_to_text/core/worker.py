@@ -95,6 +95,7 @@ def run_transcription_process(
     try:
         progress_queue.put(("progress", "w_initializing", {}, 2))
 
+        from speech_to_text.core import formatting
         from speech_to_text.core.transcriber import Transcriber
 
         def emit_progress(message, percent: int) -> None:
@@ -120,16 +121,16 @@ def run_transcription_process(
         retry_handler = _RetryStatusLogHandler(progress_queue)
         fw_logger.addHandler(retry_handler)
         try:
-            text = transcriber.transcribe(audio_file, total_duration_seconds=audio_duration_seconds)
+            segments = transcriber.transcribe(audio_file, total_duration_seconds=audio_duration_seconds)
         finally:
             fw_logger.removeHandler(retry_handler)
 
-        if text is None:
+        if segments is None:
             result_queue.put(("error", "err_transcription_failed", {}))
             return
 
         emit_progress(("w_formatting", {}), 92)
-        formatted_text = transcriber.format_output(text)
+        formatted_text = formatting.render(segments)
 
         emit_progress(("w_saving", {}), 97)
         with open(output_file, "w", encoding="utf-8") as f:

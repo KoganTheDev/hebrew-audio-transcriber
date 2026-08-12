@@ -7,6 +7,8 @@ import os
 from unittest.mock import MagicMock, patch
 from speech_to_text import config
 from speech_to_text.hardware_detection import HardwareDetector
+from speech_to_text.core.formatting import render
+from speech_to_text.core.segments import plain_text
 from speech_to_text.core.transcriber import Transcriber
 
 
@@ -87,10 +89,10 @@ class TestIntegration:
         assert transcriber.load_model() is True
         
         # Transcribe
-        result = transcriber.transcribe(sample_audio_path)
-        assert result is not None
-        assert "Hello" in result
-        
+        segments = transcriber.transcribe(sample_audio_path)
+        assert segments is not None
+        assert "Hello" in plain_text(segments)
+
         # Format output
-        formatted = transcriber.format_output(result)
+        formatted = render(segments)
         assert formatted is not None
