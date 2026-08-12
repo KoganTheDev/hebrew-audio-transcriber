@@ -114,6 +114,7 @@ STRINGS = {
         "en": "Speaker identification unavailable - transcript saved without labels",
         "he": "זיהוי דוברים אינו זמין - התמלול נשמר ללא תוויות",
     },
+    "w_correcting_terms": {"en": "Checking Hebrew terms...", "he": "בודק מונחים בעברית..."},
     "w_formatting": {"en": "Formatting output...", "he": "מעצב את הפלט..."},
     "w_saving": {"en": "Saving output file...", "he": "שומר את קובץ הפלט..."},
     "w_complete": {"en": "Complete!", "he": "הושלם!"},

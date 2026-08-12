@@ -50,6 +50,11 @@ transcription*.txt
 
 # Local audio fixtures used for accuracy evaluation (see tests/eval/).
 mp4a_test/
+eval_output/
+
+# The user's own term list is personal vocabulary, not project content.
+# hebrew_terms.example.txt is the tracked template.
+hebrew_terms.txt
 
 # Environment Variables
 .env

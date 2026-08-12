@@ -62,6 +62,8 @@ class TranscriptionThread(QThread):
         # has no access to i18n and does not know the UI language.
         if self.options.speaker_label is None and self.options.identify_speakers:
             self.options.speaker_label = t("speaker_label")
+        if self.options.terms_file is None:
+            self.options.terms_file = config.TERMS_FILENAME
         self._is_running = True
         self._process: Optional[multiprocessing.Process] = None
         logger.debug(f"TranscriptionThread created: {os.path.basename(audio_file)}")

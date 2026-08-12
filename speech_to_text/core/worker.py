@@ -151,6 +151,8 @@ def run_transcription_process(
         if not two_party:
             _identify_speakers(segments, channels, options, emit_progress)
 
+        _correct_hebrew(segments, options, emit_progress)
+
         emit_progress(("w_formatting", {}), 92)
         formatted_text = formatting.render(
             segments,
@@ -260,3 +262,32 @@ def _identify_speakers(segments, channels, options, emit_progress):
     except Exception as e:
         logger.warning(f"Speaker identification skipped: {e}", exc_info=True)
         emit_progress(("w_speakers_unavailable", {}), 92)
+
+
+def _correct_hebrew(segments, options, emit_progress):
+    """
+    Fix misrecognised domain terms, in place.
+
+    A no-op unless the user has written a term list. Like diarization, any
+    failure here costs the correction and nothing else - the transcript is
+    already complete by this point and must not be put at risk by an optional
+    tidying step.
+    """
+    terms_file = options.terms_file
+    if not terms_file or not segments:
+        return
+
+    try:
+        from speech_to_text.core import hebrew_correct
+
+        terms = hebrew_correct.TermList.load(terms_file)
+        if not len(terms):
+            return
+
+        emit_progress(("w_correcting_terms", {}), 92)
+        changes = hebrew_correct.correct(segments, terms)
+        if changes:
+            logger.info(f"Applied {len(changes)} Hebrew term correction(s)")
+
+    except Exception as e:
+        logger.warning(f"Hebrew term correction skipped: {e}", exc_info=True)

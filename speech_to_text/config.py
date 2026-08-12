@@ -212,6 +212,12 @@ SENTENCE_ENDINGS = r"[.!?]"
 
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
 OUTPUT_FILENAME = "transcription.txt"
+
+# User-maintained list of domain terms (names, places, jargon) that a general
+# model reliably mishears. One term per line, UTF-8, "#" for comments. Looked
+# for in the working directory; absent means the correction pass does nothing,
+# which is the intended default - see core/hebrew_correct.py.
+TERMS_FILENAME = "hebrew_terms.txt"
 CHECKPOINT_FILENAME = "transcription_checkpoint.txt"
 
 # ============================================================================

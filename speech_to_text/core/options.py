@@ -45,3 +45,10 @@ class TranscriptionOptions:
     # speakers is far more robust than inferring the count from a similarity
     # threshold. -1 means "unknown, infer it".
     num_speakers: int = 2
+
+    # --- Hebrew term correction -------------------------------------------
+    # Path to a user-maintained list of domain terms (names, places, jargon).
+    # Absent or empty file means the correction pass does nothing, which is the
+    # intended default - see core/hebrew_correct.py for why a general
+    # dictionary would make Hebrew transcripts worse rather than better.
+    terms_file: Optional[str] = None
