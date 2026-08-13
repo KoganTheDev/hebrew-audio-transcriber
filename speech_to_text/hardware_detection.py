@@ -3,10 +3,10 @@ Hardware Detection Module
 Detects CPU/GPU specs and calculates estimated transcription time.
 """
 
+import logging
 import platform
 import subprocess
-import logging
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
 
 from speech_to_text import config
 from speech_to_text.core.calibration import RELATIVE_COMPUTE_COST, load_cached_tiny_rtf
@@ -18,6 +18,22 @@ try:
 except ImportError:
     logger.debug("psutil not available - using default hardware specs")
     psutil = None
+
+
+def _required_ram_gb(model_size: str, default: int = 5) -> int:
+    """
+    Parse a model's RAM requirement out of config.MODELS ("3 GB" -> 3).
+
+    config stores it as display text because that's what the model cards show.
+    Parsing it here keeps a single source of truth; an unparseable or unknown
+    entry falls back to the mid-range default rather than raising, since a
+    wrong estimate is much better than a crashed hardware probe.
+    """
+    entry = config.MODELS.get(model_size)
+    if not entry:
+        return default
+    digits = "".join(c for c in str(entry.get("ram_required", "")) if c.isdigit())
+    return int(digits) if digits else default
 
 
 class HardwareDetector:
@@ -138,6 +154,10 @@ class HardwareDetector:
             "small": {"cpu": 540, "cuda": 60},
             "medium": {"cpu": 1200, "cuda": 120},
             "large": {"cpu": 2400, "cuda": 240},
+            # Turbo's 4-layer decoder is what makes it cheaper than medium
+            # despite having more parameters overall.
+            "ivrit-turbo": {"cpu": 900, "cuda": 90},
+            "ivrit-large": {"cpu": 2400, "cuda": 240},
         }
         
         if model_size not in speeds:
@@ -181,16 +201,13 @@ class HardwareDetector:
         Check if system can run given model size.
         Returns: (can_run, reason)
         """
-        ram_required = {
-            "tiny": 1,
-            "base": 2,
-            "small": 3,
-            "medium": 5,
-            "large": 8,
-        }
-        
-        required = ram_required.get(model_size, 5)
-        
+        # Read from config.MODELS rather than a parallel table. A hardcoded
+        # copy here would silently report the wrong requirement for any model
+        # added later - and since recommend_model gates on this, an under-stated
+        # requirement means recommending a model the machine cannot actually
+        # load.
+        required = _required_ram_gb(model_size)
+
         if self.ram_gb < required:
             return False, f"Insufficient RAM: {self.ram_gb:.1f}GB available, {required}GB required"
         
@@ -247,7 +264,12 @@ class HardwareDetector:
         # the cheapest model anyway, since some result is better than none.
         return "tiny", "Minimum viable option for this hardware"
     
-    def estimate_transcription_time(self, audio_duration_seconds: int, model_size: str) -> Tuple[int, str]:
+    def estimate_transcription_time(
+        self,
+        audio_duration_seconds: int,
+        model_size: str,
+        identify_speakers: bool = False,
+    ) -> Tuple[int, str]:
         """
         Estimate transcription time based on audio duration, model, and hardware.
 
@@ -280,6 +302,16 @@ class HardwareDetector:
             device_desc = f"{self.cpu_count} CPU cores (estimating…)"
 
         processing_time = audio_duration_seconds * seconds_per_audio_second
+
+        if identify_speakers:
+            # Diarization is a second full pass over the audio, independent of
+            # the Whisper model. Measured at ~0.3x realtime on 4 cores; scaled
+            # by core count on the same basis as the placeholder path above.
+            cpu_factor = config.BASELINE_CPU_CORES / max(self.cpu_count, 1)
+            processing_time += (
+                audio_duration_seconds * config.DIARIZATION_REALTIME_FACTOR * cpu_factor
+            )
+
         estimated_seconds = int(processing_time + config.TRANSCRIPTION_OVERHEAD_SECONDS)
         
         # Generate reason string

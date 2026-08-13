@@ -3,14 +3,17 @@
 import os
 import time
 import logging
+import webbrowser
+from pathlib import Path
 
-from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QFrame
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QFrame
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 
 from speech_to_text.gui import theme
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+from speech_to_text.gui.widgets import IconTextButton
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +113,24 @@ class TranscriptionStep(QFrame):
         self.result_path.setAlignment(Qt.AlignCenter)
         self.result_path.setWordWrap(True)
         result_layout.addWidget(self.result_path)
+
+        # The output stopped being a text file and became a small application:
+        # it is editable, it names speakers, it exports. Ending the run by
+        # printing a path and leaving the user to find it in Explorer wastes
+        # that. The button opens it in the default browser, which is where it
+        # is meant to be read.
+        open_row = QHBoxLayout()
+        open_row.addStretch()
+        self.open_button = IconTextButton()
+        self.open_button.setText(t("open_transcript"))
+        self.open_button.set_icon_spec("file", "left")
+        self.open_button.set_text_colors(COLORS['bg_primary'], disabled=COLORS['text_tertiary'])
+        self.open_button.setStyleSheet(theme.button_primary_qss())
+        self.open_button.setCursor(Qt.PointingHandCursor)
+        self.open_button.clicked.connect(self._open_result)
+        open_row.addWidget(self.open_button)
+        open_row.addStretch()
+        result_layout.addLayout(open_row)
 
         self.result_widget.hide()
         layout.addWidget(self.result_widget)
@@ -255,10 +276,28 @@ class TranscriptionStep(QFrame):
         self.result_widget.show()
         self.result_path.setText(t("saved_to", path=self._result_path_value))
 
+    def _open_result(self):
+        """
+        Open the finished transcript in the default browser.
+
+        webbrowser rather than os.startfile: the output is HTML, and the
+        association for .html is the browser on every platform this runs on,
+        while startfile is Windows-only. A failure here is not worth an error
+        dialog - the path is on screen either way, so it is logged and the
+        user can still open it themselves.
+        """
+        if not self._result_path_value:
+            return
+        try:
+            webbrowser.open(Path(self._result_path_value).as_uri())
+        except Exception as e:
+            logger.warning(f"Could not open transcript in a browser: {e}")
+
     def retranslate(self):
         """Re-render all text in the current UI language (live toggle)."""
         self.title.setText(t("transcribing_title"))
         self.success_msg.setText(t("transcription_complete"))
+        self.open_button.setText(t("open_transcript"))
         self.status_label.setText(self._render_status())
         if self._file_info_args is not None:
             self.set_file_info(*self._file_info_args)

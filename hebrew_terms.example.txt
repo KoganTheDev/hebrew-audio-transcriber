@@ -1,0 +1,45 @@
+# Hebrew term list - domain vocabulary the transcription model gets wrong.
+#
+# Copy this file to "hebrew_terms.txt" (next to where you run the app) and
+# replace the examples with your own terms. If that file does not exist, or is
+# empty, the correction pass does nothing at all.
+#
+# One term per line, UTF-8. Lines starting with "#" are ignored.
+#
+# WHAT TO PUT HERE
+#
+# Words a general speech model has no way to know: people's names, place names,
+# company and organisation names, project code names, professional jargon.
+# These are exactly the words that come out wrong, and exactly the words no
+# dictionary can fix.
+#
+# WHAT NOT TO PUT HERE
+#
+# Ordinary Hebrew vocabulary. This is not a spell checker and adding common
+# words makes it worse, not better. Unvocalised Hebrew is dense - חתם, חתן and
+# חתך are all one letter apart and all real words - so the more ordinary words
+# are listed, the more chances there are to "correct" something that was
+# already right.
+#
+# HOW IT DECIDES
+#
+# Only words the model itself was unsure about are considered. Among those,
+# a term is substituted only when it is clearly the closest match and clearly
+# beats the runner-up; ties are left alone. Prefixes (ו ב כ ל מ ש ה) are
+# handled, so listing ירושלים also covers בירושלים and ולירושלים.
+#
+# Every substitution is written to speech_to_text.log as
+# "Hebrew correction: <before> -> <after>", so you can check what it did and
+# remove any term that misfires.
+
+# --- Example: place names ---
+קיסריה
+ירושלים
+באר שבע
+
+# --- Example: names ---
+יובל קוגן
+
+# --- Example: organisations and jargon ---
+בראודה
+מכללת בראודה

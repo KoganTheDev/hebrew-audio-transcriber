@@ -49,6 +49,26 @@ RELATIVE_COMPUTE_COST = {
     "small": 244 / _TINY_PARAMS,
     "medium": 769 / _TINY_PARAMS,
     "large": 1550 / _TINY_PARAMS,
+    # The ivrit.ai models are fine-tunes, so they cost the same as the Whisper
+    # architecture they were tuned from - a fine-tune changes weights, not
+    # shape. ivrit-large is large-v3, hence an identical cost.
+    #
+    # Turbo is the one place the parameter-count proxy breaks down badly enough
+    # to need overriding. It keeps large-v3's encoder but cuts the decoder from
+    # 32 layers to 4. Decoding is autoregressive - one sequential pass per
+    # token - so it dominates wall-clock time in a way its share of the
+    # parameter count (809M of 1550M) does not reflect. Costing turbo by
+    # parameters alone put it just above "medium", which had the recommender
+    # skipping straight past it to medium on long files, i.e. choosing a model
+    # that is both slower in practice and worse at Hebrew.
+    #
+    # _TURBO_SPEEDUP is empirical rather than derived: the calibration
+    # benchmark only ever measures "tiny", so every other entry here is a
+    # prediction, and for turbo the honest prediction comes from published
+    # large-v3-vs-turbo throughput comparisons (~5-6x) rather than from
+    # parameter counts.
+    "ivrit-turbo": (1550 / _TINY_PARAMS) / 5.5,
+    "ivrit-large": 1550 / _TINY_PARAMS,
 }
 
 

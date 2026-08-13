@@ -3,27 +3,35 @@ Main window for the Speech-to-Text Transcriber GUI.
 3-step flow: Select File → Choose Model → Transcribe
 """
 
+import logging
 import os
 import sys
-import logging
-from typing import Optional
+from typing import List, Optional
 
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QMessageBox, QFrame, QStackedWidget, QDesktopWidget
-)
-from PyQt5.QtCore import QThread, Qt
+from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtWidgets import (
+    QDesktopWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from speech_to_text import config
-from speech_to_text.hardware_detection import HardwareDetector
-from speech_to_text.gui import theme
-from speech_to_text.gui import i18n
+from speech_to_text.core.options import TranscriptionOptions
+from speech_to_text.gui import i18n, theme
 from speech_to_text.gui.i18n import t
+from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.theme import COLORS, Fonts
-from speech_to_text.gui.steps import Step, FileSelectStep, ModelSelectStep, TranscriptionStep
-from speech_to_text.gui.threads import TranscriptionThread, CalibrationThread
+from speech_to_text.gui.threads import CalibrationThread, TranscriptionThread
 from speech_to_text.gui.widgets import IconTextButton
+from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +54,10 @@ class MainWindow(QMainWindow):
         self.hardware = HardwareDetector()
         self.current_step = Step.FILE_SELECT
         self.transcription_thread: Optional[QThread] = None
-        self.selected_file: Optional[str] = None
+        self.selected_files: List[str] = []
         self.selected_model: Optional[str] = None
+        # Total across every selected file - what should drive the model
+        # recommendation, since the estimate has to cover the whole batch.
         self.audio_duration: int = 0
         self.calibration_thread: Optional[QThread] = None
 
@@ -150,7 +160,7 @@ class MainWindow(QMainWindow):
 
         # Create steps
         self.file_step = FileSelectStep(self.hardware)
-        self.file_step.file_selected.connect(self._on_file_selected)
+        self.file_step.files_selected.connect(self._on_files_selected)
 
         self.model_step = ModelSelectStep(self.hardware)
         self.model_step.model_selected.connect(self._on_model_selected)
@@ -281,12 +291,12 @@ class MainWindow(QMainWindow):
             btn.style().polish(btn)
             btn.update()
 
-    def _on_file_selected(self, file_path: str, duration: int):
-        """Handle file selection."""
-        self.selected_file = file_path
-        self.audio_duration = duration
-        self.next_btn.setEnabled(True)
-        logger.debug(f"File selected: {file_path} ({duration}s)")
+    def _on_files_selected(self, file_paths: list, total_duration: int):
+        """Handle the file list changing (add, remove, or a folder drop)."""
+        self.selected_files = list(file_paths)
+        self.audio_duration = total_duration
+        self.next_btn.setEnabled(bool(self.selected_files))
+        logger.debug(f"Files selected: {len(self.selected_files)} file(s), {total_duration}s total")
 
     def _on_model_selected(self, model: str):
         """Handle model selection."""
@@ -300,7 +310,7 @@ class MainWindow(QMainWindow):
             self.current_step = Step.FILE_SELECT
             self.stacked_widget.setCurrentIndex(0)
             self.back_btn.hide()
-            self.next_btn.setEnabled(self.selected_file is not None)
+            self.next_btn.setEnabled(bool(self.selected_files))
         logger.debug(f"Navigated to: {self.current_step}")
 
     def _go_next(self):
@@ -338,17 +348,24 @@ class MainWindow(QMainWindow):
         self.next_btn.hide()
         self.cancel_btn.show()
 
-        filename = os.path.basename(self.selected_file)
-        self.transcription_step.set_file_info(filename, self.selected_model)
+        if len(self.selected_files) == 1:
+            file_summary = os.path.basename(self.selected_files[0])
+        else:
+            file_summary = t("files_count_label", count=len(self.selected_files))
+        self.transcription_step.set_file_info(file_summary, self.selected_model)
         self.transcription_step.start()
 
-        logger.info(f"Starting transcription: {filename} with {self.selected_model} model")
+        logger.info(f"Starting transcription: {file_summary} with {self.selected_model} model")
 
         self.transcription_thread = TranscriptionThread(
-            self.selected_file,
+            self.selected_files,
             self.selected_model,
             "cpu",  # Auto-detect would go here
-            self.audio_duration,  # real PyAV-measured duration, for accurate progress
+            self.file_step.durations,  # real PyAV-measured durations, for accurate progress
+            options=TranscriptionOptions(
+                identify_speakers=self.model_step.identify_speakers,
+                num_speakers=self.model_step.num_speakers,
+            ),
         )
         self.transcription_thread.progress.connect(self.transcription_step.update_progress)
         self.transcription_thread.finished.connect(self._on_transcription_complete)
@@ -426,7 +443,7 @@ class MainWindow(QMainWindow):
         self.model_step.clear_error()
         self.current_step = Step.FILE_SELECT
         self.stacked_widget.setCurrentIndex(0)
-        self.selected_file = None
+        self.selected_files = []
         self.selected_model = None
         self.audio_duration = 0
         self.back_btn.hide()

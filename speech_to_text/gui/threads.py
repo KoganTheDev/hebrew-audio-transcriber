@@ -6,17 +6,18 @@ a separate OS process, per the DLL-conflict note below) back into Qt
 signals — neither does any heavy lifting itself.
 """
 
-import os
 import logging
 import multiprocessing
 import queue
-from typing import Optional
+from typing import List, Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from speech_to_text import config
-from speech_to_text.core.worker import run_transcription_process
 from speech_to_text.core.calibration import run_calibration_process
+from speech_to_text.core.options import TranscriptionOptions
+from speech_to_text.core.worker import run_transcription_process
+from speech_to_text.gui.i18n import document_strings, t
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +39,47 @@ class TranscriptionThread(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str, dict)
 
-    def __init__(self, audio_file: str, model_size: str, device: str, audio_duration_seconds: float = 0):
+    def __init__(
+        self,
+        audio_files: List[str],
+        model_size: str,
+        device: str,
+        durations: Optional[List[float]] = None,
+        options: Optional[TranscriptionOptions] = None,
+    ):
         super().__init__()
-        self.audio_file = audio_file
-        self.model_size = model_size
-        self.device = device
-        self.audio_duration_seconds = audio_duration_seconds
+        self.audio_files = audio_files
+        # Settings travel to the worker as one picklable object rather than a
+        # long positional argument list forwarded through Process(args=...).
+        # model_size/device/durations stay as explicit arguments because
+        # they are what callers actually vary per run.
+        self.options = options or TranscriptionOptions()
+        self.options.model_size = model_size
+        self.options.device = device
+        self.options.audio_durations = durations or [0.0] * len(audio_files)
+        # Speaker labels and the failed-file notice must be rendered here, in
+        # the GUI process: the worker has no access to i18n and does not
+        # know the UI language (see core/worker.py's module docstring).
+        if self.options.speaker_label is None and self.options.identify_speakers:
+            self.options.speaker_label = t("speaker_label")
+        if self.options.failed_label is None:
+            self.options.failed_label = t("file_failed_notice")
+        # Same reason again, for the transcript page's own buttons and labels.
+        if not self.options.ui_strings:
+            self.options.ui_strings = document_strings()
+        if self.options.terms_file is None:
+            self.options.terms_file = config.TERMS_FILENAME
         self._is_running = True
         self._process: Optional[multiprocessing.Process] = None
-        logger.debug(f"TranscriptionThread created: {os.path.basename(audio_file)}")
+        logger.debug(f"TranscriptionThread created: {len(audio_files)} file(s)")
+
+    @property
+    def model_size(self) -> str:
+        return self.options.model_size
+
+    @property
+    def device(self) -> str:
+        return self.options.device
 
     def run(self):
         """Launch the worker process and relay its progress/result as signals."""
@@ -62,8 +95,8 @@ class TranscriptionThread(QThread):
 
             self._process = multiprocessing.Process(
                 target=run_transcription_process,
-                args=(self.audio_file, self.model_size, self.device, output_file,
-                      progress_queue, result_queue, self.audio_duration_seconds),
+                args=(self.audio_files, output_file, self.options,
+                      progress_queue, result_queue),
                 daemon=True,
             )
             self._process.start()
@@ -146,10 +179,8 @@ class TranscriptionThread(QThread):
             self._process.terminate()
 
     def _get_output_path(self) -> str:
-        """Get output file path."""
-        input_dir = os.path.dirname(self.audio_file)
-        output_file = os.path.join(input_dir, config.OUTPUT_FILENAME)
-        return output_file
+        """Get output file path - named after the single file, or the batch's folder."""
+        return config.output_path_for(self.audio_files)
 
 
 class CalibrationThread(QThread):

@@ -3,10 +3,12 @@ Core Transcription Module
 Handles the actual transcription process.
 """
 
-import os
 import logging
-import re
-from typing import Optional, Callable
+from typing import Callable, List, Optional
+
+from speech_to_text import config
+from speech_to_text.core.formatting import format_mmss
+from speech_to_text.core.segments import Segment, Word
 
 try:
     from faster_whisper import WhisperModel
@@ -16,24 +18,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def _format_mmss(seconds) -> str:
-    """Format a seconds count as m:ss, tolerating non-numeric input."""
-    try:
-        total = max(int(seconds), 0)
-    except (TypeError, ValueError):
-        return "0:00"
-    minutes, secs = divmod(total, 60)
-    return f"{minutes}:{secs:02d}"
-
-
 class Transcriber:
     """Handles speech-to-text transcription."""
     
     def __init__(
         self,
-        model_size: str = "medium",
+        model_size: str = config.DEFAULT_MODEL,
         device: str = "cpu",
-        language: str = "he",
+        language: str = config.LANGUAGE,
         progress_callback: Optional[Callable] = None
     ):
         self.model_size = model_size
@@ -42,6 +34,20 @@ class Transcriber:
         self.progress_callback = progress_callback or self._default_callback
         self.model = None
         logger.debug(f"Transcriber initialized: model={model_size}, device={device}, lang={language}")
+
+    @property
+    def model_repo(self) -> str:
+        """
+        The identifier faster-whisper actually loads.
+
+        config.MODELS keys are this app's own stable names; "repo" is the
+        upstream address (a bare Whisper size, or a HuggingFace repo holding
+        CTranslate2 weights). An unknown key falls through to itself so callers
+        can still pass a raw Whisper size or repo id directly - useful for the
+        evaluation harness, which benchmarks models that have no GUI card.
+        """
+        entry = config.MODELS.get(self.model_size)
+        return entry["repo"] if entry else self.model_size
         
     @staticmethod
     def _default_callback(message, progress: int):
@@ -65,9 +71,9 @@ class Transcriber:
             self.progress_callback(("w_loading_model", {"model": self.model_size}), 5)
 
             self.model = WhisperModel(
-                self.model_size,
+                self.model_repo,
                 device=self.device,
-                compute_type="int8",
+                compute_type=config.COMPUTE_TYPE,
                 download_root="./whisper_models"
             )
 
@@ -80,12 +86,18 @@ class Transcriber:
             self.progress_callback(("w_error_loading", {"detail": str(e)}), 0)
             return False
     
-    def transcribe(self, audio_file: str, total_duration_seconds: float = 0) -> Optional[str]:
+    def transcribe(
+        self, audio_file, total_duration_seconds: float = 0
+    ) -> Optional[List[Segment]]:
         """
-        Transcribe audio file to text.
+        Transcribe audio to structured segments.
 
         Args:
-            audio_file: Path to audio/video file
+            audio_file: Path to an audio/video file, or a float32 mono 16 kHz
+                numpy array. faster-whisper accepts either; the array form is
+                what lets the stereo channel-split path transcribe one
+                speaker's channel at a time without writing temp files
+                (see core.audio_source).
             total_duration_seconds: Real audio length (from probing the file
                 before transcription starts, see gui.audio_utils), used to
                 turn each segment's timestamp into an accurate percentage of
@@ -93,7 +105,9 @@ class Transcriber:
                 per-segment estimate.
 
         Returns:
-            Transcribed text or None if error
+            List of Segment (with per-word timings and confidences), or None
+            if error. Callers that just want text use
+            core.segments.plain_text.
         """
         if not self.model:
             logger.error("Model not loaded - call load_model() first")
@@ -110,14 +124,20 @@ class Transcriber:
             segments, info = self.model.transcribe(
                 audio_file,
                 language=self.language,
-                beam_size=5,
-                vad_filter=True,
+                beam_size=config.BEAM_SIZE,
+                # Per-word timings and confidences. Needed twice over: word
+                # boundaries are what let diarization attribute a speaker
+                # change that happens mid-segment, and word probabilities are
+                # what let the Hebrew correction pass touch only the words the
+                # model was unsure about.
+                word_timestamps=True,
+                vad_filter=config.VAD_FILTER,
                 vad_parameters=dict(min_silence_duration_ms=500)
             )
 
             logger.debug(f"Transcription info: {info}")
 
-            transcribed_text = ""
+            collected: List[Segment] = []
             segment_count = 0
 
             # 'segments' is a lazy generator — faster-whisper decodes one
@@ -134,18 +154,15 @@ class Transcriber:
                     pass  # Skip debug logging if segment attributes are problematic
 
                 if segment.text:
-                    # Add space before segment if not the first segment and text doesn't start with space
-                    if transcribed_text and not transcribed_text.endswith(" "):
-                        transcribed_text += " "
-                    transcribed_text += segment.text
+                    collected.append(_to_segment(segment))
 
                 segment_end = getattr(segment, "end", None)
                 if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
                     # Real progress: how far into the audio this segment ends.
                     fraction = min(segment_end / total_duration_seconds, 1.0)
                     message = ("w_transcribing_time", {
-                        "position": _format_mmss(segment_end),
-                        "total": _format_mmss(total_duration_seconds),
+                        "position": format_mmss(segment_end),
+                        "total": format_mmss(total_duration_seconds),
                     })
                 else:
                     # No reliable duration to measure against (shouldn't
@@ -158,9 +175,9 @@ class Transcriber:
                 progress = 15 + int(fraction * 75)
                 self.progress_callback(message, progress)
 
-            logger.info(f"✓ Transcription complete: {len(transcribed_text)} characters")
+            logger.info(f"✓ Transcription complete: {len(collected)} segments")
             self.progress_callback(("w_transcription_done", {}), 90)
-            return transcribed_text
+            return collected
 
         except Exception as e:
             logger.error(f"Transcription failed: {e}", exc_info=True)
@@ -168,15 +185,42 @@ class Transcriber:
             self.progress_callback(("w_error", {"detail": str(e)}), 0)
             return None
     
-    def format_output(self, text: str) -> str:
-        """Format output with sentence breaks."""
-        if not text:
-            return ""
-        
-        try:
-            sentences = re.split(r'(?<=[.!?])\s+', text)
-            sentences = [s.strip() for s in sentences if s.strip()]
-            return "\n".join(sentences)
-        except Exception as e:
-            logger.warning(f"Could not format output: {e}")
-            return text
+
+def _to_segment(raw) -> Segment:
+    """
+    Convert one faster-whisper Segment into our own Segment.
+
+    Every attribute is read defensively. faster-whisper's segment type has
+    changed shape across releases, `words` is None whenever word_timestamps
+    is off, and the test suite feeds in MagicMocks whose attributes are mocks
+    rather than numbers - none of which should be able to abort a
+    transcription that has otherwise succeeded. Missing timings degrade to
+    0.0, missing confidence degrades to 1.0 (i.e. "assume the model was sure",
+    so the correction pass leaves the word alone rather than mangling it on
+    the strength of absent data).
+    """
+    words = []
+    for raw_word in getattr(raw, "words", None) or []:
+        word_text = getattr(raw_word, "word", None)
+        if not isinstance(word_text, str):
+            continue
+        words.append(Word(
+            start=_as_float(getattr(raw_word, "start", None), 0.0),
+            end=_as_float(getattr(raw_word, "end", None), 0.0),
+            text=word_text,
+            probability=_as_float(getattr(raw_word, "probability", None), 1.0),
+        ))
+
+    return Segment(
+        start=_as_float(getattr(raw, "start", None), 0.0),
+        end=_as_float(getattr(raw, "end", None), 0.0),
+        text=raw.text,
+        words=words,
+    )
+
+
+def _as_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default

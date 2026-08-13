@@ -51,6 +51,16 @@ STRINGS = {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",
         "he": _RLM + "{filename} | {minutes} דק' {seconds} שנ' | {size} MB",
     },
+    # Summary line above the file list. Unlike file_info, this doesn't open
+    # with a filename - it opens with the count - so it needs no RLM anchor
+    # (the Hebrew string already starts with a strong-RTL character).
+    "files_summary": {
+        "en": "{count} files selected | Total: {minutes}m {seconds}s",
+        "he": "נבחרו {count} קבצים | סה\"כ: {minutes} דק' {seconds} שנ'",
+    },
+    # Short "N files" label - used as the filename slot of file_model_info
+    # (step 3's header) when a batch, rather than a single file, is running.
+    "files_count_label": {"en": "{count} files", "he": "{count} קבצים"},
     "file_dialog_title": {"en": "Select File", "he": "בחירת קובץ"},
     "file_dialog_filter": {"en": "Audio/Video Files", "he": "קובצי אודיו/וידאו"},
     "hw_cpu_cores": {"en": "CPU CORES", "he": "ליבות מעבד"},
@@ -61,6 +71,8 @@ STRINGS = {
     # --- Step 2: model selection ---
     "choose_model": {"en": "Choose Model", "he": "בחירת מודל"},
     "recommended_badge": {"en": "RECOMMENDED", "he": "מומלץ"},
+    "identify_speakers": {"en": "Identify speakers", "he": "זהה דוברים"},
+    "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
     "transcription_failed": {"en": "Transcription failed: {message}", "he": "התמלול נכשל: {message}"},
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
 
@@ -75,6 +87,72 @@ STRINGS = {
     "calculating": {"en": "calculating...", "he": "בחישוב..."},
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
     "saved_to": {"en": "Saved to:\n{path}", "he": "נשמר אל:\n" + _RLM + "{path}"},
+    "open_transcript": {"en": "Open transcript", "he": "פתיחת התמלול"},
+
+    # Speaker name template written into the transcript file itself, not shown
+    # in the GUI. Rendered here and passed to the worker as data: core/ has no
+    # access to this module (see core/worker.py) and cannot translate anything.
+    # {n} is 1-based - "Speaker 0" reads like a bug to a non-programmer.
+    "speaker_label": {"en": "Speaker {n}", "he": "דובר {n}"},
+
+    # Notice rendered into the HTML output itself for a batch file whose
+    # transcription failed - same "GUI renders, worker just embeds data"
+    # pattern as speaker_label. Deliberately has no {message} placeholder:
+    # unlike the transcription_failed banner below (a live error with a
+    # specific cause), this is a static notice with nothing more specific
+    # to say - the worker already logs the real exception.
+    "file_failed_notice": {
+        "en": "Transcription failed for this file.",
+        "he": "התמלול עבור קובץ זה נכשל.",
+    },
+
+    # --- Transcript document chrome -----------------------------------------
+    # The generated HTML is a small application with visible text of its own,
+    # and it is rendered in the worker process, which cannot translate. These
+    # are collected by TranscriptionThread and passed down as data, exactly
+    # like speaker_label and file_failed_notice. Keys must match the ones
+    # core/assets/transcript.js and core/formatting.py look up.
+    "doc_toolbar": {"en": "Transcript tools", "he": "כלי תמלול"},
+    "doc_search": {"en": "Search transcript", "he": "חיפוש בתמלול"},
+    "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
+    "doc_search_next": {"en": "Next match", "he": "התאמה הבאה"},
+    "doc_no_results": {"en": "No results", "he": "אין תוצאות"},
+    "doc_show_uncertain": {"en": "Uncertain words", "he": "מילים לא ודאיות"},
+    "doc_theme": {"en": "Theme", "he": "ערכה"},
+    "doc_toggle_theme": {"en": "Switch colour scheme", "he": "החלפת ערכת צבעים"},
+    "doc_save_copy": {"en": "Save a copy", "he": "שמירת עותק"},
+    "doc_status_saved": {"en": "Saved", "he": "נשמר"},
+    "doc_status_saving": {"en": "Saving...", "he": "שומר..."},
+    # The state the reader is usually in, and the one worth being precise
+    # about: the edit is safe in this browser, but the .html on disk does not
+    # contain it. A plain "Saved" there would imply the file had been updated,
+    # which is exactly what a page opened from file:// cannot do.
+    "doc_status_local": {"en": "Saved in browser", "he": "נשמר בדפדפן"},
+    "doc_status_error": {"en": "Could not save", "he": "השמירה נכשלה"},
+    "doc_files": {"en": "Files", "he": "קבצים"},
+    "doc_speakers": {"en": "Speakers", "he": "דוברים"},
+    "doc_apply_names_all": {
+        "en": "Use these names in all files",
+        "he": "השתמש בשמות האלה בכל הקבצים",
+    },
+    "doc_copy_turn": {"en": "Copy this turn", "he": "העתקת פסקה"},
+    "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
+    "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
+    "doc_play_pause": {"en": "Play or pause", "he": "נגן או השהה"},
+    "doc_plain_text": {"en": "Plain text", "he": "טקסט רגיל"},
+    "doc_plain_hint": {
+        "en": "to paste into another app",
+        "he": "להעתקה לאפליקציה אחרת",
+    },
+    "doc_opt_timestamps": {"en": "Timestamps", "he": "חותמות זמן"},
+    "doc_opt_speakers": {"en": "Speaker names", "he": "שמות דוברים"},
+    "doc_copy_all": {"en": "Copy all", "he": "העתקת הכול"},
+    "doc_confidence": {"en": "confidence", "he": "ביטחון"},
+    "doc_copied": {"en": "Copied", "he": "הועתק"},
+    "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
+    "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
+    "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
+    "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
 
     # --- Worker / thread progress messages (keys cross the process boundary) ---
     "w_starting_thread": {"en": "Starting...", "he": "מתחיל..."},
@@ -90,6 +168,27 @@ STRINGS = {
     },
     "w_transcribing_seg": {"en": "Transcribing audio... segment {n}", "he": "מתמלל אודיו... מקטע {n}"},
     "w_transcription_done": {"en": "Transcription complete", "he": "התמלול הסתיים"},
+    "w_analyzing_audio": {"en": "Analyzing audio...", "he": "מנתח את האודיו..."},
+    "w_stereo_detected": {
+        "en": "Separate channel per speaker detected - exact speaker labels",
+        "he": "זוהה ערוץ נפרד לכל דובר - זיהוי דוברים מדויק",
+    },
+    "w_identifying_speakers": {"en": "Identifying speakers...", "he": "מזהה דוברים..."},
+    "w_downloading_diarization": {
+        "en": "Downloading speaker models (one time, ~36 MB)...",
+        "he": "מוריד מודלים לזיהוי דוברים (חד-פעמי, כ-36 MB)...",
+    },
+    # Shown when diarization failed. The transcript itself is fine, so this is
+    # phrased as a missing extra rather than an error.
+    "w_speakers_unavailable": {
+        "en": "Speaker identification unavailable - transcript saved without labels",
+        "he": "זיהוי דוברים אינו זמין - התמלול נשמר ללא תוויות",
+    },
+    "w_correcting_terms": {"en": "Checking Hebrew terms...", "he": "בודק מונחים בעברית..."},
+    # Per-file status during a batch run. Opens with a Hebrew word in both
+    # languages, so - like w_loading_model above - it needs no RLM anchor
+    # even though {name} at the end is a filename.
+    "w_file_progress": {"en": "File {i}/{n}: {name}", "he": "קובץ {i} מתוך {n}: {name}"},
     "w_formatting": {"en": "Formatting output...", "he": "מעצב את הפלט..."},
     "w_saving": {"en": "Saving output file...", "he": "שומר את קובץ הפלט..."},
     "w_complete": {"en": "Complete!", "he": "הושלם!"},
@@ -172,38 +271,82 @@ MODEL_STRINGS = {
     },
     "medium": {
         "name": {"en": "Medium", "he": "Medium"},
-        "description": {"en": "High accuracy, recommended default", "he": "דיוק גבוה, ברירת המחדל המומלצת"},
+        "description": {"en": "High accuracy general-purpose model", "he": "מודל כללי בדיוק גבוה"},
         "pros": [
-            {"en": "✓ High accuracy for Hebrew (recommended!)", "he": "✓ דיוק גבוה לעברית (מומלץ!)"},
+            {"en": "✓ Good accuracy across languages", "he": "✓ דיוק טוב במגוון שפות"},
             {"en": "✓ Professional quality results", "he": "✓ תוצאות באיכות מקצועית"},
             {"en": "✓ Good balance of quality/time", "he": "✓ איזון טוב בין איכות לזמן"},
-            {"en": "✓ Best choice for most users", "he": "✓ הבחירה הטובה ביותר לרוב המשתמשים"},
         ],
         "cons": [
             {"en": "✗ Longer processing (~20-24 hours)", "he": "✗ עיבוד ממושך (כ-20-24 שעות)"},
             {"en": "✗ Requires 5 GB RAM", "he": "✗ דורש 5 GB זיכרון"},
-            {"en": "✗ Not for immediate results", "he": "✗ לא לתוצאות מיידיות"},
+            {"en": "✗ Slower and less accurate on Hebrew than Ivrit Turbo",
+             "he": "✗ איטי ופחות מדויק בעברית מ-Ivrit Turbo"},
         ],
         "time_estimate": {"en": "~20-24 hours", "he": "כ-20-24 שעות"},
-        "best_for": {"en": "Professional quality (RECOMMENDED)", "he": "איכות מקצועית (מומלץ)"},
+        "best_for": {"en": "General-purpose transcription", "he": "תמלול כללי"},
     },
     "large": {
         "name": {"en": "Large", "he": "Large"},
-        "description": {"en": "Highest accuracy, very slow", "he": "הדיוק הגבוה ביותר, איטי מאוד"},
+        "description": {"en": "Best general-purpose model, very slow",
+                        "he": "המודל הכללי הטוב ביותר, איטי מאוד"},
         "pros": [
-            {"en": "✓ Highest accuracy possible", "he": "✓ הדיוק הגבוה ביותר האפשרי"},
-            {"en": "✓ Best for critical/important content", "he": "✓ הטוב ביותר לתוכן חשוב וקריטי"},
-            {"en": "✓ Excellent Hebrew support", "he": "✓ תמיכה מצוינת בעברית"},
-            {"en": "✓ Fewest errors", "he": "✓ הכי מעט שגיאות"},
+            {"en": "✓ Highest accuracy of the general-purpose models",
+             "he": "✓ הדיוק הגבוה ביותר מבין המודלים הכלליים"},
+            {"en": "✓ Handles mixed-language audio well", "he": "✓ מתמודד היטב עם אודיו רב-לשוני"},
+            {"en": "✓ Fewest errors outside Hebrew", "he": "✓ הכי מעט שגיאות מחוץ לעברית"},
         ],
         "cons": [
             {"en": "✗ Very slow (40+ hours)", "he": "✗ איטי מאוד (מעל 40 שעות)"},
             {"en": "✗ High RAM requirement (8 GB)", "he": "✗ דרישת זיכרון גבוהה (8 GB)"},
             {"en": "✗ May run out of memory on limited systems", "he": "✗ הזיכרון עלול להיגמר במערכות מוגבלות"},
-            {"en": "✗ Not practical for most users", "he": "✗ לא מעשי לרוב המשתמשים"},
+            {"en": "✗ Still trained mostly on non-Hebrew speech",
+             "he": "✗ אומן בעיקר על דיבור שאינו עברית"},
         ],
         "time_estimate": {"en": "~40+ hours", "he": "מעל כ-40 שעות"},
-        "best_for": {"en": "Highest quality, critical content", "he": "האיכות הגבוהה ביותר, תוכן קריטי"},
+        "best_for": {"en": "Mixed-language or non-Hebrew content", "he": "תוכן רב-לשוני או שאינו עברית"},
+    },
+    "ivrit-turbo": {
+        "name": {"en": "Ivrit Turbo", "he": "Ivrit Turbo"},
+        "description": {"en": "Hebrew-tuned, fast and accurate (recommended)",
+                        "he": "מותאם לעברית, מהיר ומדויק (מומלץ)"},
+        "pros": [
+            {"en": "✓ Trained specifically on Hebrew speech", "he": "✓ אומן במיוחד על דיבור בעברית"},
+            {"en": "✓ Far fewer misheard Hebrew words than any model above",
+             "he": "✓ הרבה פחות מילים שגויות בעברית מכל מודל שמעליו"},
+            {"en": "✓ Turbo decoder: faster than Medium despite being larger",
+             "he": "✓ מפענח Turbo: מהיר מ-Medium למרות שהוא גדול יותר"},
+            {"en": "✓ Best choice for Hebrew content", "he": "✓ הבחירה הטובה ביותר לתוכן בעברית"},
+        ],
+        "cons": [
+            {"en": "✗ One-time 1.6 GB download on first use",
+             "he": "✗ הורדה חד-פעמית של 1.6 GB בשימוש הראשון"},
+            {"en": "✗ Requires 3 GB RAM", "he": "✗ דורש 3 GB זיכרון"},
+            {"en": "✗ Hebrew only - weaker on other languages than Large",
+             "he": "✗ עברית בלבד - חלש יותר משפות אחרות מ-Large"},
+        ],
+        "time_estimate": {"en": "~8-12 hours", "he": "כ-8-12 שעות"},
+        "best_for": {"en": "Hebrew transcription (RECOMMENDED)", "he": "תמלול בעברית (מומלץ)"},
+    },
+    "ivrit-large": {
+        "name": {"en": "Ivrit Large", "he": "Ivrit Large"},
+        "description": {"en": "Hebrew-tuned, highest accuracy, slow",
+                        "he": "מותאם לעברית, הדיוק הגבוה ביותר, איטי"},
+        "pros": [
+            {"en": "✓ Most accurate Hebrew option available",
+             "he": "✓ האפשרות המדויקת ביותר לעברית"},
+            {"en": "✓ Best for critical or hard-to-hear recordings",
+             "he": "✓ הטוב ביותר להקלטות קריטיות או קשות לשמיעה"},
+        ],
+        "cons": [
+            {"en": "✗ One-time 3.1 GB download on first use",
+             "he": "✗ הורדה חד-פעמית של 3.1 GB בשימוש הראשון"},
+            {"en": "✗ Very slow (40+ hours)", "he": "✗ איטי מאוד (מעל 40 שעות)"},
+            {"en": "✗ High RAM requirement (8 GB)", "he": "✗ דרישת זיכרון גבוהה (8 GB)"},
+            {"en": "✗ Rarely worth it over Ivrit Turbo", "he": "✗ לרוב לא שווה את זה לעומת Ivrit Turbo"},
+        ],
+        "time_estimate": {"en": "~40+ hours", "he": "מעל כ-40 שעות"},
+        "best_for": {"en": "Critical Hebrew content", "he": "תוכן קריטי בעברית"},
     },
 }
 
@@ -281,6 +424,27 @@ def t(key: str, **fmt) -> str:
         return key
     text = entry.get(_current_lang) or entry["en"]
     return text.format(**fmt) if fmt else text
+
+
+_DOC_PREFIX = "doc_"
+
+
+def document_strings() -> dict:
+    """
+    Every string the generated transcript page needs, in the current language.
+
+    Returned with the "doc_" prefix stripped, because the keys the renderer
+    and transcript.js look up are the bare names - the prefix only exists to
+    keep this group identifiable in STRINGS.
+
+    Placeholders are left unsubstituted on purpose: "Play from {t}" is filled
+    in per turn by the renderer, which knows the timestamp.
+    """
+    return {
+        key[len(_DOC_PREFIX):]: t(key)
+        for key in STRINGS
+        if key.startswith(_DOC_PREFIX)
+    }
 
 
 def model_text(model: str, field: str, index: int = None) -> str:

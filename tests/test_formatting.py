@@ -1,0 +1,484 @@
+"""
+Tests for transcript rendering.
+
+The bidi assertions here are deliberately at the codepoint level. Bracketed
+timestamps inside Hebrew text are exactly the kind of thing that looks fine in
+whichever editor you happen to open and silently regresses everywhere else, so
+"it rendered correctly on my machine" is not a test.
+"""
+
+import json
+import re
+from html.parser import HTMLParser
+
+import pytest
+
+from speech_to_text.core.formatting import (
+    LRI,
+    PDI,
+    RLM,
+    format_hhmmss,
+    format_plain,
+    format_range,
+    merge_turns,
+    render_html,
+)
+from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
+from speech_to_text.core.segments import Segment, TranscriptDocument, Word
+
+HE = "שלום עולם"
+
+
+def seg(start, end, text=HE, speaker=None, words=None):
+    return Segment(start=start, end=end, text=text, speaker=speaker, words=words or [])
+
+
+def word(text, probability):
+    return Word(start=0.0, end=1.0, text=text, probability=probability)
+
+
+def payload(rendered):
+    """Pull the page's data island back out, undoing the "<" escaping."""
+    raw = re.search(r'id="transcript-data">(.*?)</script>', rendered, re.S).group(1)
+    return json.loads(raw.replace("\u003c", "<"))
+
+
+def doc(name, segments, failed=False):
+    return TranscriptDocument(source_name=name, segments=segments, failed=failed)
+
+
+class _ReferenceCollector(HTMLParser):
+    """Collects every attribute through which an element would fetch something."""
+
+    FETCHING = {"src", "href", "srcset", "poster", "data", "action"}
+
+    def __init__(self):
+        super().__init__()
+        self.found = []
+
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if name.lower() not in self.FETCHING or not value:
+                continue
+            # A bare fragment points back into this same document - it is what
+            # the table of contents is made of, and fetches nothing.
+            if value.startswith("#"):
+                continue
+            self.found.append(f"<{tag} {name}={value!r}>")
+
+
+def _external_references(rendered):
+    parser = _ReferenceCollector()
+    parser.feed(rendered)
+    return parser.found
+
+
+class TestTimeFormatting:
+
+    @pytest.mark.parametrize("seconds,expected", [
+        (0, "0:00:00"),
+        (5, "0:00:05"),
+        (83, "0:01:23"),
+        (3600, "1:00:00"),
+        (3725, "1:02:05"),
+        (36000, "10:00:00"),
+    ])
+    def test_hhmmss(self, seconds, expected):
+        assert format_hhmmss(seconds) == expected
+
+    def test_negative_and_junk_do_not_raise(self):
+        assert format_hhmmss(-5) == "0:00:00"
+        assert format_hhmmss(None) == "0:00:00"
+        assert format_hhmmss("abc") == "0:00:00"
+
+
+class TestBidi:
+    """The RTL bracket/hyphen problem - see the module docstring in core/formatting."""
+
+    def test_range_is_wrapped_in_a_single_ltr_isolate(self):
+        """
+        One LRI/PDI pair around the whole range, not one per half: the hyphen
+        separating the two times is itself a neutral character sitting
+        between two LTR digit runs, the same shape that used to make the
+        mirrored brackets misplace themselves inside RTL text.
+        """
+        out = format_range(83, 90)
+        assert out.startswith(LRI)
+        assert out.endswith(PDI)
+        assert out.count(LRI) == 1 and out.count(PDI) == 1
+
+    def test_start_time_appears_before_end_time_in_logical_order(self):
+        """
+        Same "logical order is not display order" property the old bracket
+        test pinned, moved onto the separator: whatever a renderer does with
+        the hyphen, the characters are stored start-then-end.
+        """
+        out = format_range(83, 150)
+        assert out.index("1:23") < out.index("2:30")
+
+    def test_range_promotes_both_ends_together_past_an_hour(self):
+        """
+        A long file must not render one end promoted and the other bare -
+        "0:05:00 - 1:12:15" is legible, "5:00 - 72:15" reads as a wrong
+        number rather than an hour boundary.
+        """
+        assert format_range(300, 4335) == f"{LRI}0:05:00 - 1:12:15{PDI}"
+
+    def test_range_stays_unpromoted_under_an_hour(self):
+        assert format_range(32, 65) == f"{LRI}0:32 - 1:05{PDI}"
+
+    def test_control_characters_are_the_isolating_variants(self):
+        """
+        U+2066/U+2069, not the older U+202A/U+202C embeddings, which leak
+        direction into surrounding text instead of isolating from it.
+        """
+        assert ord(LRI) == 0x2066
+        assert ord(PDI) == 0x2069
+        assert ord(RLM) == 0x200F
+
+
+class TestTurnMerging:
+
+    def test_consecutive_close_segments_merge(self):
+        turns = merge_turns([seg(0, 3, "אחד"), seg(3.5, 6, "שתיים")])
+        assert len(turns) == 1
+        assert turns[0].text == "אחד שתיים"
+        assert turns[0].start == 0
+        assert turns[0].end == 6
+
+    def test_long_pause_splits_a_turn(self):
+        turns = merge_turns([seg(0, 3, "אחד"), seg(10, 12, "שתיים")])
+        assert len(turns) == 2
+
+    def test_speaker_change_splits_a_turn(self):
+        turns = merge_turns([
+            seg(0, 3, "אחד", speaker=0),
+            seg(3.2, 6, "שתיים", speaker=1),
+        ])
+        assert len(turns) == 2
+        assert [t.speaker for t in turns] == [0, 1]
+
+    def test_turn_is_capped_so_it_stays_scannable(self):
+        segments = [seg(i * 5, i * 5 + 5, f"חלק{i}") for i in range(30)]
+        turns = merge_turns(segments)
+        assert len(turns) > 1
+        assert all(t.end - t.start <= 30 for t in turns)
+
+    def test_blank_segments_are_skipped(self):
+        turns = merge_turns([seg(0, 1, "אחד"), seg(1, 2, "   "), seg(2, 3, "שתיים")])
+        assert len(turns) == 1
+        assert turns[0].text == "אחד שתיים"
+
+
+class TestFormatPlain:
+
+    def test_empty_input(self):
+        assert format_plain("") == ""
+
+    def test_splits_sentences(self):
+        assert format_plain("One. Two. Three!") == "One.\nTwo.\nThree!"
+
+
+class TestRenderHtml:
+    """
+    render_html() replaced the plain-text render() entirely - see the module
+    docstring for why a .txt file can't be fixed (direction has to be
+    declared, not guessed) and the plan this shipped from for the decisions
+    behind the HTML shape.
+    """
+
+    def test_document_shell(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        # data-doc-id rides on the same tag, so match the opening rather
+        # than the whole element.
+        assert '<html lang="he" dir="rtl"' in out
+        assert "data-doc-id=" in out
+        assert '<meta charset="utf-8">' in out
+
+    def test_one_section_per_document_with_filename_heading(self):
+        out = render_html([doc("first.wav", [seg(0, 1)]), doc("second.wav", [seg(0, 1)])])
+        assert out.count('<section class="source"') == 2
+        assert "<h1>first.wav</h1>" in out
+        assert "<h1>second.wav</h1>" in out
+
+    def test_toc_present_only_for_multiple_documents(self):
+        single = render_html([doc("only.wav", [seg(0, 1)])])
+        assert 'class="toc"' not in single
+
+        multi = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
+        assert 'class="toc"' in multi
+
+    def test_toc_anchors_resolve_to_existing_section_ids(self):
+        out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
+        assert 'href="#src-0"' in out and 'id="src-0"' in out
+        assert 'href="#src-1"' in out and 'id="src-1"' in out
+
+    def test_one_article_per_merged_turn(self):
+        segments = [seg(0, 2, "אחד"), seg(30, 32, "שתיים")]
+        assert len(merge_turns(segments)) == 2
+        out = render_html([doc("a.wav", segments)])
+        assert out.count('<article class="turn"') == 2
+
+    def test_sentence_heavy_turn_yields_multiple_paragraphs(self):
+        out = render_html([doc("a.wav", [seg(0, 1, "אחד. שתיים. שלוש.")])])
+        assert out.count("<p>") == 3
+
+    def test_timestamp_has_ltr_direction_and_isolate_characters(self):
+        """
+        The timestamp is a button that seeks and bounds playback, but the
+        bidi contract is unchanged: dir="ltr" is what the browser lays out
+        on, and the isolate characters keep copied plain text ordered
+        correctly outside the browser. Both, not either.
+        """
+        out = render_html([doc("a.wav", [seg(83, 90)])])
+        assert '<button class="ts" dir="ltr"' in out
+        assert f'{LRI}1:23 - 1:30{PDI}' in out
+
+    def test_timestamp_button_carries_both_playback_bounds(self):
+        out = render_html([doc("a.wav", [seg(83, 90)])])
+        assert 'data-start="83.00"' in out
+        assert 'data-end="90.00"' in out
+
+    def test_speaker_numbering_is_one_based(self):
+        out = render_html([doc("a.wav", [seg(0, 2, speaker=0)])], speaker_label="Speaker {n}")
+        assert "Speaker 1" in out
+        assert "Speaker 0" not in out
+
+    def test_unattributed_segment_gets_no_speaker_span(self):
+        out = render_html([doc("a.wav", [seg(0, 2, speaker=None)])], speaker_label="דובר {n}")
+        assert 'class="spk"' not in out
+
+    def test_no_timestamps_no_speakers_gives_bare_paragraphs(self):
+        out = render_html([doc("a.wav", [seg(0, 1, "שלום עולם. מה שלומך?")])], timestamps=False)
+        assert "<h2>" not in out
+        assert "<p>שלום עולם.</p>" in out
+        assert "<p>מה שלומך?</p>" in out
+
+    def test_failed_document_renders_notice_and_surrounding_documents_still_render(self):
+        out = render_html([
+            doc("before.wav", [seg(0, 1, "אחד")]),
+            doc("broken.wav", [], failed=True),
+            doc("after.wav", [seg(0, 1, "שתיים")]),
+        ], failed_label="Transcription failed")
+        assert "<h1>before.wav</h1>" in out
+        assert "<h1>broken.wav</h1>" in out
+        assert "<h1>after.wav</h1>" in out
+        assert '<p class="failed">Transcription failed</p>' in out
+        assert "אחד" in out and "שתיים" in out
+
+    def test_escaping_prevents_live_script_injection(self):
+        out = render_html([doc("a.wav", [seg(0, 1, "<script>alert(1)</script>")])])
+        assert "<script>alert(1)</script>" not in out
+        assert "&lt;script&gt;" in out
+
+    def test_output_is_fully_offline(self):
+        """
+        This app's whole premise is offline operation - no CDN, no fonts, no
+        stylesheets, no scripts fetched from anywhere.
+
+        Asserted by walking the parsed attributes rather than grepping for
+        "src=", because the inlined script legitimately mentions that string
+        in its own comments and code. What matters is that no *element* points
+        at anything the browser would have to go and fetch.
+
+        Rendered with a pinned vista (rather than the default random choice)
+        so this test's own no-network guarantee doesn't depend on random.choice
+        happening to run at all - the backdrop's url(...) is exercised either
+        way once a vista exists on disk.
+        """
+        out = render_html([
+            doc("a.wav", [seg(0, 1, speaker=0)]),
+            doc("b.wav", [seg(0, 1)], failed=True),
+        ], speaker_label="Speaker {n}", failed_label="failed", vista="vista-01.webp")
+
+        loaders = _external_references(out)
+        assert loaders == [], f"document would fetch: {loaders}"
+        assert "http://" not in out
+        assert "https://" not in out
+
+        # A data: URI is not "external" and must keep passing - the property
+        # being protected is "this page fetches nothing", which holds equally
+        # whether the image bytes are inline or the element is absent. What
+        # must never appear is a url(...) that points off the page: not in a
+        # style="" attribute, and not inside the inlined <style> block either.
+        urls = re.findall(r'url\(\s*([^)]*?)\s*\)', out)
+        assert urls, "expected at least one url(...) - the pinned backdrop"
+        for raw in urls:
+            value = raw.strip("'\"")
+            assert value.startswith("data:"), f"non-data url(...) found: {raw!r}"
+
+
+class TestDataPayload:
+    """
+    The page carries its own data island: per-word confidences the renderer
+    would otherwise throw away, plus the already-translated chrome strings.
+    """
+
+    def test_low_confidence_words_are_published_with_probability(self):
+        segments = [seg(0, 4, "אחד שתיים שלוש", words=[
+            word("אחד", 0.99), word("שתיים", 0.30), word("שלוש", 0.95),
+        ])]
+        data = payload(render_html([doc("a.wav", segments)]))
+        assert data["low"]["0-0"] == [["שתיים", 0.3, 0]]
+
+    def test_confident_words_are_not_published(self):
+        segments = [seg(0, 4, "אחד שתיים", words=[word("אחד", 0.99), word("שתיים", 0.98)])]
+        data = payload(render_html([doc("a.wav", segments)]))
+        assert data["low"] == {}
+
+    def test_threshold_matches_the_hebrew_correction_pass(self):
+        """One number, one meaning: 'uncertain' must not drift between the two."""
+        data = payload(render_html([doc("a.wav", [seg(0, 1)])]))
+        assert data["threshold"] == CONFIDENCE_THRESHOLD
+
+    def test_repeated_word_is_flagged_only_where_it_was_uncertain(self):
+        """
+        The occurrence index is what stops a confident word being shaded just
+        because an identical string elsewhere in the turn was doubted.
+        """
+        segments = [seg(0, 4, "כן ודאי כן", words=[
+            word("כן", 0.99), word("ודאי", 0.97), word("כן", 0.20),
+        ])]
+        data = payload(render_html([doc("a.wav", segments)]))
+        assert data["low"]["0-0"] == [["כן", 0.2, 1]]
+
+    def test_payload_escapes_angle_brackets_so_it_cannot_close_the_script(self):
+        segments = [seg(0, 4, "x", words=[word("</script><b>", 0.1)])]
+        out = render_html([doc("a.wav", segments)])
+        assert "</script><b>" not in out
+        assert payload(out)["low"]["0-0"][0][0] == "</script><b>"
+
+    def test_ui_strings_are_carried_as_data_not_rendered_by_the_worker(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={"search": "חיפוש"})
+        assert payload(out)["strings"]["search"] == "חיפוש"
+        assert "חיפוש" in out
+
+
+class TestEditableDocument:
+
+    def test_turn_bodies_are_editable_and_labelled(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert 'contenteditable="true"' in out
+        assert 'role="textbox"' in out
+        assert 'aria-multiline="true"' in out
+
+    def test_turns_carry_stable_identity_and_start_time(self):
+        out = render_html([doc("a.wav", [seg(0, 2, "אחד"), seg(30, 32, "שתיים")])])
+        assert 'data-turn="0-0"' in out
+        assert 'data-turn="0-1"' in out
+        assert 'data-start="30.00"' in out
+
+    def test_doc_id_is_stable_within_a_render_and_unique_between_them(self):
+        """It keys the browser's saved edits, so a collision would cross-load them."""
+        def doc_id_of(rendered):
+            return re.search(r'data-doc-id="(\w+)"', rendered).group(1)
+
+        first = render_html([doc("a.wav", [seg(0, 1)])])
+        second = render_html([doc("a.wav", [seg(0, 1)])])
+        assert doc_id_of(first) != doc_id_of(second)
+
+        pinned = render_html([doc("a.wav", [seg(0, 1)])], doc_id="fixed")
+        assert 'data-doc-id="fixed"' in pinned
+
+    def test_speaker_span_carries_its_translated_fallback(self):
+        """The page cannot rebuild a translated label once a custom name is cleared."""
+        out = render_html([doc("a.wav", [seg(0, 1, speaker=0)])], speaker_label="Speaker {n}")
+        assert 'data-fallback="Speaker 1"' in out
+
+    def test_speakers_strip_lists_each_speaker_once(self):
+        segments = [seg(0, 2, "a", speaker=0), seg(10, 12, "b", speaker=1),
+                    seg(20, 22, "c", speaker=0)]
+        out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
+        assert out.count('class="speaker-row"') == 2
+
+    def test_no_speakers_means_no_speakers_strip(self):
+        out = render_html([doc("a.wav", [seg(0, 1, speaker=None)])], speaker_label="Speaker {n}")
+        assert 'class="speakers"' not in out
+
+    def test_audio_is_referenced_relatively_and_only_for_usable_documents(self):
+        out = render_html([
+            doc("meeting.m4a", [seg(0, 1)]),
+            doc("broken.mkv", [], failed=True),
+        ], failed_label="failed")
+        assert 'data-audio="meeting.m4a"' in out
+        assert 'data-audio="broken.mkv"' not in out
+
+    def test_plain_text_panel_exists_per_document(self):
+        out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
+        assert out.count('<section class="plain">') == 2
+
+    def test_plain_text_panel_is_not_collapsible(self):
+        """
+        It was the thing this document gets used for most (pasting the whole
+        recording elsewhere) and burying it inside a collapsed <details> was
+        the wrong trade - see _render_plain_html()'s docstring.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert "<details" not in out
+        assert "<summary" not in out
+
+    def test_file_bar_carries_filename_and_position(self):
+        out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
+        assert out.count('<header class="file-bar"') == 2
+        assert "data-file-accent=" in out
+        assert "1 / 2" in out and "2 / 2" in out
+
+    def test_toast_element_is_a_live_region(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<div id="toast" class="toast" role="status" aria-live="polite" hidden>' in out
+
+
+class TestInlinedAssets:
+
+    def test_stylesheet_and_script_are_inlined(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert "<style>" in out and "</style>" in out
+        assert "<script>" in out
+
+    def test_assets_are_readable_through_the_package(self):
+        """
+        They are package data, not source-tree files - an install that drops
+        them produces a silently broken document rather than an import error.
+        """
+        from speech_to_text.core.formatting import _asset
+        assert "body {" in _asset("transcript.css")
+        assert "localStorage" in _asset("transcript.js")
+
+
+class TestVistaBackdrop:
+    """
+    The photographic backdrop: one photo per render, embedded as a data URI so
+    the document stays a single file (see TestInlinedAssets and the offline
+    test above for why nothing here may point off the page).
+    """
+
+    def test_pinned_vista_appears_as_a_base64_data_uri(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+        assert 'class="backdrop"' in out
+        assert 'aria-hidden="true"' in out
+        assert "data:image/webp;base64," in out
+
+    def test_two_default_renders_can_differ(self):
+        """
+        random.choice over 32 photos failing to differ once in a reasonable
+        number of tries would be a red flag that selection isn't random at
+        all, not proof it's broken - so this samples rather than asserting on
+        a single pair.
+        """
+        renders = {render_html([doc("a.wav", [seg(0, 1)])]) for _ in range(10)}
+        assert len(renders) > 1
+
+    def test_missing_vistas_directory_renders_cleanly_with_no_backdrop(self, monkeypatch, tmp_path):
+        import speech_to_text.core.formatting as formatting
+
+        formatting._vista_names.cache_clear()
+        monkeypatch.setattr(formatting, "_VISTAS_DIR", tmp_path / "does-not-exist")
+        try:
+            out = render_html([doc("a.wav", [seg(0, 1)])])
+            assert 'class="backdrop"' not in out
+        finally:
+            formatting._vista_names.cache_clear()
+
+    def test_unknown_pinned_vista_raises(self):
+        with pytest.raises(ValueError):
+            render_html([doc("a.wav", [seg(0, 1)])], vista="not-a-real-file.webp")
