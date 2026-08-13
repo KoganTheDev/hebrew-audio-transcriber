@@ -1,14 +1,16 @@
 """Step 1: file selection with drag-and-drop and a hardware specs table."""
 
+import glob
 import os
 import logging
+from typing import Dict, List
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QFileDialog, QFrame,
+    QLabel, QFileDialog, QFrame, QPushButton, QScrollArea, QSizePolicy,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from speech_to_text import config
 from speech_to_text.hardware_detection import HardwareDetector
@@ -22,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class FileSelectStep(QFrame):
-    """Step 1: File Selection with drag-and-drop."""
+    """Step 1: File Selection with drag-and-drop, accepting one or many files."""
 
-    file_selected = pyqtSignal(str, int)  # file_path, duration_seconds
+    files_selected = pyqtSignal(list, int)  # [file_path, ...], total duration_seconds
 
     def __init__(self, hardware: HardwareDetector, parent=None):
         super().__init__(parent)
@@ -106,27 +108,47 @@ class FileSelectStep(QFrame):
 
         layout.addWidget(self.drop_zone)
 
-        # File info display (icon + label, replaces the old '✓ {filename}' text glyph)
-        file_info_row = QHBoxLayout()
-        file_info_row.setSpacing(Spacing.XS)
-        self.file_icon = QLabel()
-        self.file_icon.setStyleSheet("background: transparent;")
-        self.file_icon.setFixedSize(16, 16)
-        self.file_icon.hide()
-        file_info_row.addWidget(self.file_icon)
+        # Selected-files summary line, above the scrollable list.
+        self.summary_label = QLabel(t("no_file_selected"))
+        self.summary_label.setFont(Fonts.BODY)
+        self.summary_label.setStyleSheet(theme.text_qss("text_secondary"))
+        layout.addWidget(self.summary_label)
 
-        self.file_label = QLabel(t("no_file_selected"))
-        self.file_label.setFont(Fonts.BODY)
-        self.file_label.setStyleSheet(theme.text_qss("text_secondary"))
-        self.file_label.setMaximumHeight(18)
-        file_info_row.addWidget(self.file_label)
-        file_info_row.addStretch()
-        layout.addLayout(file_info_row)
+        # Selected-files list. A scroll area rather than a fixed row list -
+        # dropping a folder can queue an arbitrary number of files (see the
+        # "Out of scope" note: there is deliberately no cap), so the row
+        # count is unbounded even though the window is fixed-size.
+        self._rows_container = QWidget()
+        self._rows_layout = QVBoxLayout(self._rows_container)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(Spacing.XS)
+        self._rows_layout.addStretch()
+
+        self._rows_scroll = QScrollArea()
+        self._rows_scroll.setWidget(self._rows_container)
+        self._rows_scroll.setWidgetResizable(True)
+        self._rows_scroll.setFrameShape(QFrame.NoFrame)
+        self._rows_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._rows_scroll.setStyleSheet("background: transparent;")
+        self._rows_scroll.setMaximumHeight(140)
+        layout.addWidget(self._rows_scroll)
 
         layout.addStretch()
 
-        self.selected_file = None
-        self.selected_duration = 0
+        # Parallel to each other and to the row widgets, all keyed by path -
+        # simpler than one struct per file given how small this state is.
+        self.selected_files: List[str] = []
+        self._durations: Dict[str, int] = {}
+        self._rows: Dict[str, QFrame] = {}
+
+    @property
+    def total_duration(self) -> int:
+        return sum(self._durations.values())
+
+    @property
+    def durations(self) -> List[int]:
+        """Per-file durations, in the same order as selected_files."""
+        return [self._durations[path] for path in self.selected_files]
 
     def _reset_drop_zone(self):
         """Reset drop zone to its normal (non-drag) styling."""
@@ -140,49 +162,137 @@ class FileSelectStep(QFrame):
 
     def _drop(self, event: QDropEvent):
         self._reset_drop_zone()
-        files = [u.toLocalFile() for u in event.mimeData().urls()]
-        if files:
-            self._select_file(files[0])
+        paths = []
+        for url in event.mimeData().urls():
+            local_path = url.toLocalFile()
+            if not local_path:
+                continue
+            if os.path.isdir(local_path):
+                paths.extend(self._expand_directory(local_path))
+            else:
+                paths.append(local_path)
+        if paths:
+            self._add_files(paths)
+
+    @staticmethod
+    def _expand_directory(dir_path: str) -> List[str]:
+        """
+        A dropped folder expands to the supported audio directly inside it -
+        non-recursive (a subfolder of unrelated files shouldn't silently get
+        pulled in) and sorted (so batch order is predictable and reproducible
+        rather than whatever the filesystem happens to hand back).
+        """
+        found = []
+        for pattern in config.SUPPORTED_FORMATS:
+            found.extend(glob.glob(os.path.join(dir_path, pattern)))
+        return sorted(found)
 
     def _browse(self):
         file_filter = t("file_dialog_filter") + " (" + " ".join(config.SUPPORTED_FORMATS) + ")"
-        file_path, _ = QFileDialog.getOpenFileName(self, t("file_dialog_title"), "", file_filter)
-        if file_path:
-            self._select_file(file_path)
+        file_paths, _ = QFileDialog.getOpenFileNames(self, t("file_dialog_title"), "", file_filter)
+        if file_paths:
+            self._add_files(file_paths)
 
-    def _select_file(self, file_path: str):
-        self.selected_file = file_path
+    def _add_files(self, paths: List[str]) -> None:
+        """Append new files, skipping any already listed - a second drop never duplicates."""
+        changed = False
+        for path in paths:
+            if path in self.selected_files:
+                continue
+            self.selected_files.append(path)
+            self._durations[path] = get_audio_duration(path)
+            self._add_row(path)
+            changed = True
 
-        # Get duration
-        self.selected_duration = get_audio_duration(file_path)
+        if changed:
+            self._update_summary()
+            self.files_selected.emit(list(self.selected_files), self.total_duration)
 
-        # Update display
-        self.file_icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success']))
-        self.file_icon.show()
-        self._render_file_label()
-        self.file_label.setStyleSheet(theme.text_qss("success", "font-weight: 600;"))
+    def _add_row(self, path: str) -> None:
+        row = QFrame()
+        row.setStyleSheet("background: transparent;")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(Spacing.XS)
 
-        # Emit signal with file and duration
-        self.file_selected.emit(file_path, self.selected_duration)
+        icon = QLabel()
+        icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success']))
+        icon.setStyleSheet("background: transparent;")
+        icon.setFixedSize(16, 16)
+        row_layout.addWidget(icon)
 
-    def _render_file_label(self):
-        """Render the selected-file info line in the current UI language."""
-        size_mb = os.path.getsize(self.selected_file) / (1024 * 1024)
-        self.file_label.setText(t(
+        label = QLabel()
+        label.setFont(Fonts.BODY)
+        label.setStyleSheet(theme.text_qss("text_secondary"))
+        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        row_layout.addWidget(label, 1)
+
+        remove_btn = QPushButton()
+        remove_btn.setIcon(QIcon(svg_to_pixmap(ICONS["x"], 14, COLORS['text_tertiary'])))
+        remove_btn.setFixedSize(20, 20)
+        remove_btn.setCursor(Qt.PointingHandCursor)
+        hover_bg = COLORS['bg_tertiary']
+        remove_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            f"QPushButton:hover {{ background-color: {hover_bg}; border-radius: 4px; }}"
+        )
+        remove_btn.clicked.connect(lambda: self._remove_file(path))
+        row_layout.addWidget(remove_btn)
+
+        # Insert before the trailing stretch, which stays last so new rows
+        # keep appearing at the top of the list rather than after the spacer.
+        self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
+        self._rows[path] = row
+        self._render_row_label(path)
+
+    def _render_row_label(self, path: str) -> None:
+        row = self._rows.get(path)
+        if row is None:
+            return
+        label = row.layout().itemAt(1).widget()
+        duration = self._durations[path]
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        label.setText(t(
             "file_info",
-            filename=os.path.basename(self.selected_file),
-            minutes=self.selected_duration // 60,
-            seconds=self.selected_duration % 60,
+            filename=os.path.basename(path),
+            minutes=duration // 60,
+            seconds=duration % 60,
             size=f"{size_mb:.1f}",
         ))
 
+    def _remove_file(self, path: str) -> None:
+        row = self._rows.pop(path, None)
+        if row is not None:
+            self._rows_layout.removeWidget(row)
+            row.deleteLater()
+        self._durations.pop(path, None)
+        if path in self.selected_files:
+            self.selected_files.remove(path)
+
+        self._update_summary()
+        self.files_selected.emit(list(self.selected_files), self.total_duration)
+
+    def _update_summary(self) -> None:
+        if not self.selected_files:
+            self.summary_label.setText(t("no_file_selected"))
+            return
+        total = self.total_duration
+        self.summary_label.setText(t(
+            "files_summary",
+            count=len(self.selected_files),
+            minutes=total // 60,
+            seconds=total % 60,
+        ))
+
     def reset(self):
-        """Clear the selected file and restore the placeholder label."""
-        self.selected_file = None
-        self.selected_duration = 0
-        self.file_icon.hide()
-        self.file_label.setText(t("no_file_selected"))
-        self.file_label.setStyleSheet(theme.text_qss("text_secondary"))
+        """Clear every selected file and restore the placeholder label."""
+        for row in self._rows.values():
+            self._rows_layout.removeWidget(row)
+            row.deleteLater()
+        self._rows.clear()
+        self._durations.clear()
+        self.selected_files.clear()
+        self.summary_label.setText(t("no_file_selected"))
 
     def retranslate(self):
         """Re-render all text in the current UI language (live toggle)."""
@@ -195,10 +305,9 @@ class FileSelectStep(QFrame):
             label.setText(t(key))
         if self._hw_gpu_value_label is not None and not self._hw_has_gpu:
             self._hw_gpu_value_label.setText(t("hw_no_gpu"))
-        if self.selected_file is not None:
-            self._render_file_label()
-        else:
-            self.file_label.setText(t("no_file_selected"))
+        for path in self.selected_files:
+            self._render_row_label(path)
+        self._update_summary()
 
     def _create_hardware_table(self) -> QFrame:
         """Create a compact tabular system-info display (CPU / RAM / GPU)."""

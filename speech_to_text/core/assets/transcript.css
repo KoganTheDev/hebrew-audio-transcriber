@@ -1,0 +1,900 @@
+/* ===========================================================================
+   Transcript document styling.
+
+   Inlined into the generated HTML by core/formatting.py - it is never linked,
+   because the output has to stay a single self-contained file that works with
+   no network at all. Kept as a real .css file rather than a Python string so
+   it stays lintable and readable.
+
+   Visual register: "document" - quiet and paper-like. Generous whitespace,
+   hairline rules, almost no card chrome until you hover. Colour is confined
+   to the speaker accent so the page reads as prose rather than as an
+   interface. The alternative "console" register explored during design lives
+   in docs/mockups/style-console.css; swapping registers means replacing this
+   file, nothing else.
+
+   Rules being honoured deliberately (do not "tidy" these away):
+     - hover is never the only route to an action; see the (hover: none) block
+     - focus rings stay visible; :focus-visible is styled, never removed
+     - motion is transform/opacity only, and is disabled under
+       prefers-reduced-motion
+     - colour never carries meaning on its own - speaker colour sits on top of
+       the speaker's name, and low-confidence shading pairs a tint with a
+       dotted underline so it survives greyscale
+   =========================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #faf9f7;
+  --surface: transparent;
+  --surface-hover: #f2f0ec;
+  --text: #1c1b19;
+  --muted: #6b6862;
+  --rule: #e2dfd9;
+  --accent: #2f5d50;
+  --accent-text: #ffffff;
+  --focus: #1a6aa8;
+  --warn-bg: #fdf1d6;
+  /* #c08a1e measured 2.72:1 against --warn-bg - below the 3:1 minimum for a
+     non-text UI signal (the dotted underline is one of the two carriers of
+     the low-confidence meaning, alongside the tint, so it has to actually be
+     visible). Darkened to clear 3:1 without changing the warm-amber hue. */
+  --warn-line: #b47f1a;
+  --hit-bg: #ffe9a8;
+  --hit-current: #ffc94d;
+  /* --text over --hit-current is already 11.24:1 in light mode - the same
+     colour that works everywhere else works here too, so no override is
+     needed. Declared explicitly (rather than left implicit) so the light and
+     dark blocks stay symmetrical and a future palette change can't silently
+     reintroduce the dark-mode failure below. */
+  --hit-current-text: var(--text);
+
+  --spk-0: #3a6ea5;
+  /* Darkened from #a4632a / #4a7c59: at the original values, the speaker
+     name text fell to 4.20:1 / 4.27:1 against --surface-hover (the hover
+     background under the accent border), below the 4.5:1 minimum for real
+     content. Darkened just enough to clear it on both --bg and
+     --surface-hover; same hue, so the speaker still reads as "that colour". */
+  --spk-1: #98592a;
+  --spk-2: #467654;
+  --spk-3: #7d4f8c;
+  /* Four more added for speaker recolouring/reassignment - see
+     SPEAKER_PALETTE_SIZE in formatting.py. Chosen and measured the same way
+     as the first four (>= 4.5:1 against --surface-hover, tested in
+     tests/test_transcript_styles.py's PAIRS table): a colour that "reads
+     nicely" but was never run through _relative_luminance is exactly the
+     failure a closed, verified palette exists to prevent. */
+  --spk-4: #a13f63;
+  --spk-5: #166a5c;
+  --spk-6: #6b5fa8;
+  --spk-7: #7a6a1f;
+
+  /* How strongly the backdrop photo shows through. Text no longer sits
+     directly on it everywhere - the reading column is now a translucent
+     panel (--panel-opacity below) floating over the backdrop - but the
+     timestamp and save-status chrome outside the panel still do, so this
+     stays governed by the same worst-case test: compositing --bg with pure
+     black and pure white (the two extremes any photo pixel could be) and
+     checking --text/--muted still clear 4.5:1. --muted is the tighter
+     constraint of the two (timestamps and the save-status dot are real
+     content, not decoration), which is why light and dark land on different
+     values below rather than sharing one number. The panel raises the floor
+     under the turn cards themselves, which is why this could move up from
+     0.05/0.08 without failing the test - see test_transcript_styles.py for
+     the number that decided it, not taste. */
+  --backdrop-opacity: 0.08;
+
+  /* The reading panel: a paper-coloured surface at less than full opacity,
+     floating over the backdrop rather than masking it out completely. Split
+     into an RGB triplet plus a separate opacity (matching the
+     --backdrop-opacity pattern above) rather than a single rgba() literal,
+     because rgba(var(--bg-rgb), var(--panel-opacity)) lets both halves stay
+     theme tokens - a literal would need a light and a dark copy compared by
+     eye instead of computed by the contrast test. Text inside a turn card
+     therefore sits on THREE composited layers - panel over backdrop over
+     bg - and test_backdrop_worst_case_contrast_meets_wcag models exactly
+     that stack. */
+  --bg-rgb: 250, 249, 247;
+  --panel-opacity: 0.88;
+
+  --measure: 42rem;
+  --radius: 6px;
+  --fast: 160ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16161a;
+    --surface: transparent;
+    --surface-hover: #1f1f25;
+    --text: #e9e7e2;
+    --muted: #9d998f;
+    --rule: #2d2d34;
+    --accent: #7fb3a3;
+    --accent-text: #14231e;
+    --focus: #79b8ea;
+    --warn-bg: #3a3220;
+    --warn-line: #d8a942;
+    --hit-bg: #5c4a18;
+    --hit-current: #a8842a;
+    /* --text (light-on-dark) over --hit-current measured 2.83:1 here - the
+       "current" match is a mid-brightness amber, not a dark tint like
+       --hit-bg, so the light body-text colour that works on every other
+       background fails on this one. Reusing --accent-text (already tuned as
+       a dark colour that sits on the mid-toned --accent) instead of adding a
+       fourth palette value; the goal is contrast, not a new hue. */
+    --hit-current-text: var(--accent-text);
+
+    --spk-0: #7fb0e0;
+    --spk-1: #d99a63;
+    --spk-2: #86bd97;
+    --spk-3: #b98fc7;
+    --spk-4: #e08fa0;
+    --spk-5: #6fc2c2;
+    --spk-6: #b3a6e0;
+    --spk-7: #d9c76a;
+
+    /* Higher than the light value: the same photo composited against the
+       dark --bg reads as noticeably fainter at a given opacity than it does
+       against the light one, so dark mode needs more of it to look like
+       "the same backdrop" rather than a barely-there smudge. Still bounded
+       by the same 4.5:1 worst-case test - see the light block's comment. */
+    --backdrop-opacity: 0.10;
+
+    --bg-rgb: 22, 22, 26;
+    --panel-opacity: 0.88;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #16161a;
+  --surface: transparent;
+  --surface-hover: #1f1f25;
+  --text: #e9e7e2;
+  --muted: #9d998f;
+  --rule: #2d2d34;
+  --accent: #7fb3a3;
+  --accent-text: #14231e;
+  --focus: #79b8ea;
+  --warn-bg: #3a3220;
+  --warn-line: #d8a942;
+  --hit-bg: #5c4a18;
+  --hit-current: #a8842a;
+  --hit-current-text: var(--accent-text);
+
+  --spk-0: #7fb0e0;
+  --spk-1: #d99a63;
+  --spk-2: #86bd97;
+  --spk-3: #b98fc7;
+  --spk-4: #e08fa0;
+  --spk-5: #6fc2c2;
+  --spk-6: #b3a6e0;
+  --spk-7: #d9c76a;
+
+  --backdrop-opacity: 0.10;
+
+  --bg-rgb: 22, 22, 26;
+  --panel-opacity: 0.88;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* Bottom padding reserves room for the sticky player so the last turn is
+     never hidden behind it. */
+  padding: 0 1.25rem 6rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  /* Establishes a stacking context on body itself (without needing
+     position + z-index), so .backdrop's z-index:-1 is only compared against
+     body's own children - it paints above body's background-color and below
+     everything else in the document. Without this, .backdrop is a child of
+     an *unpositioned* body, so its negative z-index would place it in the
+     root stacking context instead, one step *before* body's own background
+     is painted - i.e. completely hidden behind it, not behind the text. */
+  isolation: isolate;
+}
+
+/* The stationary photo layer. A plain background-attachment: fixed on body
+   was the obvious first idea and was rejected: it's broken on iOS Safari,
+   it forces a repaint on every scroll frame on the browsers where it does
+   work, and it cannot carry its own opacity - opacity on body would fade the
+   text along with the image. A dedicated fixed, negative-z-index element
+   behind the content gets a stationary image, independently dimmable,
+   without touching body's own paint at all.
+
+   No background colour of its own: the image is supplied per render as an
+   inline style (see formatting.py._vista_data_uri), because it changes per
+   document while this stylesheet does not. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  opacity: var(--backdrop-opacity);
+  pointer-events: none;
+}
+
+/* A reader who has told the OS "more contrast, please" is explicitly asking
+   for the plainest possible reading surface - a photo behind the text,
+   however subtle, is the opposite of that request. */
+@media (prefers-contrast: more) {
+  .backdrop { display: none; }
+}
+
+.vh {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ------------------------------------------------------------- toolbar --- */
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 auto;
+  padding: 0.7rem 0;
+  max-width: var(--measure);
+  background: var(--bg);
+  border-bottom: 1px solid var(--rule);
+}
+
+.tb-group { display: flex; align-items: center; gap: 0.4rem; }
+.tb-search { flex: 1 1 15rem; }
+
+.tb-search .icon { color: var(--muted); flex: none; }
+
+#search {
+  flex: 1 1 auto;
+  min-width: 6rem;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.95rem;
+}
+#search:focus { border-bottom-color: var(--accent); outline: none; }
+#search:focus-visible { outline: none; }
+
+.count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 4.5rem;
+  text-align: center;
+}
+
+.tb-btn, .icon-btn, .link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out;
+}
+.icon-btn { min-width: 44px; padding: 0; }
+
+.tb-btn:hover, .icon-btn:hover, .link-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.tb-btn.primary { color: var(--accent); font-weight: 600; }
+.tb-btn[aria-pressed="true"] {
+  background: var(--surface-hover);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.status {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-inline-end: 0.35rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.status[data-kind="saving"]::before { background: var(--warn-line); }
+.status[data-kind="error"]::before  { background: #c0392b; }
+/* Saved in this browser but not into any file - a hollow dot rather than a
+   filled one, so the difference is visible without reading the label. */
+.status[data-kind="local"]::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+
+.icon {
+  width: 18px; height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+/* ----------------------------------------------------------------- toc --- */
+
+main { max-width: var(--measure); margin: 0 auto; }
+
+.toc { margin: 2rem 0 3rem; }
+.toc ol { margin: 0; padding-inline-start: 1.2rem; }
+.toc li { margin: 0.1rem 0; }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+
+/* -------------------------------------------------------------- source --- */
+
+/* Each recording is its own translucent panel floating over the backdrop,
+   not flat content sitting directly on it - the earlier flat layout was the
+   whole reason a batch's files were hard to tell apart while scrolling.
+   rgba(var(--bg-rgb), var(--panel-opacity)) rather than a plain background
+   colour: the panel has to stay partly see-through for the vista to read as
+   "behind the text" rather than swapped out for a solid card, and the RGB
+   triplet + separate opacity (matching --backdrop-opacity's shape) is what
+   lets tests/test_transcript_styles.py compute the resulting composite
+   instead of trusting an rgba() literal by eye. */
+.source {
+  margin: 0 0 2.5rem;
+  padding: 0 1.25rem 1.5rem;
+  border-radius: calc(var(--radius) * 2);
+  background: rgba(var(--bg-rgb), var(--panel-opacity));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px rgb(0 0 0 / 0.10);
+}
+
+/* backdrop-filter is expensive to repaint on a long, scrolling document and
+   unsupported on some engines - @supports keeps it an enhancement rather
+   than something the panel's legibility depends on; --panel-opacity alone
+   already guarantees the contrast floor with or without it. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .source {
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+}
+
+/* Sticks below the toolbar, not at its own top:0 - --toolbar-height is
+   measured and written by transcript.js (the toolbar wraps onto a second
+   line at narrow widths, so a hardcoded number here would drift out of sync
+   with it rather than the two ever being kept equal by hand. */
+.file-bar {
+  position: sticky;
+  top: var(--toolbar-height, 0px);
+  z-index: 20;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 -1.25rem;
+  padding: 0.85rem 1.25rem 0.7rem;
+  background: rgba(var(--bg-rgb), var(--panel-opacity));
+  border-start-start-radius: calc(var(--radius) * 2);
+  border-start-end-radius: calc(var(--radius) * 2);
+  border-bottom: 2px solid var(--rule);
+}
+.file-bar[data-file-accent="0"] { border-bottom-color: var(--spk-0); }
+.file-bar[data-file-accent="1"] { border-bottom-color: var(--spk-1); }
+.file-bar[data-file-accent="2"] { border-bottom-color: var(--spk-2); }
+.file-bar[data-file-accent="3"] { border-bottom-color: var(--spk-3); }
+.file-bar[data-file-accent="4"] { border-bottom-color: var(--spk-4); }
+.file-bar[data-file-accent="5"] { border-bottom-color: var(--spk-5); }
+.file-bar[data-file-accent="6"] { border-bottom-color: var(--spk-6); }
+.file-bar[data-file-accent="7"] { border-bottom-color: var(--spk-7); }
+
+.file-bar h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.file-position {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.speakers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin: 1.25rem 0 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.speakers-title { font-size: 0.8rem; color: var(--muted); }
+
+/* position: relative anchors .swatch-menu (see below) the same way .turn
+   already anchors .spk-menu - a popover positioned against its own row, not
+   the page. */
+.speaker-row { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; }
+.swatch { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+/* Three places a coloured dot can appear: the row itself (coloured by the
+   row's own data-palette - the resting, always-visible indicator), inside
+   the turn's reassignment menu, and inside a colour trigger's own popover.
+   The latter two carry data-palette directly on the dot, since they aren't
+   descendants of a .speaker-row with the "right" palette already on it. */
+.speaker-row[data-palette="0"] .swatch, .spk-menu-item .swatch[data-palette="0"],
+.swatch-menu-item .swatch[data-palette="0"] { background: var(--spk-0); }
+.speaker-row[data-palette="1"] .swatch, .spk-menu-item .swatch[data-palette="1"],
+.swatch-menu-item .swatch[data-palette="1"] { background: var(--spk-1); }
+.speaker-row[data-palette="2"] .swatch, .spk-menu-item .swatch[data-palette="2"],
+.swatch-menu-item .swatch[data-palette="2"] { background: var(--spk-2); }
+.speaker-row[data-palette="3"] .swatch, .spk-menu-item .swatch[data-palette="3"],
+.swatch-menu-item .swatch[data-palette="3"] { background: var(--spk-3); }
+.speaker-row[data-palette="4"] .swatch, .spk-menu-item .swatch[data-palette="4"],
+.swatch-menu-item .swatch[data-palette="4"] { background: var(--spk-4); }
+.speaker-row[data-palette="5"] .swatch, .spk-menu-item .swatch[data-palette="5"],
+.swatch-menu-item .swatch[data-palette="5"] { background: var(--spk-5); }
+.speaker-row[data-palette="6"] .swatch, .spk-menu-item .swatch[data-palette="6"],
+.swatch-menu-item .swatch[data-palette="6"] { background: var(--spk-6); }
+.speaker-row[data-palette="7"] .swatch, .spk-menu-item .swatch[data-palette="7"],
+.swatch-menu-item .swatch[data-palette="7"] { background: var(--spk-7); }
+
+.speaker-name {
+  min-height: 44px;
+  width: 8rem;
+  padding: 0 0.35rem;
+  border: 0;
+  border-bottom: 1px dashed var(--rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.speaker-name:focus { border-bottom-style: solid; border-bottom-color: var(--accent); }
+
+/* The one always-visible colour control per speaker row: a small dot (its
+   colour comes from .speaker-row[data-palette] above) inside a 44px hit
+   area, not eight always-expanded buttons - see _swatch_trigger_html()'s
+   docstring for why that first version had to go: with even two speakers it
+   put sixteen full-size circles above the transcript, taller than the
+   content itself. Clicking it opens .swatch-menu, built on demand by
+   transcript.js's buildSwatchMenu() - the trigger carries no colour options
+   of its own, only the current one. */
+.swatch-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+  transition: background var(--fast) ease-out, border-color var(--fast) ease-out;
+}
+.swatch-trigger .swatch { width: 16px; height: 16px; }
+.swatch-trigger:hover, .swatch-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+  border-color: var(--rule);
+}
+
+/* The popover itself - same shape as .spk-menu (position: absolute against
+   the row's own position: relative, built and torn down by transcript.js
+   rather than living in the initial markup). A grid rather than the menu's
+   vertical list: eight colours read better as a small swatch grid than as
+   eight stacked rows of text. */
+.swatch-menu {
+  position: absolute;
+  z-index: 10;
+  inset-inline-start: 0;
+  top: 100%;
+  margin-top: 0.2rem;
+  display: grid;
+  grid-template-columns: repeat(4, 44px);
+  padding: 0.2rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+.swatch-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+.swatch-menu-item .swatch { width: 18px; height: 18px; }
+.swatch-menu-item:hover, .swatch-menu-item:focus-visible { background: var(--surface-hover); }
+/* Selection is a ring, not just the swatch's own colour - colour alone
+   never carries meaning on its own here, matching the rule the
+   low-confidence tint/underline pairing already follows elsewhere in this
+   file. */
+.swatch-menu-item[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--text); }
+
+.link-btn { color: var(--accent); font-size: 0.85rem; text-decoration: underline; }
+
+.add-speaker { color: var(--accent); }
+.add-speaker .icon { color: inherit; }
+
+/* ---------------------------------------------------------------- turn --- */
+
+.turn {
+  position: relative;
+  margin: 0 0 0.35rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  border-inline-start: 2px solid var(--rule);
+  background: var(--surface);
+  transition: background var(--fast) ease-out, transform var(--fast) ease-out;
+}
+/* Keyed on data-palette, not data-speaker: identity (who is speaking, which
+   drives the name lookup in transcript.js's applyNames()) and colour
+   (which of the eight verified swatches paints this turn) used to be the
+   same number by definition. Recolouring and reassignment need to change
+   one without the other - reassigning a turn to speaker "2" must not also
+   force it to wear whatever colour speaker "2" happened to render with
+   first - so the two are tracked as separate attributes, both kept in sync
+   by transcript.js whenever either changes. */
+.turn[data-palette="0"] { border-inline-start-color: var(--spk-0); }
+.turn[data-palette="1"] { border-inline-start-color: var(--spk-1); }
+.turn[data-palette="2"] { border-inline-start-color: var(--spk-2); }
+.turn[data-palette="3"] { border-inline-start-color: var(--spk-3); }
+.turn[data-palette="4"] { border-inline-start-color: var(--spk-4); }
+.turn[data-palette="5"] { border-inline-start-color: var(--spk-5); }
+.turn[data-palette="6"] { border-inline-start-color: var(--spk-6); }
+.turn[data-palette="7"] { border-inline-start-color: var(--spk-7); }
+
+.turn:hover, .turn:focus-within {
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+/* The turn currently being spoken. Marked with a filled, widened accent edge
+   rather than a background wash, so it stays legible under the hover tint and
+   does not fight the low-confidence shading inside the text.
+
+   Previously an inset box-shadow with a hand-written :root[dir="rtl"]
+   override to flip which side it painted on. box-shadow has no "start/end"
+   concept, so mirroring it for RTL meant maintaining two copies of the same
+   rule by hand. border-inline-start is a logical property: the layout engine
+   already knows which physical side "start" resolves to from the element's
+   direction, so thickening and recolouring that one border does the same job
+   with no duplicate selector and no risk of the two copies drifting apart. */
+.turn[data-playing] {
+  background: var(--surface-hover);
+  border-inline-start-width: 4px;
+  border-inline-start-color: var(--accent);
+}
+
+/* Hovering one card dims the others so a single speaker's thread is easy to
+   follow. Purely decorative - the name still carries the meaning. */
+.source:hover .turn { transition: opacity var(--fast) ease-out; }
+.source:hover .turn:not(:hover) { opacity: 0.72; }
+.source:hover .turn:focus-within { opacity: 1; }
+
+.turn h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* A real control affordance, not a bracketed label that happens to have a
+   click handler: a pill with its own border and background, a play glyph,
+   and hover/focus states distinct from plain text - the previous version
+   read as decoration and clicking it was a discoverability accident. */
+.ts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 44px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color var(--fast) ease-out, background var(--fast) ease-out,
+              border-color var(--fast) ease-out;
+}
+.ts .icon { width: 12px; height: 12px; }
+.ts:hover { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+
+/* Set once the <audio> element fires an "error" - the file was moved away
+   from the transcript, or the container (.mkv, for instance) is one the
+   browser can't play. The timestamps stay in the markup as plain text
+   anchors, but nothing about them should still look or act like a live
+   control: no pointer cursor, no hover colour change, no click target.
+   pointer-events removes the click itself; the disabled/aria-disabled pair
+   set by transcript.js removes it from keyboard tab order and the
+   accessibility tree too, so the "this button does nothing" fact isn't
+   something only sighted mouse users find out by trying it.
+
+   Scoped to the section, not the document: a batch can mix recordings that
+   play with ones that do not, and one missing file must not take the other
+   transcripts' playback down with it. */
+.source[data-no-audio] .ts {
+  cursor: default;
+  pointer-events: none;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+.source[data-no-audio] .ts:hover { color: var(--muted); background: transparent; }
+
+.spk {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  padding: 0 0.4rem;
+  margin-inline-start: -0.4rem;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  /* Matches .ts's own 44px so the two controls that share this header line
+     - "when" and "who" - line up rather than one looking like an
+     afterthought next to the other. */
+  min-height: 44px;
+  transition: background var(--fast) ease-out;
+}
+.spk:hover, .spk[aria-expanded="true"] { background: var(--surface-hover); }
+.turn[data-palette="0"] .spk { color: var(--spk-0); }
+.turn[data-palette="1"] .spk { color: var(--spk-1); }
+.turn[data-palette="2"] .spk { color: var(--spk-2); }
+.turn[data-palette="3"] .spk { color: var(--spk-3); }
+.turn[data-palette="4"] .spk { color: var(--spk-4); }
+.turn[data-palette="5"] .spk { color: var(--spk-5); }
+.turn[data-palette="6"] .spk { color: var(--spk-6); }
+.turn[data-palette="7"] .spk { color: var(--spk-7); }
+
+/* The reassignment menu, built on demand by transcript.js from the file's
+   current speaker roster (never baked into the initial markup, so it can
+   never go stale when a speaker is renamed or added after the page loads).
+   Anchored to .turn, which is already position: relative. */
+.spk-menu {
+  position: absolute;
+  z-index: 10;
+  inset-inline-start: 0;
+  top: 100%;
+  margin-top: 0.2rem;
+  min-width: 10rem;
+  padding: 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+.spk-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.spk-menu-item:hover, .spk-menu-item:focus-visible { background: var(--surface-hover); }
+.spk-menu-item[aria-checked="true"] { font-weight: 600; }
+.spk-menu-item .swatch { width: 10px; height: 10px; }
+
+.turn-actions {
+  margin-inline-start: auto;
+  display: flex;
+  gap: 0.15rem;
+  opacity: 0;
+  transition: opacity var(--fast) ease-out;
+}
+.turn:hover .turn-actions,
+.turn:focus-within .turn-actions { opacity: 1; }
+
+/* Hover is an enhancement, never the only route: on touch and narrow screens
+   the actions are simply always visible. */
+@media (hover: none), (max-width: 768px) {
+  .turn-actions { opacity: 1; }
+  .source:hover .turn:not(:hover) { opacity: 1; }
+}
+
+.copy-turn.copied, .copy-all.copied { color: var(--accent); }
+
+.body { outline: none; }
+.body:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.body p { margin: 0.1rem 0; }
+
+.lowconf {
+  background: var(--warn-bg);
+  border-bottom: 2px dotted var(--warn-line);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark.hit { background: var(--hit-bg); color: inherit; border-radius: 2px; }
+/* Its own text colour, not "inherit" like the base .hit: --hit-current is a
+   mid-brightness amber in dark mode, and the inherited light body-text colour
+   only reaches 2.83:1 against it (see --hit-current-text above). */
+mark.hit.current { background: var(--hit-current); color: var(--hit-current-text); }
+
+/* ----------------------------------------------------------- plain text --- */
+
+/* No longer a collapsible disclosure element - see _render_plain_html()'s
+   docstring for why: this is the panel that gets used most (copying the
+   whole recording out to somewhere else), and burying the most-used feature
+   one click below a collapsed summary line was the wrong trade. Always
+   visible instead. */
+.plain {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.plain-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.summary-hint { font-size: 0.78rem; opacity: 0.75; }
+
+.plain-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.plain-controls label { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 44px; }
+
+.plain-text {
+  margin: 0;
+  padding: 1rem;
+  max-height: 22rem;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-hover);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* -------------------------------------------------------------- player --- */
+
+.player {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: var(--measure);
+  margin: 0 auto 1rem;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.12);
+  font-size: 0.85rem;
+}
+/* An explicit display value beats the UA stylesheet's [hidden] rule, so the
+   attribute has to be honoured here or the player is visible before any
+   timestamp has been clicked. */
+.player[hidden] { display: none; }
+.player[data-disabled="true"] #player-toggle { opacity: 0.35; pointer-events: none; }
+.player-file { font-weight: 600; }
+.player-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.player-note { color: var(--warn-line); font-size: 0.78rem; margin-inline-start: auto; }
+
+/* --------------------------------------------------------------- toast --- */
+
+/* role="status" + aria-live="polite" (set in formatting.py) means this is
+   announced without moving focus - unlike the .copied flash on the button
+   that triggered it, which tells you *which* control acted, this tells you
+   *what* happened, for the times the button itself is out of view (copying
+   from the plain-text panel while a card is scrolled off, for instance).
+
+   [hidden] gates presence (screen readers, tab order); the fade is a
+   separate .show class transcript.js toggles a frame later, so the
+   transition actually has something to animate from rather than jumping
+   from [hidden] straight to fully visible. */
+.toast {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 5.5rem;
+  z-index: 60;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: calc(100% - 2.5rem);
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.85rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--fast) ease-out, transform var(--fast) ease-out;
+  pointer-events: none;
+}
+.toast[hidden] { display: none; }
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ------------------------------------------------------------ responsive --- */
+
+@media (max-width: 480px) {
+  body { font-size: 1rem; padding-inline: 0.9rem; }
+  .toolbar { gap: 0.4rem; }
+  .tb-btn span { display: none; }
+  .tb-btn.primary span { display: inline; }
+  .source { padding-inline: 0.9rem; }
+  .file-bar { margin-inline: -0.9rem; padding-inline: 0.9rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .turn:hover, .turn:focus-within { transform: none; }
+  .toast { transform: none; }
+}

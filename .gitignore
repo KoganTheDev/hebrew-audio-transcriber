@@ -33,7 +33,15 @@ htmlcov/
 # Project Specific
 whisper_models/
 diarization_models/
+
+# Generated transcripts. Same reasoning as the media block below - a transcript
+# of a real conversation is as sensitive as the recording it came from, and this
+# repo is public. The pattern has to track config.OUTPUT_FILENAME_TEMPLATE:
+# output is now "<audio stem>_transcription.html" beside the audio, which the
+# old "transcription*.txt" rule no longer matches. The .txt rule is kept so
+# transcripts left over from before the HTML switch stay ignored too.
 transcription*.txt
+*_transcription.html
 
 # Media. Never commit recordings - this repo is public, and the audio it
 # processes is real conversations. Keep this list in sync with
@@ -51,6 +59,12 @@ transcription*.txt
 # Local audio fixtures used for accuracy evaluation (see tests/eval/).
 mp4a_test/
 eval_output/
+
+# Full-size vista originals, as downloaded. Only the processed, downscaled
+# WebP versions under speech_to_text/core/assets/vistas/ are tracked and
+# shipped - the originals are tens of megabytes and serve no purpose in the
+# repo once they have been converted.
+vistas_source/
 
 # The user's own term list is personal vocabulary, not project content.
 # hebrew_terms.example.txt is the tracked template.

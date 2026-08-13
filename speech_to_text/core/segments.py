@@ -66,6 +66,25 @@ class Segment:
         return max(self.end - self.start, 0.0)
 
 
+@dataclass
+class TranscriptDocument:
+    """
+    One source file's transcript, as a unit the renderer can place under its
+    own heading.
+
+    Exists so a batch run has a shared vocabulary type for "one file's
+    output" the same way Segment is the shared vocabulary type for "one
+    chunk of transcript" - see the module docstring for why that type has to
+    live here rather than in core.worker or core.formatting: both the worker
+    process and the GUI process need it, and it must stay stdlib-only either
+    way.
+    """
+
+    source_name: str            # basename of the audio file
+    segments: List[Segment] = field(default_factory=list)
+    failed: bool = False        # transcription of this one file did not complete
+
+
 def plain_text(segments: List[Segment]) -> str:
     """
     Flatten segments back into one unpunctuated-by-us blob.

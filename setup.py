@@ -37,6 +37,12 @@ setup(
         ],
     },
     include_package_data=True,
-    package_data={"speech_to_text": ["assets/*.ico"]},
+    # core/assets holds the stylesheet and script inlined into every generated
+    # transcript. They are read at render time, so an installed copy without
+    # them produces a broken document rather than failing loudly at import.
+    package_data={
+        "speech_to_text": ["assets/*.ico"],
+        "speech_to_text.core": ["assets/*.css", "assets/*.js", "assets/vistas/*.webp"],
+    },
     zip_safe=False,
 )

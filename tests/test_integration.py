@@ -8,8 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from speech_to_text import config
-from speech_to_text.core.formatting import render
-from speech_to_text.core.segments import plain_text
+from speech_to_text.core.formatting import render_html
+from speech_to_text.core.options import TranscriptionOptions
+from speech_to_text.core.segments import TranscriptDocument, plain_text
 from speech_to_text.core.transcriber import Transcriber
 from speech_to_text.hardware_detection import HardwareDetector
 
@@ -95,6 +96,35 @@ class TestIntegration:
         assert segments is not None
         assert "Hello" in plain_text(segments)
 
-        # Format output
-        formatted = render(segments)
-        assert formatted is not None
+        # Format output - the worker now always renders a single, self-
+        # contained HTML document instead of a .txt file (see
+        # core/formatting.py's module docstring for why: direction has to
+        # be declared, not guessed, for Hebrew to align correctly).
+        document = TranscriptDocument(
+            source_name=os.path.basename(sample_audio_path), segments=segments
+        )
+        rendered = render_html([document])
+        assert rendered is not None
+        assert "<html" in rendered
+        assert "Hello World" in rendered
+
+    @pytest.mark.integration
+    def test_transcription_options_survive_pickling(self):
+        """
+        TranscriptionOptions crosses a real multiprocessing.Process boundary
+        (see core/worker.py's module docstring for why transcription runs in
+        a separate OS process) - it has to pickle cleanly, batch fields
+        included.
+        """
+        import pickle  # trusted, in-process round-trip only - mirrors multiprocessing's own use
+
+        options = TranscriptionOptions(
+            audio_durations=[12.5, 30.0],
+            speaker_label="דובר {n}",
+            failed_label="נכשל",
+        )
+        restored = pickle.loads(pickle.dumps(options))
+        assert restored.audio_durations == [12.5, 30.0]
+        assert restored.total_duration == 42.5
+        assert restored.speaker_label == "דובר {n}"
+        assert restored.failed_label == "נכשל"

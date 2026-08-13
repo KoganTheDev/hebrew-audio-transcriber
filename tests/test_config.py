@@ -2,6 +2,8 @@
 Tests for configuration module.
 """
 
+import os
+
 import pytest
 
 from speech_to_text import config
@@ -93,3 +95,47 @@ class TestConfig:
         for i in range(len(scores) - 1):
             assert scores[i] <= scores[i + 1], \
                 f"Accuracy should increase: {models[i]}/{scores[i]} -> {models[i+1]}/{scores[i+1]}"
+
+
+class TestOutputPathFor:
+    """
+    output_path_for() replaced the fixed OUTPUT_FILENAME so batches of
+    different recordings stop colliding on one transcription.txt - see
+    config.OUTPUT_FILENAME_TEMPLATE.
+    """
+
+    def test_single_file_is_named_after_its_own_stem(self):
+        path = config.output_path_for([os.path.join("dir", "meeting.wav")])
+        assert os.path.dirname(path) == "dir"
+        assert os.path.basename(path) == "meeting_transcription.html"
+
+    def test_multiple_files_are_named_after_the_shared_folder(self):
+        path = config.output_path_for([
+            os.path.join("recordings", "a.wav"),
+            os.path.join("recordings", "b.wav"),
+        ])
+        assert os.path.dirname(path) == "recordings"
+        assert os.path.basename(path) == "recordings_transcription.html"
+
+    def test_a_dotted_filename_keeps_its_whole_stem(self):
+        """splitext splits on the LAST dot - "a.b.wav" must not lose "b"."""
+        path = config.output_path_for([os.path.join("dir", "a.b.wav")])
+        assert os.path.basename(path) == "a.b_transcription.html"
+
+    def test_different_inputs_give_different_paths(self):
+        one = config.output_path_for([os.path.join("dir", "meeting.wav")])
+        two = config.output_path_for([os.path.join("dir", "other.wav")])
+        assert one != two
+
+        single = config.output_path_for([os.path.join("dir", "a.wav")])
+        batch = config.output_path_for([
+            os.path.join("dir", "a.wav"), os.path.join("dir", "b.wav"),
+        ])
+        assert single != batch
+
+    def test_output_is_written_beside_the_first_input(self):
+        path = config.output_path_for([
+            os.path.join("here", "a.wav"),
+            os.path.join("here", "b.wav"),
+        ])
+        assert os.path.dirname(path) == "here"

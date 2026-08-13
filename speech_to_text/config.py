@@ -4,6 +4,7 @@ Centralized configuration for the application.
 """
 
 import os
+from typing import List
 
 # ============================================================================
 # Model Configuration with detailed pros/cons
@@ -211,7 +212,39 @@ SENTENCE_ENDINGS = r"[.!?]"
 # ============================================================================
 
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
-OUTPUT_FILENAME = "transcription.txt"
+
+# HTML replaced .txt as the output format entirely (see core/formatting.py's
+# module docstring for why: only a declared, not guessed, paragraph
+# direction gets Hebrew to align correctly). One input file is named after
+# itself; a batch is named after the folder it came from, since there is no
+# single source filename to hang the output name on. See output_path_for().
+OUTPUT_FILENAME_TEMPLATE = "{stem}_transcription.html"
+
+
+def output_path_for(audio_files: List[str]) -> str:
+    """
+    Decide the output path for a transcription run.
+
+    One file -> named after it (so two different recordings never collide).
+    Several files -> named after their shared folder. Always written beside
+    the first input file, so the output lands next to the audio regardless
+    of which directory the app itself runs from.
+
+    This only overwrites a previous run over the *same* input(s) - re-running
+    a batch from the same folder replaces its own output, which is no worse
+    than the old fixed transcription.txt and strictly better everywhere else.
+    """
+    first_dir = os.path.dirname(audio_files[0])
+    if len(audio_files) == 1:
+        # splitext splits on the LAST dot, so "a.b.wav" -> stem "a.b" - a
+        # filename with a dot in it doesn't lose part of its name.
+        stem, _ext = os.path.splitext(os.path.basename(audio_files[0]))
+    else:
+        stem = os.path.basename(os.path.normpath(first_dir)) or "batch"
+
+    filename = OUTPUT_FILENAME_TEMPLATE.format(stem=stem)
+    return os.path.join(first_dir, filename)
+
 
 # User-maintained list of domain terms (names, places, jargon) that a general
 # model reliably mishears. One term per line, UTF-8, "#" for comments. Looked
