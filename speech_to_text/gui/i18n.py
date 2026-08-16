@@ -117,8 +117,13 @@ STRINGS = {
     "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
     "doc_search_next": {"en": "Next match", "he": "התאמה הבאה"},
     "doc_no_results": {"en": "No results", "he": "אין תוצאות"},
-    "doc_show_uncertain": {"en": "Uncertain words", "he": "מילים לא ודאיות"},
-    "doc_theme": {"en": "Theme", "he": "ערכה"},
+    "doc_show_uncertain": {"en": "Show uncertain words", "he": "הצג מילים לא ודאיות"},
+    # Two keys, not one - the button names the action it is about to take, and
+    # that action is the opposite of the current state. transcript.js swaps
+    # between them on click, alongside the existing aria-pressed/data-theme
+    # handling - "Theme" told the reader nothing about what clicking it did.
+    "doc_theme_light": {"en": "Light mode", "he": "מצב בהיר"},
+    "doc_theme_dark": {"en": "Dark mode", "he": "מצב כהה"},
     "doc_toggle_theme": {"en": "Switch colour scheme", "he": "החלפת ערכת צבעים"},
     "doc_save_copy": {"en": "Save a copy", "he": "שמירת עותק"},
     "doc_status_saved": {"en": "Saved", "he": "נשמר"},
@@ -139,6 +144,7 @@ STRINGS = {
     "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
     "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
     "doc_play_pause": {"en": "Play or pause", "he": "נגן או השהה"},
+    "doc_seek": {"en": "Seek", "he": "החלקה בהקלטה"},
     "doc_plain_text": {"en": "Plain text", "he": "טקסט רגיל"},
     "doc_plain_hint": {
         "en": "to paste into another app",
@@ -151,6 +157,17 @@ STRINGS = {
     "doc_copied": {"en": "Copied", "he": "הועתק"},
     "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
+    "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
+    "doc_outline_toggle": {"en": "Files and speakers", "he": "קבצים ודוברים"},
+    "doc_speaker_locate": {
+        "en": "Step through this speaker's turns", "he": "מעבר בין הפסקאות של הדובר",
+    },
+    # Rendered next to the locate button as a plain, visible number - not
+    # folded into doc_speaker_locate's own text, which stays the button's
+    # accessible name (see _render_speakers_html()'s docstring in
+    # formatting.py for why the count is marked aria-hidden rather than
+    # appended there).
+    "doc_speaker_turn_count": {"en": "{n} turns", "he": "{n} פסקאות"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
 

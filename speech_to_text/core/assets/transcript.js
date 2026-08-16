@@ -178,6 +178,48 @@
     rebuildPlain(section);
   }
 
+  // The count formatting.py rendered next to each locate button (see
+  // _render_speakers_html()) is a snapshot from the moment the page was
+  // generated. Reassigning a turn to a different speaker changes TWO
+  // speakers' counts (the one it left, the one it joined) without touching
+  // the DOM node that count text lives in, so nothing would ever update it
+  // if this function did not exist - a count rendered once and left stale
+  // is actively misleading (it looks authoritative), which is worse than
+  // showing no count at all.
+  //
+  // Recomputed from the DOM's own .turn[data-speaker] attributes rather than
+  // kept as a running tally alongside state.assign: a tally is a second copy
+  // of the truth that a future edit could update in one place and forget in
+  // the other, where counting the actual .turn elements can never disagree
+  // with what the reading column shows, by construction.
+  function refreshSpeakerCounts(fileIndex) {
+    var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
+    var strip = document.querySelector('.speakers[data-file="' + fileIndex + '"]');
+    if (!section || !strip) { return; }
+
+    // Both forms have to move together: the visible bare number AND the
+    // full phrase folded into the button's accessible name (see
+    // _render_speakers_html() in formatting.py for why the count is carried
+    // twice). Updating only the visible one would leave a screen reader
+    // announcing a stale count after every reassignment, which is the exact
+    // failure this function exists to prevent, just for a different
+    // audience.
+    var template = t('speaker_turn_count', '{n} turns');
+    var action = t('speaker_locate', "Step through this speaker's turns");
+    strip.querySelectorAll('.speaker-row').forEach(function (row) {
+      var id = row.dataset.speaker;
+      var count = section.querySelectorAll('.turn[data-speaker="' + id + '"]').length;
+      var countEl = row.querySelector('.spk-count');
+      if (countEl) { countEl.textContent = String(count); }
+      var btn = row.querySelector('.spk-locate');
+      if (btn) {
+        var label = action + ' (' + template.replace('{n}', String(count)) + ')';
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+      }
+    });
+  }
+
   function bindSpeakers() {
     document.querySelectorAll('.speakers').forEach(function (strip) {
       var fileIndex = strip.dataset.file;
@@ -238,7 +280,11 @@
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-label', t('speaker_colour', 'Speaker colour'));
     var dot = document.createElement('span');
-    dot.className = 'swatch';
+    // Own class, not .swatch - see the CSS comment on .swatch-rest and the
+    // matching one in formatting.py's _swatch_trigger_html() for why this
+    // has to stay a different class from the popover's per-colour dots
+    // rather than merely a differently-scoped selector.
+    dot.className = 'swatch-rest';
     dot.setAttribute('aria-hidden', 'true');
     btn.appendChild(dot);
     return btn;
@@ -262,6 +308,38 @@
     input.placeholder = fallback;
     input.setAttribute('aria-label', fallback);
     row.appendChild(input);
+
+    // Mirrors the locate button formatting.py renders on every server-side
+    // row (see _render_speakers_html()) - a speaker added live has to get
+    // the same "step through this speaker's turns" affordance as one the
+    // renderer produced, not a lesser row. Built through insertAdjacentHTML
+    // rather than createElementNS with the SVG XML namespace URI: the HTML
+    // parser already namespaces <svg>/<use> correctly when it parses a
+    // markup string (foreign-content handling is part of the HTML5 parsing
+    // algorithm), and spelling that namespace URI out as a JS string literal
+    // would put a network-scheme-shaped substring inside transcript.js's own
+    // source - which test_output_is_fully_offline treats as evidence of a
+    // network reference, even though nothing here is ever actually fetched.
+    var locate = document.createElement('button');
+    locate.type = 'button';
+    locate.className = 'icon-btn spk-locate';
+    var locateLabel = t('speaker_locate', "Step through this speaker's turns");
+    locate.setAttribute('aria-label', locateLabel);
+    locate.title = locateLabel;
+    locate.insertAdjacentHTML(
+      'beforeend', '<svg class="icon" aria-hidden="true"><use href="#i-locate"></use></svg>'
+    );
+    // A speaker added live has no turns yet - refreshSpeakerCounts() (called
+    // right after this row is inserted, by addSpeaker()/applySpeakerState())
+    // fills in the real number once the row is in the DOM; this starting
+    // text just matches what formatting.py renders server-side so there is
+    // no visible flash from "0" to whatever the real count turns out to be.
+    var count = document.createElement('span');
+    count.className = 'spk-count';
+    count.setAttribute('aria-hidden', 'true');
+    count.textContent = '0';
+    locate.appendChild(count);
+    row.appendChild(locate);
 
     var anchor = strip.querySelector('.apply-all') || strip.querySelector('.add-speaker');
     strip.insertBefore(row, anchor);
@@ -288,6 +366,7 @@
     state.speakers[fileIndex][id] = { fallback: fallback, palette: palette, added: true };
 
     createSpeakerRow(strip, id, fallback, palette);
+    refreshSpeakerCounts(fileIndex);
     save();
   }
 
@@ -391,10 +470,66 @@
   // system dismisses its sibling rather than stacking.
   var openMenuBtn = null;
 
+  // The .turn currently raised above its siblings because it holds an open
+  // .spk-menu - see .turn.menu-open in transcript.css for why this has to
+  // be an explicit class transcript.js owns, rather than a :hover rule: the
+  // menu stays open after the pointer leaves the card, so a hover-keyed
+  // z-index would drop the card back underneath its next sibling at exactly
+  // the moment the menu is being used, not before.
+  var menuOpenTurn = null;
+
   function closeMenu() {
     document.querySelectorAll('.spk-menu, .swatch-menu').forEach(function (m) { m.remove(); });
     if (openMenuBtn) { openMenuBtn.setAttribute('aria-expanded', 'false'); }
+    if (menuOpenTurn) { menuOpenTurn.classList.remove('menu-open'); menuOpenTurn = null; }
     openMenuBtn = null;
+  }
+
+  // Escaping .outline's overflow-y: auto is only a concern while the
+  // popover is actually detached from it - see positionDetachedMenu() and
+  // the .swatch-menu comment in transcript.css for why a fixed-position
+  // popover has to close on scroll instead of trying to follow the trigger:
+  // it has no DOM relationship to the scrolled container to follow it with.
+  document.addEventListener('scroll', function (e) {
+    if (!openMenuBtn) { return; }
+    var menu = document.querySelector('.swatch-menu');
+    if (menu && e.target.contains && e.target.contains(openMenuBtn)) { closeMenu(); }
+  }, true);
+
+  // Reads the trigger's real on-screen box via getBoundingClientRect() and
+  // writes it back as fixed, physical left/top - not inset-inline-start,
+  // unlike everywhere else in this file. Logical properties describe a
+  // position relative to a box's own writing direction; a rect from
+  // getBoundingClientRect() is already a physical viewport measurement with
+  // no writing-direction of its own to be logical *about*, so resolving
+  // "which physical side is inline-start" has to happen here explicitly
+  // instead (via getComputedStyle(btn).direction) rather than being free,
+  // the way it is for anything actually laid out by the CSS box model.
+  function positionDetachedMenu(menu, btn) {
+    var rect = btn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = (rect.bottom + 4) + 'px';
+    var rtl = getComputedStyle(btn).direction === 'rtl';
+    // clientWidth, NOT window.innerWidth. innerWidth includes the scrollbar
+    // gutter; a fixed element's containing block does not. Mixing the two
+    // put the menu exactly one scrollbar-width (16px here) inline-start of
+    // its trigger on every scrollable page - which, since this document
+    // always scrolls, meant always. getBoundingClientRect() is already in
+    // client coordinates, so the number subtracted from it has to be too.
+    if (rtl) {
+      menu.style.right = (document.documentElement.clientWidth - rect.right) + 'px';
+    } else {
+      menu.style.left = rect.left + 'px';
+    }
+
+    // Clamp to the viewport rather than letting the grid run off the bottom
+    // edge - the whole point of detaching this popover was to stop an
+    // ancestor's box from clipping it, so it would be self-defeating to
+    // leave it clipped by the one box every page has: the viewport itself.
+    var menuRect = menu.getBoundingClientRect();
+    if (menuRect.bottom > window.innerHeight) {
+      menu.style.top = (rect.top - menuRect.height - 4) + 'px';
+    }
   }
 
   // buildFn is called fresh on every open, not memoised - see
@@ -406,7 +541,21 @@
     if (!reopening) { return; }
 
     var menu = buildFn();
-    btn.insertAdjacentElement('afterend', menu);
+    if (menu.classList.contains('swatch-menu')) {
+      // See the .swatch-menu comment in transcript.css: .speaker-row lives
+      // inside .outline's overflow-y: auto, which would otherwise clip this
+      // popover at the sidebar's edge. Appending to <body> removes it from
+      // that clipped subtree entirely instead of trying to out-z-index or
+      // out-overflow an ancestor that will always win.
+      document.body.appendChild(menu);
+      positionDetachedMenu(menu, btn);
+    } else {
+      btn.insertAdjacentElement('afterend', menu);
+      if (menu.classList.contains('spk-menu')) {
+        menuOpenTurn = btn.closest('.turn');
+        if (menuOpenTurn) { menuOpenTurn.classList.add('menu-open'); }
+      }
+    }
     btn.setAttribute('aria-expanded', 'true');
     openMenuBtn = btn;
     var first = menu.querySelector('[role="menuitemradio"]');
@@ -434,6 +583,11 @@
     // which already covers this turn now that its data-speaker points at the
     // new identity - no separate "set this one label" path needed.
     applyNames(fileIndex);
+    // A reassignment moves this turn's count from its old speaker's total to
+    // the new one's - two rows change, not one, which is exactly the case a
+    // per-row increment/decrement would be easy to get wrong. Recomputing
+    // the whole file's counts is cheap next to that risk.
+    refreshSpeakerCounts(fileIndex);
     rebuildPlain(section);
     save();
   }
@@ -476,8 +630,14 @@
 
       var swatchItem = e.target.closest ? e.target.closest('.swatch-menu-item') : null;
       if (swatchItem) {
-        var swatchMenu = swatchItem.closest('.swatch-menu');
-        var swatchRow = swatchMenu ? swatchMenu.closest('.speaker-row') : null;
+        // Not swatchItem.closest('.swatch-menu').closest('.speaker-row'):
+        // the menu is detached to <body> while open (see toggleMenu() and
+        // the .swatch-menu comment in transcript.css), so it is no longer a
+        // DOM descendant of the row that opened it. openMenuBtn - the
+        // .swatch-trigger itself - never moves, so it is the one thing
+        // still reliably inside .speaker-row to recover it from. Read
+        // before closeMenu() clears openMenuBtn.
+        var swatchRow = openMenuBtn ? openMenuBtn.closest('.speaker-row') : null;
         closeMenu();
         if (swatchRow) {
           var fileIndex = swatchRow.closest('.speakers').dataset.file;
@@ -543,11 +703,32 @@
 
   // ------------------------------------------------------------- plain text
 
+  // U+2066/U+2069 - see the LRI/PDI comment block in core/formatting.py.
+  // The card's own pill stays bare ("0:00 - 0:32"): a click target reads its
+  // own shape as the label. The plain-text panel gets copied out of the
+  // browser into apps with no bidi engine of their own, so it needs the
+  // stronger visual cue of brackets - and, per that same comment, the
+  // brackets have to sit *inside* the isolate along with the range, not
+  // outside it: they are mirrored characters exactly like the hyphen is a
+  // neutral, so a bracket pasted outside the isolate could reorder the same
+  // way the old un-isolated timestamps did.
+  var PLAIN_LRI = '⁦';
+  var PLAIN_PDI = '⁩';
+
+  function bracketedRange(ts) {
+    // ts.textContent already carries format_range()'s own LRI/PDI pair
+    // (rendered by formatting.py); stripped here and reapplied around the
+    // bracketed form rather than nested, so the plain-text panel still has
+    // exactly one isolate pair per range, per the module docstring.
+    var bare = ts.textContent.trim().replace(/[⁦⁩]/g, '');
+    return PLAIN_LRI + '[' + bare + ']' + PLAIN_PDI;
+  }
+
   function turnPlainText(turn, withTs, withSpk) {
     var prefix = [];
     var ts = turn.querySelector('.ts');
     var spk = turn.querySelector('.spk');
-    if (withTs && ts) { prefix.push(ts.textContent.trim()); }
+    if (withTs && ts) { prefix.push(bracketedRange(ts)); }
     if (withSpk && spk) { prefix.push(spk.textContent.trim() + ':'); }
 
     var lines = [];
@@ -561,22 +742,102 @@
     return head ? head + ' ' + lines.join('\n') : lines.join('\n');
   }
 
+  // Builds or updates one .plain-row per turn - never a full teardown and
+  // rebuild of the panel's innerHTML, which is what the single-<pre>
+  // version used to do and exactly what would fight a reader mid-edit: a
+  // fresh row replaces the live one under their caret every time any turn
+  // anywhere in the file changes. Two guards instead: skip a row whose
+  // .plain-body currently has focus (the same "never rewrite what the caret
+  // is in" rule runSearch() already follows for the card), and only touch a
+  // node's text when it would actually change, so an unrelated row's
+  // scroll position and selection are left alone too.
   function rebuildPlain(section) {
     if (!section) { return; }
     var panel = section.querySelector('.plain');
     if (!panel) { return; }
+    var container = panel.querySelector('.plain-text');
+    if (!container) { return; }
 
     var tsBox = panel.querySelector('.opt-ts');
     var spkBox = panel.querySelector('.opt-spk');
     var withTs = tsBox ? tsBox.checked : false;
     var withSpk = spkBox ? spkBox.checked : false;
 
-    var blocks = [];
+    var seen = {};
     section.querySelectorAll('.turn').forEach(function (turn) {
-      var text = turnPlainText(turn, withTs, withSpk);
-      if (text) { blocks.push(text); }
+      var turnId = turn.dataset.turn;
+      var text = readParagraphs(turn.querySelector('.body')).join('\n').replace(/^\s+|\s+$/g, '');
+      var row = container.querySelector('.plain-row[data-turn="' + turnId + '"]');
+
+      if (!text) {
+        if (row) { row.remove(); }
+        return;
+      }
+      seen[turnId] = true;
+
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'plain-row';
+        row.dataset.turn = turnId;
+
+        var prefixEl = document.createElement('span');
+        prefixEl.className = 'plain-prefix';
+        prefixEl.setAttribute('contenteditable', 'false');
+        row.appendChild(prefixEl);
+
+        var bodyEl = document.createElement('span');
+        bodyEl.className = 'plain-body';
+        bodyEl.setAttribute('contenteditable', 'true');
+        bodyEl.setAttribute('role', 'textbox');
+        bodyEl.setAttribute('aria-multiline', 'true');
+        bodyEl.setAttribute('aria-label', t('turn_text', 'Turn text'));
+        row.appendChild(bodyEl);
+
+        container.appendChild(row);
+      }
+
+      var prefix = [];
+      var ts = turn.querySelector('.ts');
+      var spk = turn.querySelector('.spk');
+      if (withTs && ts) { prefix.push(bracketedRange(ts)); }
+      if (withSpk && spk) { prefix.push(spk.textContent.trim() + ':'); }
+      var prefixText = prefix.length ? prefix.join(' ') + ' ' : '';
+
+      var prefixEl = row.querySelector('.plain-prefix');
+      if (prefixEl.textContent !== prefixText) { prefixEl.textContent = prefixText; }
+
+      var bodyEl = row.querySelector('.plain-body');
+      if (document.activeElement !== bodyEl && bodyEl.textContent !== text) {
+        bodyEl.textContent = text;
+      }
     });
-    panel.querySelector('.plain-text').textContent = blocks.join('\n\n');
+
+    // A turn's body can go empty (every sentence deleted) without the turn
+    // itself disappearing - its row has to go too, not just skip being
+    // refreshed above.
+    container.querySelectorAll('.plain-row').forEach(function (row) {
+      if (!seen[row.dataset.turn]) { row.remove(); }
+    });
+  }
+
+  // "Copy all" reassembles from the rows themselves rather than reading
+  // container.textContent: the DOM has no separator between one row and the
+  // next (each is just a sibling <div>), so a raw textContent scrape would
+  // run every turn's text together with no blank line between them. Walking
+  // the rows and joining explicitly is also what keeps this in step with
+  // whatever the reader has actually typed into a .plain-body, since it
+  // reads the live element, not a cached string.
+  function plainPanelText(panel) {
+    var blocks = [];
+    panel.querySelectorAll('.plain-row').forEach(function (row) {
+      var prefixEl = row.querySelector('.plain-prefix');
+      var bodyEl = row.querySelector('.plain-body');
+      var body = bodyEl ? bodyEl.textContent.replace(/^\s+|\s+$/g, '') : '';
+      if (!body) { return; }
+      var prefix = prefixEl ? prefixEl.textContent.replace(/^\s+|\s+$/g, '') : '';
+      blocks.push(prefix ? prefix + ' ' + body : body);
+    });
+    return blocks.join('\n\n');
   }
 
   function bindPlain() {
@@ -597,7 +858,43 @@
       });
 
       panel.querySelector('.copy-all').addEventListener('click', function (e) {
-        copy(panel.querySelector('.plain-text').textContent, e.currentTarget);
+        copy(plainPanelText(panel), e.currentTarget);
+      });
+
+      // Delegated (rows are created and destroyed by rebuildPlain(), not
+      // fixed at render time) - editing a row writes straight back into the
+      // card's own .body via writeParagraphs(), the same paragraph-array
+      // shape readParagraphs() produces from a card, so nothing here ever
+      // has to parse the plain-text panel's own markup back apart. Because
+      // this handler never calls rebuildPlain() for the row it just wrote,
+      // and rebuildPlain() skips whichever row currently has focus (see
+      // above), an edit here cannot circle back and overwrite its own
+      // caret - the other half of the loop that guard exists to break.
+      var container = panel.querySelector('.plain-text');
+      container.addEventListener('input', function (e) {
+        var bodyEl = e.target.closest ? e.target.closest('.plain-body') : null;
+        if (!bodyEl) { return; }
+        var row = bodyEl.closest('.plain-row');
+        var turn = document.querySelector('.turn[data-turn="' + row.dataset.turn + '"]');
+        if (!turn) { return; }
+
+        var paragraphs = bodyEl.textContent.split('\n');
+        state.turns[row.dataset.turn] = paragraphs;
+        turn.dataset.edited = 'true';
+        unflagTurn(turn);
+        writeParagraphs(turn.querySelector('.body'), paragraphs);
+        save();
+      });
+
+      // Same plain-text-only paste rule bindEditing() enforces on the card
+      // side - markup pasted from another app must not carry fonts or
+      // colours into a transcript that has no use for rich text.
+      container.addEventListener('paste', function (e) {
+        var bodyEl = e.target.closest ? e.target.closest('.plain-body') : null;
+        if (!bodyEl) { return; }
+        e.preventDefault();
+        var text = (e.clipboardData || window.clipboardData).getData('text');
+        document.execCommand('insertText', false, text);
       });
     });
 
@@ -906,6 +1203,7 @@
     var fileEl = document.getElementById('player-file');
     var timeEl = document.getElementById('player-time');
     var toggle = document.getElementById('player-toggle');
+    var seek = document.getElementById('player-seek');
     var current = null;
     var currentSection = null;
     // The end of the range a .ts click asked to hear, or null when playback
@@ -913,10 +1211,24 @@
     // been clicked yet). Read by the unthrottled stop-check in the
     // timeupdate handler below, and by the toggle handler that clears it.
     var boundEnd = null;
+    // Set on the seek input's own 'input' event, read by the throttled
+    // timeupdate sweep below so it never overwrites seek.value while a drag
+    // is in progress - the same "don't fight the control the reader's
+    // fingers are on" rule the search box's re-entrancy guard follows.
+    var scrubbing = false;
 
     function fmt(s) {
       var m = Math.floor(s / 60), r = Math.floor(s % 60);
       return m + ':' + (r < 10 ? '0' : '') + r;
+    }
+
+    // Isolated LTR digits, same shape as format_range()'s "M:SS - M:SS" in
+    // core/formatting.py - a neutral "/" between two LTR runs, inside an RTL
+    // document, needs the same LRI/PDI guard or it can reorder the same way
+    // an un-isolated timestamp used to.
+    function updateReadout() {
+      var duration = isFinite(audio.duration) ? audio.duration : 0;
+      timeEl.textContent = '⁦' + fmt(audio.currentTime) + ' / ' + fmt(duration) + '⁩';
     }
 
     document.querySelectorAll('.ts').forEach(function (btn) {
@@ -931,12 +1243,37 @@
           current = file;
           currentSection = section;
           audio.src = encodeURIComponent(file);
+          seek.max = '0';
         }
         audio.currentTime = Number(btn.dataset.start);
         boundEnd = Number(btn.dataset.end);
+        seek.value = String(audio.currentTime);
+        // Clicking a timestamp is the one moment the readout has to update
+        // before playback (and therefore the throttled timeupdate handler)
+        // has necessarily started - a reader glancing at "0:32 / 3:11" right
+        // after the click, before any audio has actually played a frame,
+        // should not see a stale "0:00 / 3:11" left over from load.
+        updateReadout();
         audio.play().catch(function () { /* the error listener handles it */ });
       });
     });
+
+    audio.addEventListener('loadedmetadata', function () {
+      seek.max = String(audio.duration);
+      updateReadout();
+    });
+
+    seek.addEventListener('input', function () {
+      scrubbing = true;
+      audio.currentTime = Number(seek.value);
+      // A deliberate seek overrides whatever range a .ts click asked to stay
+      // inside - dragging the scrubber past data-end must not snap the
+      // playhead back, the same "manual control wins" rule the toggle
+      // button's own click handler already applies to a manual resume.
+      boundEnd = null;
+      updateReadout();
+    });
+    seek.addEventListener('change', function () { scrubbing = false; });
 
     audio.addEventListener('error', function () {
       // The audio was moved away from the transcript, or the container is one
@@ -969,6 +1306,8 @@
       current = null;
       currentSection = null;
       boundEnd = null;
+      seek.max = '0';
+      seek.value = '0';
     });
 
     // timeupdate fires several times a second. The clock is cheap, but
@@ -988,7 +1327,13 @@
     var playing = null;
 
     audio.addEventListener('timeupdate', function () {
-      timeEl.textContent = fmt(audio.currentTime);
+      updateReadout();
+      // Left alone mid-drag: the seek input's own 'input' handler is already
+      // setting audio.currentTime from seek.value, so timeupdate writing
+      // seek.value back from audio.currentTime in the same tick would just
+      // be echoing the drag back at itself - harmless in the best case,
+      // fighting the pointer in the worst.
+      if (!scrubbing) { seek.value = String(audio.currentTime); }
 
       if (boundEnd !== null && audio.currentTime >= boundEnd) {
         audio.pause();
@@ -1037,6 +1382,34 @@
 
   // ----------------------------------------------------------------- chrome
 
+  // The theme actually in effect right now: an explicit data-theme wins
+  // (either restored from a previous session or set by this page's own
+  // toggle); with none set, the page is following the system/browser
+  // preference via the @media(prefers-color-scheme) block in transcript.css,
+  // which this reads back from matchMedia rather than assuming light - the
+  // button's label has to name the *next* state correctly even when nobody
+  // has touched the toggle yet.
+  function effectiveTheme() {
+    var explicit = document.documentElement.dataset.theme;
+    if (explicit === 'dark' || explicit === 'light') { return explicit; }
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      ? 'dark' : 'light';
+  }
+
+  // The button names the action, not the current state ("מצב כהה" while
+  // light, "מצב בהיר" while dark - see the doc_theme_light/doc_theme_dark
+  // keys in gui/i18n.py), so its label has to flip every time the effective
+  // theme changes: on click, and once on init in case the system preference
+  // was already dark and formatting.py's server-rendered "dark mode" label
+  // guessed wrong.
+  function syncThemeLabel() {
+    var btn = document.getElementById('toggle-theme');
+    if (!btn) { return; }
+    var label = btn.querySelector('span');
+    var next = effectiveTheme() === 'dark' ? btn.dataset.labelLight : btn.dataset.labelDark;
+    if (label && next) { label.textContent = next; }
+  }
+
   function bindChrome() {
     var searchInput = document.getElementById('search');
     if (searchInput) {
@@ -1067,9 +1440,10 @@
     var theme = document.getElementById('toggle-theme');
     if (theme) {
       theme.addEventListener('click', function () {
-        var nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        var nextTheme = effectiveTheme() === 'dark' ? 'light' : 'dark';
         document.documentElement.dataset.theme = nextTheme;
         state.theme = nextTheme;
+        syncThemeLabel();
         save();
       });
     }
@@ -1116,6 +1490,162 @@
     });
   }
 
+  // --------------------------------------------------------------- outline
+
+  // Which file's speakers panel is shown and which outline-files link reads
+  // as current - kept in one place so the IntersectionObserver below and a
+  // manual file-link click (bindOutline()) can't drift into disagreeing
+  // about "the current file".
+  function setActiveFile(fileIndex) {
+    document.querySelectorAll('.outline-file').forEach(function (a) {
+      var isCurrent = a.dataset.file === String(fileIndex);
+      if (isCurrent) { a.setAttribute('aria-current', 'true'); } else { a.removeAttribute('aria-current'); }
+    });
+    document.querySelectorAll('.outline-speakers .speakers').forEach(function (panel) {
+      panel.classList.toggle('active', panel.dataset.file === String(fileIndex));
+    });
+  }
+
+  // One counter per (file, speaker) pair, so repeated clicks step forward
+  // through that speaker's turns rather than always landing on the first
+  // one - a plain "scroll to the first match" would make the control
+  // useless for a speaker with more than one turn on screen already.
+  var speakerCycle = {};
+
+  function stepSpeakerTurns(fileIndex, speakerId) {
+    var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
+    if (!section) { return; }
+    var turns = Array.prototype.slice.call(
+      section.querySelectorAll('.turn[data-speaker="' + speakerId + '"]')
+    );
+    if (!turns.length) { return; }
+
+    var key = fileIndex + ':' + speakerId;
+    var index = (speakerCycle[key] || 0) % turns.length;
+    turns[index].scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+    // A brief highlight, reusing the "turn currently relevant" look
+    // .turn[data-playing] already carries for played-back turns, so this
+    // doesn't need a third visual language for "this is the one you asked
+    // to see".
+    var target = turns[index];
+    target.dataset.playing = 'true';
+    setTimeout(function () {
+      if (target.dataset.playing === 'true') { delete target.dataset.playing; }
+    }, 1200);
+    speakerCycle[key] = index + 1;
+  }
+
+  function bindOutline() {
+    var outline = document.getElementById('outline');
+    var toggle = document.getElementById('outline-toggle');
+
+    // No <aside> at all (a single file with no speakers - see
+    // _render_outline_html()'s early return) - nothing here to wire up.
+    if (!outline) { return; }
+
+    // Gates the CSS rule that hides every non-current speakers panel (see
+    // .outline.js-ready in transcript.css) - added only once script is
+    // actually running, so a JavaScript-disabled open keeps every panel
+    // visible instead of losing all but the first to a rule with nothing
+    // left to un-hide them.
+    outline.classList.add('js-ready');
+
+    outline.querySelectorAll('.outline-file').forEach(function (a) {
+      a.addEventListener('click', function () {
+        setActiveFile(a.dataset.file);
+        // A real navigation (the href does the scrolling) - closing the
+        // overlay after it is only meaningful below the narrow-screen
+        // breakpoint, where .open controls visibility; toggling it off
+        // above that breakpoint is a harmless no-op since CSS ignores the
+        // class there.
+        closeOutline();
+      });
+    });
+
+    outline.addEventListener('click', function (e) {
+      var locate = e.target.closest ? e.target.closest('.spk-locate') : null;
+      if (!locate) { return; }
+      var row = locate.closest('.speaker-row');
+      var panel = locate.closest('.speakers');
+      if (row && panel) { stepSpeakerTurns(panel.dataset.file, row.dataset.speaker); }
+    });
+
+    function openOutline() {
+      outline.classList.add('open');
+      if (toggle) { toggle.setAttribute('aria-expanded', 'true'); }
+      var first = outline.querySelector('a, button, input');
+      if (first) { first.focus(); }
+    }
+
+    function closeOutlineImpl() {
+      outline.classList.remove('open');
+      if (toggle) { toggle.setAttribute('aria-expanded', 'false'); }
+    }
+    closeOutline = closeOutlineImpl;
+
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        if (outline.classList.contains('open')) { closeOutline(); } else { openOutline(); }
+      });
+    }
+
+    // Escape closes the overlay - not a focus trap (the plan is explicit
+    // that this must not trap focus), just the same "Escape dismisses the
+    // thing that's open" behaviour closeMenu() already gives the popovers.
+    // Tab is left alone entirely: a reader who tabs out of the overlay
+    // while it happens to be open is not stuck inside it.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && outline.classList.contains('open')) {
+        closeOutline();
+        if (toggle) { toggle.focus(); }
+      }
+    });
+
+    // Which file is "current" is driven by the same observer that drives
+    // the outline's own active marker - one source of truth rather than a
+    // second scroll handler that could disagree with it. rootMargin pulls
+    // the effective viewport in from the top by the toolbar's height (so a
+    // section sliding in under the sticky toolbar doesn't count as "in
+    // view" a frame early) and from the bottom by 60%, so the section
+    // occupying the *upper* portion of the screen - the one the reader is
+    // actually reading - wins over one just barely peeking in at the
+    // bottom edge.
+    if (window.IntersectionObserver) {
+      var toolbarHeight = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height')
+      ) || 0;
+      // A short file's whole section can fit inside the shrunk band at once,
+      // which means more than one section is "intersecting" at the same
+      // time - a single "last entry wins" would then depend on whatever
+      // order the browser happened to deliver entries in, not on which
+      // file is actually on screen first. Tracking every section's current
+      // intersection state and picking the smallest file index among the
+      // ones still true is the fix: since sections render top-to-bottom in
+      // document order, the smallest index among currently-intersecting
+      // ones is always the topmost one - the file the reader reached first.
+      var intersecting = {};
+      function pickActiveFromIntersecting() {
+        var current = Object.keys(intersecting)
+          .filter(function (file) { return intersecting[file]; })
+          .sort(function (a, b) { return Number(a) - Number(b); });
+        if (current.length) { setActiveFile(current[0]); }
+      }
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          intersecting[entry.target.dataset.file] = entry.isIntersecting;
+        });
+        pickActiveFromIntersecting();
+      }, { rootMargin: '-' + (toolbarHeight + 1) + 'px 0px -60% 0px', threshold: 0 });
+      document.querySelectorAll('.source').forEach(function (section) { observer.observe(section); });
+    }
+  }
+
+  // Reassigned by bindOutline() once the real <aside> (if any) is found -
+  // declared up here so keydown/click handlers above can reference it
+  // before the reassignment runs, and so calling it when there is no
+  // outline at all is a safe no-op instead of a ReferenceError.
+  var closeOutline = function () {};
+
   // ---------------------------------------------------------------- layout
 
   // The sticky file bar sits below the toolbar (see .file-bar in
@@ -1138,6 +1668,7 @@
   bindPlain();
   bindAudio();
   bindChrome();
+  bindOutline();
 
   syncToolbarHeight();
   window.addEventListener('resize', syncToolbarHeight);
@@ -1148,7 +1679,15 @@
   applySpeakerState();
   applyAssignments();
   applyEdits();
-  document.querySelectorAll('.speakers').forEach(function (s) { applyNames(s.dataset.file); });
+  // applyAssignments() has already replayed any saved reassignments by this
+  // point, so .turn[data-speaker] reflects the real, final state - counting
+  // now (rather than trusting formatting.py's server-rendered numbers, which
+  // only ever describe the state at render time) is what keeps a reloaded
+  // page's counts matching a session's own reassignments from before reload.
+  document.querySelectorAll('.speakers').forEach(function (s) {
+    applyNames(s.dataset.file);
+    refreshSpeakerCounts(s.dataset.file);
+  });
 
   Object.keys(state.opts).forEach(function (file) {
     var panel = document.querySelector('.source[data-file="' + file + '"] .plain');
@@ -1161,6 +1700,7 @@
   document.querySelectorAll('.source').forEach(rebuildPlain);
 
   if (state.theme) { document.documentElement.dataset.theme = state.theme; }
+  syncThemeLabel();
   if (state.flags) { setFlags(true); }
 
   // Restored edits are in this browser, not in any file - assume the worst and

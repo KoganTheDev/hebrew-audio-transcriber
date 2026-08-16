@@ -9,11 +9,9 @@ none of which have anything to do with running a Whisper model.
 Stdlib only, and no PyQt5 - this runs inside the worker process.
 """
 
-import base64
 import html
 import json
 import logging
-import random
 import re
 import uuid
 from functools import lru_cache
@@ -275,58 +273,6 @@ def _asset(name: str) -> str:
     return (_ASSETS / name).read_text(encoding="utf-8")
 
 
-_VISTAS_DIR = _ASSETS / "vistas"
-
-
-@lru_cache(maxsize=None)
-def _vista_names() -> tuple:
-    """
-    Available backdrop photos, sorted so vista-01.webp always sorts first.
-
-    An empty tuple - whether because the directory is missing (an installed
-    copy that lost its package data) or simply has nothing in it - is not an
-    error here. render_html() reads it as "no backdrop", the same way it
-    already behaves before this feature existed.
-    """
-    if not _VISTAS_DIR.is_dir():
-        return ()
-    return tuple(sorted(p.name for p in _VISTAS_DIR.glob("*.webp")))
-
-
-@lru_cache(maxsize=None)
-def _asset_bytes(name: str) -> bytes:
-    """
-    Binary counterpart to _asset(): the vista photos are WebP, not text, so
-    they cannot go through _asset()'s read_text/utf-8 path. Cached for the
-    same reason - a batch render would otherwise re-read the same file once
-    per document.
-    """
-    return (_ASSETS / name).read_bytes()
-
-
-def _vista_data_uri(vista: Optional[str]) -> Optional[str]:
-    """
-    Choose a backdrop and return it as a data:image/webp;base64,... URI.
-
-    vista=None (the default) picks uniformly at random from whatever exists.
-    A caller passing a specific filename - the "vista" parameter on
-    render_html() - gets exactly that one back instead, which is how tests
-    get a deterministic document. Returns None, never raises, when there is
-    nothing to embed: a missing or empty vistas/ directory must still produce
-    a working transcript, just without a backdrop.
-    """
-    names = _vista_names()
-    if not names:
-        return None
-
-    chosen = vista if vista is not None else random.choice(names)
-    if chosen not in names:
-        raise ValueError(f"unknown vista {chosen!r}; available: {', '.join(names)}")
-
-    encoded = base64.b64encode(_asset_bytes(f"vistas/{chosen}")).decode("ascii")
-    return f"data:image/webp;base64,{encoded}"
-
-
 def _json_payload(data: dict) -> str:
     """
     Serialise the page's data island.
@@ -364,7 +310,6 @@ def render_html(
     title: Optional[str] = None,
     ui_strings: Optional[Dict[str, str]] = None,
     doc_id: Optional[str] = None,
-    vista: Optional[str] = None,
 ) -> str:
     """
     Render one or more transcripts into a single, self-contained RTL HTML
@@ -392,15 +337,9 @@ def render_html(
         doc_id: identity used to key the browser's saved edits. Generated when
             not supplied; pass one to keep a re-render addressing the same
             saved edits.
-        vista: filename of a backdrop photo under core/assets/vistas/ to pin,
-            e.g. "vista-07.webp". None (the default) picks one at random -
-            a fresh choice on every render, which is what a person actually
-            wants and what makes two default renders differ in tests. Pin it
-            when the caller needs a specific, reproducible document.
     """
     strings = dict(ui_strings or {})
     doc_id = doc_id or uuid.uuid4().hex
-    vista_uri = _vista_data_uri(vista)
 
     payload = {
         "threshold": CONFIDENCE_THRESHOLD,
@@ -416,22 +355,32 @@ def render_html(
         "speakerLabel": speaker_label,
     }
 
+    # The file list used to render as a <nav class="toc"> inline at the top
+    # of the reading column - the same column every file's turns scroll
+    # through, so it scrolled out of reach after the first file. It is now
+    # part of the outline sidebar instead of a second copy alongside it: see
+    # _render_outline_html(), which also absorbs the per-file speakers strip
+    # that _render_document_html used to render inline (same reasoning -
+    # speaker management is navigation-adjacent, not reading content).
     body: List[str] = []
 
-    if len(documents) > 1:
-        body.append('<nav class="toc" aria-label="%s"><ol>'
-                    % html.escape(strings.get("files", "Files")))
-        for index, document in enumerate(documents):
-            body.append(
-                f'<li><a href="#src-{index}">{html.escape(document.source_name)}</a></li>'
-            )
-        body.append("</ol></nav>")
+    # Computed once, here, rather than inside _render_document_html: the
+    # outline sidebar (_render_outline_html -> _render_speakers_html) also
+    # needs each document's turns, to show a per-speaker turn count next to
+    # the locate button. merge_turns() is not free - it walks every
+    # segment - so a document with, say, an hour of speech would otherwise
+    # be grouped into turns twice for no reason beyond the two call sites
+    # happening to want the same thing. One list, threaded to both.
+    turns_by_doc = [merge_turns(document.segments) for document in documents]
 
     total = len(documents)
     for index, document in enumerate(documents):
         body.extend(_render_document_html(
-            document, index, total, speaker_label, timestamps, failed_label, strings, payload,
+            document, index, total, turns_by_doc[index], speaker_label, timestamps,
+            failed_label, strings, payload,
         ))
+
+    outline_html = _render_outline_html(documents, turns_by_doc, speaker_label, strings)
 
     parts = [
         "<!doctype html>",
@@ -443,25 +392,28 @@ def render_html(
         f"<style>{_asset('transcript.css')}</style>",
         "</head>",
         "<body>",
+        # First child of body: every icon site below references it, so it has
+        # to exist before any of them are parsed.
+        _render_sprite_html(),
     ]
-    if vista_uri:
-        # First child of body, ahead of everything else, so it establishes
-        # the backdrop layer before any real content paints on top of it -
-        # see the .backdrop / isolation:isolate comments in transcript.css
-        # for why paint order here matters. No alt text and aria-hidden: it
-        # is decoration, and a screen reader announcing "image" before every
-        # transcript would be pure noise.
-        parts.append(
-            f'<div class="backdrop" aria-hidden="true" '
-            f'style="background-image:url({html.escape(vista_uri)})"></div>'
-        )
     parts.extend([
-        _render_toolbar_html(strings),
+        _render_toolbar_html(strings, has_outline=outline_html is not None),
+        # .layout is the grid that puts <aside> on the visual left of the
+        # RTL document by pure source order (grid-template-columns's first
+        # track maps to the inline-start edge, which is the right in RTL) -
+        # see the .layout comment in transcript.css. <main> stays first so a
+        # screen reader or a JS-disabled reader hits the actual transcript
+        # before the navigation/speaker-management aside, matching normal
+        # reading order regardless of which side either lands on visually.
+        '<div class="layout">',
         "<main>",
     ])
     parts.extend(body)
+    parts.append("</main>")
+    if outline_html:
+        parts.append(outline_html)
     parts.extend([
-        "</main>",
+        "</div>",
         _render_player_html(strings),
         _render_toast_html(),
         '<script type="application/json" id="transcript-data">',
@@ -474,55 +426,138 @@ def render_html(
     return "\n".join(parts)
 
 
-def _icon(path: str) -> str:
-    """An inline SVG glyph. Never an emoji - those are font-dependent."""
+# ---------------------------------------------------------------------------
+# Icon sprite
+# ---------------------------------------------------------------------------
+# Every turn used to carry its own full inline SVG per icon: a play glyph in
+# the timestamp button and a copy glyph in the turn's actions, byte-identical
+# across every one of a batch's turns. At 435 bytes per icon body, a 200-turn
+# recording shipped ~85 KB of markup that said the same nine things over and
+# over. An SVG sprite fixes this the way sprites always have: each glyph is
+# defined once as a <symbol> in a hidden <svg> emitted near the top of <body>
+# (see _render_sprite_html()), and every use site becomes a four-attribute
+# <use> reference instead of a full path list - readable with JavaScript
+# disabled, since <use> is a static content reference, not a script-built
+# element (the constraint that also rules out <template> cloning for this).
+#
+# Presentation lives on .icon in transcript.css (fill: none; stroke:
+# currentColor; ...), not as attributes on the <symbol> or its paths - SVG's
+# inheritable presentation properties cross the <use> shadow boundary the
+# same way "color" crosses into a <slot>, so one CSS rule styles every
+# instance instead of every glyph repeating stroke="currentColor" nine times.
+_ICON_DEFS: Dict[str, str] = {
+    "search": '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+    "up": '<path d="M18 15l-6-6-6 6"/>',
+    "down": '<path d="M6 9l6 6 6-6"/>',
+    "flag": '<path d="M5 21V4h9l1 2h5v9h-6l-1-2H5"/>',
+    "theme": '<path d="M21 13a9 9 0 11-10-10 7 7 0 0010 10z"/>',
+    "save": '<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/>',
+    "copy": '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/>',
+    "play": '<path d="M7 4l12 8-12 8z"/>',
+    "plus": '<path d="M12 5v14"/><path d="M5 12h14"/>',
+    "list": '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
+    # A double chevron pointing down the page, not the GPS-style circle-and-
+    # ticks this replaced: that glyph read as "locate me on a map", which is
+    # not what the button does - it steps through one speaker's turns, each
+    # click advancing to the next one further down the transcript. "down =
+    # next" is already this sprite's own vocabulary (see "up"/"down" above,
+    # used for the search box's previous/next-match buttons); doubling the
+    # chevron distinguishes "skip to this speaker's next turn" from a single
+    # step to the next search match while keeping the same visual language
+    # rather than inventing a second one. Left undirected on the inline axis
+    # on purpose - the transcript scrolls vertically regardless of the
+    # document's RTL/LTR direction, so there is no left/right sense to mirror.
+    "locate": '<path d="M6 5l6 6 6-6"/><path d="M6 12l6 6 6-6"/>',
+}
+
+
+def _render_sprite_html() -> str:
+    """
+    The one copy of every icon body, as <symbol> definitions.
+
+    position:absolute + zero size (rather than display:none) is the
+    standard sprite-hiding technique: some engines skip <use> resolution
+    against a display:none ancestor, so the symbols are laid out at (0, 0)
+    with no box instead of removed from rendering altogether. aria-hidden
+    keeps a screen reader from ever landing on the defs themselves - the
+    per-icon <use> sites are what carry (or intentionally omit) meaning.
+    """
+    symbols = "".join(
+        f'<symbol id="i-{name}" viewBox="0 0 24 24">{path}</symbol>'
+        for name, path in _ICON_DEFS.items()
+    )
     return (
-        '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" '
-        'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
-        f'stroke-linejoin="round">{path}</svg>'
+        '<svg aria-hidden="true" focusable="false" '
+        'style="position:absolute;width:0;height:0;overflow:hidden">'
+        f'{symbols}</svg>'
     )
 
 
-_ICON_SEARCH = _icon('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>')
-_ICON_UP = _icon('<path d="M18 15l-6-6-6 6"/>')
-_ICON_DOWN = _icon('<path d="M6 9l6 6 6-6"/>')
-_ICON_FLAG = _icon('<path d="M5 21V4h9l1 2h5v9h-6l-1-2H5"/>')
-_ICON_THEME = _icon('<path d="M21 13a9 9 0 11-10-10 7 7 0 0010 10z"/>')
-_ICON_SAVE = _icon('<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/>')
-_ICON_COPY = _icon('<rect x="9" y="9" width="11" height="11" rx="2"/>'
-                   '<path d="M5 15V5a2 2 0 012-2h8"/>')
-_ICON_PLAY = _icon('<path d="M7 4l12 8-12 8z"/>')
-_ICON_PLUS = _icon('<path d="M12 5v14"/><path d="M5 12h14"/>')
+def _icon(name: str) -> str:
+    """A <use> reference into the sprite. Never an emoji - those are font-dependent."""
+    return f'<svg class="icon" aria-hidden="true"><use href="#i-{name}"></use></svg>'
 
 
-def _render_toolbar_html(strings: Dict[str, str]) -> str:
+def _render_toolbar_html(strings: Dict[str, str], has_outline: bool) -> str:
     """The document's own chrome: search, view toggles, export, save status."""
     def s(key: str, fallback: str) -> str:
         return html.escape(strings.get(key, fallback))
 
     search = s("search", "Search transcript")
+    outline_btn = ""
+    if has_outline:
+        # Only meaningful, and only rendered, when there is an <aside> to
+        # open - a single-file document with no speakers has nothing for it
+        # to control. aria-expanded/aria-controls are kept in sync by
+        # transcript.js's outline toggle handler; below ~900px this is the
+        # sidebar's only entry point (see .outline in transcript.css), so it
+        # has to exist in the toolbar's own markup, not be built by script.
+        outline_btn = (
+            f'<button id="outline-toggle" class="tb-btn" aria-expanded="false"'
+            f' aria-controls="outline">{_icon("list")}'
+            f'<span>{s("outline_toggle", "Files and speakers")}</span></button>'
+        )
     return "\n".join([
         f'<header class="toolbar" role="toolbar"'
         f' aria-label="{s("toolbar", "Transcript tools")}">',
+        # The toolbar's controls sit inside their own grid-column: 2 wrapper
+        # (see .tb-row in transcript.css) rather than being grid items of
+        # .toolbar directly - .tb-group is a flex row (a search box that
+        # grows, buttons that wrap at narrow widths), and a bare
+        # display: flex on the grid items would fight the grid's own column
+        # placement instead of just occupying it. This is what ties the
+        # toolbar's controls to the same track main sits in.
+        '<div class="tb-row">',
         '<div class="tb-group tb-search">',
-        _ICON_SEARCH,
+        _icon("search"),
         f'<input id="search" type="search" placeholder="{search}" aria-label="{search}">',
         '<span id="search-count" class="count" aria-live="polite"></span>',
         f'<button id="search-prev" class="icon-btn"'
-        f' aria-label="{s("search_prev", "Previous match")}">{_ICON_UP}</button>',
+        f' aria-label="{s("search_prev", "Previous match")}">{_icon("up")}</button>',
         f'<button id="search-next" class="icon-btn"'
-        f' aria-label="{s("search_next", "Next match")}">{_ICON_DOWN}</button>',
+        f' aria-label="{s("search_next", "Next match")}">{_icon("down")}</button>',
         "</div>",
         '<div class="tb-group tb-actions">',
-        f'<button id="toggle-flags" class="tb-btn" aria-pressed="false">{_ICON_FLAG}'
-        f'<span>{s("show_uncertain", "Uncertain words")}</span></button>',
+        outline_btn,
+        f'<button id="toggle-flags" class="tb-btn" aria-pressed="false">{_icon("flag")}'
+        f'<span>{s("show_uncertain", "Show uncertain words")}</span></button>',
+        # Server-rendered assuming the light scheme, since that is this
+        # element's state before any script runs; transcript.js corrects the
+        # label on init if the system/browser is actually already in dark
+        # mode (see bindChrome()'s theme handling), and swaps it again on
+        # every click. The label names the action ("switch to dark"), not
+        # the current state - "Theme" told the reader nothing about what
+        # clicking it would do.
         f'<button id="toggle-theme" class="tb-btn"'
-        f' aria-label="{s("toggle_theme", "Switch colour scheme")}">{_ICON_THEME}'
-        f'<span>{s("theme", "Theme")}</span></button>',
-        f'<button id="export" class="tb-btn primary">{_ICON_SAVE}'
+        f' aria-label="{s("toggle_theme", "Switch colour scheme")}"'
+        f' data-label-dark="{s("theme_dark", "Dark mode")}"'
+        f' data-label-light="{s("theme_light", "Light mode")}">{_icon("theme")}'
+        f'<span>{s("theme_dark", "Dark mode")}</span></button>',
+        f'<button id="export" class="tb-btn primary">{_icon("save")}'
         f'<span>{s("save_copy", "Save a copy")}</span></button>',
         f'<span id="status" class="status" role="status"'
         f' aria-live="polite">{s("status_saved", "Saved")}</span>',
+        "</div>",
         "</div>",
         "</header>",
     ])
@@ -538,10 +573,24 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     container the browser cannot play.
     """
     label = html.escape(strings.get("play_pause", "Play or pause"))
+    seek_label = html.escape(strings.get("seek", "Seek"))
+    # A native <input type="range">, not a custom div-based track: it is
+    # keyboard-operable (arrow keys, Home/End, Page Up/Down) and announced
+    # with its role, value and bounds by every screen reader for free -
+    # reimplementing that on a div was rejected because it means
+    # reimplementing it *correctly*, not just visually. max starts at 0 and
+    # is set once loadedmetadata reports the real duration (see bindAudio()
+    # in transcript.js); before that, there is nothing to scrub to yet.
+    # "current / total" sits in its own dir="ltr" span, with the usual
+    # LRI/PDI isolate around the whole thing - same bidi shape as
+    # format_range()'s "M:SS - M:SS", a neutral "/" between two LTR digit
+    # runs inside an RTL document (see the module docstring).
     return f"""<div id="player" class="player" hidden>
-<button id="player-toggle" class="icon-btn" aria-label="{label}">{_ICON_PLAY}</button>
+<button id="player-toggle" class="icon-btn" aria-label="{label}">{_icon("play")}</button>
 <span id="player-file" class="player-file"></span>
-<span id="player-time" class="player-time" dir="ltr">0:00</span>
+<input id="player-seek" class="seek" type="range" min="0" max="0" step="0.1" value="0"
+ aria-label="{seek_label}">
+<span id="player-time" class="player-time" dir="ltr">{LRI}0:00 / 0:00{PDI}</span>
 <audio id="audio" preload="none"></audio>
 </div>"""
 
@@ -596,13 +645,24 @@ def _render_document_html(
     document: TranscriptDocument,
     index: int,
     total: int,
+    turns: List[Turn],
     speaker_label: Optional[str],
     timestamps: bool,
     failed_label: Optional[str],
     strings: Dict[str, str],
     payload: dict,
 ) -> List[str]:
-    """One <section class="source">: sticky file bar, speakers strip, turns, plain text."""
+    """One <section class="source">: sticky file bar, turns, plain text.
+
+    No speakers strip here any more - it rendered the same roster twice (once
+    per file, in the very column the reader was trying to read) and the
+    sidebar is now the one place speaker management lives; see
+    _render_outline_html().
+
+    turns is this document's merge_turns() result, computed once by the
+    caller (render_html) and passed in rather than recomputed here - see the
+    comment where render_html builds turns_by_doc for why.
+    """
     # The audio filename is the source name: output lands next to its input,
     # so a relative reference is all the page needs. Quoting happens in the
     # page (encodeURIComponent) rather than here, so the attribute keeps the
@@ -619,20 +679,15 @@ def _render_document_html(
         lines.append("</section>")
         return lines
 
-    turns = merge_turns(document.segments)
-    speakers = _speaker_indices(document.segments)
+    turn_ids = [f"{index}-{position}" for position in range(len(turns))]
 
-    if speaker_label is not None and speakers:
-        lines.append(_render_speakers_html(index, speakers, speaker_label, strings))
-
-    for position, turn in enumerate(turns):
-        turn_id = f"{index}-{position}"
+    for turn_id, turn in zip(turn_ids, turns):
         flagged = turn.low_confidence(CONFIDENCE_THRESHOLD)
         if flagged:
             payload["low"][turn_id] = flagged
         lines.append(_render_turn_html(turn, turn_id, speaker_label, timestamps, strings))
 
-    lines.append(_render_plain_html(strings))
+    lines.append(_render_plain_html(turns, turn_ids, speaker_label, timestamps, strings))
     lines.append("</section>")
     return lines
 
@@ -649,47 +704,123 @@ def _swatch_trigger_html(strings: Dict[str, str]) -> str:
     speakers a file has - the menu itself is built by transcript.js's
     buildSwatchMenu(), the same on-demand-popover shape as the turn's
     reassignment menu (buildSpeakerMenu()), not a second pattern invented for
-    this. The swatch's own colour comes from the .speaker-row[data-palette]
-    CSS rule already in transcript.css, keyed off the row's data-palette -
-    this button carries no colour of its own to fall out of sync.
+    this. The swatch's own colour comes from the shared --spk custom
+    property transcript.css sets once per data-palette index and inherits
+    from .speaker-row down to this dot - this button carries no colour of
+    its own to fall out of sync.
     """
     label = html.escape(strings.get("speaker_colour", "Speaker colour"))
+    # A distinct class from the popover's own dots (.swatch), not just a
+    # distinct selector - see the CSS comment on .swatch-rest for why this is
+    # a structural fix rather than a specificity patch: an unscoped
+    # .speaker-row[data-palette] .swatch descendant rule used to reach into
+    # the popover too (it opens as a sibling still inside .speaker-row), and
+    # tied on specificity with the popover's own per-dot rule, so source
+    # order silently decided which one painted. Two classes that can never
+    # collide removes the possibility outright rather than out-specificity-ing
+    # it, which the next selector added here would only re-break.
     return (
         f'<button type="button" class="swatch-trigger" aria-haspopup="true"'
         f' aria-expanded="false" aria-label="{label}">'
-        '<span class="swatch" aria-hidden="true"></span></button>'
+        '<span class="swatch-rest" aria-hidden="true"></span></button>'
     )
 
 
 def _render_speakers_html(
     file_index: int,
     speakers: List[int],
+    turns: List[Turn],
     speaker_label: str,
     strings: Dict[str, str],
+    active: bool = False,
 ) -> str:
     """
     Editable names, colours and roster for this recording's speakers.
 
+    Lives in the outline sidebar (see _render_outline_html()), one panel per
+    file with only the in-view file's panel shown - the .speaker-row shape
+    and data-file attribute are unchanged from when this rendered inline in
+    the reading column, which is what keeps applyNames(fileIndex),
+    recolourSpeaker, addSpeaker and bakeFormState() in transcript.js working
+    against the same selectors without a rewrite.
+
     Per file rather than global: speaker 1 in one recording is rarely the same
     person as speaker 1 in another, so names stay local and an explicit action
     copies them across when it really is the same meeting.
+
+    active=True marks the panel transcript.js should show by default before
+    its own IntersectionObserver has decided which file is in view (the first
+    file, same as which file's turns are on screen at load) - see
+    .outline.js-ready .speakers:not(.active) in transcript.css. Without
+    JavaScript every panel stays visible (no CSS rule hides a non-.active one
+    unless .js-ready is present), so speaker names are still readable for
+    every file, not just the first, on a script-disabled open.
 
     Not a <label> wrapping the whole row any more: once a row holds a text
     input *and* a colour trigger that opens its own menu, "label wraps one
     control" stops being true of it. The input keeps its own aria-label
     instead - already there before this changed, so nothing lost its
     accessible name.
+
+    Each row also shows how many turns this speaker holds in the recording -
+    the count is len(turns whose .speaker == this speaker's index), which by
+    construction equals the number of .turn elements the reading column
+    renders for them (_render_turn_html emits one per entry in the same
+    `turns` list). The count is rendered here purely as a number in a <span>,
+    not folded into the button's aria-label: the label still has to say what
+    the button DOES ("step through this speaker's turns"), and letting the
+    count grow into a second aria-label sentence like "5, step through this
+    speaker's turns" would leave a screen reader announcing a number with no
+    action attached first. aria-hidden on the count span (and keeping the
+    aria-label as the button's whole accessible name) is what enforces that
+    rather than relying on incidental DOM order.
     """
+    counts = {speaker: 0 for speaker in speakers}
+    for turn in turns:
+        if turn.speaker in counts:
+            counts[turn.speaker] += 1
+
     rows = []
     for speaker in speakers:
         fallback = speaker_label.format(n=speaker + 1)
         palette = speaker % SPEAKER_PALETTE_SIZE
+        # Raw here, escaped once below after the count is composed in -
+        # escaping first and then concatenating would double-escape the
+        # apostrophe in "speaker's".
+        locate_label = strings.get("speaker_locate", "Step through this speaker's turns")
+        # The count appears twice, deliberately, in two different forms.
+        #
+        # Visibly it is the bare number, because the button is ~47px wide in
+        # the narrowest sidebar flank and the full "{n} turns" phrase only
+        # fitted there by dropping to a ~10px font - too small to read, which
+        # defeats the point of showing a count at all. A bare digit fits at a
+        # legible size.
+        #
+        # In the accessible name it is the full phrase, folded into the
+        # button's own label. The first version marked the visible span
+        # aria-hidden so it would not clobber the label, which did protect
+        # the label but threw the count away entirely for anyone using a
+        # screen reader - and the count is information (how much of this
+        # recording is this speaker), not decoration, so hiding it is not a
+        # neutral choice. Composing both into aria-label keeps the action
+        # first ("what does this button do") with the count as the
+        # supplementary detail it is, and leaves nothing audible-only or
+        # visible-only.
+        count_phrase = strings.get("speaker_turn_count", "{n} turns").replace(
+            "{n}", str(counts[speaker])
+        )
+        locate_full = html.escape(f"{locate_label} ({count_phrase})")
         rows.append(
             f'<div class="speaker-row" data-speaker="{speaker}" data-palette="{palette}">'
             + _swatch_trigger_html(strings) +
             f'<input class="speaker-name" type="text" value=""'
             f' placeholder="{html.escape(fallback)}"'
             f' aria-label="{html.escape(fallback)}">'
+            f'<button type="button" class="icon-btn spk-locate" aria-label="{locate_full}"'
+            f' title="{locate_full}">'
+            f'{_icon("locate")}'
+            f'<span class="spk-count" aria-hidden="true">{counts[speaker]}</span>'
+            f'</button>'
             "</div>"
         )
 
@@ -699,15 +830,80 @@ def _render_speakers_html(
     )
     add_label = html.escape(strings.get("add_speaker", "Add speaker"))
     add_speaker = (
-        f'<button type="button" class="tb-btn add-speaker">{_ICON_PLUS}'
+        f'<button type="button" class="tb-btn add-speaker">{_icon("plus")}'
         f'<span>{add_label}</span></button>'
     )
     title = html.escape(strings.get("speakers", "Speakers"))
+    cls = "speakers active" if active else "speakers"
     return (
-        f'<div class="speakers" data-file="{file_index}">'
+        f'<div class="{cls}" data-file="{file_index}">'
         f'<span class="speakers-title">{title}</span>'
         + "".join(rows) + apply_all + add_speaker + "</div>"
     )
+
+
+def _render_outline_html(
+    documents: List[TranscriptDocument],
+    turns_by_doc: List[List[Turn]],
+    speaker_label: Optional[str],
+    strings: Dict[str, str],
+) -> Optional[str]:
+    """
+    The sidebar: which file is which, and each file's speaker roster.
+
+    Replaces two things that used to live inside the reading column: the
+    <nav class="toc"> file list (present only for a multi-file batch) and the
+    per-file speakers strip (rendered inline in every <section class="source">
+    by _render_document_html - see its docstring). Both belong to
+    "where am I, who is this" rather than to the transcript text itself, so
+    moving them out of the column the reader is scrolling through is a
+    relocation, not new functionality.
+
+    turns_by_doc mirrors documents index-for-index - render_html's single
+    merge_turns() pass, threaded down so _render_speakers_html can show each
+    speaker's turn count without merging the same segments a second time.
+
+    Returns None - so the caller can skip emitting an empty <aside> and the
+    matching toolbar toggle button - when there is neither a file list to
+    show (a single-document render) nor any speaker to manage.
+    """
+    total = len(documents)
+    show_files = total > 1
+
+    panels = []
+    for index, document in enumerate(documents):
+        if document.failed:
+            continue
+        speakers = _speaker_indices(document.segments)
+        if speaker_label is not None and speakers:
+            panels.append(
+                _render_speakers_html(
+                    index, speakers, turns_by_doc[index], speaker_label, strings,
+                    active=index == 0,
+                )
+            )
+
+    if not show_files and not panels:
+        return None
+
+    sections = []
+    if show_files:
+        items = []
+        for index, document in enumerate(documents):
+            current = ' aria-current="true"' if index == 0 else ""
+            items.append(
+                f'<li><a href="#src-{index}" class="outline-file" data-file="{index}"{current}>'
+                f'{html.escape(document.source_name)}</a></li>'
+            )
+        sections.append(
+            f'<h2 class="outline-title">{html.escape(strings.get("files", "Files"))}</h2>'
+            f'<ol class="outline-files">{"".join(items)}</ol>'
+        )
+    if panels:
+        sections.append(f'<div class="outline-speakers">{"".join(panels)}</div>')
+
+    label = html.escape(strings.get("outline", "Files and speakers"))
+    return f'<aside class="outline" aria-label="{label}" id="outline">{"".join(sections)}</aside>'
 
 
 def _render_turn_html(
@@ -730,7 +926,7 @@ def _render_turn_html(
         header_parts.append(
             f'<button class="ts" dir="ltr" data-start="{turn.start:.2f}"'
             f' data-end="{turn.end:.2f}" aria-label="{aria}">'
-            f'{_ICON_PLAY}<span dir="ltr">{format_range(turn.start, turn.end)}</span></button>'
+            f'{_icon("play")}<span dir="ltr">{format_range(turn.start, turn.end)}</span></button>'
         )
 
     if speaker_label is not None and turn.speaker is not None:
@@ -743,16 +939,24 @@ def _render_turn_html(
         # has to be reachable and activatable the way any control is.
         label = html.escape(speaker_label.format(n=turn.speaker + 1))
         palette = turn.speaker % SPEAKER_PALETTE_SIZE
+        # Wrapped in .spk-anchor (position: relative, sized to hug just this
+        # button) rather than leaving .spk itself as the reassignment menu's
+        # anchor - the menu is inserted as this wrapper's child, a *sibling*
+        # of .spk, because the HTML content model forbids interactive
+        # descendants (the menu's own <button>s) inside a <button>. See
+        # .spk-anchor's comment in transcript.css for the full reasoning.
         header_parts.append(
+            f'<span class="spk-anchor">'
             f'<button type="button" class="spk" data-speaker="{turn.speaker}"'
             f' data-palette="{palette}" data-fallback="{label}"'
             f' aria-haspopup="true" aria-expanded="false">{label}</button>'
+            f'</span>'
         )
 
     copy_label = html.escape(strings.get("copy_turn", "Copy this turn"))
     actions = (
         f'<span class="turn-actions"><button class="icon-btn copy-turn"'
-        f' aria-label="{copy_label}">{_ICON_COPY}</button></span>'
+        f' aria-label="{copy_label}">{_icon("copy")}</button></span>'
     )
 
     speaker_attr = (
@@ -781,26 +985,85 @@ def _render_turn_html(
     return "\n".join(lines)
 
 
-def _render_plain_html(strings: Dict[str, str]) -> str:
+def _render_plain_row_html(
+    turn: Turn,
+    turn_id: str,
+    speaker_label: Optional[str],
+    timestamps: bool,
+    strings: Dict[str, str],
+) -> str:
+    """
+    One turn's row in the copy-out panel: an inert prefix, an editable body.
+
+    Rendered server-side (not built by transcript.js from nothing) so the
+    plain-text panel is readable - and, per Phase 4, editable via native
+    contenteditable even with JavaScript disabled reaching it, exactly the
+    way a turn's own <div class="body"> already is. transcript.js's
+    rebuildPlain() finds this same element by its data-turn id afterwards
+    and only ever updates its text, never recreates it from scratch, unless
+    a speaker was added client-side with no server-rendered turn to match.
+    """
+    prefix_parts = []
+    if timestamps:
+        # Same bracket-inside-the-isolate shape as transcript.js's
+        # bracketedRange() - see that function's comment, and the module
+        # docstring's LRI/PDI explanation, for why the brackets have to sit
+        # inside the isolate rather than around it.
+        bare = format_range(turn.start, turn.end).replace(LRI, "").replace(PDI, "")
+        prefix_parts.append(f"{LRI}[{bare}]{PDI}")
+    if speaker_label is not None and turn.speaker is not None:
+        prefix_parts.append(f"{speaker_label.format(n=turn.speaker + 1)}:")
+    prefix_text = f"{' '.join(prefix_parts)} " if prefix_parts else ""
+
+    body_text = "\n".join(split_sentences(turn.text))
+    body_label = html.escape(strings.get("turn_text", "Turn text"))
+    return (
+        f'<div class="plain-row" data-turn="{turn_id}">'
+        f'<span class="plain-prefix" contenteditable="false">{html.escape(prefix_text)}</span>'
+        f'<span class="plain-body" contenteditable="true" role="textbox"'
+        f' aria-multiline="true" aria-label="{body_label}">{html.escape(body_text)}</span>'
+        "</div>"
+    )
+
+
+def _render_plain_html(
+    turns: List[Turn],
+    turn_ids: List[str],
+    speaker_label: Optional[str],
+    timestamps: bool,
+    strings: Dict[str, str],
+) -> str:
     """
     The copy-out panel.
 
     Always visible, not collapsed inside a <details> - it was the thing this
     document gets used for most (pasting the whole recording somewhere else)
     and burying the most-used feature one click below a "Plain text" summary
-    line was the wrong trade. Rebuilt from the live DOM on every edit, so it
-    can never drift from the cards above it.
+    line was the wrong trade.
+
+    One <div class="plain-row" data-turn="..."> per turn (see
+    _render_plain_row_html()), rendered up front rather than built from
+    nothing by transcript.js - the same "readable and editable without
+    JavaScript" property every turn card already has. transcript.js's
+    rebuildPlain() then keeps each row's text in step with its card (and the
+    reverse) by data-turn id: no parsing either direction, so editing either
+    the row or the card cannot desync it from the other, it just writes the
+    same paragraph array readParagraphs() already produces from a card.
     """
     def s(key: str, fallback: str) -> str:
         return html.escape(strings.get(key, fallback))
 
+    rows = "".join(
+        _render_plain_row_html(turn, turn_id, speaker_label, timestamps, strings)
+        for turn_id, turn in zip(turn_ids, turns)
+    )
     return f"""<section class="plain">
 <h2 class="plain-title"><span>{s('plain_text', 'Plain text')}</span>
 <span class="summary-hint">{s('plain_hint', 'to paste into another app')}</span></h2>
 <div class="plain-controls">
 <label><input type="checkbox" class="opt-ts" checked> {s('opt_timestamps', 'Timestamps')}</label>
 <label><input type="checkbox" class="opt-spk" checked> {s('opt_speakers', 'Speaker names')}</label>
-<button class="tb-btn copy-all">{_ICON_COPY}<span>{s('copy_all', 'Copy all')}</span></button>
+<button class="tb-btn copy-all">{_icon("copy")}<span>{s('copy_all', 'Copy all')}</span></button>
 </div>
-<pre class="plain-text" tabindex="0"></pre>
+<div class="plain-text" tabindex="-1">{rows}</div>
 </section>"""

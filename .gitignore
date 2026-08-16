@@ -60,12 +60,6 @@ transcription*.txt
 mp4a_test/
 eval_output/
 
-# Full-size vista originals, as downloaded. Only the processed, downscaled
-# WebP versions under speech_to_text/core/assets/vistas/ are tracked and
-# shipped - the originals are tens of megabytes and serve no purpose in the
-# repo once they have been converted.
-vistas_source/
-
 # The user's own term list is personal vocabulary, not project content.
 # hebrew_terms.example.txt is the tracked template.
 hebrew_terms.txt

@@ -14,6 +14,8 @@ import logging
 import multiprocessing
 import os
 import re
+import tempfile
+import uuid
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
@@ -66,6 +68,40 @@ class _RetryStatusLogHandler(logging.Handler):
                 return
 
 
+def _atomic_write_html(path: str, content: str) -> None:
+    """
+    Write content to `path` without ever leaving a half-written file behind.
+
+    A plain `open(path, "w")` truncates the target immediately, so a crash
+    partway through the write destroys whatever good output was already
+    there - exactly the failure this whole checkpointing scheme exists to
+    prevent. Instead: write to a fresh temp file in the SAME directory as
+    the target (same filesystem, which is what makes the final step atomic
+    rather than a copy), flush and fsync so the bytes are actually on disk
+    and not just sitting in an OS buffer, then os.replace() the temp file
+    onto the target. os.replace() is an atomic rename on both POSIX and
+    Windows: any reader (or another crash) sees either the old complete file
+    or the new complete file, never something in between.
+
+    If the write itself fails partway, the temp file is removed rather than
+    left behind for the batch's output directory to accumulate junk in.
+    """
+    directory = os.path.dirname(path) or "."
+    fd, tmp_path = tempfile.mkstemp(prefix=".transcript-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def run_transcription_process(
     audio_files: List[str],
     output_file: str,
@@ -111,6 +147,19 @@ def run_transcription_process(
     indefensible given how long transcription takes. This mirrors the
     decision already made for diarization and Hebrew correction: an optional
     or partial failure costs only itself.
+
+    Transcription is by far the most expensive step in this pipeline, so the
+    combined HTML is re-rendered and atomically rewritten (see
+    _atomic_write_html) after EVERY file, not only once at the very end. A
+    crash, a forced reboot or a kill at file 9 of 10 must not cost the nine
+    files that already finished. Re-rendering the whole document per file is
+    O(n^2) in render cost, but render+write is negligible next to decoding
+    and transcribing audio, so this trade is not close. These per-file
+    checkpoint writes are silent to the caller: they do not touch
+    progress_queue (w_formatting/w_saving stay attached to the one final
+    write only) or result_queue (still exactly one "finished"/"error" at the
+    end) - the GUI's completion path does not need to know intermediate
+    writes happened at all.
     """
     try:
         progress_queue.put(("progress", "w_initializing", {}, 2))
@@ -145,6 +194,16 @@ def run_transcription_process(
         fw_logger.setLevel(logging.DEBUG)
         retry_handler = _RetryStatusLogHandler(progress_queue)
         fw_logger.addHandler(retry_handler)
+
+        # Pinned once per run, before the first checkpoint write, rather than
+        # left to render_html()'s own default. render_html() mints a fresh
+        # uuid4 doc_id on every call, which is the right behaviour for a
+        # one-shot render but wrong for a document that gets rewritten
+        # repeatedly during one run: a changing doc_id would change the
+        # browser's localStorage autosave key on every checkpoint, orphaning
+        # any edits the user made against the previous doc_id. It must stay
+        # exactly what it was on the first write through to the last.
+        doc_id = uuid.uuid4().hex
 
         documents = []
         done_duration = 0.0
@@ -202,6 +261,39 @@ def run_transcription_process(
                     ))
                     succeeded += 1
 
+                # Checkpoint: render and atomically rewrite the output after
+                # this file, so it survives a crash before the batch ends.
+                # Gated on succeeded > 0 rather than firing unconditionally -
+                # if every file so far has failed there is nothing worth
+                # writing yet (only failure-notice placeholders), and if the
+                # whole batch goes on to fail we want the "every file
+                # failed" path below to behave exactly as it always has:
+                # error reported, no output file left on disk. Once at least
+                # one file has succeeded, every subsequent checkpoint
+                # (successful or not) rewrites the full picture so far.
+                #
+                # A checkpoint is a safety net, not the main event: if
+                # rendering or writing it raises, that must not take down a
+                # batch that is otherwise succeeding. Log it and keep
+                # transcribing - the next checkpoint, or the final write,
+                # gets another chance.
+                if succeeded > 0:
+                    try:
+                        checkpoint_html = formatting.render_html(
+                            documents,
+                            speaker_label=options.speaker_label,
+                            timestamps=options.timestamps,
+                            failed_label=options.failed_label,
+                            title=os.path.splitext(os.path.basename(output_file))[0],
+                            ui_strings=options.ui_strings,
+                            doc_id=doc_id,
+                        )
+                        _atomic_write_html(output_file, checkpoint_html)
+                    except Exception as e:
+                        logger.warning(
+                            f"Checkpoint write failed after {audio_file}: {e}", exc_info=True
+                        )
+
                 done_duration += file_duration
         finally:
             fw_logger.removeHandler(retry_handler)
@@ -218,11 +310,19 @@ def run_transcription_process(
             failed_label=options.failed_label,
             title=os.path.splitext(os.path.basename(output_file))[0],
             ui_strings=options.ui_strings,
+            doc_id=doc_id,
         )
 
+        # Unlike the per-file checkpoints above, this write is not allowed to
+        # fail silently: it's the last chance to persist the batch, so a
+        # failure here must surface as the "error" result the way it always
+        # has (the outer except below still catches it). Still routed
+        # through the same atomic helper as the checkpoints - there is no
+        # reason the final write should be less safe than the ones before
+        # it; a crash during this write must not be able to destroy the last
+        # good checkpoint on disk.
         emit_progress(("w_saving", {}), 99)
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write(rendered)
+        _atomic_write_html(output_file, rendered)
 
         emit_progress(("w_complete", {}), 100)
         result_queue.put(("finished", output_file))

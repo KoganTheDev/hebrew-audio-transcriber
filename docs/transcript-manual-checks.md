@@ -51,21 +51,45 @@ only origin that matters here, and it is the one with the restrictions.
 
 ## 2. Speaker names, colours and reassignment
 
-- [ ] Type a name in the speakers strip. Every turn by that speaker updates as you type.
+Speaker management lives in the outline sidebar now, not inline above each recording's turns - see
+section 10 below for the sidebar itself.
+
+- [ ] Type a name in a speaker row in the sidebar. Every turn by that speaker updates as you type.
 - [ ] Clear the name. It falls back to "דובר 1", not to blank.
 - [ ] With two or more files: rename in one, confirm the others are untouched.
 - [ ] Press "use these names in all files". Other files adopt them - but a two-speaker recording
       does not gain a third name from a three-speaker one.
-- [ ] Press "+ הוספת דובר" (add speaker). A new row appears with its own name field and colour
-      picker, defaulting to a fallback like "דובר 3" that no other speaker in the file is using.
+- [ ] Press "+ הוספת דובר" (add speaker). A new row appears with its own name field, colour
+      picker and locate button, defaulting to a fallback like "דובר 3" that no other speaker in the
+      file is using.
 - [ ] Click a swatch on any speaker's colour picker (an existing or a newly added one). That
       speaker's name, every one of their turns' accent border, and the swatch's own selected ring
       all update together.
+- [ ] **The swatch bug fix**: open a speaker's colour menu, pick the *last* colour in the grid.
+      Reopen any colour menu (that speaker's or another's) - it must still show all eight swatches
+      in eight visibly distinct colours, not the picked colour repeated across every dot.
+- [ ] Open a speaker's colour menu from a row scrolled to the sidebar's **bottom edge** (scroll the
+      outline panel so the row sits right at the bottom before opening it, rather than mid-panel).
+      The swatch grid must be fully visible, not clipped by the sidebar's own scrollbar. The sidebar
+      is a scroll container, so a menu opened mid-panel proves nothing about clipping - only one
+      opened at the edge does.
 - [ ] Click a turn's speaker label. A menu of every speaker in that file opens, each with its
       current colour and name.
 - [ ] Choose a different speaker from that menu. The turn's accent border and label change to the
       target speaker immediately, **and the plain-text panel below updates to match** without being
       reopened.
+- [ ] Open a reassignment menu on a card that has another card below it, then **move the pointer
+      away from the card entirely** before checking - do not leave it hovered. The menu must still
+      paint above the card underneath it. This is the critical detail: a fix keyed to `.turn:hover`
+      passes with the pointer still resting on the card (hover's own lift already creates a stacking
+      context) but fails in real use, because the menu stays open well after the pointer leaves it.
+- [ ] Click a speaker row's locate button in the sidebar. The view scrolls to that speaker's first
+      turn in that file; click again and it steps to the next one, cycling back to the first after
+      the last.
+- [ ] Each speaker row shows a turn count next to its locate button, matching the number of that
+      speaker's cards actually visible in the reading column. Reassign a turn to a different
+      speaker via its `.spk` chip menu: **both** the count it left and the count it joined update
+      immediately, without a reload.
 - [ ] **Reload the page.** Added speakers, their colours, and any reassigned turns are all still
       there, exactly as left - not just the text edits.
 
@@ -94,6 +118,14 @@ Requires the transcript to be sitting next to its real audio file.
       appear, and that section's timestamps become plain grey labels, not-focusable by Tab.
 - [ ] In a batch where only one file's audio is missing: **the other recordings still play.** A
       single bad file must not disable the whole document.
+- [ ] The player shows a seek bar and a "current / total" readout. Dragging the seek bar moves
+      playback to that position; the readout updates as you drag, not only after you release.
+- [ ] Click a timestamp whose range ends before the file's end, let it play to the range's end
+      (player pauses there, per the check above), then drag the seek bar to a point *past* that
+      original range end. Playback must **not** snap back - a deliberate seek clears the range
+      bound the same way pressing the play/pause toggle already does.
+- [ ] Click a timestamp. The readout updates to that turn's start time immediately, before playback
+      has produced a single `timeupdate` event.
 
 ## 5. Search
 
@@ -112,10 +144,20 @@ Requires the transcript to be sitting next to its real audio file.
 - [ ] The text matches the cards above, including your edits, speaker names and reassignments.
 - [ ] Uncheck "חותמות זמן" and "שמות דוברים" - the text updates immediately.
 - [ ] "העתקת הכול" copies. Paste into another app: the Hebrew reads correctly and timestamps are
-      not reversed.
+      not reversed, and each timestamp is bracketed - "[0:32 - 1:05]" - unlike the bare pill on the
+      card above it.
 - [ ] A toast appears near the bottom of the screen confirming the copy, and disappears on its own
       after a few seconds. A per-turn copy button does the same, alongside its own brief flash.
-- [ ] Edit a card with the panel open. The panel updates without any action on your part.
+- [ ] Edit a card with the panel open. The panel updates without any action on your part, **and the
+      caret in whatever else you were typing (a different turn, the search box) is undisturbed.**
+- [ ] **Two-way editing.** Click directly into a row in the plain-text panel itself and type. The
+      matching card above updates as you type - reload the page and the edit is still there, same
+      as editing the card directly.
+- [ ] Type in a plain-text row and don't stop: the caret must stay put mid-word. This is the
+      re-entrancy guard - editing here must not trigger a rebuild that yanks the caret out from
+      under you.
+- [ ] Paste formatted text (from Word, or a web page) into a plain-text row. It arrives as plain
+      text only, same as pasting into a card.
 
 ## 7. Export
 
@@ -131,8 +173,8 @@ Requires the transcript to be sitting next to its real audio file.
 
 - [ ] Toggle the theme. Both schemes are readable; the choice survives a reload.
 - [ ] Set the OS to dark mode with no in-page choice made. The document follows it.
-- [ ] The vista photo is faintly visible through the reading panel in both schemes - it should read
-      as "behind the text," not fully masked out and not fighting the text for attention.
+- [ ] The reading panel (.source, .outline, menus) is visibly distinct from the page ground in both
+      schemes - a flat, raised surface, not flush with the body colour behind it.
 - [ ] Scroll a file with several turns. Its filename bar stays pinned just below the toolbar the
       whole way through that file, with its own accent colour, and hands off to the next file's bar
       at the section boundary rather than overlapping it.
@@ -142,13 +184,57 @@ Requires the transcript to be sitting next to its real audio file.
 - [ ] Turn on "reduce motion" at the OS level. Cards no longer lift on hover, the colour-swatch hover
       scale is gone, the toast still appears/disappears but without sliding, and search does not
       smooth-scroll.
-- [ ] Set the OS to "more contrast." The backdrop photo disappears entirely.
 - [ ] Narrow the window to ~375px. No horizontal scrolling, and the per-turn copy buttons are
       permanently visible rather than hover-only.
+- [ ] **The reading column stays centred as the window narrows.** At 1900px, 1400px, 1100px and
+      900px, `<main>`'s centre matches the viewport centre, and the toolbar's first control shares
+      an edge with the reading column. This guards a specific regression, not a taste preference:
+      `.toolbar` and `.layout` used to be two independently centred boxes of different widths -
+      156px apart at the values then in play - so nothing "pushed" one off from the other; they were
+      simply never tied to the same measurement. Lining them up here is a guarantee now, not a
+      coincidence of today's numbers.
 - [ ] On a touch device or with hover emulation off: every control is reachable without hovering,
       including the speaker colour swatches and the add-speaker button.
 
-## 9. Offline guarantee
+## 9. Outline sidebar
+
+Best tested with a multi-file batch (three recordings is enough) so there is something for the
+"current file" tracking to actually show.
+
+- [ ] The sidebar lists every file and shows the current file's speakers panel. On a single-file
+      document with no speakers to manage, the sidebar (and its toolbar button) are absent entirely.
+- [ ] Scroll through the document. The file list's current-file marker, and which file's speakers
+      panel is shown, both track which file you are actually reading - not just which one you
+      started on.
+- [ ] Click a file name in the sidebar. The view jumps to that file's section.
+- [ ] Narrow the window below ~1200px - not the old ~900px, which was measured against a fixed-width
+      sidebar; the current sidebar's flanks are flexible and get squeezed well before 900px. The
+      sidebar disappears behind a toolbar button, **and that button appears at this width and not
+      before** (it is not present in the toolbar above the breakpoint). Clicking it opens the
+      sidebar as an overlay over the transcript.
+- [ ] With the overlay open, press Escape. It closes, and focus returns to the toolbar button.
+- [ ] With the overlay open, press Tab repeatedly past its last focusable element. Focus leaves the
+      overlay and continues into the rest of the page - it must not be trapped inside.
+- [ ] With JavaScript disabled (or before it has finished loading): the transcript's own turns are
+      still fully readable regardless of window width - only the sidebar's file-jump and
+      speaker-management conveniences are affected.
+
+## 10. Crash recovery
+
+This is a worker-process check, not a transcript.js one: the output HTML is rewritten after every
+file in a batch finishes, not only once at the very end, since transcription is by far the most
+expensive step in the pipeline and a crash near the end of a long batch used to lose the whole run.
+
+- [ ] Start a batch of three or more files. **After the second file finishes** (watch the progress
+      log, or just time it), kill the app outright - end the process, do not use the app's own
+      Cancel button.
+- [ ] An HTML file already exists on disk at the batch's output location, containing the completed
+      transcripts for however many files finished before the kill.
+- [ ] Open it. It behaves exactly like a normal, complete transcript - editing, autosave, search,
+      speaker management, all as expected. A checkpoint file is a real document, not a partial or
+      broken one.
+
+## 11. Offline guarantee
 
 - [ ] Disconnect from the network entirely and open the file. Everything works, nothing is missing,
       and the browser's network tab shows no requests.

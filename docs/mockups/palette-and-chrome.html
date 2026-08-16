@@ -1,0 +1,1065 @@
+<!doctype html>
+<!--
+  Phase 0 deliverable - palette and chrome sign-off mockup.
+
+  Purpose: let Yuval pick one of three palettes and settle the "does the page
+  look veiled" question before either gets applied to the real transcript.css.
+  Nothing here is wired into speech_to_text/ - standalone, offline, works from
+  file:// with nothing else on disk. Follows docs/mockups/control-styles.html's
+  conventions: tokens copied (not linked), lang="he" dir="rtl", a sticky
+  switcher bar, data-* attributes on <html> driving variants, plain inline
+  <script> at the bottom.
+
+  Three palettes (data-palette="1|2|3"), independently switchable colour
+  scheme (data-theme="light|dark", same mechanism as control-styles.html) and
+  backdrop strength (data-backdrop="off|vivid|current"):
+
+    1. Anuppuccin faithful-fill  - Mocha verbatim in dark. In light, every
+       Latte ACCENT hex is verbatim; the speaker chip becomes a filled pill
+       with a per-accent text colour, because Latte's accents fail 4.5:1 as
+       light-on-light text on an outlined chip.
+    2. Anuppuccin adjusted - Mocha verbatim in dark, identical to palette 1.
+       In light, the speaker chip stays exactly as it is today (outlined,
+       border/text = currentColor, no fill) and every --spk-N is darkened
+       until it clears 4.5:1 instead.
+
+    Palettes 1 and 2 share their neutrals: both use `mantle` as
+    --surface-hover, subtext1 as --muted and overlay2 as --control-border.
+    An earlier draft of this mockup gave palette 1 the "faithful" surface0
+    hover and left --muted and --control-border failing there on purpose, as
+    a demonstration. That was the wrong call - it made palette 1 a strawman
+    rather than a choosable option, and the failure was not even about
+    fidelity: NO Latte token works as --muted on surface0 (subtext0 3.20:1,
+    subtext1 4.05:1, and only `text` itself clears it, which would erase the
+    muted/body distinction). Sharing the neutrals means the ONLY difference
+    between 1 and 2 is how a speaker chip is drawn, which is the actual
+    decision being asked for here.
+    3. Ledger - today's shipped transcript.css palette, unchanged, plus only
+       the two new hierarchy tokens --accent-tint/--accent-hover. The
+       do-no-harm baseline everything else is judged against.
+
+  Accent chosen for the Catppuccin palettes (1 and 2): MAUVE, not blue.
+  Reasoning kept as one comment, right where --accent is first declared
+  below, rather than repeated three times - see palette 1's dark block.
+
+  Contrast fixes made while deriving palette 1/2's tokens (none of these are
+  given by the plan - they had to be computed and verified the same way
+  transcript.css's own tokens were):
+    - light --focus: Catppuccin sapphire measured 2.78:1 against Latte --bg
+      (below the 3:1 UI minimum) - swapped for Latte blue (#1e66f5, 4.34:1).
+    - light --accent-hover: naively "softening" mauve toward Latte's own
+      crust (a light colour in a light theme) *raised* luminance instead of
+      darkening it, dropping white-on-hover to 4.16:1 or worse. Mixed toward
+      black instead: #7430cb, 6.94:1.
+    - --warn-line (light): Latte's raw yellow measured 2.05:1 against the
+      derived --warn-bg. Darkened by mixing toward black (30%) to #9c6314,
+      3.91:1 - same darkening reasoning transcript.css's own --warn-line
+      comment already documents for the shipped palette.
+    - --hit-current / --hit-current-text (dark): naive mixes of base+yellow
+      failed --text at every alpha strong enough to look like "the current
+      match" (2.35-4.08:1). Following transcript.css's own precedent for this
+      exact problem (see its --hit-current-text comment), paired
+      --hit-current with --accent-text instead of --text once the mix reached
+      50% (#8c806e, accent-text-on-it 4.85:1) - a second colour was never the
+      fix there either.
+    - --control-border (palettes 1 and 2, light): overlay1 was the first
+      candidate and fails the 3:1 UI floor outright (2.83:1 on --bg, 2.63:1
+      on --surface-hover). overlay2 clears it on both (3.49:1 / 3.25:1) and
+      is what both palettes use. Note this only works because --surface-hover
+      is `mantle`; against surface0 the same token drops to 2.56:1, which is
+      one of the two reasons the surface0 hover was abandoned (the other,
+      and the decisive one, being that no Latte token survives as --muted
+      there at all).
+
+  Full numeric derivation (every candidate tried, not just the winner) lives
+  in the session's contrast-check scratch scripts, not in this file - what
+  matters here is that the live readout below computes the SAME formulas
+  live from the SAME custom properties, so nothing above has to be trusted
+  by eye.
+-->
+<html lang="he" dir="rtl" data-theme="light" data-palette="1" data-backdrop="current">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palette and chrome mockup - Phase 0</title>
+<style>
+/* =========================================================================
+   PALETTE 1 - Anuppuccin faithful-fill
+   ========================================================================= */
+
+/* Light (Latte), faithful mapping: --surface-hover = Catppuccin's own
+   "surface0" role was the obvious first choice for the hover background and
+   had to be abandoned: no Latte token survives as --muted on top of it.
+   subtext0 measures 3.20:1 there and even subtext1 only reaches 4.05:1,
+   both under the 4.5:1 floor for real text - the only Latte value that
+   clears it is `text` itself, which would collapse the muted/body
+   distinction entirely. So this palette uses `mantle` as --surface-hover
+   too, exactly as palette 2 does. That is not a hedge: it means the ONLY
+   difference between palettes 1 and 2 is how a speaker chip is drawn
+   (filled with a per-accent text colour here, outlined with darkened
+   accents there), which is the actual question this mockup exists to
+   answer. Every Latte accent hex below is still verbatim. */
+html[data-palette="1"] {
+  --bg: #eff1f5;
+  /* mantle, not surface0 - see the comment above. */
+  --surface-hover: #e6e9ef;
+  --text: #4c4f69;
+  /* subtext1, not subtext0: 5.53:1 on --bg and 5.14:1 on --surface-hover,
+     against subtext0's failing 4.37:1 / 4.06:1. */
+  --muted: #5c5f77;
+  --rule: #bcc0cc;
+  /* overlay2. overlay1 was tried first and fails the 3:1 UI floor at
+     2.83:1 / 2.63:1; overlay2 clears it at 3.49:1 / 3.25:1. */
+  --control-border: #7c7f93;
+
+  /* Accent: MAUVE, not blue. Catppuccin's own docs name mauve as the
+     "default" accent across the whole line (it's the colour the project
+     uses for its own wordmark), and blue is already spoken for as --spk-0 -
+     reusing it as --accent would make "the button that means primary action"
+     and "the chip that means speaker 1" the same colour, which is the kind
+     of colour-carries-two-meanings collision transcript.css's own comments
+     elsewhere warn against (see .lowconf's tint+underline pairing). Mauve is
+     unused by any --spk-N slot except spk-3, so it stays a distinct signal
+     everywhere that matters more (toolbar primary action, focus-adjacent
+     chrome) while still reading as "this document's colour". */
+  --accent: #8839ef;
+  --accent-text: #ffffff;
+  --accent-hover: #7430cb;
+  --accent-tint: #e0d5f4;
+  --focus: #1e66f5;
+
+  --warn-bg: #ede2d5;
+  --warn-line: #9c6314;
+  --hit-bg: #e9cea9;
+  --hit-current: #e8c494;
+  --hit-current-text: var(--text);
+
+  --spk-0: #1e66f5;
+  --spk-1: #fe640b;
+  --spk-2: #40a02b;
+  --spk-3: #8839ef;
+  --spk-4: #e64553;
+  --spk-5: #179299;
+  --spk-6: #7287fd;
+  --spk-7: #df8e1d;
+  /* Only used by palette 1's light-mode filled-pill chip (see .spk rules
+     below) - the per-accent paired text colours from the plan, verbatim. */
+  --spk-0-chip-text: #ffffff;
+  --spk-1-chip-text: #11111b;
+  --spk-2-chip-text: #11111b;
+  --spk-3-chip-text: #ffffff;
+  --spk-4-chip-text: #11111b;
+  --spk-5-chip-text: #11111b;
+  --spk-6-chip-text: #11111b;
+  --spk-7-chip-text: #11111b;
+
+  --bg-rgb: 239, 241, 245;
+}
+
+/* Dark (Mocha), verbatim - and shared byte-for-byte with palette 2's dark
+   block below, because the plan says palette 2 is "identical to palette 1"
+   in dark mode. Declared twice rather than factored into one shared
+   selector so each palette's block stays self-contained and readable in
+   isolation, the same trade-off transcript.css itself makes between
+   @media(prefers-color-scheme) and [data-theme="dark"]. */
+html[data-palette="1"][data-theme="dark"],
+html[data-palette="2"][data-theme="dark"] {
+  --bg: #1e1e2e;
+  --surface-hover: #313244;
+  --text: #cdd6f4;
+  --muted: #a6adc8;
+  --rule: #45475a;
+  --control-border: #7f849c;
+
+  --accent: #cba6f7;
+  --accent-text: #11111b;
+  --accent-hover: #d5b8f9;
+  --accent-tint: #38324c;
+  --focus: #74c7ec;
+
+  --warn-bg: #38363d;
+  --warn-line: #f9e2af;
+  --hit-bg: #5b5552;
+  --hit-current: #8c806e;
+  --hit-current-text: var(--accent-text);
+
+  --spk-0: #89b4fa;
+  --spk-1: #fab387;
+  --spk-2: #a6e3a1;
+  --spk-3: #cba6f7;
+  --spk-4: #eba0ac;
+  --spk-5: #94e2d5;
+  --spk-6: #b4befe;
+  --spk-7: #f9e2af;
+
+  --bg-rgb: 30, 30, 46;
+}
+
+/* =========================================================================
+   PALETTE 2 - Anuppuccin adjusted
+   ========================================================================= */
+
+html[data-palette="2"] {
+  --bg: #eff1f5;
+  /* The fix: mantle instead of palette 1's surface0 - a gentler step away
+     from --bg, which is what lets --muted and --control-border clear their
+     minimums against it below without touching either token's own value. */
+  --surface-hover: #e6e9ef;
+  --text: #4c4f69;
+  /* subtext1, the same token palette 1 uses - NOT the derived #65687d this
+     started as. #65687d cleared the flat pairs (4.85:1 on --bg, 4.51:1 on
+     --surface-hover) but failed the one check that only the live readout
+     could catch: composited against the CURRENT backdrop (photo at 0.40
+     under a 0.88 panel), its worst case over a black pixel is 4.35:1,
+     under the 4.5:1 floor. subtext1 is 4.96:1 on that same composite.
+     Palettes 1 and 2 now share every neutral, which is the point - the
+     only thing that should differ between them is how a speaker chip is
+     drawn. */
+  --muted: #5c5f77;
+  --rule: #bcc0cc;
+  --control-border: #7c7f93;
+
+  --accent: #8839ef;
+  --accent-text: #ffffff;
+  --accent-hover: #7430cb;
+  --accent-tint: #e0d5f4;
+  --focus: #1e66f5;
+
+  --warn-bg: #ede2d5;
+  --warn-line: #9c6314;
+  --hit-bg: #e9cea9;
+  --hit-current: #e8c494;
+  --hit-current-text: var(--text);
+
+  /* The fix: the darkened values from the plan, verbatim - text/border
+     colour directly on the *existing outlined* chip design, no fill needed. */
+  --spk-0: #0f5bf4;
+  --spk-1: #b74301;
+  --spk-2: #307820;
+  --spk-3: #8737ef;
+  --spk-4: #ce1c2b;
+  --spk-5: #12747a;
+  --spk-6: #3754fc;
+  --spk-7: #935d13;
+
+  --bg-rgb: 239, 241, 245;
+}
+/* Palette 2's dark block is declared jointly with palette 1's above. */
+
+/* =========================================================================
+   PALETTE 3 - Ledger (today's shipped palette, unchanged)
+   ========================================================================= */
+
+html[data-palette="3"] {
+  --bg: #faf9f7;
+  --surface-hover: #f2f0ec;
+  --text: #1c1b19;
+  --muted: #6b6862;
+  --rule: #e2dfd9;
+  --control-border: #6b6862;
+  --accent: #2f5d50;
+  --accent-text: #ffffff;
+  --focus: #1a6aa8;
+  --warn-bg: #fdf1d6;
+  --warn-line: #b47f1a;
+  --hit-bg: #ffe9a8;
+  --hit-current: #ffc94d;
+  --hit-current-text: var(--text);
+
+  --spk-0: #3a6ea5;
+  --spk-1: #98592a;
+  --spk-2: #467654;
+  --spk-3: #7d4f8c;
+  --spk-4: #a13f63;
+  --spk-5: #166a5c;
+  --spk-6: #6b5fa8;
+  --spk-7: #7a6a1f;
+
+  /* The only tokens new to Ledger's palette - given by the plan, verified
+     below rather than trusted: accent-text on both accent and accent-hover
+     clears 4.5:1 (10.0:1 resting, unaffected since accent-hover only used on
+     hover), accent on accent-tint clears 3:1 (6.24:1). */
+  --accent-tint: #e4ece9;
+  --accent-hover: #24493f;
+
+  --bg-rgb: 250, 249, 247;
+}
+
+html[data-palette="3"][data-theme="dark"] {
+  --bg: #16161a;
+  --surface-hover: #1f1f25;
+  --text: #e9e7e2;
+  --muted: #9d998f;
+  --rule: #2d2d34;
+  --control-border: #9d998f;
+  --accent: #7fb3a3;
+  --accent-text: #14231e;
+  --focus: #79b8ea;
+  --warn-bg: #3a3220;
+  --warn-line: #d8a942;
+  --hit-bg: #5c4a18;
+  --hit-current: #a8842a;
+  --hit-current-text: var(--accent-text);
+
+  --spk-0: #7fb0e0;
+  --spk-1: #d99a63;
+  --spk-2: #86bd97;
+  --spk-3: #b98fc7;
+  --spk-4: #e08fa0;
+  --spk-5: #6fc2c2;
+  --spk-6: #b3a6e0;
+  --spk-7: #d9c76a;
+
+  --accent-tint: #1f2c27;
+  --accent-hover: #99c4b7;
+
+  --bg-rgb: 22, 22, 26;
+}
+
+/* =========================================================================
+   Backdrop strength - orthogonal to palette, same three settings for all
+   three palettes (the plan's literal numbers: 0.40/0.55 light/dark for
+   "current", 0.88 panel opacity). Declared after the palette blocks and
+   keyed on data-theme/data-backdrop only (not data-palette), so it never
+   competes on specificity with a palette rule for the same property.
+   ========================================================================= */
+html { --panel-opacity: 0.88; }
+html:not([data-theme="dark"]) { --backdrop-opacity: 0.40; }
+html[data-theme="dark"] { --backdrop-opacity: 0.55; }
+html[data-backdrop="off"] { --backdrop-opacity: 0; --panel-opacity: 1; }
+html[data-backdrop="vivid"] { --backdrop-opacity: 1; --panel-opacity: 1; }
+
+/* Squircle control shape - the Phase 0 pick already shipped in transcript.css
+   (see docs/mockups/control-styles.html), reproduced as a constant here since
+   this mockup is about colour/chrome, not control shape. */
+:root { --control-radius: 14px; --control-border-width: 2px; --radius: 6px; --fast: 160ms; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  isolation: isolate;
+}
+
+/* ---- the backdrop photo - inlined data-URI SVG, deliberately both bright
+   and dark so the worst-case contrast the readout computes is a real risk,
+   not a hypothetical one. A diagonal gradient white -> mid-grey -> black. ---- */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='0.5' stop-color='%238a8a8a'/%3E%3Cstop offset='1' stop-color='%23000000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='300' fill='url(%23g)'/%3E%3C/svg%3E");
+  background-size: cover;
+  background-position: center;
+  opacity: var(--backdrop-opacity);
+  pointer-events: none;
+  transition: opacity var(--fast) ease-out;
+}
+
+/* ==== MOCKUP'S OWN CHROME - deliberately NOT the transcript design system,
+   so the two are never confused. Dark slate + amber, monospace labels,
+   dashed separators: a "control panel" register the real document never
+   uses anywhere. ==== */
+.switcher {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  margin: 0 -1.25rem 1.5rem;
+  background: #14141a;
+  color: #e8dfc8;
+  border-bottom: 3px dashed #d9a441;
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+.switcher .grp { display: flex; align-items: center; gap: 0.4rem; }
+.switcher .grp-label { color: #a89a6f; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.72rem; }
+.switcher button {
+  min-height: 38px;
+  padding: 0 0.75rem;
+  border: 1px solid #4a4636;
+  border-radius: 3px;
+  background: #24242e;
+  color: #e8dfc8;
+  font: inherit;
+  cursor: pointer;
+}
+.switcher button[aria-pressed="true"] {
+  background: #d9a441;
+  color: #14141a;
+  border-color: #d9a441;
+  font-weight: 700;
+}
+.switcher .theme-toggle { margin-inline-start: auto; }
+.mockup-note {
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  color: #8a8f9c;
+  background: #14141a1a;
+  border: 1px dashed #d9a44166;
+  border-radius: 4px;
+  padding: 0.6rem 0.9rem;
+  margin: 0 0 1.5rem;
+}
+
+h1 { font-size: 1.3rem; margin: 1.5rem 0 0.25rem; }
+h2.demo-title {
+  font-size: 0.95rem;
+  color: var(--muted);
+  border-bottom: 1px dashed var(--rule);
+  padding-bottom: 0.4rem;
+  margin: 2.5rem 0 1rem;
+}
+.lede { color: var(--muted); font-size: 0.9rem; max-width: 46rem; }
+
+table.states { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+table.states th, table.states td {
+  text-align: start;
+  vertical-align: middle;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--rule);
+}
+table.states th { color: var(--muted); font-weight: 500; font-size: 0.82rem; }
+table.states td:first-child { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+
+/* ---- contrast readout ---- */
+.readout-wrap { max-width: 68rem; margin: 0 auto 1.5rem; }
+.readout-wrap > summary {
+  cursor: pointer;
+  padding: 0.6rem 0.9rem;
+  border: var(--control-border-width, 2px) solid var(--control-border);
+  border-radius: var(--control-radius, 14px);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.readout-wrap > summary:hover { color: var(--text); border-color: var(--text); }
+.readout-wrap[open] > summary { margin-bottom: 0.75rem; }
+.readout {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  margin: 0 0 2rem;
+  background: rgba(var(--bg-rgb), 1);
+  overflow-x: auto;
+}
+.readout table { border-collapse: collapse; width: 100%; font-size: 0.82rem; font-family: Consolas, "SF Mono", "Liberation Mono", monospace; }
+.readout caption { text-align: start; font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; caption-side: top; }
+.readout th, .readout td { padding: 0.3rem 0.6rem; text-align: start; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.readout th { color: var(--muted); font-weight: 600; }
+.readout .swab { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid var(--rule); vertical-align: middle; margin-inline-end: 0.3rem; }
+.readout .ratio-pass { color: var(--text); }
+.readout .ratio-fail { color: #ffffff; background: #b3261e; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 3px; }
+.readout .min-col { color: var(--muted); }
+
+/* =========================================================================
+   TRANSCRIPT DESIGN SYSTEM - reproduced from transcript.css. Real class
+   names, real markup shape, so this is the actual chrome being judged, not a
+   paraphrase of it.
+   ========================================================================= */
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+
+.layout-demo { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; gap: 0 1.5rem; align-items: start; max-width: 62rem; margin: 0 auto; }
+@media (max-width: 900px) { .layout-demo { grid-template-columns: minmax(0, 1fr); } }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+  max-width: 62rem;
+  margin: 0 auto 1rem;
+}
+.tb-group { display: flex; align-items: center; gap: 0.4rem; }
+.tb-search { flex: 1 1 15rem; }
+.tb-search .icon { color: var(--muted); flex: none; }
+#search {
+  flex: 1 1 auto; min-width: 6rem; min-height: 44px; padding: 0 0.5rem;
+  border: 0; border-bottom: 1px solid transparent; background: transparent;
+  color: inherit; font: inherit; font-size: 0.95rem;
+}
+#search:focus { border-bottom-color: var(--accent); outline: none; }
+.count { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: center; }
+
+.tb-btn, .icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  min-height: 44px; padding: 0 0.6rem;
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: transparent; color: var(--muted); font: inherit; font-size: 0.9rem;
+  cursor: pointer;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out, border-color var(--fast) ease-out;
+}
+.icon-btn { min-width: 44px; padding: 0; }
+.tb-btn:hover, .icon-btn:hover, .tb-btn.is-hover, .icon-btn.is-hover { background: var(--surface-hover); color: var(--text); border-color: var(--text); }
+.tb-btn:active, .icon-btn:active, .tb-btn.is-active, .icon-btn.is-active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tb-btn.is-focus, .icon-btn.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tb-btn.primary { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.tb-btn[aria-pressed="true"] { background: var(--surface-hover); color: var(--text); border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+
+.status { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.status::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-inline-end: 0.35rem; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.status[data-kind="saving"]::before { background: var(--warn-line); }
+.status[data-kind="error"]::before { background: #c0392b; }
+.status[data-kind="local"]::before { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); }
+
+.icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---- outline sidebar ---- */
+.outline {
+  padding: 1.1rem 1rem 1.5rem;
+  border-radius: calc(var(--radius) * 2);
+  background: rgba(var(--bg-rgb), var(--panel-opacity));
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .outline { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+}
+html[data-backdrop="off"] .outline, html[data-backdrop="vivid"] .outline,
+html[data-backdrop="off"] .source, html[data-backdrop="vivid"] .source {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.outline-title { margin: 0 0 0.4rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.outline-files { list-style: none; margin: 0 0 1.5rem; padding: 0; }
+.outline-files li { margin: 0.1rem 0; }
+.outline-files a {
+  display: flex; align-items: center; min-height: 44px; padding: 0 0.6rem;
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: var(--control-radius);
+  color: var(--muted); text-decoration: none; font-size: 0.9rem;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out, border-color var(--fast) ease-out;
+}
+.outline-files a:hover { background: var(--surface-hover); color: var(--text); border-color: var(--text); }
+.outline-files a[aria-current="true"] {
+  color: var(--text); font-weight: 600; border-color: var(--accent);
+  border-inline-start-width: 4px; background: var(--surface-hover);
+}
+.speakers { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; border-bottom: 1px solid var(--rule); padding-bottom: 1rem; margin-bottom: 1rem; }
+.speakers-title { display: block; margin-bottom: 0.3rem; font-size: 0.8rem; color: var(--muted); }
+.speaker-row { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; }
+.speaker-row.is-hover { background: var(--surface-hover); border-radius: var(--control-radius); }
+.swatch-rest { width: 16px; height: 16px; border-radius: 50%; background: var(--muted); flex: none; }
+.speaker-row[data-palette="0"] .swatch-rest { background: var(--spk-0); }
+.speaker-row[data-palette="1"] .swatch-rest { background: var(--spk-1); }
+.speaker-row[data-palette="2"] .swatch-rest { background: var(--spk-2); }
+.speaker-row[data-palette="3"] .swatch-rest { background: var(--spk-3); }
+.swatch-trigger {
+  display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0;
+  border: var(--control-border-width) solid var(--control-border); border-radius: 50%; background: transparent;
+  cursor: pointer; flex: none;
+}
+.swatch-trigger:hover { background: var(--surface-hover); border-color: var(--accent); }
+.speaker-name {
+  flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 0 0.6rem;
+  border: var(--control-border-width) solid var(--control-border); border-radius: var(--control-radius);
+  background: transparent; color: inherit; font: inherit; font-size: 0.9rem;
+}
+.spk-locate { color: var(--muted); }
+.spk-locate .icon { width: 15px; height: 15px; }
+.link-btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.3rem; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 0.85rem; text-decoration: underline; cursor: pointer; }
+.add-speaker { color: var(--accent); }
+
+/* ---- source panel / turns ---- */
+.source {
+  margin: 0 0 1.5rem;
+  padding: 0 1.25rem 1.25rem;
+  border-radius: calc(var(--radius) * 2);
+  background: rgba(var(--bg-rgb), var(--panel-opacity));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px rgb(0 0 0 / 0.10);
+  max-width: 62rem;
+  margin-inline: auto;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .source { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+}
+.file-bar {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem;
+  margin: 0 -1.25rem; padding: 0.85rem 1.25rem 0.7rem;
+  border-start-start-radius: calc(var(--radius) * 2); border-start-end-radius: calc(var(--radius) * 2);
+  border-bottom: 2px solid var(--spk-0);
+}
+.file-bar h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
+.file-position { flex: none; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
+.turn {
+  position: relative; margin: 0 0 0.35rem; padding: 0.6rem 0.9rem; border-radius: var(--radius);
+  border-inline-start: 2px solid var(--rule); background: transparent;
+}
+.turn[data-palette="0"] { border-inline-start-color: var(--spk-0); }
+.turn[data-palette="1"] { border-inline-start-color: var(--spk-1); }
+.turn[data-palette="2"] { border-inline-start-color: var(--spk-2); }
+.turn[data-palette="3"] { border-inline-start-color: var(--spk-3); }
+.turn h2 { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.2rem; font-size: 0.85rem; font-weight: 500; }
+
+.ts {
+  display: inline-flex; align-items: center; gap: 0.3rem; min-height: 44px; padding: 0 0.6rem;
+  border: var(--control-border-width) solid var(--control-border); border-radius: var(--control-radius);
+  background: var(--surface-hover); color: var(--muted);
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace; font-size: 0.8rem; font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.ts .icon { width: 12px; height: 12px; }
+.ts:hover { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+
+.spk {
+  position: relative; display: inline-flex; align-items: center;
+  border: var(--control-border-width) solid currentColor; padding: 0 0.5rem; margin-inline-start: -0.4rem;
+  border-radius: var(--control-radius); background: transparent; font: inherit; font-weight: 600;
+  cursor: pointer; min-height: 44px;
+}
+.turn[data-palette="0"] .spk { color: var(--spk-0); }
+.turn[data-palette="1"] .spk { color: var(--spk-1); }
+.turn[data-palette="2"] .spk { color: var(--spk-2); }
+.turn[data-palette="3"] .spk { color: var(--spk-3); }
+.spk:hover { background: var(--surface-hover); }
+
+/* Palette 1's filled-pill fix - light mode only. Higher specificity than
+   the plain currentColor rule above by virtue of the extra attribute
+   selectors, so it overrides it exactly where the plan says it should and
+   nowhere else (palette 1 dark, palette 2, palette 3 all keep the outlined
+   chip). */
+html[data-palette="1"]:not([data-theme="dark"]) .turn[data-palette="0"] .spk { background: var(--spk-0); color: var(--spk-0-chip-text); border-color: var(--spk-0); }
+html[data-palette="1"]:not([data-theme="dark"]) .turn[data-palette="1"] .spk { background: var(--spk-1); color: var(--spk-1-chip-text); border-color: var(--spk-1); }
+html[data-palette="1"]:not([data-theme="dark"]) .turn[data-palette="2"] .spk { background: var(--spk-2); color: var(--spk-2-chip-text); border-color: var(--spk-2); }
+html[data-palette="1"]:not([data-theme="dark"]) .turn[data-palette="3"] .spk { background: var(--spk-3); color: var(--spk-3-chip-text); border-color: var(--spk-3); }
+
+.turn-actions { margin-inline-start: auto; display: flex; gap: 0.15rem; }
+.body p { margin: 0.1rem 0; }
+.lowconf { background: var(--warn-bg); border-bottom: 2px dotted var(--warn-line); border-radius: 2px; padding: 0 1px; }
+mark.hit { background: var(--hit-bg); color: inherit; border-radius: 2px; }
+mark.hit.current { background: var(--hit-current); color: var(--hit-current-text); }
+
+/* ---- Phase 4 button-hierarchy demo ---- */
+.tier1 { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.tier1:hover, .tier1.is-hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
+/* Tier 3 keeps the resting border (--control-border) - only the fill and the
+   inset underline are new, echoing .tb-btn[aria-pressed="true"] above. */
+.tier3-on { background: var(--accent-tint); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.tier3-on:hover, .tier3-on.is-hover { background: var(--surface-hover); }
+
+.hitarea-demo { position: relative; display: inline-block; }
+.swab-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 1.5rem; }
+.swab-row .chip {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.6rem;
+  border-radius: var(--control-radius); border: var(--control-border-width) solid var(--rule);
+  font-size: 0.8rem; font-family: Consolas, monospace;
+}
+.swab-row .dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+</style>
+</head>
+<body>
+
+<header class="switcher" role="toolbar" aria-label="Mockup controls">
+  <span class="grp-label">PALETTE</span>
+  <div class="grp">
+    <button type="button" data-pick-palette="1" aria-pressed="true">1. Faithful-fill</button>
+    <button type="button" data-pick-palette="2" aria-pressed="false">2. Adjusted</button>
+    <button type="button" data-pick-palette="3" aria-pressed="false">3. Ledger</button>
+  </div>
+  <span class="grp-label">BACKDROP</span>
+  <div class="grp">
+    <button type="button" data-pick-backdrop="off" aria-pressed="false">Off</button>
+    <button type="button" data-pick-backdrop="current" aria-pressed="true">Current</button>
+    <button type="button" data-pick-backdrop="vivid" aria-pressed="false">Vivid</button>
+  </div>
+  <button type="button" class="theme-toggle" id="theme-toggle">Dark mode</button>
+</header>
+
+<div class="backdrop" aria-hidden="true"></div>
+
+<h1>Palette and chrome mockup</h1>
+<p class="lede">
+  Three palettes, a colour-scheme toggle and a backdrop-strength toggle, all
+  independent of each other. Everything below is the document's real markup
+  and real class names, in every state at once rather than behind hover -
+  and the table under this paragraph reads the actual rendered colours back
+  out of the page and checks them against the same WCAG formulas
+  tests/test_transcript_styles.py uses, live, on every change.
+</p>
+
+<!-- Collapsed by default. The readout is the proof, not the point: the point
+     is seeing the palettes on real chrome, and a ~1000px table above the
+     first turn card pushed every one of them below the fold. <details> keeps
+     it one click away and discoverable rather than moving it somewhere it
+     would not be found. It still recomputes on every palette/theme/backdrop
+     change whether open or closed, so opening it is never stale. -->
+<details class="readout-wrap">
+<summary>Live contrast readout - every ratio computed from the rendered page (click to open)</summary>
+<section class="readout" aria-label="Live contrast readout">
+  <table id="readout-table">
+    <caption>Contrast ratios computed from this page's own <code>getComputedStyle</code> values - not hand-typed. A red cell is a real failure at the current palette/theme/backdrop combination.</caption>
+    <thead>
+      <tr><th></th><th>Foreground</th><th>Background</th><th>Ratio</th><th class="min-col">Minimum</th></tr>
+    </thead>
+    <tbody id="readout-pairs"></tbody>
+  </table>
+  <table id="readout-backdrop" style="margin-top:1rem;">
+    <caption>Worst-case backdrop composite for <code>.source</code>/<code>.outline</code> (text sitting on the translucent panel over the photo's brightest and darkest possible pixel), at the current --backdrop-opacity / --panel-opacity.</caption>
+    <thead>
+      <tr><th>Token</th><th>Pixel</th><th>Composite</th><th>Ratio</th><th class="min-col">Minimum</th></tr>
+    </thead>
+    <tbody id="readout-backdrop-body"></tbody>
+  </table>
+</section>
+</details>
+
+<div class="layout-demo">
+<main>
+
+<h2 class="demo-title">Toolbar (real markup, all four save-status states)</h2>
+<header class="toolbar" role="toolbar" aria-label="כלי תמלול">
+  <div class="tb-group tb-search">
+    <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="search" type="search" placeholder="חיפוש בתמלול" aria-label="חיפוש בתמלול">
+    <span class="count" aria-live="polite">2 / 5</span>
+    <button class="icon-btn" aria-label="התאמה קודמת"><svg class="icon" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg></button>
+    <button class="icon-btn" aria-label="התאמה הבאה"><svg class="icon" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  </div>
+  <div class="tb-group tb-actions">
+    <button class="tb-btn" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg><span>קבצים ודוברים</span></button>
+    <button class="tb-btn" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M5 21V4h9l1 2h5v9h-6l-1-2H5"/></svg><span>הצג מילים לא ודאיות</span></button>
+    <button class="tb-btn" aria-label="החלפת ערכת צבעים"><svg class="icon" viewBox="0 0 24 24"><path d="M21 13a9 9 0 11-10-10 7 7 0 0010 10z"/></svg><span>מצב כהה</span></button>
+    <button class="tb-btn primary"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/></svg><span>שמירת עותק</span></button>
+    <span class="status" role="status">נשמר</span>
+  </div>
+</header>
+<p class="mockup-note">The single #status element above can only show one data-kind at a time in the real document - here are all four side by side:</p>
+<div class="swab-row">
+  <span class="status" data-kind="saved">נשמר</span>
+  <span class="status" data-kind="saving">שומר...</span>
+  <span class="status" data-kind="error">השמירה נכשלה</span>
+  <span class="status" data-kind="local">נשמר בדפדפן</span>
+</div>
+
+<h2 class="demo-title">Phase 4 button hierarchy (resting / hover / focus-visible / active, forced)</h2>
+<table class="states">
+  <thead><tr><th></th><th>Resting</th><th>Hover</th><th>Focus-visible</th><th>Active</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Tier 1 - primary (filled --accent)</td>
+      <td><button class="tb-btn tier1">שמירת עותק</button></td>
+      <td><button class="tb-btn tier1 is-hover">שמירת עותק</button></td>
+      <td><button class="tb-btn tier1 is-focus">שמירת עותק</button></td>
+      <td><button class="tb-btn tier1 is-active">שמירת עותק</button></td>
+    </tr>
+    <tr>
+      <td>Tier 2 - secondary (outlined, today's default)</td>
+      <td><button class="tb-btn">קבצים ודוברים</button></td>
+      <td><button class="tb-btn is-hover">קבצים ודוברים</button></td>
+      <td><button class="tb-btn is-focus">קבצים ודוברים</button></td>
+      <td><button class="tb-btn is-active">קבצים ודוברים</button></td>
+    </tr>
+    <tr>
+      <td>Tier 3 - toggle ON (--accent-tint fill, border kept)</td>
+      <td><button class="tb-btn tier3-on">הצג מילים לא ודאיות</button></td>
+      <td><button class="tb-btn tier3-on is-hover">הצג מילים לא ודאיות</button></td>
+      <td><button class="tb-btn tier3-on is-focus">הצג מילים לא ודאיות</button></td>
+      <td><button class="tb-btn tier3-on is-active">הצג מילים לא ודאיות</button></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 class="demo-title">Flags toggle - both resting states at once</h2>
+<div class="swab-row">
+  <button class="tb-btn" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M5 21V4h9l1 2h5v9h-6l-1-2H5"/></svg><span>הצג מילים לא ודאיות (כבוי)</span></button>
+  <button class="tb-btn" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M5 21V4h9l1 2h5v9h-6l-1-2H5"/></svg><span>הצג מילים לא ודאיות (דלוק)</span></button>
+</div>
+
+<h2 class="demo-title">mark.hit and mark.hit.current, shown directly</h2>
+<p>תוצאות חיפוש לדוגמה: המונח <mark class="hit">תכנון</mark> חוזר כמה פעמים בפסקאות, וההתאמה הנוכחית מסומנת כך: <mark class="hit current">תכנון</mark>.</p>
+
+<h2 class="demo-title">Source panel - real turn cards</h2>
+<section class="source" data-file="0">
+  <header class="file-bar">
+    <h1>ראיון_תכנון_רבעוני.mp3</h1>
+    <span class="file-position" dir="ltr">1 / 2</span>
+  </header>
+
+  <article class="turn" data-palette="0">
+    <h2>
+      <button class="ts" dir="ltr">0:12 - 0:47</button>
+      <button type="button" class="spk">דובר 1</button>
+      <span class="turn-actions"><button class="icon-btn" aria-label="העתקת פסקה"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></span>
+    </h2>
+    <div class="body">
+      <p>אז אני חושב שאנחנו צריכים להתחיל עם התכנון של השלב הבא, לפני שנעבור לשלב הביצוע.</p>
+    </div>
+  </article>
+
+  <article class="turn" data-palette="2">
+    <h2>
+      <button class="ts" dir="ltr">0:48 - 1:10</button>
+      <button type="button" class="spk">דובר 2</button>
+      <span class="turn-actions"><button class="icon-btn" aria-label="העתקת פסקה"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></span>
+    </h2>
+    <div class="body">
+      <p>בהחלט, אני מסכים. בואו נעבור על הנקודות העיקריות לפני שממשיכים הלאה.</p>
+    </div>
+  </article>
+
+  <article class="turn" data-palette="3">
+    <h2>
+      <button class="ts" dir="ltr">1:11 - 1:34</button>
+      <button type="button" class="spk">דובר 3</button>
+      <span class="turn-actions"><button class="icon-btn" aria-label="העתקת פסקה"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></span>
+    </h2>
+    <div class="body">
+      <p>המונח <span class="lowconf">בין־שכבתי</span> לא ברור לי לגמרי כאן, אפשר לחזור על הנקודה הזאת?</p>
+    </div>
+  </article>
+</section>
+
+</main>
+
+<aside class="outline" aria-label="קבצים ודוברים">
+  <h2 class="outline-title">קבצים</h2>
+  <ol class="outline-files">
+    <li><a href="#" class="outline-file" aria-current="true">ראיון_תכנון_רבעוני.mp3</a></li>
+    <li><a href="#" class="outline-file">ראיון_סיכום_פרויקט.mp3</a></li>
+  </ol>
+  <div class="outline-speakers">
+    <div class="speakers active" data-file="0">
+      <span class="speakers-title">דוברים</span>
+      <div class="speaker-row" data-palette="0">
+        <button type="button" class="swatch-trigger" aria-label="צבע הדובר"><span class="swatch-rest" aria-hidden="true"></span></button>
+        <input class="speaker-name" type="text" value="" placeholder="דובר 1" aria-label="דובר 1">
+        <button type="button" class="icon-btn spk-locate" aria-label="מעבר בין הפסקאות של הדובר"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      </div>
+      <div class="speaker-row" data-palette="2">
+        <button type="button" class="swatch-trigger" aria-label="צבע הדובר"><span class="swatch-rest" aria-hidden="true"></span></button>
+        <input class="speaker-name" type="text" value="" placeholder="דובר 3" aria-label="דובר 3">
+        <button type="button" class="icon-btn spk-locate" aria-label="מעבר בין הפסקאות של הדובר"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      </div>
+      <button class="link-btn">השתמש בשמות האלה בכל הקבצים</button>
+      <button type="button" class="tb-btn add-speaker"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>הוספת דובר</span></button>
+    </div>
+  </div>
+</aside>
+</div>
+
+<h2 class="demo-title">Speaker row - resting vs hover (forced, not hover-dependent)</h2>
+<table class="states">
+  <thead><tr><th></th><th>Resting</th><th>Hover</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Speaker row</td>
+      <td>
+        <div class="speaker-row" data-palette="1">
+          <button type="button" class="swatch-trigger"><span class="swatch-rest" aria-hidden="true"></span></button>
+          <input class="speaker-name" type="text" value="" placeholder="דובר 2" aria-label="דובר 2">
+        </div>
+      </td>
+      <td>
+        <div class="speaker-row is-hover" data-palette="1">
+          <button type="button" class="swatch-trigger"><span class="swatch-rest" aria-hidden="true"></span></button>
+          <input class="speaker-name" type="text" value="" placeholder="דובר 2" aria-label="דובר 2">
+        </div>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 class="demo-title">Every --spk-N swatch at the current palette/theme</h2>
+<div class="swab-row" id="spk-swatches"></div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+
+  // ---- switcher wiring ----
+  document.querySelectorAll('[data-pick-palette]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      root.dataset.palette = btn.dataset.pickPalette;
+      document.querySelectorAll('[data-pick-palette]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      refreshReadout();
+    });
+  });
+  document.querySelectorAll('[data-pick-backdrop]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      root.dataset.backdrop = btn.dataset.pickBackdrop;
+      document.querySelectorAll('[data-pick-backdrop]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      refreshReadout();
+    });
+  });
+  var themeToggle = document.getElementById('theme-toggle');
+  themeToggle.addEventListener('click', function () {
+    var next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    themeToggle.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+    refreshReadout();
+  });
+
+  // ---- WCAG 2.1 relative luminance / contrast ratio, same formulas as
+  // tests/test_transcript_styles.py's _relative_luminance / contrast_ratio ----
+  function hexToRgb(hex) {
+    hex = hex.trim().replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+    return [0, 2, 4].map(function (i) { return parseInt(hex.substr(i, 2), 16); });
+  }
+  function relLuminance(rgb) {
+    var lin = rgb.map(function (c) {
+      c = c / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  }
+  function contrastRatio(hexA, hexB) {
+    var a = relLuminance(hexToRgb(hexA)), b = relLuminance(hexToRgb(hexB));
+    var hi = Math.max(a, b), lo = Math.min(a, b);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function mix(bgHex, pixelRgb, alpha) {
+    var bg = hexToRgb(bgHex);
+    var out = bg.map(function (c, i) { return Math.round(c * (1 - alpha) + pixelRgb[i] * alpha); });
+    return '#' + out.map(function (c) { return c.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  function cssVar(name) {
+    return getComputedStyle(root).getPropertyValue(name).trim();
+  }
+  function rgbTriplet(str) {
+    return str.split(',').map(function (s) { return parseInt(s.trim(), 10); });
+  }
+  function resolveVar(name) {
+    // --hit-current-text and --hit-current-text/--warn-line etc sometimes
+    // resolve to var(--other) at the CSS level, but getComputedStyle already
+    // returns the FINAL cascaded colour for a real property - reading a
+    // custom property directly can still return the literal "var(--x)" text
+    // in some engines, so resolve one level of indirection defensively.
+    var value = cssVar(name);
+    var ref = value.match(/^var\((--[\w-]+)\)$/);
+    return ref ? cssVar(ref[1]) : value;
+  }
+
+  var PAIRS = [
+    ['--text', '--bg', 4.5],
+    ['--text', '--surface-hover', 4.5],
+    ['--muted', '--bg', 4.5],
+    ['--muted', '--surface-hover', 4.5],
+    ['--text', '--warn-bg', 4.5],
+    ['--text', '--hit-bg', 4.5],
+    ['--hit-current-text', '--hit-current', 4.5],
+    ['--accent-text', '--accent', 4.5],
+    ['--accent-text', '--accent-hover', 4.5],
+    ['--warn-line', '--warn-bg', 3.0],
+    ['--focus', '--bg', 3.0],
+    ['--control-border', '--bg', 3.0],
+    ['--control-border', '--surface-hover', 3.0],
+    ['--accent', '--accent-tint', 3.0],
+  ];
+
+  /*
+    The speaker pairs are NOT a fixed list, because which pairing is real
+    depends on how the palette draws a speaker chip - and asserting the
+    wrong one is worse than asserting nothing, since it paints a passing
+    palette red.
+
+    Outlined chip (palettes 2 and 3, and every palette in dark mode): the
+    accent IS the text, sitting on --surface-hover, so --spk-N must clear
+    4.5:1 against it.
+
+    Filled chip (palette 1 in light mode): the accent is the BACKGROUND and
+    --spk-N-chip-text is the text on top of it. --spk-N against
+    --surface-hover is then not a pairing that occurs anywhere on the page -
+    checking it would be like checking .toast's --text against itself, which
+    is exactly why tests/test_transcript_styles.py excludes .toast from its
+    SURFACES sweep and gives it its own assertion instead. Whichever phase
+    ships, this same split has to be carried into that test file's PAIRS
+    table rather than left as a mockup-only nicety.
+  */
+  function speakerPairs() {
+    var filled = document.documentElement.getAttribute('data-palette') === '1'
+      && document.documentElement.getAttribute('data-theme') !== 'dark';
+    var pairs = [];
+    for (var i = 0; i < 8; i++) {
+      if (filled) {
+        pairs.push(['--spk-' + i + '-chip-text', '--spk-' + i, 4.5]);
+      } else {
+        pairs.push(['--spk-' + i, '--surface-hover', 4.5]);
+      }
+    }
+    return pairs;
+  }
+
+  function refreshReadout() {
+    var body = document.getElementById('readout-pairs');
+    body.innerHTML = '';
+    PAIRS.concat(speakerPairs()).forEach(function (pair) {
+      var fg = resolveVar(pair[0]), bg = resolveVar(pair[1]), min = pair[2];
+      var ratio = contrastRatio(fg, bg);
+      var pass = ratio >= min;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><span class="swab" style="background:' + fg + '"></span><span class="swab" style="background:' + bg + '"></span></td>' +
+        '<td>' + pair[0] + ' <span style="color:var(--muted)">(' + fg + ')</span></td>' +
+        '<td>' + pair[1] + ' <span style="color:var(--muted)">(' + bg + ')</span></td>' +
+        '<td class="' + (pass ? 'ratio-pass' : 'ratio-fail') + '">' + ratio.toFixed(2) + ':1</td>' +
+        '<td class="min-col">' + min.toFixed(1) + ':1</td>';
+      body.appendChild(tr);
+    });
+
+    // ---- backdrop worst-case composite, same maths as
+    // test_backdrop_worst_case_contrast_meets_wcag: bg*(1-a)+pixel*a through
+    // the backdrop, then that result mixed again with the panel colour at
+    // --panel-opacity. ----
+    var bdBody = document.getElementById('readout-backdrop-body');
+    bdBody.innerHTML = '';
+    var bg = resolveVar('--bg');
+    var backdropOpacity = parseFloat(cssVar('--backdrop-opacity'));
+    var panelOpacity = parseFloat(cssVar('--panel-opacity'));
+    var panelRgb = rgbTriplet(cssVar('--bg-rgb'));
+    var pixels = [['black', [0, 0, 0]], ['white', [255, 255, 255]]];
+    var tokens = [['--text', 4.5], ['--muted', 4.5]];
+    tokens.forEach(function (tokenPair) {
+      var token = tokenPair[0], min = tokenPair[1];
+      var fg = resolveVar(token);
+      pixels.forEach(function (px) {
+        var behindPanel = mix(bg, px[1], backdropOpacity);
+        var composite = mix(behindPanel, panelRgb, panelOpacity);
+        var ratio = contrastRatio(fg, composite);
+        var pass = ratio >= min;
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + token + '</td>' +
+          '<td>' + px[0] + '</td>' +
+          '<td><span class="swab" style="background:' + composite + '"></span>' + composite + '</td>' +
+          '<td class="' + (pass ? 'ratio-pass' : 'ratio-fail') + '">' + ratio.toFixed(2) + ':1</td>' +
+          '<td class="min-col">' + min.toFixed(1) + ':1</td>';
+        bdBody.appendChild(tr);
+      });
+    });
+
+    // ---- spk swatch strip ----
+    var swatches = document.getElementById('spk-swatches');
+    swatches.innerHTML = '';
+    for (var i = 0; i < 8; i++) {
+      var hex = resolveVar('--spk-' + i);
+      var chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = '<span class="dot" style="background:' + hex + '"></span>--spk-' + i + ' ' + hex;
+      swatches.appendChild(chip);
+    }
+  }
+
+  refreshReadout();
+})();
+</script>
+</body>
+</html>
