@@ -140,7 +140,7 @@ class Transcriber:
             collected: List[Segment] = []
             segment_count = 0
 
-            # 'segments' is a lazy generator — faster-whisper decodes one
+            # 'segments' is a lazy generator - faster-whisper decodes one
             # segment at a time as it's iterated. Iterating it directly
             # (instead of materializing it with list() first) is what makes
             # per-segment progress updates reflect real, ongoing work rather
@@ -166,8 +166,8 @@ class Transcriber:
                     })
                 else:
                     # No reliable duration to measure against (shouldn't
-                    # normally happen — the GUI always probes the real
-                    # duration first) — fall back to a soft, ever-increasing
+                    # normally happen - the GUI always probes the real
+                    # duration first) - fall back to a soft, ever-increasing
                     # estimate that never claims to reach completion.
                     fraction = min(0.03 * segment_count, 0.95)
                     message = ("w_transcribing_seg", {"n": segment_count})

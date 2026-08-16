@@ -16,7 +16,7 @@ from speech_to_text import config
 from speech_to_text.core.dependencies import ensure_dependencies
 
 # Setup logging: fixed-width, column-aligned format with millisecond precision
-# and source location (file:line) — easy to scan and to grep by level/module.
+# and source location (file:line) - easy to scan and to grep by level/module.
 LOG_FORMAT = (
     "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)-32s "
     "%(filename)s:%(lineno)d - %(message)s"
@@ -57,7 +57,7 @@ def main():
     # copy of MSVCP140.dll on Windows; whichever loads into the process first
     # wins the name and the other side reuses it. Importing PyQt5 first causes
     # a hard access-violation crash (0xc0000005) inside PyQt5's older bundled
-    # copy as soon as ctranslate2 loads a model later — confirmed by reproducing
+    # copy as soon as ctranslate2 loads a model later - confirmed by reproducing
     # it both ways. This import order avoids the conflict; do not reorder it.
     try:
         import faster_whisper  # noqa: F401

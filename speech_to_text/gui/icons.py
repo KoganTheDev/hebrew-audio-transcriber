@@ -1,7 +1,7 @@
 """
 Icon set for the Speech-to-Text Transcriber GUI.
 
-Uses Tabler Icons (MIT licensed, https://tabler.io/icons) — stroke-based
+Uses Tabler Icons (MIT licensed, https://tabler.io/icons) - stroke-based
 outline icons that recolor cleanly via the 'currentColor' substitution in
 svg_to_pixmap().
 """

@@ -59,7 +59,7 @@ class TranscriptionStep(QFrame):
         self.progress_bar.setMinimumHeight(28)
         layout.addWidget(self.progress_bar)
 
-        # Animates value changes instead of snapping instantly — real
+        # Animates value changes instead of snapping instantly - real
         # progress can arrive in uneven bursts (faster-whisper only reports
         # a segment once it's fully decoded, which can include several
         # temperature-retry attempts), so a big jump reads as "catching up"
@@ -150,7 +150,7 @@ class TranscriptionStep(QFrame):
         # Ticks once a second so the elapsed/remaining time and a "still
         # working" heartbeat keep moving even during real backend gaps with
         # no new progress message (e.g. while the model is still loading, or
-        # a long segment is still being decoded) — otherwise the UI looks
+        # a long segment is still being decoded) - otherwise the UI looks
         # frozen even though work is genuinely happening in the background
         # process.
         self._timer = QTimer(self)
@@ -184,7 +184,7 @@ class TranscriptionStep(QFrame):
         if self.start_time is None:
             return
         # Cycle a trailing "", ".", "..", "..." suffix on the status text as
-        # a heartbeat — visible proof the app is alive even when the backend
+        # a heartbeat - visible proof the app is alive even when the backend
         # hasn't sent a new message this second.
         self._dot_phase = (self._dot_phase + 1) % 4
         self.status_label.setText(self._render_status().rstrip(".") + "." * self._dot_phase)
@@ -203,8 +203,8 @@ class TranscriptionStep(QFrame):
 
         percentage == -1 is a status-only sentinel (see
         TranscriptionThread._relay_progress_message): faster-whisper is
-        doing real work — decoding a segment, retrying it at a different
-        temperature — but we don't have a new, trustworthy percentage yet,
+        doing real work - decoding a segment, retrying it at a different
+        temperature - but we don't have a new, trustworthy percentage yet,
         so only the descriptive text is updated; the bar and ETA are left
         exactly where they were.
         """
@@ -237,7 +237,7 @@ class TranscriptionStep(QFrame):
         each time a backend message arrives.
 
         If the percentage hasn't moved in a while (STALL_SECONDS), the
-        elapsed*(100-pct)/pct projection is no longer trustworthy — it was
+        elapsed*(100-pct)/pct projection is no longer trustworthy - it was
         only ever a snapshot of the pace up to the last real update, and
         without correction it balloons the longer a single hard-to-decode
         segment takes. Showing "calculating..." is more honest than a

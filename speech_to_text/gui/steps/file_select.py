@@ -37,14 +37,14 @@ class FileSelectStep(QFrame):
         layout.setSpacing(Spacing.LG)
         layout.setContentsMargins(Spacing.XL, Spacing.XL, Spacing.XL, Spacing.XL)
 
-        # Title — "Specs" now, since the system-info table is the first
+        # Title - "Specs" now, since the system-info table is the first
         # thing on this page.
         self.title = QLabel(t("specs_title"))
         self.title.setFont(Fonts.TITLE)
         self.title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(self.title)
 
-        # System info table — shown here (above the drop zone) since it's
+        # System info table - shown here (above the drop zone) since it's
         # relevant context before the user even picks a file or model.
         hw_table = self._create_hardware_table()
         layout.addWidget(hw_table)
@@ -318,11 +318,11 @@ class FileSelectStep(QFrame):
         outer = QVBoxLayout(card)
         outer.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         outer.setSpacing(Spacing.XS)
-        # No in-card header here — the page title above the card already
+        # No in-card header here - the page title above the card already
         # reads "Specs", so a repeated label inside would be redundant.
 
         # Table: one cell per metric, each with its own header/value split by
-        # a divider line, and vertical divider lines between cells — a real
+        # a divider line, and vertical divider lines between cells - a real
         # row/column grid rather than plain text spread across a bare card.
         hw_info = self.hardware.get_hardware_info()
         self._hw_has_gpu = hw_info['has_gpu']

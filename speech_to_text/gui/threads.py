@@ -3,7 +3,7 @@ Background QThreads used by MainWindow.
 
 Both threads exist purely to bridge a `multiprocessing.Process` (running in
 a separate OS process, per the DLL-conflict note below) back into Qt
-signals — neither does any heavy lifting itself.
+signals - neither does any heavy lifting itself.
 """
 
 import logging
@@ -86,7 +86,7 @@ class TranscriptionThread(QThread):
         logger.info(f"TranscriptionThread started")
         try:
             # Kept below run_transcription_process's own first emission (2%)
-            # so the bar only ever moves forward — see its phase breakdown.
+            # so the bar only ever moves forward - see its phase breakdown.
             self.progress.emit("w_starting_thread", {}, 1)
             output_file = self._get_output_path()
 
@@ -107,7 +107,7 @@ class TranscriptionThread(QThread):
                 # worker process finishes quickly, several trailing
                 # messages (e.g. "Saving output file...", 97 then
                 # "Complete!", 100) can already be sitting in the queue
-                # alongside the "finished" result — relaying only the first
+                # alongside the "finished" result - relaying only the first
                 # one and then returning left the bar visibly stuck below
                 # 100% even though the run had actually completed.
                 got_any = False
@@ -158,8 +158,8 @@ class TranscriptionThread(QThread):
 
         "progress" messages carry a real percentage. "status" messages (see
         core.worker._RetryStatusLogHandler) only describe background
-        activity — e.g. faster-whisper retrying a hard-to-decode segment at
-        a higher temperature — without a known percentage yet, so they're
+        activity - e.g. faster-whisper retrying a hard-to-decode segment at
+        a higher temperature - without a known percentage yet, so they're
         emitted with percent=-1 as a sentinel meaning "update the status
         text, but don't move the bar" (see TranscriptionStep.update_progress).
 
@@ -187,7 +187,7 @@ class CalibrationThread(QThread):
     """
     Runs the one-time hardware calibration benchmark in the background.
 
-    Only actually benchmarks on first run — HardwareDetector already loads
+    Only actually benchmarks on first run - HardwareDetector already loads
     a cached result synchronously if one exists, in which case MainWindow
     won't even start this thread. Same subprocess-isolation reasoning as
     TranscriptionThread: this loads faster-whisper, so it can't safely share

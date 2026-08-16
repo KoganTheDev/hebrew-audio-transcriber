@@ -4,7 +4,7 @@ Wizard step widgets for the Speech-to-Text Transcriber GUI.
 
 Split into one module per step (file_select.py / model_select.py /
 transcription.py) since each is a large, self-contained QFrame widget only
-coupled to the others by living in the same wizard — see gui/main_window.py
+coupled to the others by living in the same wizard - see gui/main_window.py
 for how MainWindow wires them together via the Step enum below.
 """
 
