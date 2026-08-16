@@ -1,0 +1,429 @@
+<!doctype html>
+<!--
+  Phase 0 deliverable - control style mockup.
+
+  Purpose: let Yuval pick a control style before it gets applied to the real
+  transcript.css (Phase 6). Nothing here is wired into speech_to_text/ - this
+  is a standalone file that borrows the real document's colour tokens
+  (copied from transcript.css, not linked - this has to open from file://
+  with nothing else on disk) so the controls are judged in their real colours,
+  not a mockup's own palette.
+
+  Four variants, switchable live with the buttons at the top:
+    1. squircle - generous corner radius, thicker border
+    2. pill     - fully rounded, thicker border
+    3. soft     - small radius, strongest border weight
+    4. current  - today's shipped style, as the baseline to compare against
+
+  Every variant keeps: >=44px hit areas (the dashed outline in each swatch
+  shows the real hit area, which can be bigger than the painted glyph -
+  see the "hit area" note under the swatch-trigger row), a visible
+  :focus-visible ring, and the disabled/dead state used by
+  .source[data-no-audio] .ts in the real document (see the last row of each
+  panel). Each variant is shown in both colour schemes and in resting, hover,
+  focused and pressed states, because the whole point of this exercise is
+  that the current controls don't read as controls - the states are the
+  substance, not the shape.
+
+  Colour-scheme toggle in the top bar flips a data-theme attribute the same
+  way transcript.js's real toggle does, so both schemes are one click apart
+  rather than two separately-built pages that could drift.
+-->
+<html lang="he" dir="rtl" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control style mockup - Phase 0</title>
+<style>
+  /* ---- colour tokens, copied verbatim from transcript.css ---- */
+  :root {
+    --bg: #faf9f7;
+    --surface-hover: #f2f0ec;
+    --text: #1c1b19;
+    --muted: #6b6862;
+    --rule: #e2dfd9;
+    --accent: #2f5d50;
+    --accent-text: #ffffff;
+    --focus: #1a6aa8;
+    --spk-0: #3a6ea5;
+    --spk-2: #467654;
+    --fast: 160ms;
+  }
+  :root[data-theme="dark"] {
+    --bg: #16161a;
+    --surface-hover: #1f1f25;
+    --text: #e9e7e2;
+    --muted: #9d998f;
+    --rule: #2d2d34;
+    --accent: #7fb3a3;
+    --accent-text: #14231e;
+    --focus: #79b8ea;
+    --spk-0: #7fb0e0;
+    --spk-2: #86bd97;
+  }
+
+  /* ---- per-variant control shape - the thing being compared ---- */
+  /* "current" matches transcript.css today: tb-btn/icon-btn borderless,
+     .ts a 1px-border pill. The other three deliberately give every control
+     (not just .ts) a real border, because "buttons don't read as buttons"
+     was the complaint - a borderless toolbar button was part of that. */
+  [data-variant="squircle"] { --ctrl-radius: 14px; --ctrl-border: 2px; }
+  [data-variant="pill"]     { --ctrl-radius: 999px; --ctrl-border: 2px; }
+  [data-variant="soft"]     { --ctrl-radius: 4px; --ctrl-border: 3px; }
+  [data-variant="current"]  { --ctrl-radius: 6px; --ctrl-border: 0px; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 1.5rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+  }
+
+  h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+  .lede { color: var(--muted); font-size: 0.9rem; margin: 0 0 1.5rem; max-width: 42rem; }
+
+  .switcher {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.75rem 0;
+    margin-bottom: 1.5rem;
+    background: var(--bg);
+    border-bottom: 1px solid var(--rule);
+  }
+  .switcher button {
+    min-height: 44px;
+    padding: 0 1rem;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .switcher button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .switcher .theme-toggle { margin-inline-start: auto; }
+
+  .variant-panel { display: none; }
+  .variant-panel.active { display: block; }
+
+  .scheme-block { margin-bottom: 2.5rem; }
+  .scheme-block h2 {
+    font-size: 1rem;
+    color: var(--muted);
+    border-bottom: 1px dashed var(--rule);
+    padding-bottom: 0.4rem;
+  }
+
+  table.states { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+  table.states th, table.states td {
+    text-align: start;
+    vertical-align: middle;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.states th { color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+  table.states td:first-child { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+
+  /* ---- the controls under test - shapes driven by the --ctrl-* tokens ---- */
+  .tb-btn, .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 0.8rem;
+    border: var(--ctrl-border) solid var(--rule);
+    border-radius: var(--ctrl-radius);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background var(--fast) ease-out, color var(--fast) ease-out,
+                border-color var(--fast) ease-out;
+  }
+  .icon-btn { padding: 0; }
+  [data-variant="current"] .tb-btn, [data-variant="current"] .icon-btn { border-color: transparent; }
+  .tb-btn:hover, .icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .tb-btn.is-hover, .icon-btn.is-hover { background: var(--surface-hover); color: var(--text); }
+  .tb-btn.is-pressed, .icon-btn.is-pressed {
+    background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+  }
+  .tb-btn.is-focus, .icon-btn.is-focus,
+  .ts.is-focus, .spk.is-focus, .swatch-trigger.is-focus, .copy-btn.is-focus {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: max(var(--ctrl-radius), 3px);
+  }
+
+  .ts {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 44px;
+    padding: 0 0.7rem;
+    border: max(var(--ctrl-border), 1px) solid var(--rule);
+    border-radius: var(--ctrl-radius);
+    background: var(--surface-hover);
+    color: var(--muted);
+    font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .ts:hover, .ts.is-hover { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+  .ts.is-pressed { color: var(--accent-text); background: var(--accent); border-color: var(--accent); filter: brightness(0.9); }
+  .ts[disabled] {
+    cursor: default; pointer-events: none;
+    color: var(--muted); background: transparent; border-color: transparent;
+    opacity: 0.6;
+  }
+
+  .spk {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 0.6rem;
+    border: var(--ctrl-border) solid var(--spk-0);
+    border-radius: var(--ctrl-radius);
+    background: transparent;
+    color: var(--spk-0);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  [data-variant="current"] .spk { border-color: transparent; }
+  .spk:hover, .spk.is-hover { background: var(--surface-hover); }
+  .spk.is-pressed { background: var(--spk-0); color: var(--accent-text); }
+
+  /* The swatch trigger stays circular in every variant - a colour indicator
+     reads as a colour, not a shape choice, so it is deliberately exempt from
+     the --ctrl-radius sweep. What does vary is its border weight, so it still
+     participates in the "thicker border" comparison. */
+  .swatch-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: max(var(--ctrl-border), 1px) solid var(--rule);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+  }
+  .swatch-trigger .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--spk-2); }
+  .swatch-trigger:hover, .swatch-trigger.is-hover { background: var(--surface-hover); }
+  .swatch-trigger.is-pressed { background: var(--surface-hover); border-color: var(--accent); }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: var(--ctrl-border) solid var(--rule);
+    border-radius: var(--ctrl-radius);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  [data-variant="current"] .copy-btn { border-color: transparent; }
+  .copy-btn:hover, .copy-btn.is-hover { background: var(--surface-hover); color: var(--text); }
+  .copy-btn.is-pressed { color: var(--accent); }
+
+  .icon { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  .hitarea-demo { position: relative; display: inline-block; }
+  .hitarea-demo::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px dashed var(--focus);
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .note { color: var(--muted); font-size: 0.8rem; margin: 0.5rem 0 0; }
+</style>
+</head>
+<body data-variant="squircle">
+
+<header class="switcher" role="toolbar" aria-label="Variant switcher">
+  <button type="button" data-pick="squircle" aria-pressed="true">1. Squircle</button>
+  <button type="button" data-pick="pill" aria-pressed="false">2. Pill</button>
+  <button type="button" data-pick="soft" aria-pressed="false">3. Soft rectangle</button>
+  <button type="button" data-pick="current" aria-pressed="false">4. Current (baseline)</button>
+  <button type="button" class="theme-toggle" id="theme-toggle">Dark mode</button>
+</header>
+
+<h1>Control style mockup</h1>
+<p class="lede">
+  The document's real chrome - toolbar buttons, timestamp pills, speaker
+  chips, the colour swatch trigger and copy buttons - rendered in the real
+  colour tokens from transcript.css. Pick a variant above; both colour
+  schemes render below at once so they can be compared side by side without
+  re-toggling per state.
+</p>
+
+<main>
+  <div class="scheme-block" data-scheme="light" style="--_bg: #faf9f7;">
+    <h2>Light scheme</h2>
+    <div style="background: var(--bg); padding: 1rem; border-radius: 8px;">
+      <table class="states">
+        <thead>
+          <tr><th></th><th>Resting</th><th>Hover</th><th>Focused</th><th>Pressed</th><th>Disabled</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Toolbar button</td>
+            <td><button class="tb-btn">Save a copy</button></td>
+            <td><button class="tb-btn is-hover">Save a copy</button></td>
+            <td><button class="tb-btn is-focus">Save a copy</button></td>
+            <td><button class="tb-btn is-pressed">Save a copy</button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Icon button</td>
+            <td><span class="hitarea-demo"><button class="icon-btn"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></span></td>
+            <td><button class="icon-btn is-hover"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="icon-btn is-focus"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="icon-btn is-pressed"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Timestamp pill</td>
+            <td><button class="ts" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts is-hover" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts is-focus" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts is-pressed" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts" dir="ltr" disabled>0:32 - 1:05</button></td>
+          </tr>
+          <tr>
+            <td>Speaker chip</td>
+            <td><button class="spk">דנה</button></td>
+            <td><button class="spk is-hover">דנה</button></td>
+            <td><button class="spk is-focus">דנה</button></td>
+            <td><button class="spk is-pressed">דנה</button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Swatch trigger</td>
+            <td><span class="hitarea-demo"><button class="swatch-trigger"><span class="dot"></span></button></span></td>
+            <td><button class="swatch-trigger is-hover"><span class="dot"></span></button></td>
+            <td><button class="swatch-trigger is-focus"><span class="dot"></span></button></td>
+            <td><button class="swatch-trigger is-pressed"><span class="dot"></span></button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Copy button</td>
+            <td><button class="copy-btn"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="copy-btn is-hover"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="copy-btn is-focus"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="copy-btn is-pressed"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td>-</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">Dashed outline on the two round controls above = the real 44&times;44px hit area, which is bigger than the painted dot/icon on purpose (padding, not a bigger glyph - a 44px box is 44px in layout regardless of what background-clip paints inside it).</p>
+    </div>
+  </div>
+
+  <div class="scheme-block" data-scheme="dark">
+    <h2>Dark scheme</h2>
+    <div data-theme="dark" style="background: #16161a; color: #e9e7e2; padding: 1rem; border-radius: 8px;">
+      <table class="states" style="--rule: #2d2d34;">
+        <thead>
+          <tr><th></th><th>Resting</th><th>Hover</th><th>Focused</th><th>Pressed</th><th>Disabled</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Toolbar button</td>
+            <td><button class="tb-btn">Save a copy</button></td>
+            <td><button class="tb-btn is-hover">Save a copy</button></td>
+            <td><button class="tb-btn is-focus">Save a copy</button></td>
+            <td><button class="tb-btn is-pressed">Save a copy</button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Icon button</td>
+            <td><span class="hitarea-demo"><button class="icon-btn"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></span></td>
+            <td><button class="icon-btn is-hover"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="icon-btn is-focus"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="icon-btn is-pressed"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Timestamp pill</td>
+            <td><button class="ts" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts is-hover" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts is-focus" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts is-pressed" dir="ltr">0:32 - 1:05</button></td>
+            <td><button class="ts" dir="ltr" disabled>0:32 - 1:05</button></td>
+          </tr>
+          <tr>
+            <td>Speaker chip</td>
+            <td><button class="spk">דנה</button></td>
+            <td><button class="spk is-hover">דנה</button></td>
+            <td><button class="spk is-focus">דנה</button></td>
+            <td><button class="spk is-pressed">דנה</button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Swatch trigger</td>
+            <td><span class="hitarea-demo"><button class="swatch-trigger"><span class="dot"></span></button></span></td>
+            <td><button class="swatch-trigger is-hover"><span class="dot"></span></button></td>
+            <td><button class="swatch-trigger is-focus"><span class="dot"></span></button></td>
+            <td><button class="swatch-trigger is-pressed"><span class="dot"></span></button></td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>Copy button</td>
+            <td><button class="copy-btn"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="copy-btn is-hover"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="copy-btn is-focus"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td><button class="copy-btn is-pressed"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg></button></td>
+            <td>-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var buttons = document.querySelectorAll('[data-pick]');
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.body.dataset.variant = btn.dataset.pick;
+      buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+    });
+  });
+
+  var themeToggle = document.getElementById('theme-toggle');
+  themeToggle.addEventListener('click', function () {
+    var root = document.documentElement;
+    var next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    themeToggle.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+  });
+})();
+</script>
+</body>
+</html>

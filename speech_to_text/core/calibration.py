@@ -6,7 +6,7 @@ actual measurement: this module runs a short real transcription with the
 tiny model, times how long it actually takes on this machine, and derives
 seconds-of-processing-per-second-of-audio from that. Other model sizes are
 then estimated by scaling that single measurement by each model's relative
-parameter count — real math instead of made-up multipliers, without having
+parameter count - real math instead of made-up multipliers, without having
 to benchmark every model size separately.
 
 Must run in a separate OS process (see speech_to_text.core.worker for why:
@@ -28,7 +28,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Whisper always processes audio in fixed internal 30-second windows,
-# regardless of input length — a clip shorter than 30s still costs almost as
+# regardless of input length - a clip shorter than 30s still costs almost as
 # much compute as a full window, which massively inflates a naive
 # elapsed/duration ratio. 60s (two full windows) gives a stable average
 # without a long one-time wait.
@@ -40,7 +40,7 @@ CALIBRATION_CACHE_PATH = os.path.join("whisper_models", ".calibration.json")
 # model's parameter count (tiny=39M, base=74M, small=244M, medium=769M,
 # large=1550M params). Whisper's encoder/decoder compute scales with model
 # width, so parameter-count ratios are a reasonable real-world proxy for
-# relative runtime — this is what lets one measured benchmark (tiny) predict
+# relative runtime - this is what lets one measured benchmark (tiny) predict
 # the other four sizes' time on the same hardware.
 _TINY_PARAMS = 39
 RELATIVE_COMPUTE_COST = {
@@ -103,7 +103,7 @@ def _generate_silence_wav(path: str, seconds: int, sample_rate: int) -> None:
     Write a short silent mono WAV using only the stdlib.
 
     Calibration explicitly disables VAD (see _run_calibration), so silence
-    is not skipped — the encoder still runs its full fixed-size window
+    is not skipped - the encoder still runs its full fixed-size window
     regardless of content. Silence keeps the benchmark deterministic;
     random noise was tried and measured no more realistically, just less
     reproducibly (decoder token count for noise is unpredictable).
@@ -131,7 +131,7 @@ def _run_calibration(cpu_cores: int) -> float:
 
         start = time.time()
         # Call the model directly (not Transcriber.transcribe) so VAD stays
-        # off — we want the true per-second processing cost regardless of
+        # off - we want the true per-second processing cost regardless of
         # audio content, since we can't know in advance how much of a real
         # file will be silence.
         segments, _ = transcriber.model.transcribe(
@@ -154,7 +154,7 @@ def run_calibration_process(cpu_cores: int, result_queue: "multiprocessing.Queue
     Entry point for the calibration subprocess.
 
     Puts ("ok", seconds_per_audio_second) or ("error", message) on
-    result_queue before exiting. Import-light at module level (no PyQt5) —
+    result_queue before exiting. Import-light at module level (no PyQt5) -
     see module docstring.
     """
     try:

@@ -2,7 +2,7 @@
 Theme system for the Speech-to-Text Transcriber GUI.
 
 Single source of truth for colors, fonts, spacing, and QSS (Qt stylesheet)
-generation. Palette: amber/copper accent on charcoal — a warm, tactile,
+generation. Palette: amber/copper accent on charcoal - a warm, tactile,
 mixing-console feel with a single solid accent color (no dual-tone
 gradients, which read as generic AI-generated UI). The one deliberate
 exception is the header title text, which uses a copper-toned gradient
@@ -109,7 +109,7 @@ def text_qss(color_key: str, extra: str = "") -> str:
     """
     Style for a QLabel sitting on a colored parent frame.
 
-    Explicitly sets 'background: transparent' — without it, once any ancestor
+    Explicitly sets 'background: transparent' - without it, once any ancestor
     in the widget tree has a stylesheet, Qt renders plain QLabels with an
     opaque background instead of showing the parent frame's color through.
     """
@@ -117,9 +117,9 @@ def text_qss(color_key: str, extra: str = "") -> str:
 
 
 def card_qss(object_name: str, selected: bool = False) -> str:
-    # ID selector (#name) — a bare 'QFrame {...}' selector would also match QLabel,
+    # ID selector (#name) - a bare 'QFrame {...}' selector would also match QLabel,
     # since QLabel subclasses QFrame in Qt, leaking the border/background onto child text.
-    # 'selected' means this card's radio button is the one currently picked —
+    # 'selected' means this card's radio button is the one currently picked -
     # not necessarily the recommended one, which gets its own separate badge.
     border_color = COLORS['accent'] if selected else COLORS['border']
     return f"""
@@ -196,7 +196,7 @@ def badge_qss() -> str:
 
 
 def hardware_card_qss(object_name: str) -> str:
-    # No QSS padding here — the child QHBoxLayout's own contentsMargins provide
+    # No QSS padding here - the child QHBoxLayout's own contentsMargins provide
     # the inset instead. Stacking both ate nearly all of the card's fixed
     # height and clipped the icon/text.
     return f"""
@@ -209,7 +209,7 @@ def hardware_card_qss(object_name: str) -> str:
 
 def error_banner_qss(object_name: str) -> str:
     """
-    Inline error banner — shown in place of a modal QMessageBox popup so a
+    Inline error banner - shown in place of a modal QMessageBox popup so a
     failed transcription doesn't interrupt the user with a blocking dialog.
     """
     return f"""
@@ -245,7 +245,7 @@ def gradient_text_pixmap(
     Qt stylesheets can't apply a gradient to text color (only to
     background-color), so this paints the text as an alpha mask and
     composites a gradient-filled pixmap into it. Used for the header title
-    only — a deliberate one-off brand accent, not the general theme.
+    only - a deliberate one-off brand accent, not the general theme.
     """
     metrics = QFontMetrics(font)
     width = metrics.horizontalAdvance(text) + padding * 2

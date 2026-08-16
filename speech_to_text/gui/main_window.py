@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(16, 8, 16, 8)
         header_layout.setSpacing(10)
 
-        # Title — centered, gradient-filled text (the one deliberate use of a
+        # Title - centered, gradient-filled text (the one deliberate use of a
         # gradient in this theme, as a brand accent rather than a UI backdrop).
         # Rendered as a pixmap, so retranslate() re-renders it on language switch.
         self.title_label = QLabel()
@@ -181,7 +181,7 @@ class MainWindow(QMainWindow):
         nav_layout = QHBoxLayout(nav_widget)
         nav_layout.setSpacing(8)
 
-        # Back and Next are given the same fixed size — minimum-size alone
+        # Back and Next are given the same fixed size - minimum-size alone
         # lets each button grow to fit its own text/icon, so their rendered
         # widths drifted apart (e.g. "  Back" + icon vs "Next" + icon). Wide
         # enough for next_btn's longest state too ("New File" + icon).
@@ -199,7 +199,7 @@ class MainWindow(QMainWindow):
         self.back_btn.hide()
         nav_layout.addWidget(self.back_btn)
 
-        # Cancel button — only shown during Step.TRANSCRIPTION, in the same
+        # Cancel button - only shown during Step.TRANSCRIPTION, in the same
         # slot as Back (which is hidden at that point). Stops the worker
         # process and returns to Choose Model rather than closing the app.
         self.cancel_btn = IconTextButton()
@@ -383,7 +383,7 @@ class MainWindow(QMainWindow):
         self.transcription_step.show_result(output_file)
 
         # Show completion options. This reuses next_btn, so its icon/layout
-        # need to switch too — a forward arrow reads as "proceed to the next
+        # need to switch too - a forward arrow reads as "proceed to the next
         # step", which is misleading for what's actually a reset action.
         self._set_next_button_mode("new_file")
         self.next_btn.show()
@@ -392,7 +392,7 @@ class MainWindow(QMainWindow):
 
     def _on_transcription_error(self, error_key: str, error_params: dict):
         """
-        Handle a genuine transcription failure (not a user cancel — that's
+        Handle a genuine transcription failure (not a user cancel - that's
         handled separately by _cancel_transcription).
 
         Receives an i18n key + params (rendered at display time, so the

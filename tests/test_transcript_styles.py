@@ -40,22 +40,65 @@ PAIRS = [
     ("--text", "--hit-bg", TEXT_MIN),
     ("--hit-current-text", "--hit-current", TEXT_MIN),
     ("--accent-text", "--accent", TEXT_MIN),
-    # Speaker names are coloured text, and they carry a speaker's identity.
-    # Eight, not four - added/recoloured speakers can wear any of them, so
-    # every slot in SPEAKER_PALETTE_SIZE (core/formatting.py) has to clear
-    # the same bar a colour someone just eyeballed never gets checked against.
-    ("--spk-0", "--surface-hover", TEXT_MIN),
-    ("--spk-1", "--surface-hover", TEXT_MIN),
-    ("--spk-2", "--surface-hover", TEXT_MIN),
-    ("--spk-3", "--surface-hover", TEXT_MIN),
-    ("--spk-4", "--surface-hover", TEXT_MIN),
-    ("--spk-5", "--surface-hover", TEXT_MIN),
-    ("--spk-6", "--surface-hover", TEXT_MIN),
-    ("--spk-7", "--surface-hover", TEXT_MIN),
+    # The speaker chip is FILLED now (Phase 4), not coloured text on a
+    # transparent chip - the pairing that actually renders on the page is
+    # --spk-N-chip-text on ITS OWN --spk-N fill, not --spk-N as text against
+    # --surface-hover. That old pairing is asserted nowhere in the
+    # stylesheet any more (the same reasoning this file already applies to
+    # excluding .toast from the surface sweep below: check the pairing that
+    # is real, not the one that used to be), so it is replaced rather than
+    # kept alongside the new one - keeping both would mean re-imposing the
+    # old outlined-chip design's contrast requirement on a component that no
+    # longer has that design, which could fail a palette that is actually
+    # fine.
+    ("--spk-0-chip-text", "--spk-0", TEXT_MIN),
+    ("--spk-1-chip-text", "--spk-1", TEXT_MIN),
+    ("--spk-2-chip-text", "--spk-2", TEXT_MIN),
+    ("--spk-3-chip-text", "--spk-3", TEXT_MIN),
+    ("--spk-4-chip-text", "--spk-4", TEXT_MIN),
+    ("--spk-5-chip-text", "--spk-5", TEXT_MIN),
+    ("--spk-6-chip-text", "--spk-6", TEXT_MIN),
+    ("--spk-7-chip-text", "--spk-7", TEXT_MIN),
     # The dotted underline is one of the two carriers of "the model was unsure
     # here" - the tint alone must not be the only signal, so it has to be seen.
     ("--warn-line", "--warn-bg", UI_MIN),
     ("--focus", "--bg", UI_MIN),
+    # --control-border is load-bearing now, not decoration: the squircle
+    # redesign made a control's resting border its primary "this is a
+    # control" signal (see the token's own definition in transcript.css for
+    # why --rule, at 1.26:1, was the wrong token to reuse for that job).
+    # WCAG 1.4.11 wants >= 3:1 for a boundary a component is identified by -
+    # checked against both backgrounds a resting or hovered control sits on.
+    ("--control-border", "--bg", UI_MIN),
+    ("--control-border", "--surface-hover", UI_MIN),
+    # --panel is the flat token now used only by popovers (.swatch-menu,
+    # .spk-menu) - a popover reads as MORE raised than the translucent panel
+    # it opened from, so it deliberately stays opaque rather than compositing
+    # against the backdrop too (see those rules' own comments). .source and
+    # .outline themselves moved to rgba(var(--panel-rgb), var(--panel-opacity))
+    # once the backdrop photo came back (Phase 5) and are checked by
+    # test_backdrop_worst_case_contrast_meets_wcag below instead, which
+    # models the actual three-layer stack (panel over backdrop over bg) - a
+    # flat-token row here would only prove the popover case, not theirs.
+    ("--text", "--panel", TEXT_MIN),
+    ("--muted", "--panel", TEXT_MIN),
+    ("--control-border", "--panel", UI_MIN),
+    ("--focus", "--panel", UI_MIN),
+    ("--focus", "--surface-hover", UI_MIN),
+    ("--accent", "--bg", UI_MIN),
+    ("--accent", "--panel", UI_MIN),
+    ("--accent", "--surface-hover", UI_MIN),
+    # Tier 1 (see .tb-btn.primary in transcript.css): the primary button's
+    # own text colour has to stay legible on both its hover/active fill
+    # (--accent-hover), not just its resting one (--accent, already checked
+    # via --accent-text/--accent above).
+    ("--accent-text", "--accent-hover", TEXT_MIN),
+    # Tier 3 (see .tb-btn[aria-pressed="true"]): a toggle's own label is real
+    # content sitting on its --accent-tint fill once it is "on", so --text
+    # has to hold there too; the inset box-shadow border is non-text UI, held
+    # to the 3:1 floor against the same fill it sits on.
+    ("--text", "--accent-tint", TEXT_MIN),
+    ("--accent", "--accent-tint", UI_MIN),
 ]
 
 
@@ -123,7 +166,7 @@ def _rgb(hex_or_triplet):
 
 
 def _mix(background_hex, pixel_rgb, opacity):
-    """Composite `background_hex` under a layer at `opacity`, as hex."""
+    """Composite `pixel_rgb` at `opacity` over `background_hex`, as hex."""
     bg = _rgb(background_hex)
     mixed = [bg[i] * (1 - opacity) + pixel_rgb[i] * opacity for i in range(3)]
     return "#" + "".join(f"{round(c):02x}" for c in mixed)
@@ -132,22 +175,28 @@ def _mix(background_hex, pixel_rgb, opacity):
 # The composited background under text is no longer a fixed token once a photo
 # sits behind it - it is bg*(1-a) + p*a for whatever pixel p happens to be
 # under a given letter, and the reading column adds a second layer on top of
-# that: a translucent panel (--panel-opacity, over --bg-rgb) floating over the
-# backdrop rather than masking it out. Text therefore sits on THREE composited
-# layers - panel over backdrop over bg - not the two the panel-less design
-# had. Auditing every pixel of 32 photos is not the point; bounding the worst
-# case is. p=black and p=white are the two extremes any backdrop pixel could
-# land on, so a token that clears 4.5:1 against both of them, through the
-# panel, clears it against everything in between too.
+# that: a translucent panel (--panel-opacity, over --panel-rgb) floating over
+# the backdrop rather than masking it out. Text therefore sits on THREE
+# composited layers - panel over backdrop over bg - not the two the panel-less
+# design had. --panel-rgb, NOT --bg-rgb: Anuppuccin (Phase 0) gave the panel
+# its own elevation token, one step above --bg, so compositing against --bg
+# here would model a surface nothing text-bearing actually sits on any more.
+#
+# Auditing every pixel of 32 photos is not the point; bounding the worst case
+# is. p=black and p=white are the two extremes any backdrop pixel could land
+# on - genuinely, not hypothetically: several of the shipped vistas contain
+# pure-black or pure-white pixels (see docs/transcript-manual-checks.md) - so
+# a token that clears 4.5:1 against both of them, through the panel, clears it
+# against everything in between too.
 BACKDROP_PAIRS = [
     # (foreground token, minimum) - backgrounds are the three-layer composited
     # extremes, built below per scheme from --bg, --backdrop-opacity,
-    # --bg-rgb and --panel-opacity.
+    # --panel-rgb and --panel-opacity.
     ("--text", TEXT_MIN),
-    # Timestamps and the save-status label render straight over the backdrop,
-    # outside the panel (see .toolbar / .player in transcript.css, both
-    # transparent-free and outside .source), so --muted has to hold here too,
-    # not just against the flat tokens above.
+    # --muted is the tighter of the two (timestamps and the file-position
+    # label are real content rendered inside the translucent .source/.file-bar
+    # panel, not decoration), which is why it is the number quoted when this
+    # test's result is discussed rather than --text.
     ("--muted", TEXT_MIN),
 ]
 
@@ -156,16 +205,23 @@ BACKDROP_PAIRS = [
 @pytest.mark.parametrize("foreground,minimum", BACKDROP_PAIRS)
 @pytest.mark.parametrize("pixel", [(0, 0, 0), (255, 255, 255)], ids=["black", "white"])
 def test_backdrop_worst_case_contrast_meets_wcag(scheme, foreground, minimum, pixel):
+    """
+    The single most important test in this file: it is the only thing
+    standing between a future opacity tweak and unreadable text over a photo.
+    If this fails, the fix is a different treatment (a stronger panel, a
+    different device entirely) - never nudging the minimum to match whatever
+    the current numbers happen to be.
+    """
     tokens = SCHEMES[scheme]
     fg = tokens.get(foreground)
     bg = tokens.get("--bg")
     backdrop_opacity = tokens.get("--backdrop-opacity")
-    panel_rgb = tokens.get("--bg-rgb")
+    panel_rgb = tokens.get("--panel-rgb")
     panel_opacity = tokens.get("--panel-opacity")
     assert fg and fg.startswith("#"), f"{foreground} missing or not a hex colour in {scheme}"
     assert bg and bg.startswith("#"), f"--bg missing or not a hex colour in {scheme}"
     assert backdrop_opacity, f"--backdrop-opacity missing in {scheme}"
-    assert panel_rgb, f"--bg-rgb missing in {scheme}"
+    assert panel_rgb, f"--panel-rgb missing in {scheme}"
     assert panel_opacity, f"--panel-opacity missing in {scheme}"
 
     # Layer 1: the backdrop photo pixel over --bg.
@@ -193,3 +249,234 @@ def test_both_dark_blocks_stay_in_step():
         r"\s*:root:not\(\[data-theme=\"light\"\]\)"
     )
     assert media == SCHEMES["dark"]
+
+
+def _rule_block(source, selector):
+    """The raw declaration text of one top-level `selector { ... }` rule -
+    unlike _block()/_tokens() above, this keeps ordinary properties
+    (grid-template-columns, max-width), not just --custom-properties."""
+    pattern = r"^" + re.escape(selector) + r"\s*\{(.*?)\n\}"
+    match = re.search(pattern, source, re.S | re.M)
+    assert match, f"could not find {selector} {{ ... }} in transcript.css"
+    return match.group(1)
+
+
+def _property(block, name):
+    match = re.search(r"(?<![-\w])" + re.escape(name) + r"\s*:\s*([^;]+);", block)
+    assert match, f"{name!r} not found in block: {block!r}"
+    return match.group(1).strip()
+
+
+def test_layout_and_toolbar_share_the_same_grid_columns():
+    """
+    The 156px toolbar/column misalignment this replaced came from .toolbar
+    and .layout each computing their own centred max-width independently -
+    two boxes of different widths, centred separately, cannot line up. The
+    fix is a single --layout-columns (and matching max-width formula) both
+    grids read, which this checks structurally: if either rule drifts back
+    to its own hand-written grid-template-columns or max-width, the two
+    boxes stop being guaranteed to agree, even if today's numbers happen to
+    match by coincidence.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    assert "--layout-columns:" in source
+
+    layout = _rule_block(source, ".layout")
+    toolbar = _rule_block(source, ".toolbar")
+    assert _property(layout, "grid-template-columns") == "var(--layout-columns)"
+    assert _property(toolbar, "grid-template-columns") == "var(--layout-columns)"
+    # Same max-width formula, not merely "some max-width" - a value that
+    # happens to equal the same number today but is spelled differently
+    # would still pass a looser check and still be free to drift apart.
+    assert _property(layout, "max-width") == _property(toolbar, "max-width")
+
+
+def test_toolbar_row_sits_in_the_shared_main_column():
+    """.tb-row (not .toolbar itself) is what's actually placed in track 2 -
+    see the comment on .tb-row in transcript.css for why the controls
+    couldn't be grid items of .toolbar directly."""
+    source = CSS.read_text(encoding="utf-8")
+    tb_row = _rule_block(source, ".tb-row")
+    assert _property(tb_row, "grid-column") == "2"
+
+
+def test_flanks_are_flexible_not_fixed():
+    """
+    minmax(0, var(--rail)), not a bare var(--rail) - a fixed flank can't
+    give width back to main as the viewport narrows, which is what forced
+    main below its own reading measure well before the layout had to
+    collapse. See --layout-columns's own comment for the full reasoning.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    match = re.search(r"--layout-columns:\s*([^;]+);", source)
+    assert match, "--layout-columns not found in transcript.css"
+    assert "minmax(0, var(--rail))" in match.group(1)
+    # var(--measure) alone (not wrapped in minmax) is what keeps the centre
+    # track rigid - main holding its full width, rather than main shrinking
+    # in step with the flanks, is the entire point of this layout.
+    assert re.search(r"(?<!minmax\()\bvar\(--measure\)", match.group(1))
+
+
+def test_outline_toggle_breakpoint_matches_the_measured_flank_minimum():
+    """
+    1200px, not the pre-Phase-2 900px - that number was measured against a
+    fixed 18rem sidebar and stopped being correct the moment the flanks
+    became flexible (they get squeezed well before 900px). See the
+    @media (max-width: 1200px) comment in transcript.css for how 1200 was
+    actually measured (a same-origin iframe at that width, real Chrome
+    layout, not a formula) rather than picked as a round number.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    assert "@media (max-width: 1200px)" in source
+    assert "@media (max-width: 900px)" not in source
+
+
+def test_only_the_shared_rule_declares_layout_grid_columns():
+    """
+    The narrow-screen media query's first draft overrode
+    `.layout { grid-template-columns: ... }` directly instead of redefining
+    the --layout-columns token, which collapsed .layout to a single track
+    while .toolbar kept its three - reintroducing, inside the very media
+    query meant to fix the layout, the exact 156px divergence
+    --layout-columns exists to prevent (see that token's own comment, and
+    the @media (max-width: 1200px) comment in transcript.css). This checks
+    the whole file, not just the base rules: grid-template-columns must be
+    declared for .layout, and separately for .toolbar, in exactly one place
+    each - the shared base rule reading var(--layout-columns) - never as a
+    direct property override anywhere else, including inside a media query.
+    """
+    source = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+
+    def rules_declaring_gtc_for(class_name):
+        hits = []
+        for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", source):
+            selector, body = match.group(1).strip(), match.group(2)
+            if "grid-template-columns" not in body:
+                continue
+            if re.search(r"\." + class_name + r"\b", selector):
+                hits.append(selector)
+        return hits
+
+    for class_name in ("layout", "toolbar"):
+        hits = rules_declaring_gtc_for(class_name)
+        assert hits == ["." + class_name], (
+            f".{class_name}'s grid-template-columns must be declared in exactly one "
+            f"place (the shared base rule reading var(--layout-columns)); any other "
+            f"occurrence bypasses the shared token. Found: {hits}"
+        )
+
+
+def test_speaker_row_reacts_to_hover_and_focus():
+    """
+    .speaker-row used to have no :hover rule at all, so it read as inert
+    beside .turn and .outline-files a, both of which react - this is the bug
+    the user reported directly. :focus-within has to be paired with :hover
+    (not :hover alone), because the row contains a real <input>
+    (.speaker-name) and a keyboard user tabbing into it needs the same
+    grouping cue a mouse user hovering the row already gets.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    match = re.search(
+        r"\.speaker-row:hover,\s*\.speaker-row:focus-within\s*\{([^}]*)\}", source
+    )
+    assert match, (
+        ".speaker-row:hover, .speaker-row:focus-within rule not found in transcript.css"
+    )
+    assert re.search(r"background\s*:", match.group(1)), (
+        ".speaker-row's hover/focus-within rule must set a background"
+    )
+
+
+def test_panel_token_is_actually_used():
+    """
+    .source and .outline are the translucent reading surfaces the backdrop
+    photo shows through (Phase 5) - rgba(var(--panel-rgb), var(--panel-opacity)),
+    not the flat --panel. If either silently fell back to --panel or --bg
+    instead, the panel would stop being see-through - the whole point of the
+    backdrop coming back - and nothing else in this file would notice, since
+    the contrast pairs above check colour values, not which token a rule
+    actually resolves through.
+
+    Popovers (.swatch-menu, .spk-menu) are the deliberate opposite case: they
+    stay on the flat --panel because a popover reads as MORE raised than its
+    translucent container, not equally see-through - see those rules' own
+    comments. Checked here too, so a future edit can't quietly blur the two
+    surfaces' roles back together.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    for selector in (".source", ".outline", ".file-bar"):
+        block = _rule_block(source, selector)
+        assert _property(block, "background") == "rgba(var(--panel-rgb), var(--panel-opacity))", (
+            f"{selector} must declare background: rgba(var(--panel-rgb), var(--panel-opacity))"
+        )
+    for selector in (".swatch-menu", ".spk-menu"):
+        block = _rule_block(source, selector)
+        assert _property(block, "background") == "var(--panel)", (
+            f"{selector} must stay on the flat background: var(--panel)"
+        )
+
+
+def test_no_blur_declarations():
+    """
+    Blur was measured (Phase 5, see the --panel-opacity comment) to buy zero
+    contrast headroom over the backdrop photo - the worst-case composite is
+    exactly as tight blurred as it is sharp, because a blur radius redistributes
+    a pixel's neighbours' colour without changing the extremes any single pixel
+    under text can land on. The panel opacity is what protects contrast; blur
+    was tried and dropped. This guards the decision, not merely today's file:
+    a live `backdrop-filter` or `filter: blur(` declaration must not reappear,
+    on `.backdrop` or anywhere else, even though a comment is free to keep
+    talking about why it was rejected (several already do).
+    """
+    source = CSS.read_text(encoding="utf-8")
+    # Strip /* ... */ comments before scanning, so a comment that merely
+    # *mentions* backdrop-filter or blur() to explain why it was rejected
+    # (several currently do, deliberately) doesn't trip this guard - only a
+    # live declaration should.
+    without_comments = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    assert "backdrop-filter" not in without_comments, (
+        "a live backdrop-filter declaration reappeared - blur was measured to "
+        "buy zero contrast headroom (see the --panel-opacity comment) and the "
+        "user does not want it back"
+    )
+    assert "filter: blur(" not in without_comments, (
+        "a live filter: blur( declaration reappeared - see the backdrop-filter "
+        "assertion above for why"
+    )
+
+
+def test_focus_ring_gated_behind_keyboard_flag():
+    """
+    Phase 7: .body and .plain-body are the two elements the user reported the
+    ring lighting up on for a plain mouse click (a Chromium quirk - it matches
+    :focus-visible on a contenteditable element for mouse focus too). The fix
+    is transcript.js's own tracked modality flag, html[data-kbd], not
+    :focus-visible alone - see the STATED EXCEPTION in this file's standing
+    rules comment at the top. Every other control keeps plain :focus-visible,
+    including #search's existing outline: none exemption and .speaker-name,
+    which is explicitly out of scope.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    assert re.search(r"html\[data-kbd\]\s+\.body:focus\s*\{", source), (
+        ".body's focus ring must be gated behind html[data-kbd] .body:focus"
+    )
+    assert re.search(r"html\[data-kbd\]\s+\.plain-body:focus\s*\{", source), (
+        ".plain-body's focus ring must be gated behind html[data-kbd] .plain-body:focus"
+    )
+    # Bare :focus-visible on either element would re-admit the mouse-click bug
+    # this phase exists to fix.
+    assert not re.search(r"(?<![-\w])\.body:focus-visible\s*\{", source)
+    assert not re.search(r"(?<![-\w])\.plain-body:focus-visible\s*\{", source)
+    # #search's own exemption (out of scope for Phase 7) must survive intact.
+    assert "#search:focus-visible { outline: none; }" in source
+
+
+def test_hover_dim_is_phase_8_value():
+    """
+    Phase 8: non-focused cards dim to 0.5 (from the original 0.72) while a
+    section is hovered - see the rule's own comment for why, and for the
+    accepted contrast trade-off that comes with dimming text toward the panel.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    block = _rule_block(source, ".source:hover .turn:not(:hover)")
+    assert _property(block, "opacity") == "0.5"

@@ -201,17 +201,31 @@ class TestRenderHtml:
         assert "<h1>first.wav</h1>" in out
         assert "<h1>second.wav</h1>" in out
 
-    def test_toc_present_only_for_multiple_documents(self):
+    def test_outline_present_only_when_there_is_something_for_it_to_show(self):
+        """
+        No file list to show (one document) and no speaker to manage - the
+        sidebar itself, and the toolbar button that opens it, both disappear
+        rather than rendering an empty shell.
+        """
         single = render_html([doc("only.wav", [seg(0, 1)])])
-        assert 'class="toc"' not in single
+        assert 'class="outline"' not in single
+        assert 'id="outline-toggle"' not in single
 
         multi = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
-        assert 'class="toc"' in multi
+        assert 'class="outline"' in multi
+        assert 'id="outline-toggle"' in multi
 
-    def test_toc_anchors_resolve_to_existing_section_ids(self):
+    def test_outline_file_list_anchors_resolve_to_existing_section_ids(self):
         out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
+        assert 'class="outline-file"' in out
         assert 'href="#src-0"' in out and 'id="src-0"' in out
         assert 'href="#src-1"' in out and 'id="src-1"' in out
+
+    def test_single_document_with_speakers_still_gets_an_outline(self):
+        """The sidebar is not gated purely on file count - one file with
+        speakers to manage still needs somewhere for that roster to live."""
+        out = render_html([doc("a.wav", [seg(0, 1, speaker=0)])], speaker_label="Speaker {n}")
+        assert 'class="outline"' in out
 
     def test_one_article_per_merged_turn(self):
         segments = [seg(0, 2, "אחד"), seg(30, 32, "שתיים")]
@@ -248,6 +262,32 @@ class TestRenderHtml:
         out = render_html([doc("a.wav", [seg(0, 2, speaker=None)])], speaker_label="דובר {n}")
         assert 'class="spk"' not in out
 
+    def test_toolbar_controls_sit_in_a_shared_grid_column_wrapper(self):
+        """
+        .tb-row is what ties the toolbar's actual controls to main's own grid
+        track (see --layout-columns in transcript.css) - .toolbar itself is
+        the three-track grid, but only .tb-row is placed in track 2, so the
+        toolbar's controls occupy exactly the width the reading column does.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<div class="tb-row">' in out
+        # The search and action groups are still inside the wrapper, not
+        # siblings of it - .tb-row wraps them, it doesn't replace them.
+        tb_row_start = out.index('<div class="tb-row">')
+        header_end = out.index("</header>")
+        assert 'class="tb-group tb-search"' in out[tb_row_start:header_end]
+        assert 'class="tb-group tb-actions"' in out[tb_row_start:header_end]
+
+    def test_speaker_button_is_wrapped_in_its_own_menu_anchor(self):
+        """
+        .spk-anchor is what the reassignment menu is positioned against (see
+        its comment in transcript.css) - it has to wrap .spk directly, not
+        just appear somewhere in the card, or the menu goes back to opening
+        at the wrong place.
+        """
+        out = render_html([doc("a.wav", [seg(0, 2, speaker=0)])], speaker_label="Speaker {n}")
+        assert '<span class="spk-anchor"><button type="button" class="spk"' in out
+
     def test_no_timestamps_no_speakers_gives_bare_paragraphs(self):
         out = render_html([doc("a.wav", [seg(0, 1, "שלום עולם. מה שלומך?")])], timestamps=False)
         assert "<h2>" not in out
@@ -282,9 +322,9 @@ class TestRenderHtml:
         at anything the browser would have to go and fetch.
 
         Rendered with a pinned vista (rather than the default random choice)
-        so this test's own no-network guarantee doesn't depend on random.choice
-        happening to run at all - the backdrop's url(...) is exercised either
-        way once a vista exists on disk.
+        so this test's own no-network guarantee doesn't depend on
+        random.choice happening to run at all - the backdrop's url(...) is
+        exercised either way once a vista exists on disk.
         """
         out = render_html([
             doc("a.wav", [seg(0, 1, speaker=0)]),
@@ -301,6 +341,10 @@ class TestRenderHtml:
         # whether the image bytes are inline or the element is absent. What
         # must never appear is a url(...) that points off the page: not in a
         # style="" attribute, and not inside the inlined <style> block either.
+        # _external_references() above does not catch this on its own: "style"
+        # is not in its FETCHING attribute set, since a style attribute's
+        # *value* pointing off-page is not the same shape of bug as an
+        # href/src doing so, and needs its own check.
         urls = re.findall(r'url\(\s*([^)]*?)\s*\)', out)
         assert urls, "expected at least one url(...) - the pinned backdrop"
         for raw in urls:
@@ -391,9 +435,80 @@ class TestEditableDocument:
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
         assert out.count('class="speaker-row"') == 2
 
+    def test_speaker_row_has_no_locate_button_or_turn_count(self):
+        """
+        Both were deleted as sidebar clutter (not relocated) - the row is now
+        just the swatch trigger and the name input. Regression guard for the
+        removal, the mirror image of the count test this replaces.
+        """
+        segments = [
+            seg(0, 2, "a", speaker=0), seg(2.2, 4, "b", speaker=0),
+            seg(10, 12, "c", speaker=1),
+        ]
+        out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
+        assert "spk-locate" not in out
+        assert "spk-count" not in out
+        assert "i-locate" not in out
+        assert "Step through this speaker" not in out
+
+    def test_merge_turns_called_once_per_document(self, monkeypatch):
+        """
+        _render_speakers_html() needs the same merged turns
+        _render_document_html() renders, and it used to get them by calling
+        merge_turns() a second time on the same segments - real work
+        (grouping every segment in the file) repeated for no reason. Spying
+        on merge_turns itself, rather than just checking the output still
+        looks right, is what actually catches a regression here: two calls
+        that produce identical turns would pass every other assertion in
+        this file while still doing the redundant work this test exists to
+        rule out.
+        """
+        import speech_to_text.core.formatting as formatting_module
+
+        calls = []
+        real_merge_turns = formatting_module.merge_turns
+
+        def spy(segments, *args, **kwargs):
+            calls.append(segments)
+            return real_merge_turns(segments, *args, **kwargs)
+
+        monkeypatch.setattr(formatting_module, "merge_turns", spy)
+
+        docs = [
+            doc("a.wav", [seg(0, 1, "x", speaker=0)]),
+            doc("b.wav", [seg(0, 1, "y", speaker=0)]),
+        ]
+        formatting_module.render_html(docs, speaker_label="Speaker {n}")
+        assert len(calls) == len(docs)
+
     def test_no_speakers_means_no_speakers_strip(self):
         out = render_html([doc("a.wav", [seg(0, 1, speaker=None)])], speaker_label="Speaker {n}")
         assert 'class="speakers"' not in out
+
+    def test_speakers_strip_lives_in_the_sidebar_not_the_source_section(self):
+        """
+        The strip moved out of the reading column entirely (Phase 3) - it
+        used to render once per <section class="source">, duplicating the
+        roster for every scroll past a file boundary. Asserted by checking
+        the outline's own speakers wrapper contains it and no
+        <section class="source">...</section> slice does.
+        """
+        import re
+
+        segments = [seg(0, 2, "a", speaker=0), seg(10, 12, "b", speaker=1)]
+        out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
+        assert 'class="outline-speakers"' in out
+        for section in re.findall(r'<section class="source".*?</section>', out, re.S):
+            assert 'class="speakers' not in section
+            assert 'class="speaker-row"' not in section
+
+    def test_first_files_speakers_panel_is_marked_active(self):
+        out = render_html([
+            doc("a.wav", [seg(0, 1, speaker=0)]),
+            doc("b.wav", [seg(0, 1, speaker=0)]),
+        ], speaker_label="Speaker {n}")
+        assert 'class="speakers active" data-file="0"' in out
+        assert 'class="speakers" data-file="1"' in out
 
     def test_audio_is_referenced_relatively_and_only_for_usable_documents(self):
         out = render_html([
@@ -416,6 +531,36 @@ class TestEditableDocument:
         out = render_html([doc("a.wav", [seg(0, 1)])])
         assert "<details" not in out
         assert "<summary" not in out
+
+    def test_plain_text_rows_are_rendered_server_side_with_matching_turn_ids(self):
+        """
+        Two-way editing (Phase 4) is a relocation the other direction too:
+        the plain-text panel used to be pure JavaScript output with nothing
+        for a script-disabled reader to see. Each row is now rendered up
+        front, keyed by the same data-turn id as its card, so
+        transcript.js's rebuildPlain() only ever has to sync an existing
+        element rather than build the panel from nothing.
+        """
+        out = render_html([doc("a.wav", [seg(0, 2, "אחד"), seg(30, 32, "שתיים")])])
+        assert 'class="plain-row" data-turn="0-0"' in out
+        assert 'class="plain-row" data-turn="0-1"' in out
+        assert 'class="plain-prefix" contenteditable="false"' in out
+        assert 'class="plain-body" contenteditable="true"' in out
+
+    def test_plain_text_row_brackets_the_timestamp_inside_the_isolate(self):
+        """
+        The card's own pill stays bare ("0:32 - 1:05"); the plain-text
+        panel - copied out into apps with no bidi engine - gets the
+        stronger "[0:32 - 1:05]" cue, with the brackets inside the same
+        LRI/PDI isolate as the range itself (see the module docstring and
+        transcript.js's bracketedRange() for why outside the isolate would
+        let them reorder the same way the range's own hyphen could).
+        """
+        out = render_html([doc("a.wav", [seg(32, 65)])])
+        assert f"{LRI}[0:32 - 1:05]{PDI}" in out
+        # The card's pill is unaffected - format_range() is reused, not
+        # changed, so the un-bracketed form still appears for it.
+        assert f"{LRI}0:32 - 1:05{PDI}" in out
 
     def test_file_bar_carries_filename_and_position(self):
         out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
@@ -482,3 +627,188 @@ class TestVistaBackdrop:
     def test_unknown_pinned_vista_raises(self):
         with pytest.raises(ValueError):
             render_html([doc("a.wav", [seg(0, 1)])], vista="not-a-real-file.webp")
+
+
+class TestApplyNamesReachesTheSidebar:
+    """
+    "Use these names in all files" used to repaint every turn's .spk chip
+    (still inside .source) but leave every other file's sidebar name input
+    untouched, because applyNames() queried .speaker-name inside .source -
+    where the inputs stopped living once the speaker strip moved into the
+    outline sidebar. See applyNames() in transcript.js for the fix.
+
+    A DOM-level assertion (does file 2's actual input.value carry the name
+    after a click) needs a real browser - that is covered by the manual
+    check and the plan's own browser verification step, not by pytest. What
+    is checked here, cheaply and on every run, is the mechanism: applyNames
+    resolves its name inputs from .speakers, not .source.
+    """
+
+    def test_apply_names_resolves_inputs_from_the_speakers_panel(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        match = re.search(r"function applyNames\(fileIndex\) \{.*?\n  \}", js, re.S)
+        assert match, "applyNames() not found in transcript.js"
+        body = match.group(0)
+        assert "strip.querySelectorAll('.speaker-name')" in body
+        # The old, wrong selector must not have come back either - a fix
+        # that adds the sidebar lookup without removing the stale one would
+        # still look plausible in a diff.
+        assert "section.querySelectorAll('.speaker-name')" not in body
+
+    def test_no_locate_button_or_turn_count_mechanism_remains(self):
+        """
+        Both were deleted, not relocated - a regression that brought either
+        one back anywhere (markup, styles or behaviour) should fail here
+        rather than only be caught by eyeballing a rendered page.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        for name in ("spk-locate", "spk-count", "stepSpeakerTurns", "speakerCycle",
+                     "refreshSpeakerCounts", "i-locate"):
+            assert name not in _asset("transcript.js"), f"{name} still in transcript.js"
+        for name in ("spk-locate", "spk-count"):
+            assert name not in _asset("transcript.css"), f"{name} still in transcript.css"
+
+
+class TestPlayPauseGlyph:
+    """
+    _ICON_DEFS used to have "play" and no "pause" at all, so #player-toggle
+    rendered a play triangle once and never changed, even while audio was
+    playing.
+    """
+
+    def test_pause_symbol_exists_in_the_sprite(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<symbol id="i-pause" viewBox="0 0 24 24">' in out
+        # Stroked, like every other glyph in the sprite (fill: none comes
+        # from .icon in CSS) - a filled pair of bars would be the odd one
+        # out here, and this locks that in rather than trusting the SVG to
+        # merely look right once.
+        match = re.search(r'<symbol id="i-pause"[^>]*>(.*?)</symbol>', out)
+        assert match and "fill=" not in match.group(1)
+
+    def test_player_toggle_starts_on_the_play_glyph(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        toggle = re.search(r'<button id="player-toggle".*?</button>', out, re.S).group(0)
+        assert '#i-play' in toggle
+        assert '#i-pause' not in toggle
+
+    def test_javascript_swaps_both_the_glyph_and_the_aria_label(self):
+        """
+        A button whose icon shows "pause" while its accessible name still
+        says "play" is worse than not swapping at all - both halves have to
+        move together, driven off the audio element's own play/pause
+        events (not the click handler) so a programmatic pause, like the
+        range-bound stop in the timeupdate handler, updates it too.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "'#i-pause'" in js and "'#i-play'" in js
+        assert "toggle.setAttribute('aria-label'" in js
+        assert "audio.addEventListener('play', syncToggleGlyph)" in js
+        assert "audio.addEventListener('pause', syncToggleGlyph)" in js
+
+
+class TestPopoverStackingAndAnchoring:
+    """
+    Structural preconditions for the three popover bugs fixed alongside the
+    centred layout: a card painting behind its own reassignment menu, that
+    menu opening at the card's edge instead of under the clicked button, and
+    the colour swatch menu being clipped by the sidebar's own scrollbar.
+
+    The actual painting behaviour (does this pixel really sit on top of that
+    one) is not something a Python test can observe - it was verified in a
+    real browser instead (see the plan's verification section). What IS
+    checked here, cheaply and on every run, is that the mechanism each fix
+    depends on still exists: the explicit open-state class CSS keys off of,
+    and the JS that sets/clears it.
+    """
+
+    def test_turn_menu_open_class_exists_with_a_higher_stack_level(self):
+        """
+        Every .turn is position: relative with no z-index of its own, so a
+        card holding an open menu needs an explicit, higher-than-zero stack
+        level or its later siblings (painted after it in DOM order, at the
+        same stack level 0) cover it - see the long comment on
+        .turn.menu-open in transcript.css for why this can't be :hover-keyed.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        css = _asset("transcript.css")
+        match = re.search(r"\.turn\.menu-open\s*\{([^}]*)\}", css)
+        assert match, ".turn.menu-open rule not found in transcript.css"
+        assert re.search(r"z-index\s*:\s*[1-9]", match.group(1)), (
+            "the open-state rule must set a positive z-index, or it ties "
+            "with (rather than beats) its zero-level siblings"
+        )
+
+    def test_javascript_sets_and_clears_the_menu_open_class(self):
+        """
+        The class is only useful if transcript.js actually toggles it when a
+        .spk-menu opens and closes - see menuOpenTurn in toggleMenu()/
+        closeMenu().
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "classList.add('menu-open')" in js
+        assert "classList.remove('menu-open')" in js
+
+    def test_spk_menu_is_anchored_to_its_own_wrapper_not_the_turn(self):
+        """
+        .spk-anchor - not .spk itself (which cannot hold the menu's own
+        <button> descendants - see the content-model comment in
+        transcript.css) and not .turn (the old, wrong anchor that opened the
+        menu at the card's edge) - has to be the positioned ancestor.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        css = _asset("transcript.css")
+        match = re.search(r"\.spk-anchor\s*\{([^}]*)\}", css)
+        assert match, ".spk-anchor rule not found in transcript.css"
+        assert "position: relative" in match.group(1)
+
+    def test_swatch_menu_is_detached_from_the_scrolling_sidebar_when_opened(self):
+        """
+        .outline is overflow-y: auto, which clips any ordinary
+        position: absolute popover inside it at the sidebar's own edge - see
+        the .swatch-menu comment in transcript.css for the two options
+        weighed and why detaching to <body> with computed fixed coordinates
+        was picked over restructuring the sidebar's scroll container.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "document.body.appendChild(menu)" in js
+        assert "positionDetachedMenu" in js
+        assert "menu.style.position = 'fixed'" in js
+
+
+class TestKeyboardModalityFlag:
+    """
+    Phase 7: the .body/.plain-body focus ring (see the STATED EXCEPTION
+    comment at the top of transcript.css) is gated behind html[data-kbd]
+    rather than :focus-visible alone, because Chromium matches
+    :focus-visible on a contenteditable element for a mouse click too - the
+    entire bug the user reported. transcript.js is what has to set and clear
+    that flag; the CSS side (which selectors it gates) is checked in
+    test_transcript_styles.py instead.
+    """
+
+    def test_tab_keydown_sets_the_flag(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert re.search(
+            r"e\.key === 'Tab'.*?setAttribute\('data-kbd', 'true'\)", js, re.S
+        ), "Tab keydown must set data-kbd on <html>"
+
+    def test_pointerdown_clears_the_flag(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "addEventListener('pointerdown'" in js
+        assert "removeAttribute('data-kbd')" in js

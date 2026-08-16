@@ -56,7 +56,7 @@ class ModelSelectStep(QFrame):
         self.title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(self.title)
 
-        # Error banner — shown inline (instead of a modal popup) if a
+        # Error banner - shown inline (instead of a modal popup) if a
         # transcription attempt fails and the user is sent back here to
         # retry. Hidden until show_error() is called.
         self.error_banner = QFrame()
@@ -208,7 +208,7 @@ class ModelSelectStep(QFrame):
             self.model_selected.emit(name)
             self._apply_selection(name)
             if not self._syncing:
-                # A real click (not our own programmatic re-sync) — stop
+                # A real click (not our own programmatic re-sync) - stop
                 # auto-following the recommendation as it updates.
                 self._user_touched_model = True
 
@@ -264,7 +264,7 @@ class ModelSelectStep(QFrame):
         layout.addLayout(text_layout)
         layout.addStretch()
 
-        # Recommended badge — always created so update_audio_duration can
+        # Recommended badge - always created so update_audio_duration can
         # show/hide it as the real recommendation shifts, instead of only
         # ever reflecting the recommendation computed at construction time.
         badge = QLabel(t("recommended_badge"))
@@ -363,7 +363,7 @@ class ModelSelectStep(QFrame):
         Move the RECOMMENDED badge to recommended_model and, if the user
         hasn't manually picked a model yet, follow it with the selection.
 
-        The accent border is a separate concept (see _apply_selection) —
+        The accent border is a separate concept (see _apply_selection) -
         it always tracks whichever card's radio is actually checked, not
         the recommendation, so a manually-picked model stays highlighted
         even after the recommendation moves elsewhere.

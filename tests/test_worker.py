@@ -9,6 +9,7 @@ transcriber module itself so that late import picks it up.
 """
 
 import os
+import re
 
 import pytest
 
@@ -47,6 +48,14 @@ class FakeTranscriber:
     def transcribe(self, source, total_duration_seconds=0):
         if source == "broken.wav":
             raise RuntimeError("simulated decode failure")
+        if source == "fatal.wav":
+            # A BaseException, not an Exception - simulates the process
+            # actually dying (kill -9, a forced reboot, power loss) rather
+            # than a caught-and-logged per-file failure. Nothing in
+            # run_transcription_process catches anything broader than
+            # Exception, so this must propagate all the way out and the
+            # function must never reach its final render/write.
+            raise KeyboardInterrupt("simulated hard kill mid-transcription")
         self.progress_callback(("w_starting", {}), 15)
         for pct in (30, 50, 70, 90):
             self.progress_callback(("w_transcribing_time", {}), pct)
@@ -166,3 +175,183 @@ class TestBatchFailureIsolation:
 
         assert result_queue.items[-1][0] == "error"
         assert not os.path.exists(str(tmp_path / "out.html"))
+
+
+class TestCheckpointing:
+    """
+    Phase 1: the output HTML is rewritten after every file, not just at the
+    end, so a crash mid-batch does not lose already-finished transcripts.
+    """
+
+    def _doc_id(self, html_out: str) -> str:
+        match = re.search(r'data-doc-id="([^"]+)"', html_out)
+        assert match, "expected a data-doc-id attribute on <html>"
+        return match.group(1)
+
+    def test_a_hard_kill_mid_batch_still_leaves_the_earlier_files_transcripts_on_disk(
+        self, tmp_path
+    ):
+        """
+        Proves the property directly rather than by inference from the final
+        file: the THIRD file's transcription raises KeyboardInterrupt, a
+        BaseException that run_transcription_process's `except Exception`
+        clauses do not catch, so the function propagates out and NEVER
+        reaches emit_progress(("w_saving", ...)) or the final
+        _atomic_write_html call - there is no "last write" here at all. If
+        the first two files' transcripts are on disk anyway, only the
+        per-file checkpoint could have put them there.
+        """
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(
+            identify_speakers=False, audio_durations=[10.0, 10.0, 10.0],
+        )
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        with pytest.raises(KeyboardInterrupt):
+            worker.run_transcription_process(
+                ["a.wav", "b.wav", "fatal.wav"],
+                output_path, options, progress_queue, result_queue,
+            )
+
+        # The run died before it could put anything on result_queue at all.
+        assert not result_queue.items
+
+        with open(output_path, encoding="utf-8") as f:
+            html_out = f.read()
+        assert "hello from a.wav" in html_out
+        assert "hello from b.wav" in html_out
+
+    def test_output_file_already_holds_earlier_transcripts_while_a_later_file_is_still_running(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        Reads the output file WHILE the third file's transcription is still
+        in progress - before the batch has finished at all - and confirms
+        the first two files' transcripts are already there, and the third's
+        is not. This is direct evidence the checkpoint after file 2 hit disk
+        before the run ended, rather than an inference from the file's final
+        contents (which the final write would produce with or without
+        checkpointing).
+        """
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(
+            identify_speakers=False, audio_durations=[10.0, 10.0, 10.0],
+        )
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        seen_mid_run = {}
+        real_transcribe = FakeTranscriber.transcribe
+
+        def spying_transcribe(self, source, total_duration_seconds=0):
+            if source == "c.wav" and os.path.exists(output_path):
+                with open(output_path, encoding="utf-8") as f:
+                    seen_mid_run["content"] = f.read()
+            return real_transcribe(self, source, total_duration_seconds=total_duration_seconds)
+
+        monkeypatch.setattr(FakeTranscriber, "transcribe", spying_transcribe)
+
+        worker.run_transcription_process(
+            ["a.wav", "b.wav", "c.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert "content" in seen_mid_run, "expected the output file to already exist by file 3"
+        assert "hello from a.wav" in seen_mid_run["content"]
+        assert "hello from b.wav" in seen_mid_run["content"]
+        assert "hello from c.wav" not in seen_mid_run["content"]
+
+    def test_doc_id_is_stable_across_checkpoints(self, tmp_path, monkeypatch):
+        """
+        render_html() mints a fresh uuid4 doc_id per call by default; the
+        worker must pin one and reuse it across every checkpoint, or the
+        browser's localStorage autosave key would change underneath a user
+        who is editing a partially-written file.
+        """
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        seen_doc_ids = []
+        real_write = worker._atomic_write_html
+
+        def recording_write(path, content):
+            seen_doc_ids.append(self._doc_id(content))
+            real_write(path, content)
+
+        monkeypatch.setattr(worker, "_atomic_write_html", recording_write)
+
+        worker.run_transcription_process(
+            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert len(seen_doc_ids) >= 2, "expected at least one checkpoint plus the final write"
+        assert len(set(seen_doc_ids)) == 1
+
+    def _vista(self, html_out: str) -> str:
+        match = re.search(r'class="backdrop"[^>]*style="background-image:url\(([^)]+)\)"', html_out)
+        assert match, "expected a .backdrop element with an inline background-image"
+        return match.group(1)
+
+    def test_vista_is_stable_across_checkpoints(self, tmp_path, monkeypatch):
+        """
+        render_html() picks a fresh random vista per call by default, exactly
+        like it mints a fresh doc_id - the same reasoning as
+        test_doc_id_is_stable_across_checkpoints applies here: without a pin,
+        the backdrop photo would change on every per-file checkpoint rewrite
+        and flicker to a different image mid-batch, which is not what "one
+        document" means.
+        """
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        seen_vistas = []
+        real_write = worker._atomic_write_html
+
+        def recording_write(path, content):
+            seen_vistas.append(self._vista(content))
+            real_write(path, content)
+
+        monkeypatch.setattr(worker, "_atomic_write_html", recording_write)
+
+        worker.run_transcription_process(
+            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert len(seen_vistas) >= 2, "expected at least one checkpoint plus the final write"
+        assert len(set(seen_vistas)) == 1
+
+    def test_no_stray_temp_file_survives_a_successful_run(self, tmp_path):
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert os.listdir(tmp_path) == ["out.html"]
+
+    def test_a_single_file_run_is_unchanged(self, tmp_path):
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1] == ("finished", output_path)
+        with open(output_path, encoding="utf-8") as f:
+            html_out = f.read()
+        assert "hello from a.wav" in html_out
+        assert os.listdir(tmp_path) == ["out.html"]

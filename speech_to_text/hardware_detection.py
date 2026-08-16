@@ -58,7 +58,7 @@ class HardwareDetector:
         # Real measured transcription speed on this machine (seconds of tiny-
         # model processing per second of audio), used by
         # estimate_transcription_time instead of guessed constants. None
-        # until a calibration benchmark has run — see set_calibration() and
+        # until a calibration benchmark has run - see set_calibration() and
         # speech_to_text.core.calibration.
         self.tiny_seconds_per_audio_second: Optional[float] = load_cached_tiny_rtf(self.cpu_count)
 
@@ -231,7 +231,7 @@ class HardwareDetector:
         first one that (a) fits in available RAM (can_run_model) and, once
         we have a real audio duration and a calibrated per-machine speed
         (see core.calibration), (b) is estimated to finish within
-        RECOMMENDED_TIME_BUDGET_SECONDS. Device (GPU) is not considered —
+        RECOMMENDED_TIME_BUDGET_SECONDS. Device (GPU) is not considered -
         transcription always runs on CPU in this app (see
         TranscriptionThread).
 
@@ -260,7 +260,7 @@ class HardwareDetector:
 
             return model_name, f"Highest accuracy this machine's RAM can support ({self.ram_gb:.1f}GB)"
 
-        # Nothing fit (e.g. not even enough RAM for 'tiny') — fall back to
+        # Nothing fit (e.g. not even enough RAM for 'tiny') - fall back to
         # the cheapest model anyway, since some result is better than none.
         return "tiny", "Minimum viable option for this hardware"
     
@@ -277,7 +277,7 @@ class HardwareDetector:
         from speech_to_text.core.calibration) scaled to the requested model
         size by relative parameter count, rather than guessed constants.
         Transcription always runs on CPU in this app (see TranscriptionThread
-        — device is hardcoded to "cpu"), so this does not factor in GPU speed
+        - device is hardcoded to "cpu"), so this does not factor in GPU speed
         even if a GPU is present.
 
         Args:
@@ -292,7 +292,7 @@ class HardwareDetector:
             seconds_per_audio_second = self.tiny_seconds_per_audio_second * relative_cost
             device_desc = f"{self.cpu_count} CPU cores"
         else:
-            # Calibration hasn't finished yet (first run only — see
+            # Calibration hasn't finished yet (first run only - see
             # CalibrationThread). Use a conservative placeholder so the UI has
             # something to show; it's replaced automatically once the
             # background calibration completes.

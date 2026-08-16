@@ -163,19 +163,29 @@
   function applyNames(fileIndex) {
     var names = state.names[fileIndex] || {};
     var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
-    if (!section) { return; }
+    var strip = document.querySelector('.speakers[data-file="' + fileIndex + '"]');
 
-    section.querySelectorAll('.spk').forEach(function (el) {
-      var i = el.dataset.speaker;
-      // dataset.fallback carries the already-translated "Speaker N" produced
-      // by the renderer - this process has no way to build it itself.
-      el.textContent = (names[i] && names[i].trim()) || el.dataset.fallback || '';
-    });
-    section.querySelectorAll('.speaker-name').forEach(function (input) {
-      var i = input.closest('.speaker-row').dataset.speaker;
-      if (document.activeElement !== input) { input.value = names[i] || ''; }
-    });
-    rebuildPlain(section);
+    if (section) {
+      section.querySelectorAll('.spk').forEach(function (el) {
+        var i = el.dataset.speaker;
+        // dataset.fallback carries the already-translated "Speaker N" produced
+        // by the renderer - this process has no way to build it itself.
+        el.textContent = (names[i] && names[i].trim()) || el.dataset.fallback || '';
+      });
+      rebuildPlain(section);
+    }
+
+    // The name inputs moved into the sidebar's speaker roster (.speakers)
+    // two rounds ago; .source only ever holds the read-only .spk chips
+    // above. Querying .speaker-name inside .source used to find nothing,
+    // which is why "use these names in all files" repainted the chips but
+    // left every other file's sidebar input showing its old value.
+    if (strip) {
+      strip.querySelectorAll('.speaker-name').forEach(function (input) {
+        var i = input.closest('.speaker-row').dataset.speaker;
+        if (document.activeElement !== input) { input.value = names[i] || ''; }
+      });
+    }
   }
 
   function bindSpeakers() {
@@ -238,7 +248,11 @@
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-label', t('speaker_colour', 'Speaker colour'));
     var dot = document.createElement('span');
-    dot.className = 'swatch';
+    // Own class, not .swatch - see the CSS comment on .swatch-rest and the
+    // matching one in formatting.py's _swatch_trigger_html() for why this
+    // has to stay a different class from the popover's per-colour dots
+    // rather than merely a differently-scoped selector.
+    dot.className = 'swatch-rest';
     dot.setAttribute('aria-hidden', 'true');
     btn.appendChild(dot);
     return btn;
@@ -391,10 +405,66 @@
   // system dismisses its sibling rather than stacking.
   var openMenuBtn = null;
 
+  // The .turn currently raised above its siblings because it holds an open
+  // .spk-menu - see .turn.menu-open in transcript.css for why this has to
+  // be an explicit class transcript.js owns, rather than a :hover rule: the
+  // menu stays open after the pointer leaves the card, so a hover-keyed
+  // z-index would drop the card back underneath its next sibling at exactly
+  // the moment the menu is being used, not before.
+  var menuOpenTurn = null;
+
   function closeMenu() {
     document.querySelectorAll('.spk-menu, .swatch-menu').forEach(function (m) { m.remove(); });
     if (openMenuBtn) { openMenuBtn.setAttribute('aria-expanded', 'false'); }
+    if (menuOpenTurn) { menuOpenTurn.classList.remove('menu-open'); menuOpenTurn = null; }
     openMenuBtn = null;
+  }
+
+  // Escaping .outline's overflow-y: auto is only a concern while the
+  // popover is actually detached from it - see positionDetachedMenu() and
+  // the .swatch-menu comment in transcript.css for why a fixed-position
+  // popover has to close on scroll instead of trying to follow the trigger:
+  // it has no DOM relationship to the scrolled container to follow it with.
+  document.addEventListener('scroll', function (e) {
+    if (!openMenuBtn) { return; }
+    var menu = document.querySelector('.swatch-menu');
+    if (menu && e.target.contains && e.target.contains(openMenuBtn)) { closeMenu(); }
+  }, true);
+
+  // Reads the trigger's real on-screen box via getBoundingClientRect() and
+  // writes it back as fixed, physical left/top - not inset-inline-start,
+  // unlike everywhere else in this file. Logical properties describe a
+  // position relative to a box's own writing direction; a rect from
+  // getBoundingClientRect() is already a physical viewport measurement with
+  // no writing-direction of its own to be logical *about*, so resolving
+  // "which physical side is inline-start" has to happen here explicitly
+  // instead (via getComputedStyle(btn).direction) rather than being free,
+  // the way it is for anything actually laid out by the CSS box model.
+  function positionDetachedMenu(menu, btn) {
+    var rect = btn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = (rect.bottom + 4) + 'px';
+    var rtl = getComputedStyle(btn).direction === 'rtl';
+    // clientWidth, NOT window.innerWidth. innerWidth includes the scrollbar
+    // gutter; a fixed element's containing block does not. Mixing the two
+    // put the menu exactly one scrollbar-width (16px here) inline-start of
+    // its trigger on every scrollable page - which, since this document
+    // always scrolls, meant always. getBoundingClientRect() is already in
+    // client coordinates, so the number subtracted from it has to be too.
+    if (rtl) {
+      menu.style.right = (document.documentElement.clientWidth - rect.right) + 'px';
+    } else {
+      menu.style.left = rect.left + 'px';
+    }
+
+    // Clamp to the viewport rather than letting the grid run off the bottom
+    // edge - the whole point of detaching this popover was to stop an
+    // ancestor's box from clipping it, so it would be self-defeating to
+    // leave it clipped by the one box every page has: the viewport itself.
+    var menuRect = menu.getBoundingClientRect();
+    if (menuRect.bottom > window.innerHeight) {
+      menu.style.top = (rect.top - menuRect.height - 4) + 'px';
+    }
   }
 
   // buildFn is called fresh on every open, not memoised - see
@@ -406,7 +476,21 @@
     if (!reopening) { return; }
 
     var menu = buildFn();
-    btn.insertAdjacentElement('afterend', menu);
+    if (menu.classList.contains('swatch-menu')) {
+      // See the .swatch-menu comment in transcript.css: .speaker-row lives
+      // inside .outline's overflow-y: auto, which would otherwise clip this
+      // popover at the sidebar's edge. Appending to <body> removes it from
+      // that clipped subtree entirely instead of trying to out-z-index or
+      // out-overflow an ancestor that will always win.
+      document.body.appendChild(menu);
+      positionDetachedMenu(menu, btn);
+    } else {
+      btn.insertAdjacentElement('afterend', menu);
+      if (menu.classList.contains('spk-menu')) {
+        menuOpenTurn = btn.closest('.turn');
+        if (menuOpenTurn) { menuOpenTurn.classList.add('menu-open'); }
+      }
+    }
     btn.setAttribute('aria-expanded', 'true');
     openMenuBtn = btn;
     var first = menu.querySelector('[role="menuitemradio"]');
@@ -476,8 +560,14 @@
 
       var swatchItem = e.target.closest ? e.target.closest('.swatch-menu-item') : null;
       if (swatchItem) {
-        var swatchMenu = swatchItem.closest('.swatch-menu');
-        var swatchRow = swatchMenu ? swatchMenu.closest('.speaker-row') : null;
+        // Not swatchItem.closest('.swatch-menu').closest('.speaker-row'):
+        // the menu is detached to <body> while open (see toggleMenu() and
+        // the .swatch-menu comment in transcript.css), so it is no longer a
+        // DOM descendant of the row that opened it. openMenuBtn - the
+        // .swatch-trigger itself - never moves, so it is the one thing
+        // still reliably inside .speaker-row to recover it from. Read
+        // before closeMenu() clears openMenuBtn.
+        var swatchRow = openMenuBtn ? openMenuBtn.closest('.speaker-row') : null;
         closeMenu();
         if (swatchRow) {
           var fileIndex = swatchRow.closest('.speakers').dataset.file;
@@ -543,11 +633,32 @@
 
   // ------------------------------------------------------------- plain text
 
+  // U+2066/U+2069 - see the LRI/PDI comment block in core/formatting.py.
+  // The card's own pill stays bare ("0:00 - 0:32"): a click target reads its
+  // own shape as the label. The plain-text panel gets copied out of the
+  // browser into apps with no bidi engine of their own, so it needs the
+  // stronger visual cue of brackets - and, per that same comment, the
+  // brackets have to sit *inside* the isolate along with the range, not
+  // outside it: they are mirrored characters exactly like the hyphen is a
+  // neutral, so a bracket pasted outside the isolate could reorder the same
+  // way the old un-isolated timestamps did.
+  var PLAIN_LRI = '⁦';
+  var PLAIN_PDI = '⁩';
+
+  function bracketedRange(ts) {
+    // ts.textContent already carries format_range()'s own LRI/PDI pair
+    // (rendered by formatting.py); stripped here and reapplied around the
+    // bracketed form rather than nested, so the plain-text panel still has
+    // exactly one isolate pair per range, per the module docstring.
+    var bare = ts.textContent.trim().replace(/[⁦⁩]/g, '');
+    return PLAIN_LRI + '[' + bare + ']' + PLAIN_PDI;
+  }
+
   function turnPlainText(turn, withTs, withSpk) {
     var prefix = [];
     var ts = turn.querySelector('.ts');
     var spk = turn.querySelector('.spk');
-    if (withTs && ts) { prefix.push(ts.textContent.trim()); }
+    if (withTs && ts) { prefix.push(bracketedRange(ts)); }
     if (withSpk && spk) { prefix.push(spk.textContent.trim() + ':'); }
 
     var lines = [];
@@ -561,22 +672,102 @@
     return head ? head + ' ' + lines.join('\n') : lines.join('\n');
   }
 
+  // Builds or updates one .plain-row per turn - never a full teardown and
+  // rebuild of the panel's innerHTML, which is what the single-<pre>
+  // version used to do and exactly what would fight a reader mid-edit: a
+  // fresh row replaces the live one under their caret every time any turn
+  // anywhere in the file changes. Two guards instead: skip a row whose
+  // .plain-body currently has focus (the same "never rewrite what the caret
+  // is in" rule runSearch() already follows for the card), and only touch a
+  // node's text when it would actually change, so an unrelated row's
+  // scroll position and selection are left alone too.
   function rebuildPlain(section) {
     if (!section) { return; }
     var panel = section.querySelector('.plain');
     if (!panel) { return; }
+    var container = panel.querySelector('.plain-text');
+    if (!container) { return; }
 
     var tsBox = panel.querySelector('.opt-ts');
     var spkBox = panel.querySelector('.opt-spk');
     var withTs = tsBox ? tsBox.checked : false;
     var withSpk = spkBox ? spkBox.checked : false;
 
-    var blocks = [];
+    var seen = {};
     section.querySelectorAll('.turn').forEach(function (turn) {
-      var text = turnPlainText(turn, withTs, withSpk);
-      if (text) { blocks.push(text); }
+      var turnId = turn.dataset.turn;
+      var text = readParagraphs(turn.querySelector('.body')).join('\n').replace(/^\s+|\s+$/g, '');
+      var row = container.querySelector('.plain-row[data-turn="' + turnId + '"]');
+
+      if (!text) {
+        if (row) { row.remove(); }
+        return;
+      }
+      seen[turnId] = true;
+
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'plain-row';
+        row.dataset.turn = turnId;
+
+        var prefixEl = document.createElement('span');
+        prefixEl.className = 'plain-prefix';
+        prefixEl.setAttribute('contenteditable', 'false');
+        row.appendChild(prefixEl);
+
+        var bodyEl = document.createElement('span');
+        bodyEl.className = 'plain-body';
+        bodyEl.setAttribute('contenteditable', 'true');
+        bodyEl.setAttribute('role', 'textbox');
+        bodyEl.setAttribute('aria-multiline', 'true');
+        bodyEl.setAttribute('aria-label', t('turn_text', 'Turn text'));
+        row.appendChild(bodyEl);
+
+        container.appendChild(row);
+      }
+
+      var prefix = [];
+      var ts = turn.querySelector('.ts');
+      var spk = turn.querySelector('.spk');
+      if (withTs && ts) { prefix.push(bracketedRange(ts)); }
+      if (withSpk && spk) { prefix.push(spk.textContent.trim() + ':'); }
+      var prefixText = prefix.length ? prefix.join(' ') + ' ' : '';
+
+      var prefixEl = row.querySelector('.plain-prefix');
+      if (prefixEl.textContent !== prefixText) { prefixEl.textContent = prefixText; }
+
+      var bodyEl = row.querySelector('.plain-body');
+      if (document.activeElement !== bodyEl && bodyEl.textContent !== text) {
+        bodyEl.textContent = text;
+      }
     });
-    panel.querySelector('.plain-text').textContent = blocks.join('\n\n');
+
+    // A turn's body can go empty (every sentence deleted) without the turn
+    // itself disappearing - its row has to go too, not just skip being
+    // refreshed above.
+    container.querySelectorAll('.plain-row').forEach(function (row) {
+      if (!seen[row.dataset.turn]) { row.remove(); }
+    });
+  }
+
+  // "Copy all" reassembles from the rows themselves rather than reading
+  // container.textContent: the DOM has no separator between one row and the
+  // next (each is just a sibling <div>), so a raw textContent scrape would
+  // run every turn's text together with no blank line between them. Walking
+  // the rows and joining explicitly is also what keeps this in step with
+  // whatever the reader has actually typed into a .plain-body, since it
+  // reads the live element, not a cached string.
+  function plainPanelText(panel) {
+    var blocks = [];
+    panel.querySelectorAll('.plain-row').forEach(function (row) {
+      var prefixEl = row.querySelector('.plain-prefix');
+      var bodyEl = row.querySelector('.plain-body');
+      var body = bodyEl ? bodyEl.textContent.replace(/^\s+|\s+$/g, '') : '';
+      if (!body) { return; }
+      var prefix = prefixEl ? prefixEl.textContent.replace(/^\s+|\s+$/g, '') : '';
+      blocks.push(prefix ? prefix + ' ' + body : body);
+    });
+    return blocks.join('\n\n');
   }
 
   function bindPlain() {
@@ -597,7 +788,43 @@
       });
 
       panel.querySelector('.copy-all').addEventListener('click', function (e) {
-        copy(panel.querySelector('.plain-text').textContent, e.currentTarget);
+        copy(plainPanelText(panel), e.currentTarget);
+      });
+
+      // Delegated (rows are created and destroyed by rebuildPlain(), not
+      // fixed at render time) - editing a row writes straight back into the
+      // card's own .body via writeParagraphs(), the same paragraph-array
+      // shape readParagraphs() produces from a card, so nothing here ever
+      // has to parse the plain-text panel's own markup back apart. Because
+      // this handler never calls rebuildPlain() for the row it just wrote,
+      // and rebuildPlain() skips whichever row currently has focus (see
+      // above), an edit here cannot circle back and overwrite its own
+      // caret - the other half of the loop that guard exists to break.
+      var container = panel.querySelector('.plain-text');
+      container.addEventListener('input', function (e) {
+        var bodyEl = e.target.closest ? e.target.closest('.plain-body') : null;
+        if (!bodyEl) { return; }
+        var row = bodyEl.closest('.plain-row');
+        var turn = document.querySelector('.turn[data-turn="' + row.dataset.turn + '"]');
+        if (!turn) { return; }
+
+        var paragraphs = bodyEl.textContent.split('\n');
+        state.turns[row.dataset.turn] = paragraphs;
+        turn.dataset.edited = 'true';
+        unflagTurn(turn);
+        writeParagraphs(turn.querySelector('.body'), paragraphs);
+        save();
+      });
+
+      // Same plain-text-only paste rule bindEditing() enforces on the card
+      // side - markup pasted from another app must not carry fonts or
+      // colours into a transcript that has no use for rich text.
+      container.addEventListener('paste', function (e) {
+        var bodyEl = e.target.closest ? e.target.closest('.plain-body') : null;
+        if (!bodyEl) { return; }
+        e.preventDefault();
+        var text = (e.clipboardData || window.clipboardData).getData('text');
+        document.execCommand('insertText', false, text);
       });
     });
 
@@ -906,6 +1133,7 @@
     var fileEl = document.getElementById('player-file');
     var timeEl = document.getElementById('player-time');
     var toggle = document.getElementById('player-toggle');
+    var seek = document.getElementById('player-seek');
     var current = null;
     var currentSection = null;
     // The end of the range a .ts click asked to hear, or null when playback
@@ -913,10 +1141,36 @@
     // been clicked yet). Read by the unthrottled stop-check in the
     // timeupdate handler below, and by the toggle handler that clears it.
     var boundEnd = null;
+    // Set on the seek input's own 'input' event, read by the throttled
+    // timeupdate sweep below so it never overwrites seek.value while a drag
+    // is in progress - the same "don't fight the control the reader's
+    // fingers are on" rule the search box's re-entrancy guard follows.
+    var scrubbing = false;
 
     function fmt(s) {
       var m = Math.floor(s / 60), r = Math.floor(s % 60);
       return m + ':' + (r < 10 ? '0' : '') + r;
+    }
+
+    // Drives the track's left-to-right fill (see .seek in transcript.css:
+    // the gradient is painted from --seek-fill, not from the input's own
+    // value/max, because browsers disagree on whether a range's native fill
+    // respects a forced `direction: ltr`). A percentage string, not a bare
+    // number, since it is written straight into a CSS custom property that
+    // feeds a linear-gradient() stop.
+    function updateSeekFill() {
+      var max = Number(seek.max) || 0;
+      var pct = max > 0 ? (Number(seek.value) / max) * 100 : 0;
+      seek.style.setProperty('--seek-fill', pct + '%');
+    }
+
+    // Isolated LTR digits, same shape as format_range()'s "M:SS - M:SS" in
+    // core/formatting.py - a neutral "/" between two LTR runs, inside an RTL
+    // document, needs the same LRI/PDI guard or it can reorder the same way
+    // an un-isolated timestamp used to.
+    function updateReadout() {
+      var duration = isFinite(audio.duration) ? audio.duration : 0;
+      timeEl.textContent = '⁦' + fmt(audio.currentTime) + ' / ' + fmt(duration) + '⁩';
     }
 
     document.querySelectorAll('.ts').forEach(function (btn) {
@@ -931,12 +1185,40 @@
           current = file;
           currentSection = section;
           audio.src = encodeURIComponent(file);
+          seek.max = '0';
         }
         audio.currentTime = Number(btn.dataset.start);
         boundEnd = Number(btn.dataset.end);
+        seek.value = String(audio.currentTime);
+        updateSeekFill();
+        // Clicking a timestamp is the one moment the readout has to update
+        // before playback (and therefore the throttled timeupdate handler)
+        // has necessarily started - a reader glancing at "0:32 / 3:11" right
+        // after the click, before any audio has actually played a frame,
+        // should not see a stale "0:00 / 3:11" left over from load.
+        updateReadout();
         audio.play().catch(function () { /* the error listener handles it */ });
       });
     });
+
+    audio.addEventListener('loadedmetadata', function () {
+      seek.max = String(audio.duration);
+      updateReadout();
+      updateSeekFill();
+    });
+
+    seek.addEventListener('input', function () {
+      scrubbing = true;
+      audio.currentTime = Number(seek.value);
+      // A deliberate seek overrides whatever range a .ts click asked to stay
+      // inside - dragging the scrubber past data-end must not snap the
+      // playhead back, the same "manual control wins" rule the toggle
+      // button's own click handler already applies to a manual resume.
+      boundEnd = null;
+      updateReadout();
+      updateSeekFill();
+    });
+    seek.addEventListener('change', function () { scrubbing = false; });
 
     audio.addEventListener('error', function () {
       // The audio was moved away from the transcript, or the container is one
@@ -969,6 +1251,9 @@
       current = null;
       currentSection = null;
       boundEnd = null;
+      seek.max = '0';
+      seek.value = '0';
+      updateSeekFill();
     });
 
     // timeupdate fires several times a second. The clock is cheap, but
@@ -988,7 +1273,16 @@
     var playing = null;
 
     audio.addEventListener('timeupdate', function () {
-      timeEl.textContent = fmt(audio.currentTime);
+      updateReadout();
+      // Left alone mid-drag: the seek input's own 'input' handler is already
+      // setting audio.currentTime from seek.value, so timeupdate writing
+      // seek.value back from audio.currentTime in the same tick would just
+      // be echoing the drag back at itself - harmless in the best case,
+      // fighting the pointer in the worst.
+      if (!scrubbing) {
+        seek.value = String(audio.currentTime);
+        updateSeekFill();
+      }
 
       if (boundEnd !== null && audio.currentTime >= boundEnd) {
         audio.pause();
@@ -1026,6 +1320,25 @@
       playing = null;
     });
 
+    // Driven off the audio element's own play/pause events, not off the
+    // toggle button's click handler, so the glyph and label are correct
+    // even when nothing here caused the pause - the range-bound stop in the
+    // timeupdate handler above calls audio.pause() directly, and a reader
+    // watching the button would otherwise still see "pause" after playback
+    // had actually stopped on its own.
+    var toggleUse = toggle.querySelector('use');
+    function syncToggleGlyph() {
+      var playingNow = !audio.paused && !audio.ended;
+      if (toggleUse) { toggleUse.setAttribute('href', playingNow ? '#i-pause' : '#i-play'); }
+      // Swapped alongside the glyph, not left behind: a button whose icon
+      // shows "pause" while its accessible name still says "play" is worse
+      // than not swapping at all - a screen reader user would be told the
+      // opposite of what a sighted reader sees.
+      toggle.setAttribute('aria-label', playingNow ? t('pause', 'Pause') : t('play_pause', 'Play'));
+    }
+    audio.addEventListener('play', syncToggleGlyph);
+    audio.addEventListener('pause', syncToggleGlyph);
+
     toggle.addEventListener('click', function () {
       // A manual resume is the reader taking the wheel back - the range a
       // .ts click asked to stay inside no longer applies, or the toggle
@@ -1036,6 +1349,34 @@
   }
 
   // ----------------------------------------------------------------- chrome
+
+  // The theme actually in effect right now: an explicit data-theme wins
+  // (either restored from a previous session or set by this page's own
+  // toggle); with none set, the page is following the system/browser
+  // preference via the @media(prefers-color-scheme) block in transcript.css,
+  // which this reads back from matchMedia rather than assuming light - the
+  // button's label has to name the *next* state correctly even when nobody
+  // has touched the toggle yet.
+  function effectiveTheme() {
+    var explicit = document.documentElement.dataset.theme;
+    if (explicit === 'dark' || explicit === 'light') { return explicit; }
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      ? 'dark' : 'light';
+  }
+
+  // The button names the action, not the current state ("מצב כהה" while
+  // light, "מצב בהיר" while dark - see the doc_theme_light/doc_theme_dark
+  // keys in gui/i18n.py), so its label has to flip every time the effective
+  // theme changes: on click, and once on init in case the system preference
+  // was already dark and formatting.py's server-rendered "dark mode" label
+  // guessed wrong.
+  function syncThemeLabel() {
+    var btn = document.getElementById('toggle-theme');
+    if (!btn) { return; }
+    var label = btn.querySelector('span');
+    var next = effectiveTheme() === 'dark' ? btn.dataset.labelLight : btn.dataset.labelDark;
+    if (label && next) { label.textContent = next; }
+  }
 
   function bindChrome() {
     var searchInput = document.getElementById('search');
@@ -1067,9 +1408,10 @@
     var theme = document.getElementById('toggle-theme');
     if (theme) {
       theme.addEventListener('click', function () {
-        var nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        var nextTheme = effectiveTheme() === 'dark' ? 'light' : 'dark';
         document.documentElement.dataset.theme = nextTheme;
         state.theme = nextTheme;
+        syncThemeLabel();
         save();
       });
     }
@@ -1116,6 +1458,125 @@
     });
   }
 
+  // --------------------------------------------------------------- outline
+
+  // Which file's speakers panel is shown and which outline-files link reads
+  // as current - kept in one place so the IntersectionObserver below and a
+  // manual file-link click (bindOutline()) can't drift into disagreeing
+  // about "the current file".
+  function setActiveFile(fileIndex) {
+    document.querySelectorAll('.outline-file').forEach(function (a) {
+      var isCurrent = a.dataset.file === String(fileIndex);
+      if (isCurrent) { a.setAttribute('aria-current', 'true'); } else { a.removeAttribute('aria-current'); }
+    });
+    document.querySelectorAll('.outline-speakers .speakers').forEach(function (panel) {
+      panel.classList.toggle('active', panel.dataset.file === String(fileIndex));
+    });
+  }
+
+  function bindOutline() {
+    var outline = document.getElementById('outline');
+    var toggle = document.getElementById('outline-toggle');
+
+    // No <aside> at all (a single file with no speakers - see
+    // _render_outline_html()'s early return) - nothing here to wire up.
+    if (!outline) { return; }
+
+    // Gates the CSS rule that hides every non-current speakers panel (see
+    // .outline.js-ready in transcript.css) - added only once script is
+    // actually running, so a JavaScript-disabled open keeps every panel
+    // visible instead of losing all but the first to a rule with nothing
+    // left to un-hide them.
+    outline.classList.add('js-ready');
+
+    outline.querySelectorAll('.outline-file').forEach(function (a) {
+      a.addEventListener('click', function () {
+        setActiveFile(a.dataset.file);
+        // A real navigation (the href does the scrolling) - closing the
+        // overlay after it is only meaningful below the narrow-screen
+        // breakpoint, where .open controls visibility; toggling it off
+        // above that breakpoint is a harmless no-op since CSS ignores the
+        // class there.
+        closeOutline();
+      });
+    });
+
+    function openOutline() {
+      outline.classList.add('open');
+      if (toggle) { toggle.setAttribute('aria-expanded', 'true'); }
+      var first = outline.querySelector('a, button, input');
+      if (first) { first.focus(); }
+    }
+
+    function closeOutlineImpl() {
+      outline.classList.remove('open');
+      if (toggle) { toggle.setAttribute('aria-expanded', 'false'); }
+    }
+    closeOutline = closeOutlineImpl;
+
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        if (outline.classList.contains('open')) { closeOutline(); } else { openOutline(); }
+      });
+    }
+
+    // Escape closes the overlay - not a focus trap (the plan is explicit
+    // that this must not trap focus), just the same "Escape dismisses the
+    // thing that's open" behaviour closeMenu() already gives the popovers.
+    // Tab is left alone entirely: a reader who tabs out of the overlay
+    // while it happens to be open is not stuck inside it.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && outline.classList.contains('open')) {
+        closeOutline();
+        if (toggle) { toggle.focus(); }
+      }
+    });
+
+    // Which file is "current" is driven by the same observer that drives
+    // the outline's own active marker - one source of truth rather than a
+    // second scroll handler that could disagree with it. rootMargin pulls
+    // the effective viewport in from the top by the toolbar's height (so a
+    // section sliding in under the sticky toolbar doesn't count as "in
+    // view" a frame early) and from the bottom by 60%, so the section
+    // occupying the *upper* portion of the screen - the one the reader is
+    // actually reading - wins over one just barely peeking in at the
+    // bottom edge.
+    if (window.IntersectionObserver) {
+      var toolbarHeight = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height')
+      ) || 0;
+      // A short file's whole section can fit inside the shrunk band at once,
+      // which means more than one section is "intersecting" at the same
+      // time - a single "last entry wins" would then depend on whatever
+      // order the browser happened to deliver entries in, not on which
+      // file is actually on screen first. Tracking every section's current
+      // intersection state and picking the smallest file index among the
+      // ones still true is the fix: since sections render top-to-bottom in
+      // document order, the smallest index among currently-intersecting
+      // ones is always the topmost one - the file the reader reached first.
+      var intersecting = {};
+      function pickActiveFromIntersecting() {
+        var current = Object.keys(intersecting)
+          .filter(function (file) { return intersecting[file]; })
+          .sort(function (a, b) { return Number(a) - Number(b); });
+        if (current.length) { setActiveFile(current[0]); }
+      }
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          intersecting[entry.target.dataset.file] = entry.isIntersecting;
+        });
+        pickActiveFromIntersecting();
+      }, { rootMargin: '-' + (toolbarHeight + 1) + 'px 0px -60% 0px', threshold: 0 });
+      document.querySelectorAll('.source').forEach(function (section) { observer.observe(section); });
+    }
+  }
+
+  // Reassigned by bindOutline() once the real <aside> (if any) is found -
+  // declared up here so keydown/click handlers above can reference it
+  // before the reassignment runs, and so calling it when there is no
+  // outline at all is a safe no-op instead of a ReferenceError.
+  var closeOutline = function () {};
+
   // ---------------------------------------------------------------- layout
 
   // The sticky file bar sits below the toolbar (see .file-bar in
@@ -1129,15 +1590,38 @@
     document.documentElement.style.setProperty('--toolbar-height', toolbar.offsetHeight + 'px');
   }
 
+  // Tracks input modality on <html> as data-kbd, for the .body/.plain-body
+  // focus ring (see the STATED EXCEPTION comment at the top of
+  // transcript.css). :focus-visible alone cannot do this: Chromium matches
+  // it on a contenteditable element for a mouse click too, which is the
+  // exact bug being fixed (the ring lighting up when a reader merely clicks
+  // in to select text). Tab is the one key that can move focus without
+  // already being handled by some other keydown listener on this page, and
+  // is set rather than toggled off on other keys - a reader tabbing through
+  // controls and then pressing, say, an arrow key inside the seek control
+  // should not lose the flag mid-keyboard-session. pointerdown, not click:
+  // it fires before the resulting focus event, so the flag is already clear
+  // by the time :focus paints.
+  function bindKeyboardModality() {
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') { document.documentElement.setAttribute('data-kbd', 'true'); }
+    });
+    document.addEventListener('pointerdown', function () {
+      document.documentElement.removeAttribute('data-kbd');
+    });
+  }
+
   // ------------------------------------------------------------------- init
 
   load();
+  bindKeyboardModality();
   bindEditing();
   bindSpeakers();
   bindMenus();
   bindPlain();
   bindAudio();
   bindChrome();
+  bindOutline();
 
   syncToolbarHeight();
   window.addEventListener('resize', syncToolbarHeight);
@@ -1148,7 +1632,13 @@
   applySpeakerState();
   applyAssignments();
   applyEdits();
-  document.querySelectorAll('.speakers').forEach(function (s) { applyNames(s.dataset.file); });
+  // applyAssignments() has already replayed any saved reassignments by this
+  // point, so .turn[data-speaker] reflects the real, final state - applying
+  // names now is what makes a reloaded page's labels match a session's own
+  // reassignments from before reload.
+  document.querySelectorAll('.speakers').forEach(function (s) {
+    applyNames(s.dataset.file);
+  });
 
   Object.keys(state.opts).forEach(function (file) {
     var panel = document.querySelector('.source[data-file="' + file + '"] .plain');
@@ -1161,6 +1651,7 @@
   document.querySelectorAll('.source').forEach(rebuildPlain);
 
   if (state.theme) { document.documentElement.dataset.theme = state.theme; }
+  syncThemeLabel();
   if (state.flags) { setFlags(true); }
 
   // Restored edits are in this browser, not in any file - assume the worst and

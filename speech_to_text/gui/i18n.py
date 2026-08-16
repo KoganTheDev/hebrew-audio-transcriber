@@ -117,8 +117,13 @@ STRINGS = {
     "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
     "doc_search_next": {"en": "Next match", "he": "התאמה הבאה"},
     "doc_no_results": {"en": "No results", "he": "אין תוצאות"},
-    "doc_show_uncertain": {"en": "Uncertain words", "he": "מילים לא ודאיות"},
-    "doc_theme": {"en": "Theme", "he": "ערכה"},
+    "doc_show_uncertain": {"en": "Show uncertain words", "he": "הצג מילים לא ודאיות"},
+    # Two keys, not one - the button names the action it is about to take, and
+    # that action is the opposite of the current state. transcript.js swaps
+    # between them on click, alongside the existing aria-pressed/data-theme
+    # handling - "Theme" told the reader nothing about what clicking it did.
+    "doc_theme_light": {"en": "Light mode", "he": "מצב בהיר"},
+    "doc_theme_dark": {"en": "Dark mode", "he": "מצב כהה"},
     "doc_toggle_theme": {"en": "Switch colour scheme", "he": "החלפת ערכת צבעים"},
     "doc_save_copy": {"en": "Save a copy", "he": "שמירת עותק"},
     "doc_status_saved": {"en": "Saved", "he": "נשמר"},
@@ -138,7 +143,15 @@ STRINGS = {
     "doc_copy_turn": {"en": "Copy this turn", "he": "העתקת פסקה"},
     "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
     "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
-    "doc_play_pause": {"en": "Play or pause", "he": "נגן או השהה"},
+    # Two keys, not one - same "the button names the action it is about to
+    # take" reasoning as doc_theme_light/doc_theme_dark above. transcript.js
+    # swaps between them on the audio element's own play/pause events (see
+    # bindAudio()), alongside the #i-play/#i-pause glyph swap, so a
+    # programmatic pause (the range-bound stop in the timeupdate handler)
+    # updates the accessible name too, not just a click on the button.
+    "doc_play_pause": {"en": "Play", "he": "נגן"},
+    "doc_pause": {"en": "Pause", "he": "השהה"},
+    "doc_seek": {"en": "Seek", "he": "החלקה בהקלטה"},
     "doc_plain_text": {"en": "Plain text", "he": "טקסט רגיל"},
     "doc_plain_hint": {
         "en": "to paste into another app",
@@ -151,6 +164,8 @@ STRINGS = {
     "doc_copied": {"en": "Copied", "he": "הועתק"},
     "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
+    "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
+    "doc_outline_toggle": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
 

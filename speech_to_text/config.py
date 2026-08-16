@@ -278,9 +278,9 @@ GUI_WINDOW_MIN_HEIGHT = 550     # Minimum resizable height (px)
 # ============================================================================
 # File selection zone styling and spacing
 
-GUI_DROP_ZONE_HEIGHT = 210      # Drop zone height (px) — shrunk to make room for the system info table above it
-GUI_DROP_ZONE_PADDING = 20      # Internal padding in drop zone (px) — reduced to fit the shorter zone
-GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) — reduced to fit the shorter zone
+GUI_DROP_ZONE_HEIGHT = 210      # Drop zone height (px) - shrunk to make room for the system info table above it
+GUI_DROP_ZONE_PADDING = 20      # Internal padding in drop zone (px) - reduced to fit the shorter zone
+GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) - reduced to fit the shorter zone
 
 # ============================================================================
 # Hardware Detection Configuration
@@ -289,7 +289,7 @@ GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) �
 
 # Placeholder speed factors, used only until the real per-machine
 # calibration benchmark (speech_to_text.core.calibration) finishes on first
-# run — see HardwareDetector.estimate_transcription_time. Not used once a
+# run - see HardwareDetector.estimate_transcription_time. Not used once a
 # real measurement is available.
 SPEED_FACTORS = {
     "tiny": 2.5,      # 2.5x real-time (10 min audio = ~4 min processing)

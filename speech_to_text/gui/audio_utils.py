@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 def get_audio_duration(file_path: str) -> int:
     """
     Get the real audio/video duration in seconds by reading container
-    metadata — not an estimate.
+    metadata - not an estimate.
 
     Uses PyAV (the 'av' package), which is already a required dependency of
     faster-whisper, so no extra install is needed. This reads the container
     header directly rather than decoding the file, so it's fast and exact
     for essentially all formats faster-whisper/ffmpeg can handle. Falls back
     to a rough file-size-based guess only if the file can't be opened at all
-    (e.g. corrupt/unsupported file) — that fallback is clearly logged as an
+    (e.g. corrupt/unsupported file) - that fallback is clearly logged as an
     estimate, since it is one.
     """
     try:
