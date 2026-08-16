@@ -57,11 +57,11 @@ section 10 below for the sidebar itself.
 - [ ] Type a name in a speaker row in the sidebar. Every turn by that speaker updates as you type.
 - [ ] Clear the name. It falls back to "דובר 1", not to blank.
 - [ ] With two or more files: rename in one, confirm the others are untouched.
-- [ ] Press "use these names in all files". Other files adopt them - but a two-speaker recording
-      does not gain a third name from a three-speaker one.
-- [ ] Press "+ הוספת דובר" (add speaker). A new row appears with its own name field, colour
-      picker and locate button, defaulting to a fallback like "דובר 3" that no other speaker in the
-      file is using.
+- [ ] Press "use these names in all files". Other files' sidebar **name inputs** show the name (not
+      just each turn's `.spk` chip) - but a two-speaker recording does not gain a third name from a
+      three-speaker one.
+- [ ] Press "+ הוספת דובר" (add speaker). A new row appears with its own name field and colour
+      picker, defaulting to a fallback like "דובר 3" that no other speaker in the file is using.
 - [ ] Click a swatch on any speaker's colour picker (an existing or a newly added one). That
       speaker's name, every one of their turns' accent border, and the swatch's own selected ring
       all update together.
@@ -83,13 +83,8 @@ section 10 below for the sidebar itself.
       paint above the card underneath it. This is the critical detail: a fix keyed to `.turn:hover`
       passes with the pointer still resting on the card (hover's own lift already creates a stacking
       context) but fails in real use, because the menu stays open well after the pointer leaves it.
-- [ ] Click a speaker row's locate button in the sidebar. The view scrolls to that speaker's first
-      turn in that file; click again and it steps to the next one, cycling back to the first after
-      the last.
-- [ ] Each speaker row shows a turn count next to its locate button, matching the number of that
-      speaker's cards actually visible in the reading column. Reassign a turn to a different
-      speaker via its `.spk` chip menu: **both** the count it left and the count it joined update
-      immediately, without a reload.
+- [ ] A speaker row in the sidebar is just a colour swatch and a name input now - no locate button
+      and no turn count next to it (both were removed as clutter, not relocated elsewhere).
 - [ ] **Reload the page.** Added speakers, their colours, and any reassigned turns are all still
       there, exactly as left - not just the text edits.
 
@@ -120,12 +115,21 @@ Requires the transcript to be sitting next to its real audio file.
       single bad file must not disable the whole document.
 - [ ] The player shows a seek bar and a "current / total" readout. Dragging the seek bar moves
       playback to that position; the readout updates as you drag, not only after you release.
+- [ ] **The seek fill advances left to right** as playback runs, even though the page itself is
+      RTL - watch the filled (accent-coloured) portion of the track grow from the start edge toward
+      the end edge, not the reverse. Drag the thumb by hand too: the fill must track the thumb, not
+      lag a tick behind it.
 - [ ] Click a timestamp whose range ends before the file's end, let it play to the range's end
       (player pauses there, per the check above), then drag the seek bar to a point *past* that
       original range end. Playback must **not** snap back - a deliberate seek clears the range
       bound the same way pressing the play/pause toggle already does.
 - [ ] Click a timestamp. The readout updates to that turn's start time immediately, before playback
       has produced a single `timeupdate` event.
+- [ ] The player's toggle button shows a **pause** glyph while audio is playing and a **play**
+      glyph while it is not - including when playback stops on its own (the range-bound stop at a
+      turn's end, per the check above), not only after clicking the toggle itself. Inspect the
+      button's accessible name (e.g. via the browser's accessibility tree) alongside the glyph: it
+      must say "pause" while playing and "play" while paused, not the same text throughout.
 
 ## 5. Search
 
@@ -175,12 +179,46 @@ Requires the transcript to be sitting next to its real audio file.
 - [ ] Set the OS to dark mode with no in-page choice made. The document follows it.
 - [ ] The reading panel (.source, .outline, menus) is visibly distinct from the page ground in both
       schemes - a flat, raised surface, not flush with the body colour behind it.
+- [ ] **Backdrop legibility over a dark-heavy vista (Phase 5/5b).** Generate a document pinned to a
+      vista that genuinely contains pure-black pixels - vista-09, -29, -30 and -31 all do, and that is
+      the case that makes *light* mode's contrast tightest, not dark mode's:
+
+      ```bash
+      py -3.11 -c "
+      import io, sys; sys.path.insert(0, '.')
+      from speech_to_text.core import formatting; formatting._asset.cache_clear()
+      from speech_to_text.core.segments import Segment, TranscriptDocument, Word
+      from speech_to_text.gui import i18n; i18n.set_language('he')
+      w = lambda t, p: Word(start=0, end=1, text=t, probability=p)
+      segs = [Segment(0, 5, 'שלום, מה שלומך היום?', speaker=0,
+                      words=[w('שלום,', .99), w('מה', .98), w('שלומך', .41), w('היום?', .93)])]
+      io.open('check-dark-vista.html', 'w', encoding='utf-8').write(formatting.render_html(
+          [TranscriptDocument('meeting.m4a', segs)], speaker_label=i18n.t('speaker_label'),
+          title='check', ui_strings=i18n.document_strings(), vista='vista-09.webp'))
+      "
+      ```
+
+      Open it in both colour schemes. The photo is visible at full strength in the margins and
+      faintly through the reading panel (.source, .outline, .file-bar) where text sits, and every
+      line of body text and every timestamp/muted label stays comfortably legible over the darkest
+      part of the photo, in both schemes - not just plausible-looking, but readable at a normal
+      glance without straining.
+- [ ] Set the OS to "prefers contrast: more". The backdrop photo disappears entirely (a reader who
+      asked for maximum contrast should not have a photo behind their text at all).
 - [ ] Scroll a file with several turns. Its filename bar stays pinned just below the toolbar the
       whole way through that file, with its own accent colour, and hands off to the next file's bar
       at the section boundary rather than overlapping it.
 - [ ] Tab through the whole page, including a turn's speaker label and its reassignment menu, and
       the colour swatches in the speakers strip. Focus is always visible, and the tab order follows
       the reading order.
+- [ ] **Focus ring, keyboard-only (Phase 7).** Click directly into a turn's body text, and separately
+      into a row in the plain-text panel, to place the caret and select some text. **No ring appears
+      on either**, even though the caret and any selection are visible. Then press Tab until focus
+      reaches a card and, separately, a plain-text row: **a ring appears** on each - one clean box on
+      the card, not a per-line staircase on the plain-text row. `.speaker-name` is out of scope; its
+      focus cue is unchanged either way. Click a toolbar button, or focus `#search`, and confirm both
+      keep exactly today's behaviour (a button still rings; the search box still shows only its
+      accent underline, never a ring).
 - [ ] Turn on "reduce motion" at the OS level. Cards no longer lift on hover, the colour-swatch hover
       scale is gone, the toast still appears/disappears but without sliding, and search does not
       smooth-scroll.

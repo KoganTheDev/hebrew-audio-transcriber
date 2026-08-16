@@ -15,7 +15,18 @@
 
    Rules being honoured deliberately (do not "tidy" these away):
      - hover is never the only route to an action; see the (hover: none) block
-     - focus rings stay visible; :focus-visible is styled, never removed
+     - focus rings stay visible; :focus-visible is styled, never removed.
+       STATED EXCEPTION: .body and .plain-body (see their own rules) gate the
+       ring behind html[data-kbd] instead of :focus-visible alone, because
+       Chromium matches :focus-visible on a contenteditable element for mouse
+       clicks too - merely clicking into a card to select text lit a full-box
+       ring on .body and a per-line-fragment stepped ring on .plain-body's
+       multi-line inline span. transcript.js sets data-kbd on Tab keydown and
+       clears it on pointerdown, so the ring survives for a keyboard reader
+       (who still needs to see which block they are about to type into) and
+       disappears for a mouse click. Every other focused control on this page
+       keeps plain :focus-visible - this exception is scoped to exactly those
+       two elements, per the user's report.
      - motion is transform/opacity only, and is disabled under
        prefers-reduced-motion
      - colour never carries meaning on its own - speaker colour sits on top of
@@ -150,6 +161,50 @@
   --spk-6-chip-text: #11111b;
   --spk-7-chip-text: #11111b;
 
+  /* How strongly the backdrop photo shows through. DECIDED at 1.00 in both
+     schemes from a live mockup (docs/mockups/backdrop-and-chrome.html): the
+     photo runs at full strength in the margins, where nothing has to stay
+     legible over it, and --panel-opacity below is what protects the reading
+     surface, not this value. Text does not sit directly on the backdrop
+     anywhere text-bearing - the reading column is a translucent panel
+     (--panel-opacity) floating over it - which is why this can be 1.00
+     without failing the worst-case contrast test in
+     tests/test_transcript_styles.py: that test composites --panel-rgb over a
+     pure-black and a pure-white pixel (the extremes any photo pixel could
+     be, and ones that genuinely occur in several of the 32 shipped vistas)
+     and checks --text/--muted still clear 4.5:1 through the panel. */
+  --backdrop-opacity: 1.00;
+
+  /* The reading panel: a raised surface at less than full opacity, floating
+     over the backdrop rather than masking it out completely. Split into an
+     RGB triplet plus a separate opacity (matching the --backdrop-opacity
+     pattern above) rather than a single rgba() literal, because
+     rgba(var(--panel-rgb), var(--panel-opacity)) lets both halves stay
+     theme tokens - a literal would need a light and a dark copy compared by
+     eye instead of computed by the contrast test. This is --panel-rgb, not a
+     --bg-rgb token - this palette (Anuppuccin) added a second elevation
+     step, --panel, one step above --bg, specifically for the panel surface,
+     see --panel's own comment above, so compositing against --bg would
+     model the wrong surface's colour.
+
+     0.93, not the user's originally-preferred 0.70: 0.70 measured 2.65:1 for
+     --muted against a 4.5:1 floor and was not shippable. Per-image
+     measurement across all 32 vistas (correct RGB-space compositing) found
+     the minimum safe panel opacity ranges only 0.89 to 0.91 - they are
+     ordinary photographs spanning nearly the full tonal range, not a
+     situation where a thinner panel is available for some images and not
+     others. 0.91 itself was tried first and clears the 4.5:1 floor by only
+     0.02 (4.52:1) for light --muted, the tightest of the four worst cases -
+     close enough that a later palette adjustment, or integer RGB rounding in
+     real compositing, could flip it. 0.93 clears the same case by 0.24
+     (4.74:1); the visual difference between 9% and 7% photo show-through is
+     negligible, the difference in headroom is roughly twelvefold. See
+     docs/transcript-manual-checks.md and the mockup for the tone-mapping and
+     per-image alternatives that were tried and closed out before landing
+     here. */
+  --panel-rgb: 239, 241, 245;
+  --panel-opacity: 0.93;
+
   --measure: 42rem;
   --radius: 6px;
   --fast: 160ms;
@@ -255,6 +310,13 @@
     --spk-5-chip-text: #11111b;
     --spk-6-chip-text: #11111b;
     --spk-7-chip-text: #11111b;
+
+    /* Both DECIDED at the same value as the light block - see that block's
+       comment for why 1.00/0.93, not a per-scheme number. --panel-rgb is
+       Mocha's own --panel (#1e1e2e), not a darkened guess. */
+    --backdrop-opacity: 1.00;
+    --panel-rgb: 30, 30, 46;
+    --panel-opacity: 0.93;
   }
 }
 
@@ -300,6 +362,10 @@
   --spk-5-chip-text: #11111b;
   --spk-6-chip-text: #11111b;
   --spk-7-chip-text: #11111b;
+
+  --backdrop-opacity: 1.00;
+  --panel-rgb: 30, 30, 46;
+  --panel-opacity: 0.93;
 }
 
 /* Replaces four families of eight near-identical [data-palette="N"] /
@@ -349,6 +415,50 @@ body {
   font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
   font-size: 1.0625rem;
   line-height: 1.75;
+  /* Establishes a stacking context on body itself (without needing
+     position + z-index), so .backdrop's z-index:-1 is only compared against
+     body's own children - it paints above body's background-color and below
+     everything else in the document. Without this, .backdrop is a child of
+     an *unpositioned* body, so its negative z-index would place it in the
+     root stacking context instead, one step *before* body's own background
+     is painted - i.e. completely hidden behind it, not behind the text. */
+  isolation: isolate;
+}
+
+/* The stationary photo layer. A plain background-attachment: fixed on body
+   was the obvious first idea and was rejected: it's broken on iOS Safari,
+   it forces a repaint on every scroll frame on the browsers where it does
+   work, and it cannot carry its own opacity - opacity on body would fade the
+   text along with the image. A dedicated fixed, negative-z-index element
+   behind the content gets a stationary image, independently dimmable,
+   without touching body's own paint at all.
+
+   No background colour of its own: the image is supplied per render as an
+   inline style (see formatting.py._vista_data_uri), because it changes per
+   document while this stylesheet does not.
+
+   No blur here, and none is coming back: an @supports (backdrop-filter: ...)
+   panel-blur block used to sit in the .source rule below, and a whole-image
+   filter: blur() alternative was tried against this element directly.
+   Measured contrast impact of either was zero - blurring a photo changes
+   which pixels sit under which letter, it does not lighten or darken any of
+   them, so it bought no headroom against the worst-case test below and was
+   dropped along with the @supports blocks that implemented it. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  opacity: var(--backdrop-opacity);
+  pointer-events: none;
+}
+
+/* A reader who has told the OS "more contrast, please" is explicitly asking
+   for the plainest possible reading surface - a photo behind the text,
+   however subtle, is the opposite of that request. */
+@media (prefers-contrast: more) {
+  .backdrop { display: none; }
 }
 
 .vh {
@@ -656,11 +766,14 @@ main { grid-column: 2; min-width: 0; margin: 0; }
    real height (which changes when it wraps to a second line) rather than a
    second hardcoded number drifting from the first.
 
-   background: var(--panel) - the raised reading surface, same token as
-   .source below and menus opened from within it, so a popover reads as
-   raised above the page ground rather than flush with it (see --panel's
-   own definition for why it had to exist once the backdrop photo, the
-   thing that used to separate a panel from the page, was removed). */
+   rgba(var(--panel-rgb), var(--panel-opacity)), not the flat --panel: this
+   is a reading surface floating over the backdrop, same as .source below,
+   so it has to stay partly see-through for the photo to read as "behind
+   the sidebar" rather than swapped out for a solid card the moment the
+   backdrop is back. Menus opened from within it (.spk-menu, .swatch-menu)
+   deliberately keep the flat --panel instead - see their own comments for
+   why a popover reads as MORE raised than its container, not equally
+   translucent. */
 .outline {
   grid-column: 3;
   position: sticky;
@@ -669,7 +782,7 @@ main { grid-column: 2; min-width: 0; margin: 0; }
   overflow-y: auto;
   padding: 1.25rem 1rem 2rem;
   border-radius: calc(var(--radius) * 2);
-  background: var(--panel);
+  background: rgba(var(--panel-rgb), var(--panel-opacity));
 }
 .outline-title {
   margin: 0 0 0.4rem;
@@ -728,67 +841,38 @@ main { grid-column: 2; min-width: 0; margin: 0; }
    loses the filtering, not the content. */
 .outline.js-ready .outline-speakers .speakers:not(.active) { display: none; }
 
-/* .icon-btn's own rule lays out icon + label side by side (row), sized for
-   short English toolbar labels - measured against this button's actual
-   content ("{n} turns"/"{n} פסקאות" plus the icon), a row layout at the
-   narrowest sidebar flank (~1201px viewport, see the .speaker-row
-   breakpoint comment below) pushed this button past 90px wide, which left
-   .speaker-name only ~33px - well under the ~80px floor a short real name
-   needs to render without scrolling internally. Stacking icon-over-count
-   instead keeps the button's WIDTH close to its old 44px square (bounded by
-   whichever of the icon or the count text is wider, not their sum) at the
-   cost of some extra height, which .speaker-row's align-items: center
-   already absorbs without disturbing the row's other controls. flex: none
-   keeps it from being squeezed by .speaker-name's flex: 1 1 auto as the
-   sidebar narrows - the name input is what should give first. */
-.spk-locate {
-  flex: none;
-  flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.3rem 0.4rem;
-  color: var(--muted);
-}
-.spk-locate:hover { color: var(--text); }
-.spk-locate .icon { width: 15px; height: 15px; }
-/* aria-hidden in the markup, not just visually de-emphasised: see
-   _render_speakers_html()'s docstring for why the count must never become
-   part of the button's announced name. font-size smaller than the rest of
-   the sidebar's 0.9rem body text on purpose - it is supplementary
-   information next to an icon that already carries the button's primary
-   meaning, not a second label competing with it. */
-/* 0.62rem (~10px) was needed while this rendered the whole "{n} turns"
-   phrase into a ~47px button - too small to actually read, which defeats
-   the point of surfacing a count. Now that only the bare number is visible
-   (the full phrase lives in the button's accessible name instead), it fits
-   comfortably at a legible size. */
-.spk-count {
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  line-height: 1;
-}
-
 /* -------------------------------------------------------------- source --- */
 
-/* Each recording is its own panel, not flat content sitting directly on the
-   page ground - the earlier flat layout was the whole reason a batch's
-   files were hard to tell apart while scrolling. background: var(--panel)
-   is Catppuccin's own elevation step above --bg (see --panel's definition
-   in :root), not a translucent overlay any more - there is nothing left to
-   be translucent over once the backdrop photo is gone. */
+/* Each recording is its own translucent panel floating over the backdrop,
+   not flat content sitting directly on it - the earlier flat layout was the
+   whole reason a batch's files were hard to tell apart while scrolling.
+   rgba(var(--panel-rgb), var(--panel-opacity)), not the flat --panel: the
+   panel has to stay partly see-through for the backdrop to read as "behind
+   the text" rather than swapped out for a solid card, and the RGB triplet +
+   separate opacity (matching --backdrop-opacity's shape) is what lets
+   tests/test_transcript_styles.py compute the resulting composite instead of
+   trusting an rgba() literal by eye. */
 .source {
   margin: 0 0 2.5rem;
   padding: 0 1.25rem 1.5rem;
   border-radius: calc(var(--radius) * 2);
-  background: var(--panel);
+  background: rgba(var(--panel-rgb), var(--panel-opacity));
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px rgb(0 0 0 / 0.10);
 }
 
 /* Sticks below the toolbar, not at its own top:0 - --toolbar-height is
    measured and written by transcript.js (the toolbar wraps onto a second
    line at narrow widths, so a hardcoded number here would drift out of sync
-   with it rather than the two ever being kept equal by hand. */
+   with it rather than the two ever being kept equal by hand.
+
+   Translucent like .source above, not the flat --panel: the file bar sits
+   flush against .source's own edges (the negative margin below) and fully
+   occludes whatever of .source is behind it, so an opaque file bar would be
+   a solid seam breaking the backdrop exactly where a reader's eye lands
+   first. It composites against the SAME single backdrop layer .source does
+   here, not a second one stacked on top - test_backdrop_worst_case_contrast
+   below already covers this pairing via --muted (the file position label's
+   colour), not a separate one. */
 .file-bar {
   position: sticky;
   top: var(--toolbar-height, 0px);
@@ -799,7 +883,7 @@ main { grid-column: 2; min-width: 0; margin: 0; }
   gap: 0.75rem;
   margin: 0 -1.25rem;
   padding: 0.85rem 1.25rem 0.7rem;
-  background: var(--panel);
+  background: rgba(var(--panel-rgb), var(--panel-opacity));
   border-start-start-radius: calc(var(--radius) * 2);
   border-start-end-radius: calc(var(--radius) * 2);
   border-bottom: 2px solid var(--rule);
@@ -854,7 +938,7 @@ main { grid-column: 2; min-width: 0; margin: 0; }
    had no :hover rule at all - this file's own inline/gap layout worked fine
    without one, but an inline-flex box only ever sizes to its content, and
    the hover surface added below has to span the panel the way every other
-   interactive row in it does, not just hug the swatch/input/locate group.
+   interactive row in it does, not just hug the swatch/input pair.
    As a flex item of .speakers (display: flex; flex-direction: column;
    align-items: stretch), an item with display: flex already gets
    blockified and stretched to the container's full width regardless of
@@ -862,7 +946,7 @@ main { grid-column: 2; min-width: 0; margin: 0; }
    about triggering behaviour that was silently absent before.
 
    padding + a matching negative inline margin: the padding is what gives
-   the hover background room around the packed swatch/input/locate group
+   the hover background room around the packed swatch/input pair
    (the same reason .outline-files a has its own padding), and the negative
    margin cancels it back out so the row's *content* still starts at the
    same inline position it always did, flush with the panel's other
@@ -919,7 +1003,7 @@ main { grid-column: 2; min-width: 0; margin: 0; }
 .swatch, .swatch-rest { width: 9px; height: 9px; border-radius: 50%; background: var(--spk, var(--muted)); flex: none; }
 
 /* Squircle here too - a name field is as much "a control in the sidebar" as
-   the locate button beside it, and an underlined-only input was exactly the
+   the swatch trigger beside it, and an underlined-only input was exactly the
    kind of control that used to disappear into the page. Full border, not
    just the bottom rule it had before. */
 .speaker-name {
@@ -1148,9 +1232,23 @@ main { grid-column: 2; min-width: 0; margin: 0; }
 }
 
 /* Hovering one card dims the others so a single speaker's thread is easy to
-   follow. Purely decorative - the name still carries the meaning. */
+   follow. Purely decorative - the name still carries the meaning.
+
+   0.5, not the original 0.72 (Phase 8): 0.72 read as too weak a separation
+   once judged against real Hebrew paragraphs rather than short English
+   samples - dense RTL text at 0.72 barely looked different from full
+   strength. Accepted trade-off, deliberately not "fixed" later: dimming
+   composites a card's text toward the panel behind it, so a non-focused
+   card's text drops below the 4.5:1 floor while the pointer is over the
+   section (0.72 already did this, more mildly - 0.5 is a difference of
+   degree, not a new problem). That is fine because it is transient (gone
+   the moment the pointer moves, or on blur for the focus-within case below)
+   and it only ever affects text the reader is, by definition, not currently
+   reading - the card under the pointer stays at full contrast throughout.
+   If this number is revisited, revisit it having read this comment, not by
+   noticing the ratio in isolation. */
 .source:hover .turn { transition: opacity var(--fast) ease-out; }
-.source:hover .turn:not(:hover) { opacity: 0.72; }
+.source:hover .turn:not(:hover) { opacity: 0.5; }
 .source:hover .turn:focus-within { opacity: 1; }
 
 .turn h2 {
@@ -1377,8 +1475,15 @@ main { grid-column: 2; min-width: 0; margin: 0; }
 
 .copy-turn.copied, .copy-all.copied { color: var(--accent); border-color: var(--accent); }
 
+/* Keyboard-only ring - see the STATED EXCEPTION in the file's standing-rules
+   comment at the top for why this is html[data-kbd] .body:focus rather than
+   plain .body:focus-visible: :focus-visible alone matches on a
+   contenteditable element for a mouse click, which is exactly what the user
+   reported (the ring lighting up while they were only trying to select
+   text). html[data-kbd] is transcript.js's own tracked modality flag (set on
+   Tab keydown, cleared on pointerdown), not the browser's heuristic. */
 .body { outline: none; }
-.body:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+html[data-kbd] .body:focus { outline: 2px solid var(--focus); outline-offset: 4px; }
 .body p { margin: 0.1rem 0; }
 
 .lowconf {
@@ -1464,7 +1569,18 @@ mark.hit.current { background: var(--hit-current); color: var(--hit-current-text
   word-break: break-word;
   outline: none;
 }
-.plain-body:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 2px; }
+/* Same STATED EXCEPTION as .body above, and doubly needed here: .plain-body
+   is a multi-line INLINE element, so a plain outline (drawn per line
+   fragment) rendered a stepped staircase of boxes rather than one ring - the
+   second half of the user's report. Gating on the tracked keyboard flag
+   fixes both symptoms at once: no ring on a mouse click that only selects
+   text, and the ring only ever has to be judged in the one situation
+   (Tab-focus) where the per-line stepping is visible anyway. */
+html[data-kbd] .plain-body:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
 
 /* -------------------------------------------------------------- player --- */
 
@@ -1511,16 +1627,27 @@ mark.hit.current { background: var(--hit-current); color: var(--hit-current-text
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+  /* The document is RTL, but a seek control's "further along" direction is a
+     physical, learned convention (every media player on earth fills left to
+     right), not a text-flow one - unlike the layout grid or the reading
+     column, there is no RTL-appropriate alternative to flip to. Forcing LTR
+     here, and driving the fill from a JS-set --seek-fill percentage rather
+     than relying on the input's own value/max (browsers disagree on whether
+     a range's native fill direction follows `direction` at all), is what
+     makes the track advance left to right regardless of the page direction -
+     see bindAudio()'s throttled timeupdate handler in transcript.js, the
+     single place --seek-fill is written. */
+  direction: ltr;
 }
 .seek::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
-  background: var(--rule);
+  background: linear-gradient(to right, var(--accent) var(--seek-fill, 0%), var(--rule) var(--seek-fill, 0%));
 }
 .seek::-moz-range-track {
   height: 4px;
   border-radius: 999px;
-  background: var(--rule);
+  background: linear-gradient(to right, var(--accent) var(--seek-fill, 0%), var(--rule) var(--seek-fill, 0%));
 }
 /* "Where it makes sense" for the thumb means giving it the same load-
    bearing border weight every other control now has, not literally
@@ -1632,24 +1759,13 @@ mark.hit.current { background: var(--hit-current); color: var(--hit-current-text
    which the row still reads as three real controls rather than two squares
    crowding a sliver nobody could type into.
 
-   Re-measured after the locate button grew a visible turn count (Phase 5).
-   The first attempt kept .icon-btn's row layout (icon beside the count
-   text) and .spk-locate grew to ~91px at this breakpoint - .speaker-name
-   dropped to ~33px, well under the 79.7px floor above and too narrow for
-   real use. .spk-locate now stacks icon-over-count (flex-direction: column)
-   instead, so its WIDTH is bounded by whichever of the icon or the count
-   text is wider, not their sum - re-measured with a real <iframe
-   src="this document"> at 1201px (a genuine independent viewport, same
-   technique as the search above; 1201 rather than 1200 because
-   max-width: 1200px on the overlay media query below is inclusive and would
-   have already collapsed the sidebar at exactly 1200), .speaker-name held
-   ~58-64px even with a two-digit count ("12 turns"/"12 פסקאות") - narrower
-   than the 79.7px floor above, but still wide enough for a few characters
-   of a short name without scrolling internally, and .spk-locate itself
-   stayed at the swatch trigger's own 44px height rather than growing
-   taller. If a future change widens the count further (a longer
-   translation, a three-digit count), re-measure here rather than assuming
-   this breakpoint still holds. */
+   The row used to hold a third control here - a locate button that grew a
+   visible turn count and, at its widest, squeezed .speaker-name down to
+   ~58-64px, still above the 79.7px floor above only by a smaller margin than
+   the swatch-trigger-plus-input measurement gives now. That button and its
+   count were removed as clutter; the row is just the swatch trigger and the
+   name input, so .speaker-name clears the 79.7px floor with more room than
+   the numbers above show, not less - nothing left to re-measure down to. */
 @media (max-width: 1200px) {
   /* Below this width the sidebar column would squeeze the reading measure
      rather than sit comfortably beside it, so the grid collapses to one
@@ -1680,7 +1796,11 @@ mark.hit.current { background: var(--hit-current); color: var(--hit-current-text
     z-index: 45;
     max-height: none;
     padding: 1.25rem;
-    background: var(--panel);
+    /* Same translucent surface as the base .outline rule above - this is
+       the same element, just its narrow-viewport fullscreen presentation,
+       and there is no reason the backdrop should stop reading through it
+       purely because the sidebar became a takeover instead of a rail. */
+    background: rgba(var(--panel-rgb), var(--panel-opacity));
     box-shadow: 0 12px 30px rgb(0 0 0 / 0.25);
   }
   /* .open is toggled by transcript.js; without JavaScript #outline-toggle

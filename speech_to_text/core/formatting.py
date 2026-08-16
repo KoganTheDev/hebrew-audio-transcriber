@@ -9,9 +9,11 @@ none of which have anything to do with running a Whisper model.
 Stdlib only, and no PyQt5 - this runs inside the worker process.
 """
 
+import base64
 import html
 import json
 import logging
+import random
 import re
 import uuid
 from functools import lru_cache
@@ -273,6 +275,60 @@ def _asset(name: str) -> str:
     return (_ASSETS / name).read_text(encoding="utf-8")
 
 
+_VISTAS_DIR = _ASSETS / "vistas"
+
+
+@lru_cache(maxsize=None)
+def _vista_names() -> tuple:
+    """
+    Available backdrop photos, sorted so vista-01.webp always sorts first.
+
+    An empty tuple - whether because the directory is missing (an installed
+    copy that lost its package data) or simply has nothing in it - is not an
+    error here. render_html() reads it as "no backdrop", the same way it
+    already behaves before this feature existed.
+    """
+    if not _VISTAS_DIR.is_dir():
+        return ()
+    return tuple(sorted(p.name for p in _VISTAS_DIR.glob("*.webp")))
+
+
+@lru_cache(maxsize=None)
+def _asset_bytes(name: str) -> bytes:
+    """
+    Binary counterpart to _asset(): the vista photos are WebP, not text, so
+    they cannot go through _asset()'s read_text/utf-8 path. Cached for the
+    same reason - a batch render would otherwise re-read the same file once
+    per document.
+    """
+    return (_ASSETS / name).read_bytes()
+
+
+def _vista_data_uri(vista: Optional[str]) -> Optional[str]:
+    """
+    Choose a backdrop and return it as a data:image/webp;base64,... URI.
+
+    vista=None (the default) picks uniformly at random from whatever exists.
+    A caller passing a specific filename - the "vista" parameter on
+    render_html() - gets exactly that one back instead, which is how tests
+    (and worker.py's per-run pin, so the photo does not change mid-batch on
+    every checkpoint rewrite) get a deterministic document. Returns None,
+    never raises, when there is nothing to embed: a missing or empty vistas/
+    directory must still produce a working transcript, just without a
+    backdrop.
+    """
+    names = _vista_names()
+    if not names:
+        return None
+
+    chosen = vista if vista is not None else random.choice(names)
+    if chosen not in names:
+        raise ValueError(f"unknown vista {chosen!r}; available: {', '.join(names)}")
+
+    encoded = base64.b64encode(_asset_bytes(f"vistas/{chosen}")).decode("ascii")
+    return f"data:image/webp;base64,{encoded}"
+
+
 def _json_payload(data: dict) -> str:
     """
     Serialise the page's data island.
@@ -310,6 +366,7 @@ def render_html(
     title: Optional[str] = None,
     ui_strings: Optional[Dict[str, str]] = None,
     doc_id: Optional[str] = None,
+    vista: Optional[str] = None,
 ) -> str:
     """
     Render one or more transcripts into a single, self-contained RTL HTML
@@ -337,9 +394,17 @@ def render_html(
         doc_id: identity used to key the browser's saved edits. Generated when
             not supplied; pass one to keep a re-render addressing the same
             saved edits.
+        vista: filename of a backdrop photo under core/assets/vistas/ to pin,
+            e.g. "vista-07.webp". None (the default) picks one at random -
+            a fresh choice on every render, which is what a person actually
+            wants and what makes two default renders differ in tests. Pin it
+            when the caller needs a specific, reproducible document - worker.py
+            does this once per batch so the photo does not change on every
+            per-file checkpoint rewrite.
     """
     strings = dict(ui_strings or {})
     doc_id = doc_id or uuid.uuid4().hex
+    vista_uri = _vista_data_uri(vista)
 
     payload = {
         "threshold": CONFIDENCE_THRESHOLD,
@@ -365,12 +430,13 @@ def render_html(
     body: List[str] = []
 
     # Computed once, here, rather than inside _render_document_html: the
-    # outline sidebar (_render_outline_html -> _render_speakers_html) also
-    # needs each document's turns, to show a per-speaker turn count next to
-    # the locate button. merge_turns() is not free - it walks every
-    # segment - so a document with, say, an hour of speech would otherwise
-    # be grouped into turns twice for no reason beyond the two call sites
-    # happening to want the same thing. One list, threaded to both.
+    # outline sidebar used to need each document's turns too, to show a
+    # per-speaker turn count next to the (now-removed) locate button, so this
+    # stayed a single list threaded to both call sites rather than have
+    # merge_turns() - which is not free, it walks every segment - group the
+    # same document's segments into turns twice. The outline no longer reads
+    # turns at all, but _render_document_html still does, so the single-call
+    # structure (and its spy test) stays.
     turns_by_doc = [merge_turns(document.segments) for document in documents]
 
     total = len(documents)
@@ -380,7 +446,7 @@ def render_html(
             failed_label, strings, payload,
         ))
 
-    outline_html = _render_outline_html(documents, turns_by_doc, speaker_label, strings)
+    outline_html = _render_outline_html(documents, speaker_label, strings)
 
     parts = [
         "<!doctype html>",
@@ -396,6 +462,18 @@ def render_html(
         # to exist before any of them are parsed.
         _render_sprite_html(),
     ]
+    if vista_uri:
+        # Right after the sprite - the sprite paints nothing itself (zero
+        # size, position:absolute), so the backdrop is still effectively the
+        # first thing on the page to paint, ahead of any real content. See
+        # the .backdrop / isolation:isolate comments in transcript.css for
+        # why paint order here matters. No alt text and aria-hidden: it is
+        # decoration, and a screen reader announcing "image" before every
+        # transcript would be pure noise.
+        parts.append(
+            f'<div class="backdrop" aria-hidden="true" '
+            f'style="background-image:url({html.escape(vista_uri)})"></div>'
+        )
     parts.extend([
         _render_toolbar_html(strings, has_outline=outline_html is not None),
         # .layout is the grid that puts <aside> on the visual left of the
@@ -454,20 +532,16 @@ _ICON_DEFS: Dict[str, str] = {
     "save": '<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/>',
     "copy": '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/>',
     "play": '<path d="M7 4l12 8-12 8z"/>',
+    # Two vertical bars, stroked like every other glyph here (fill: none
+    # comes from .icon in CSS - a filled pair of rectangles would be the odd
+    # one out in this sprite). transcript.js's bindAudio() swaps the
+    # player-toggle button between #i-play and #i-pause on the audio
+    # element's own play/pause events, not on the click handler directly, so
+    # a programmatic pause (the range-bound stop in the timeupdate handler)
+    # updates the glyph too.
+    "pause": '<path d="M9 5v14"/><path d="M15 5v14"/>',
     "plus": '<path d="M12 5v14"/><path d="M5 12h14"/>',
     "list": '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
-    # A double chevron pointing down the page, not the GPS-style circle-and-
-    # ticks this replaced: that glyph read as "locate me on a map", which is
-    # not what the button does - it steps through one speaker's turns, each
-    # click advancing to the next one further down the transcript. "down =
-    # next" is already this sprite's own vocabulary (see "up"/"down" above,
-    # used for the search box's previous/next-match buttons); doubling the
-    # chevron distinguishes "skip to this speaker's next turn" from a single
-    # step to the next search match while keeping the same visual language
-    # rather than inventing a second one. Left undirected on the inline axis
-    # on purpose - the transcript scrolls vertically regardless of the
-    # document's RTL/LTR direction, so there is no left/right sense to mirror.
-    "locate": '<path d="M6 5l6 6 6-6"/><path d="M6 12l6 6 6-6"/>',
 }
 
 
@@ -572,7 +646,13 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     and removes itself again if the audio turns out to be missing or in a
     container the browser cannot play.
     """
-    label = html.escape(strings.get("play_pause", "Play or pause"))
+    # Server-rendered assuming the button is showing a play glyph, since
+    # audio has not started when the page loads (the player starts hidden
+    # too - see below). transcript.js's bindAudio() swaps both this label
+    # and the glyph between "play"/"pause" on the audio element's own
+    # play/pause events, the same "swap on load and on every change" pattern
+    # syncThemeLabel() already follows for the theme toggle.
+    label = html.escape(strings.get("play_pause", "Play"))
     seek_label = html.escape(strings.get("seek", "Seek"))
     # A native <input type="range">, not a custom div-based track: it is
     # keyboard-operable (arrow keys, Home/End, Page Up/Down) and announced
@@ -729,13 +809,12 @@ def _swatch_trigger_html(strings: Dict[str, str]) -> str:
 def _render_speakers_html(
     file_index: int,
     speakers: List[int],
-    turns: List[Turn],
     speaker_label: str,
     strings: Dict[str, str],
     active: bool = False,
 ) -> str:
     """
-    Editable names, colours and roster for this recording's speakers.
+    Editable names and colours for this recording's speakers.
 
     Lives in the outline sidebar (see _render_outline_html()), one panel per
     file with only the in-view file's panel shown - the .speaker-row shape
@@ -762,65 +841,21 @@ def _render_speakers_html(
     instead - already there before this changed, so nothing lost its
     accessible name.
 
-    Each row also shows how many turns this speaker holds in the recording -
-    the count is len(turns whose .speaker == this speaker's index), which by
-    construction equals the number of .turn elements the reading column
-    renders for them (_render_turn_html emits one per entry in the same
-    `turns` list). The count is rendered here purely as a number in a <span>,
-    not folded into the button's aria-label: the label still has to say what
-    the button DOES ("step through this speaker's turns"), and letting the
-    count grow into a second aria-label sentence like "5, step through this
-    speaker's turns" would leave a screen reader announcing a number with no
-    action attached first. aria-hidden on the count span (and keeping the
-    aria-label as the button's whole accessible name) is what enforces that
-    rather than relying on incidental DOM order.
+    No locate button or turn count any more - both were removed as clutter.
+    The row is just the swatch trigger and the name input, which is why this
+    no longer needs each speaker's turns at all (turns was only ever read
+    here to compute the count).
     """
-    counts = {speaker: 0 for speaker in speakers}
-    for turn in turns:
-        if turn.speaker in counts:
-            counts[turn.speaker] += 1
-
     rows = []
     for speaker in speakers:
         fallback = speaker_label.format(n=speaker + 1)
         palette = speaker % SPEAKER_PALETTE_SIZE
-        # Raw here, escaped once below after the count is composed in -
-        # escaping first and then concatenating would double-escape the
-        # apostrophe in "speaker's".
-        locate_label = strings.get("speaker_locate", "Step through this speaker's turns")
-        # The count appears twice, deliberately, in two different forms.
-        #
-        # Visibly it is the bare number, because the button is ~47px wide in
-        # the narrowest sidebar flank and the full "{n} turns" phrase only
-        # fitted there by dropping to a ~10px font - too small to read, which
-        # defeats the point of showing a count at all. A bare digit fits at a
-        # legible size.
-        #
-        # In the accessible name it is the full phrase, folded into the
-        # button's own label. The first version marked the visible span
-        # aria-hidden so it would not clobber the label, which did protect
-        # the label but threw the count away entirely for anyone using a
-        # screen reader - and the count is information (how much of this
-        # recording is this speaker), not decoration, so hiding it is not a
-        # neutral choice. Composing both into aria-label keeps the action
-        # first ("what does this button do") with the count as the
-        # supplementary detail it is, and leaves nothing audible-only or
-        # visible-only.
-        count_phrase = strings.get("speaker_turn_count", "{n} turns").replace(
-            "{n}", str(counts[speaker])
-        )
-        locate_full = html.escape(f"{locate_label} ({count_phrase})")
         rows.append(
             f'<div class="speaker-row" data-speaker="{speaker}" data-palette="{palette}">'
             + _swatch_trigger_html(strings) +
             f'<input class="speaker-name" type="text" value=""'
             f' placeholder="{html.escape(fallback)}"'
             f' aria-label="{html.escape(fallback)}">'
-            f'<button type="button" class="icon-btn spk-locate" aria-label="{locate_full}"'
-            f' title="{locate_full}">'
-            f'{_icon("locate")}'
-            f'<span class="spk-count" aria-hidden="true">{counts[speaker]}</span>'
-            f'</button>'
             "</div>"
         )
 
@@ -844,7 +879,6 @@ def _render_speakers_html(
 
 def _render_outline_html(
     documents: List[TranscriptDocument],
-    turns_by_doc: List[List[Turn]],
     speaker_label: Optional[str],
     strings: Dict[str, str],
 ) -> Optional[str]:
@@ -859,9 +893,11 @@ def _render_outline_html(
     moving them out of the column the reader is scrolling through is a
     relocation, not new functionality.
 
-    turns_by_doc mirrors documents index-for-index - render_html's single
-    merge_turns() pass, threaded down so _render_speakers_html can show each
-    speaker's turn count without merging the same segments a second time.
+    No longer takes turns_by_doc: that was only ever threaded down so
+    _render_speakers_html could show a per-speaker turn count, and the count
+    (along with the locate button beside it) is gone. render_html still
+    computes turns_by_doc once for _render_document_html's own use - see the
+    comment there.
 
     Returns None - so the caller can skip emitting an empty <aside> and the
     matching toolbar toggle button - when there is neither a file list to
@@ -878,7 +914,7 @@ def _render_outline_html(
         if speaker_label is not None and speakers:
             panels.append(
                 _render_speakers_html(
-                    index, speakers, turns_by_doc[index], speaker_label, strings,
+                    index, speakers, speaker_label, strings,
                     active=index == 0,
                 )
             )

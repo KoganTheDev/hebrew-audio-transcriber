@@ -163,61 +163,29 @@
   function applyNames(fileIndex) {
     var names = state.names[fileIndex] || {};
     var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
-    if (!section) { return; }
-
-    section.querySelectorAll('.spk').forEach(function (el) {
-      var i = el.dataset.speaker;
-      // dataset.fallback carries the already-translated "Speaker N" produced
-      // by the renderer - this process has no way to build it itself.
-      el.textContent = (names[i] && names[i].trim()) || el.dataset.fallback || '';
-    });
-    section.querySelectorAll('.speaker-name').forEach(function (input) {
-      var i = input.closest('.speaker-row').dataset.speaker;
-      if (document.activeElement !== input) { input.value = names[i] || ''; }
-    });
-    rebuildPlain(section);
-  }
-
-  // The count formatting.py rendered next to each locate button (see
-  // _render_speakers_html()) is a snapshot from the moment the page was
-  // generated. Reassigning a turn to a different speaker changes TWO
-  // speakers' counts (the one it left, the one it joined) without touching
-  // the DOM node that count text lives in, so nothing would ever update it
-  // if this function did not exist - a count rendered once and left stale
-  // is actively misleading (it looks authoritative), which is worse than
-  // showing no count at all.
-  //
-  // Recomputed from the DOM's own .turn[data-speaker] attributes rather than
-  // kept as a running tally alongside state.assign: a tally is a second copy
-  // of the truth that a future edit could update in one place and forget in
-  // the other, where counting the actual .turn elements can never disagree
-  // with what the reading column shows, by construction.
-  function refreshSpeakerCounts(fileIndex) {
-    var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
     var strip = document.querySelector('.speakers[data-file="' + fileIndex + '"]');
-    if (!section || !strip) { return; }
 
-    // Both forms have to move together: the visible bare number AND the
-    // full phrase folded into the button's accessible name (see
-    // _render_speakers_html() in formatting.py for why the count is carried
-    // twice). Updating only the visible one would leave a screen reader
-    // announcing a stale count after every reassignment, which is the exact
-    // failure this function exists to prevent, just for a different
-    // audience.
-    var template = t('speaker_turn_count', '{n} turns');
-    var action = t('speaker_locate', "Step through this speaker's turns");
-    strip.querySelectorAll('.speaker-row').forEach(function (row) {
-      var id = row.dataset.speaker;
-      var count = section.querySelectorAll('.turn[data-speaker="' + id + '"]').length;
-      var countEl = row.querySelector('.spk-count');
-      if (countEl) { countEl.textContent = String(count); }
-      var btn = row.querySelector('.spk-locate');
-      if (btn) {
-        var label = action + ' (' + template.replace('{n}', String(count)) + ')';
-        btn.setAttribute('aria-label', label);
-        btn.setAttribute('title', label);
-      }
-    });
+    if (section) {
+      section.querySelectorAll('.spk').forEach(function (el) {
+        var i = el.dataset.speaker;
+        // dataset.fallback carries the already-translated "Speaker N" produced
+        // by the renderer - this process has no way to build it itself.
+        el.textContent = (names[i] && names[i].trim()) || el.dataset.fallback || '';
+      });
+      rebuildPlain(section);
+    }
+
+    // The name inputs moved into the sidebar's speaker roster (.speakers)
+    // two rounds ago; .source only ever holds the read-only .spk chips
+    // above. Querying .speaker-name inside .source used to find nothing,
+    // which is why "use these names in all files" repainted the chips but
+    // left every other file's sidebar input showing its old value.
+    if (strip) {
+      strip.querySelectorAll('.speaker-name').forEach(function (input) {
+        var i = input.closest('.speaker-row').dataset.speaker;
+        if (document.activeElement !== input) { input.value = names[i] || ''; }
+      });
+    }
   }
 
   function bindSpeakers() {
@@ -309,38 +277,6 @@
     input.setAttribute('aria-label', fallback);
     row.appendChild(input);
 
-    // Mirrors the locate button formatting.py renders on every server-side
-    // row (see _render_speakers_html()) - a speaker added live has to get
-    // the same "step through this speaker's turns" affordance as one the
-    // renderer produced, not a lesser row. Built through insertAdjacentHTML
-    // rather than createElementNS with the SVG XML namespace URI: the HTML
-    // parser already namespaces <svg>/<use> correctly when it parses a
-    // markup string (foreign-content handling is part of the HTML5 parsing
-    // algorithm), and spelling that namespace URI out as a JS string literal
-    // would put a network-scheme-shaped substring inside transcript.js's own
-    // source - which test_output_is_fully_offline treats as evidence of a
-    // network reference, even though nothing here is ever actually fetched.
-    var locate = document.createElement('button');
-    locate.type = 'button';
-    locate.className = 'icon-btn spk-locate';
-    var locateLabel = t('speaker_locate', "Step through this speaker's turns");
-    locate.setAttribute('aria-label', locateLabel);
-    locate.title = locateLabel;
-    locate.insertAdjacentHTML(
-      'beforeend', '<svg class="icon" aria-hidden="true"><use href="#i-locate"></use></svg>'
-    );
-    // A speaker added live has no turns yet - refreshSpeakerCounts() (called
-    // right after this row is inserted, by addSpeaker()/applySpeakerState())
-    // fills in the real number once the row is in the DOM; this starting
-    // text just matches what formatting.py renders server-side so there is
-    // no visible flash from "0" to whatever the real count turns out to be.
-    var count = document.createElement('span');
-    count.className = 'spk-count';
-    count.setAttribute('aria-hidden', 'true');
-    count.textContent = '0';
-    locate.appendChild(count);
-    row.appendChild(locate);
-
     var anchor = strip.querySelector('.apply-all') || strip.querySelector('.add-speaker');
     strip.insertBefore(row, anchor);
     bindSpeakerRow(row, strip.dataset.file);
@@ -366,7 +302,6 @@
     state.speakers[fileIndex][id] = { fallback: fallback, palette: palette, added: true };
 
     createSpeakerRow(strip, id, fallback, palette);
-    refreshSpeakerCounts(fileIndex);
     save();
   }
 
@@ -583,11 +518,6 @@
     // which already covers this turn now that its data-speaker points at the
     // new identity - no separate "set this one label" path needed.
     applyNames(fileIndex);
-    // A reassignment moves this turn's count from its old speaker's total to
-    // the new one's - two rows change, not one, which is exactly the case a
-    // per-row increment/decrement would be easy to get wrong. Recomputing
-    // the whole file's counts is cheap next to that risk.
-    refreshSpeakerCounts(fileIndex);
     rebuildPlain(section);
     save();
   }
@@ -1222,6 +1152,18 @@
       return m + ':' + (r < 10 ? '0' : '') + r;
     }
 
+    // Drives the track's left-to-right fill (see .seek in transcript.css:
+    // the gradient is painted from --seek-fill, not from the input's own
+    // value/max, because browsers disagree on whether a range's native fill
+    // respects a forced `direction: ltr`). A percentage string, not a bare
+    // number, since it is written straight into a CSS custom property that
+    // feeds a linear-gradient() stop.
+    function updateSeekFill() {
+      var max = Number(seek.max) || 0;
+      var pct = max > 0 ? (Number(seek.value) / max) * 100 : 0;
+      seek.style.setProperty('--seek-fill', pct + '%');
+    }
+
     // Isolated LTR digits, same shape as format_range()'s "M:SS - M:SS" in
     // core/formatting.py - a neutral "/" between two LTR runs, inside an RTL
     // document, needs the same LRI/PDI guard or it can reorder the same way
@@ -1248,6 +1190,7 @@
         audio.currentTime = Number(btn.dataset.start);
         boundEnd = Number(btn.dataset.end);
         seek.value = String(audio.currentTime);
+        updateSeekFill();
         // Clicking a timestamp is the one moment the readout has to update
         // before playback (and therefore the throttled timeupdate handler)
         // has necessarily started - a reader glancing at "0:32 / 3:11" right
@@ -1261,6 +1204,7 @@
     audio.addEventListener('loadedmetadata', function () {
       seek.max = String(audio.duration);
       updateReadout();
+      updateSeekFill();
     });
 
     seek.addEventListener('input', function () {
@@ -1272,6 +1216,7 @@
       // button's own click handler already applies to a manual resume.
       boundEnd = null;
       updateReadout();
+      updateSeekFill();
     });
     seek.addEventListener('change', function () { scrubbing = false; });
 
@@ -1308,6 +1253,7 @@
       boundEnd = null;
       seek.max = '0';
       seek.value = '0';
+      updateSeekFill();
     });
 
     // timeupdate fires several times a second. The clock is cheap, but
@@ -1333,7 +1279,10 @@
       // seek.value back from audio.currentTime in the same tick would just
       // be echoing the drag back at itself - harmless in the best case,
       // fighting the pointer in the worst.
-      if (!scrubbing) { seek.value = String(audio.currentTime); }
+      if (!scrubbing) {
+        seek.value = String(audio.currentTime);
+        updateSeekFill();
+      }
 
       if (boundEnd !== null && audio.currentTime >= boundEnd) {
         audio.pause();
@@ -1370,6 +1319,25 @@
       if (playing) { delete playing.dataset.playing; }
       playing = null;
     });
+
+    // Driven off the audio element's own play/pause events, not off the
+    // toggle button's click handler, so the glyph and label are correct
+    // even when nothing here caused the pause - the range-bound stop in the
+    // timeupdate handler above calls audio.pause() directly, and a reader
+    // watching the button would otherwise still see "pause" after playback
+    // had actually stopped on its own.
+    var toggleUse = toggle.querySelector('use');
+    function syncToggleGlyph() {
+      var playingNow = !audio.paused && !audio.ended;
+      if (toggleUse) { toggleUse.setAttribute('href', playingNow ? '#i-pause' : '#i-play'); }
+      // Swapped alongside the glyph, not left behind: a button whose icon
+      // shows "pause" while its accessible name still says "play" is worse
+      // than not swapping at all - a screen reader user would be told the
+      // opposite of what a sighted reader sees.
+      toggle.setAttribute('aria-label', playingNow ? t('pause', 'Pause') : t('play_pause', 'Play'));
+    }
+    audio.addEventListener('play', syncToggleGlyph);
+    audio.addEventListener('pause', syncToggleGlyph);
 
     toggle.addEventListener('click', function () {
       // A manual resume is the reader taking the wheel back - the range a
@@ -1506,35 +1474,6 @@
     });
   }
 
-  // One counter per (file, speaker) pair, so repeated clicks step forward
-  // through that speaker's turns rather than always landing on the first
-  // one - a plain "scroll to the first match" would make the control
-  // useless for a speaker with more than one turn on screen already.
-  var speakerCycle = {};
-
-  function stepSpeakerTurns(fileIndex, speakerId) {
-    var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
-    if (!section) { return; }
-    var turns = Array.prototype.slice.call(
-      section.querySelectorAll('.turn[data-speaker="' + speakerId + '"]')
-    );
-    if (!turns.length) { return; }
-
-    var key = fileIndex + ':' + speakerId;
-    var index = (speakerCycle[key] || 0) % turns.length;
-    turns[index].scrollIntoView({ block: 'center', behavior: scrollBehavior() });
-    // A brief highlight, reusing the "turn currently relevant" look
-    // .turn[data-playing] already carries for played-back turns, so this
-    // doesn't need a third visual language for "this is the one you asked
-    // to see".
-    var target = turns[index];
-    target.dataset.playing = 'true';
-    setTimeout(function () {
-      if (target.dataset.playing === 'true') { delete target.dataset.playing; }
-    }, 1200);
-    speakerCycle[key] = index + 1;
-  }
-
   function bindOutline() {
     var outline = document.getElementById('outline');
     var toggle = document.getElementById('outline-toggle');
@@ -1560,14 +1499,6 @@
         // class there.
         closeOutline();
       });
-    });
-
-    outline.addEventListener('click', function (e) {
-      var locate = e.target.closest ? e.target.closest('.spk-locate') : null;
-      if (!locate) { return; }
-      var row = locate.closest('.speaker-row');
-      var panel = locate.closest('.speakers');
-      if (row && panel) { stepSpeakerTurns(panel.dataset.file, row.dataset.speaker); }
     });
 
     function openOutline() {
@@ -1659,9 +1590,31 @@
     document.documentElement.style.setProperty('--toolbar-height', toolbar.offsetHeight + 'px');
   }
 
+  // Tracks input modality on <html> as data-kbd, for the .body/.plain-body
+  // focus ring (see the STATED EXCEPTION comment at the top of
+  // transcript.css). :focus-visible alone cannot do this: Chromium matches
+  // it on a contenteditable element for a mouse click too, which is the
+  // exact bug being fixed (the ring lighting up when a reader merely clicks
+  // in to select text). Tab is the one key that can move focus without
+  // already being handled by some other keydown listener on this page, and
+  // is set rather than toggled off on other keys - a reader tabbing through
+  // controls and then pressing, say, an arrow key inside the seek control
+  // should not lose the flag mid-keyboard-session. pointerdown, not click:
+  // it fires before the resulting focus event, so the flag is already clear
+  // by the time :focus paints.
+  function bindKeyboardModality() {
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') { document.documentElement.setAttribute('data-kbd', 'true'); }
+    });
+    document.addEventListener('pointerdown', function () {
+      document.documentElement.removeAttribute('data-kbd');
+    });
+  }
+
   // ------------------------------------------------------------------- init
 
   load();
+  bindKeyboardModality();
   bindEditing();
   bindSpeakers();
   bindMenus();
@@ -1680,13 +1633,11 @@
   applyAssignments();
   applyEdits();
   // applyAssignments() has already replayed any saved reassignments by this
-  // point, so .turn[data-speaker] reflects the real, final state - counting
-  // now (rather than trusting formatting.py's server-rendered numbers, which
-  // only ever describe the state at render time) is what keeps a reloaded
-  // page's counts matching a session's own reassignments from before reload.
+  // point, so .turn[data-speaker] reflects the real, final state - applying
+  // names now is what makes a reloaded page's labels match a session's own
+  // reassignments from before reload.
   document.querySelectorAll('.speakers').forEach(function (s) {
     applyNames(s.dataset.file);
-    refreshSpeakerCounts(s.dataset.file);
   });
 
   Object.keys(state.opts).forEach(function (file) {

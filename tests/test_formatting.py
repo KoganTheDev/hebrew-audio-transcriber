@@ -320,24 +320,36 @@ class TestRenderHtml:
         "src=", because the inlined script legitimately mentions that string
         in its own comments and code. What matters is that no *element* points
         at anything the browser would have to go and fetch.
+
+        Rendered with a pinned vista (rather than the default random choice)
+        so this test's own no-network guarantee doesn't depend on
+        random.choice happening to run at all - the backdrop's url(...) is
+        exercised either way once a vista exists on disk.
         """
         out = render_html([
             doc("a.wav", [seg(0, 1, speaker=0)]),
             doc("b.wav", [seg(0, 1)], failed=True),
-        ], speaker_label="Speaker {n}", failed_label="failed")
+        ], speaker_label="Speaker {n}", failed_label="failed", vista="vista-01.webp")
 
         loaders = _external_references(out)
         assert loaders == [], f"document would fetch: {loaders}"
         assert "http://" not in out
         assert "https://" not in out
 
-        # No url(...) should appear at all now that the backdrop photo (the
-        # one thing that ever needed one, embedded as a data: URI) is gone -
-        # not in a style="" attribute, and not inside the inlined <style>
-        # block either. A url(...) reappearing here would mean something new
-        # is pointing off the page, which this app's offline premise forbids.
+        # A data: URI is not "external" and must keep passing - the property
+        # being protected is "this page fetches nothing", which holds equally
+        # whether the image bytes are inline or the element is absent. What
+        # must never appear is a url(...) that points off the page: not in a
+        # style="" attribute, and not inside the inlined <style> block either.
+        # _external_references() above does not catch this on its own: "style"
+        # is not in its FETCHING attribute set, since a style attribute's
+        # *value* pointing off-page is not the same shape of bug as an
+        # href/src doing so, and needs its own check.
         urls = re.findall(r'url\(\s*([^)]*?)\s*\)', out)
-        assert urls == [], f"unexpected url(...) in output: {urls}"
+        assert urls, "expected at least one url(...) - the pinned backdrop"
+        for raw in urls:
+            value = raw.strip("'\"")
+            assert value.startswith("data:"), f"non-data url(...) found: {raw!r}"
 
 
 class TestDataPayload:
@@ -423,45 +435,21 @@ class TestEditableDocument:
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
         assert out.count('class="speaker-row"') == 2
 
-    def test_speaker_row_turn_count_matches_rendered_turns(self):
+    def test_speaker_row_has_no_locate_button_or_turn_count(self):
         """
-        The count next to each locate button has to describe reality, not
-        just "how many segments came in" - two same-speaker segments close
-        together merge into one turn (see TestTurnMerging), and the reading
-        column only ever shows one .turn for that pair. The sidebar's count
-        must agree with what a reader scrolling the column actually sees.
+        Both were deleted as sidebar clutter (not relocated) - the row is now
+        just the swatch trigger and the name input. Regression guard for the
+        removal, the mirror image of the count test this replaces.
         """
         segments = [
-            seg(0, 2, "a", speaker=0), seg(2.2, 4, "b", speaker=0),  # one merged turn
+            seg(0, 2, "a", speaker=0), seg(2.2, 4, "b", speaker=0),
             seg(10, 12, "c", speaker=1),
-            seg(20, 22, "d", speaker=1),
-            seg(30, 32, "e", speaker=1),
         ]
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
-
-        for speaker, expected in ((0, 1), (1, 3)):
-            row = re.search(
-                r'<div class="speaker-row" data-speaker="%d"[^>]*>.*?</div>' % speaker, out, re.S,
-            ).group(0)
-            # .turn's own data-speaker (not .spk's, which every turn also
-            # carries) is the thing the reading column actually renders one
-            # of per turn - counting that, rather than trusting the count
-            # logic to grade its own homework, is what this test is for.
-            turn_count = len(re.findall(
-                r'<article class="turn" data-turn="[^"]*" data-start="[^"]*"'
-                r' data-speaker="%d"' % speaker, out,
-            ))
-            assert turn_count == expected
-            # The count is carried in two forms and both have to be right.
-            # Visibly it is the bare number - the full phrase only fitted the
-            # narrow sidebar button at an unreadable ~10px. In the accessible
-            # name it is the full phrase, so a screen reader gets the count
-            # too rather than an action label with the number stripped out.
-            # Asserting only one of the two would let the other rot silently,
-            # and the audible one is exactly the half nobody notices.
-            assert f'<span class="spk-count" aria-hidden="true">{expected}</span>' in row
-            assert f'({expected} turns)' in row
-            assert 'aria-label="Step through this speaker&#x27;s turns (' in row
+        assert "spk-locate" not in out
+        assert "spk-count" not in out
+        assert "i-locate" not in out
+        assert "Step through this speaker" not in out
 
     def test_merge_turns_called_once_per_document(self, monkeypatch):
         """
@@ -602,6 +590,128 @@ class TestInlinedAssets:
         assert "localStorage" in _asset("transcript.js")
 
 
+class TestVistaBackdrop:
+    """
+    The photographic backdrop: one photo per render, embedded as a data URI so
+    the document stays a single file (see TestInlinedAssets and the offline
+    test above for why nothing here may point off the page).
+    """
+
+    def test_pinned_vista_appears_as_a_base64_data_uri(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+        assert 'class="backdrop"' in out
+        assert 'aria-hidden="true"' in out
+        assert "data:image/webp;base64," in out
+
+    def test_two_default_renders_can_differ(self):
+        """
+        random.choice over 32 photos failing to differ once in a reasonable
+        number of tries would be a red flag that selection isn't random at
+        all, not proof it's broken - so this samples rather than asserting on
+        a single pair.
+        """
+        renders = {render_html([doc("a.wav", [seg(0, 1)])]) for _ in range(10)}
+        assert len(renders) > 1
+
+    def test_missing_vistas_directory_renders_cleanly_with_no_backdrop(self, monkeypatch, tmp_path):
+        import speech_to_text.core.formatting as formatting
+
+        formatting._vista_names.cache_clear()
+        monkeypatch.setattr(formatting, "_VISTAS_DIR", tmp_path / "does-not-exist")
+        try:
+            out = render_html([doc("a.wav", [seg(0, 1)])])
+            assert 'class="backdrop"' not in out
+        finally:
+            formatting._vista_names.cache_clear()
+
+    def test_unknown_pinned_vista_raises(self):
+        with pytest.raises(ValueError):
+            render_html([doc("a.wav", [seg(0, 1)])], vista="not-a-real-file.webp")
+
+
+class TestApplyNamesReachesTheSidebar:
+    """
+    "Use these names in all files" used to repaint every turn's .spk chip
+    (still inside .source) but leave every other file's sidebar name input
+    untouched, because applyNames() queried .speaker-name inside .source -
+    where the inputs stopped living once the speaker strip moved into the
+    outline sidebar. See applyNames() in transcript.js for the fix.
+
+    A DOM-level assertion (does file 2's actual input.value carry the name
+    after a click) needs a real browser - that is covered by the manual
+    check and the plan's own browser verification step, not by pytest. What
+    is checked here, cheaply and on every run, is the mechanism: applyNames
+    resolves its name inputs from .speakers, not .source.
+    """
+
+    def test_apply_names_resolves_inputs_from_the_speakers_panel(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        match = re.search(r"function applyNames\(fileIndex\) \{.*?\n  \}", js, re.S)
+        assert match, "applyNames() not found in transcript.js"
+        body = match.group(0)
+        assert "strip.querySelectorAll('.speaker-name')" in body
+        # The old, wrong selector must not have come back either - a fix
+        # that adds the sidebar lookup without removing the stale one would
+        # still look plausible in a diff.
+        assert "section.querySelectorAll('.speaker-name')" not in body
+
+    def test_no_locate_button_or_turn_count_mechanism_remains(self):
+        """
+        Both were deleted, not relocated - a regression that brought either
+        one back anywhere (markup, styles or behaviour) should fail here
+        rather than only be caught by eyeballing a rendered page.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        for name in ("spk-locate", "spk-count", "stepSpeakerTurns", "speakerCycle",
+                     "refreshSpeakerCounts", "i-locate"):
+            assert name not in _asset("transcript.js"), f"{name} still in transcript.js"
+        for name in ("spk-locate", "spk-count"):
+            assert name not in _asset("transcript.css"), f"{name} still in transcript.css"
+
+
+class TestPlayPauseGlyph:
+    """
+    _ICON_DEFS used to have "play" and no "pause" at all, so #player-toggle
+    rendered a play triangle once and never changed, even while audio was
+    playing.
+    """
+
+    def test_pause_symbol_exists_in_the_sprite(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<symbol id="i-pause" viewBox="0 0 24 24">' in out
+        # Stroked, like every other glyph in the sprite (fill: none comes
+        # from .icon in CSS) - a filled pair of bars would be the odd one
+        # out here, and this locks that in rather than trusting the SVG to
+        # merely look right once.
+        match = re.search(r'<symbol id="i-pause"[^>]*>(.*?)</symbol>', out)
+        assert match and "fill=" not in match.group(1)
+
+    def test_player_toggle_starts_on_the_play_glyph(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        toggle = re.search(r'<button id="player-toggle".*?</button>', out, re.S).group(0)
+        assert '#i-play' in toggle
+        assert '#i-pause' not in toggle
+
+    def test_javascript_swaps_both_the_glyph_and_the_aria_label(self):
+        """
+        A button whose icon shows "pause" while its accessible name still
+        says "play" is worse than not swapping at all - both halves have to
+        move together, driven off the audio element's own play/pause
+        events (not the click handler) so a programmatic pause, like the
+        range-bound stop in the timeupdate handler, updates it too.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "'#i-pause'" in js and "'#i-play'" in js
+        assert "toggle.setAttribute('aria-label'" in js
+        assert "audio.addEventListener('play', syncToggleGlyph)" in js
+        assert "audio.addEventListener('pause', syncToggleGlyph)" in js
+
+
 class TestPopoverStackingAndAnchoring:
     """
     Structural preconditions for the three popover bugs fixed alongside the
@@ -675,3 +785,30 @@ class TestPopoverStackingAndAnchoring:
         assert "document.body.appendChild(menu)" in js
         assert "positionDetachedMenu" in js
         assert "menu.style.position = 'fixed'" in js
+
+
+class TestKeyboardModalityFlag:
+    """
+    Phase 7: the .body/.plain-body focus ring (see the STATED EXCEPTION
+    comment at the top of transcript.css) is gated behind html[data-kbd]
+    rather than :focus-visible alone, because Chromium matches
+    :focus-visible on a contenteditable element for a mouse click too - the
+    entire bug the user reported. transcript.js is what has to set and clear
+    that flag; the CSS side (which selectors it gates) is checked in
+    test_transcript_styles.py instead.
+    """
+
+    def test_tab_keydown_sets_the_flag(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert re.search(
+            r"e\.key === 'Tab'.*?setAttribute\('data-kbd', 'true'\)", js, re.S
+        ), "Tab keydown must set data-kbd on <html>"
+
+    def test_pointerdown_clears_the_flag(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "addEventListener('pointerdown'" in js
+        assert "removeAttribute('data-kbd')" in js

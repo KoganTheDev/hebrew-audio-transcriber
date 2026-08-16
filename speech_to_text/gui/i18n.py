@@ -143,7 +143,14 @@ STRINGS = {
     "doc_copy_turn": {"en": "Copy this turn", "he": "העתקת פסקה"},
     "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
     "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
-    "doc_play_pause": {"en": "Play or pause", "he": "נגן או השהה"},
+    # Two keys, not one - same "the button names the action it is about to
+    # take" reasoning as doc_theme_light/doc_theme_dark above. transcript.js
+    # swaps between them on the audio element's own play/pause events (see
+    # bindAudio()), alongside the #i-play/#i-pause glyph swap, so a
+    # programmatic pause (the range-bound stop in the timeupdate handler)
+    # updates the accessible name too, not just a click on the button.
+    "doc_play_pause": {"en": "Play", "he": "נגן"},
+    "doc_pause": {"en": "Pause", "he": "השהה"},
     "doc_seek": {"en": "Seek", "he": "החלקה בהקלטה"},
     "doc_plain_text": {"en": "Plain text", "he": "טקסט רגיל"},
     "doc_plain_hint": {
@@ -159,15 +166,6 @@ STRINGS = {
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
     "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_outline_toggle": {"en": "Files and speakers", "he": "קבצים ודוברים"},
-    "doc_speaker_locate": {
-        "en": "Step through this speaker's turns", "he": "מעבר בין הפסקאות של הדובר",
-    },
-    # Rendered next to the locate button as a plain, visible number - not
-    # folded into doc_speaker_locate's own text, which stays the button's
-    # accessible name (see _render_speakers_html()'s docstring in
-    # formatting.py for why the count is marked aria-hidden rather than
-    # appended there).
-    "doc_speaker_turn_count": {"en": "{n} turns", "he": "{n} פסקאות"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
 

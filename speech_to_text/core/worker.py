@@ -13,6 +13,7 @@ regardless of timing.
 import logging
 import multiprocessing
 import os
+import random
 import re
 import tempfile
 import uuid
@@ -205,6 +206,18 @@ def run_transcription_process(
         # exactly what it was on the first write through to the last.
         doc_id = uuid.uuid4().hex
 
+        # Same reasoning as doc_id just above, for the same reason: pinned
+        # once, before the first checkpoint write, not left to render_html()'s
+        # own per-call random.choice(). Without this, the backdrop photo
+        # would change on every per-file checkpoint rewrite and flicker to a
+        # different image mid-batch - a document is one document, not a slide
+        # show. vista_names() can be empty (no vistas/ directory, e.g. an
+        # installed copy that lost its package data); None then, and
+        # render_html() already treats vista=None as "no backdrop" the same
+        # way it treats an empty vistas/ directory.
+        vista_names = formatting._vista_names()
+        vista = random.choice(vista_names) if vista_names else None
+
         documents = []
         done_duration = 0.0
         succeeded = 0
@@ -287,6 +300,7 @@ def run_transcription_process(
                             title=os.path.splitext(os.path.basename(output_file))[0],
                             ui_strings=options.ui_strings,
                             doc_id=doc_id,
+                            vista=vista,
                         )
                         _atomic_write_html(output_file, checkpoint_html)
                     except Exception as e:
@@ -311,6 +325,7 @@ def run_transcription_process(
             title=os.path.splitext(os.path.basename(output_file))[0],
             ui_strings=options.ui_strings,
             doc_id=doc_id,
+            vista=vista,
         )
 
         # Unlike the per-file checkpoints above, this write is not allowed to

@@ -71,19 +71,15 @@ PAIRS = [
     # checked against both backgrounds a resting or hovered control sits on.
     ("--control-border", "--bg", UI_MIN),
     ("--control-border", "--surface-hover", UI_MIN),
-    # The backdrop photo used to be the thing that separated a panel (.source,
-    # .outline, menus) from the page ground - text on a panel sat on a
-    # composited photo-under-translucent-paper background that could only be
-    # bounded by worst-case pixel simulation (the sweep this file used to run,
-    # see git history). With the backdrop removed the panel is a flat token
-    # like any other, so "every text-bearing surface is proven legible"
-    # becomes ordinary rows here instead of a separate composite sweep - one
-    # row per surface (--bg, --panel, --surface-hover) for every foreground
-    # that actually renders on it: body text, muted/content text, the
-    # control-border boundary, the focus ring, and the accent colour (turn
-    # accent bars, links, active states). --surface-hover's own rows above
-    # already cover --text/--muted/--control-border against it, so only the
-    # two new surfaces plus the two new foregrounds are added below.
+    # --panel is the flat token now used only by popovers (.swatch-menu,
+    # .spk-menu) - a popover reads as MORE raised than the translucent panel
+    # it opened from, so it deliberately stays opaque rather than compositing
+    # against the backdrop too (see those rules' own comments). .source and
+    # .outline themselves moved to rgba(var(--panel-rgb), var(--panel-opacity))
+    # once the backdrop photo came back (Phase 5) and are checked by
+    # test_backdrop_worst_case_contrast_meets_wcag below instead, which
+    # models the actual three-layer stack (panel over backdrop over bg) - a
+    # flat-token row here would only prove the popover case, not theirs.
     ("--text", "--panel", TEXT_MIN),
     ("--muted", "--panel", TEXT_MIN),
     ("--control-border", "--panel", UI_MIN),
@@ -158,6 +154,86 @@ def test_contrast_meets_wcag(scheme, foreground, background, minimum):
     assert ratio >= minimum, (
         f"{scheme}: {foreground} ({fg}) on {background} ({bg}) "
         f"is {ratio:.2f}:1, below the {minimum}:1 minimum"
+    )
+
+
+def _rgb(hex_or_triplet):
+    """Accept either "#rrggbb" or a "r, g, b" custom-property value as (r, g, b) ints."""
+    value = hex_or_triplet.strip()
+    if value.startswith("#"):
+        return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+    return tuple(int(part.strip()) for part in value.split(","))
+
+
+def _mix(background_hex, pixel_rgb, opacity):
+    """Composite `pixel_rgb` at `opacity` over `background_hex`, as hex."""
+    bg = _rgb(background_hex)
+    mixed = [bg[i] * (1 - opacity) + pixel_rgb[i] * opacity for i in range(3)]
+    return "#" + "".join(f"{round(c):02x}" for c in mixed)
+
+
+# The composited background under text is no longer a fixed token once a photo
+# sits behind it - it is bg*(1-a) + p*a for whatever pixel p happens to be
+# under a given letter, and the reading column adds a second layer on top of
+# that: a translucent panel (--panel-opacity, over --panel-rgb) floating over
+# the backdrop rather than masking it out. Text therefore sits on THREE
+# composited layers - panel over backdrop over bg - not the two the panel-less
+# design had. --panel-rgb, NOT --bg-rgb: Anuppuccin (Phase 0) gave the panel
+# its own elevation token, one step above --bg, so compositing against --bg
+# here would model a surface nothing text-bearing actually sits on any more.
+#
+# Auditing every pixel of 32 photos is not the point; bounding the worst case
+# is. p=black and p=white are the two extremes any backdrop pixel could land
+# on - genuinely, not hypothetically: several of the shipped vistas contain
+# pure-black or pure-white pixels (see docs/transcript-manual-checks.md) - so
+# a token that clears 4.5:1 against both of them, through the panel, clears it
+# against everything in between too.
+BACKDROP_PAIRS = [
+    # (foreground token, minimum) - backgrounds are the three-layer composited
+    # extremes, built below per scheme from --bg, --backdrop-opacity,
+    # --panel-rgb and --panel-opacity.
+    ("--text", TEXT_MIN),
+    # --muted is the tighter of the two (timestamps and the file-position
+    # label are real content rendered inside the translucent .source/.file-bar
+    # panel, not decoration), which is why it is the number quoted when this
+    # test's result is discussed rather than --text.
+    ("--muted", TEXT_MIN),
+]
+
+
+@pytest.mark.parametrize("scheme", sorted(SCHEMES))
+@pytest.mark.parametrize("foreground,minimum", BACKDROP_PAIRS)
+@pytest.mark.parametrize("pixel", [(0, 0, 0), (255, 255, 255)], ids=["black", "white"])
+def test_backdrop_worst_case_contrast_meets_wcag(scheme, foreground, minimum, pixel):
+    """
+    The single most important test in this file: it is the only thing
+    standing between a future opacity tweak and unreadable text over a photo.
+    If this fails, the fix is a different treatment (a stronger panel, a
+    different device entirely) - never nudging the minimum to match whatever
+    the current numbers happen to be.
+    """
+    tokens = SCHEMES[scheme]
+    fg = tokens.get(foreground)
+    bg = tokens.get("--bg")
+    backdrop_opacity = tokens.get("--backdrop-opacity")
+    panel_rgb = tokens.get("--panel-rgb")
+    panel_opacity = tokens.get("--panel-opacity")
+    assert fg and fg.startswith("#"), f"{foreground} missing or not a hex colour in {scheme}"
+    assert bg and bg.startswith("#"), f"--bg missing or not a hex colour in {scheme}"
+    assert backdrop_opacity, f"--backdrop-opacity missing in {scheme}"
+    assert panel_rgb, f"--panel-rgb missing in {scheme}"
+    assert panel_opacity, f"--panel-opacity missing in {scheme}"
+
+    # Layer 1: the backdrop photo pixel over --bg.
+    behind_panel = _mix(bg, pixel, float(backdrop_opacity))
+    # Layer 2: the translucent panel over that.
+    composited = _mix(behind_panel, _rgb(panel_rgb), float(panel_opacity))
+
+    ratio = contrast_ratio(fg, composited)
+    assert ratio >= minimum, (
+        f"{scheme}: {foreground} ({fg}) on panel-over-backdrop {composited} "
+        f"(--bg {bg} at {backdrop_opacity} over {pixel}, panel {panel_rgb} "
+        f"at {panel_opacity}) is {ratio:.2f}:1, below the {minimum}:1 minimum"
     )
 
 
@@ -313,17 +389,94 @@ def test_speaker_row_reacts_to_hover_and_focus():
 
 def test_panel_token_is_actually_used():
     """
-    --panel is the raised reading surface that replaced "translucent paper
-    over a photo" once the backdrop was removed (Phase 3.5). If .source or
-    .outline silently fell back to --bg (the page ground) instead, a panel
-    would be visually indistinguishable from the page behind it - the whole
-    elevation ramp would be invisible - and nothing else in this file would
-    notice, since the contrast pairs above check colour values, not which
-    token a rule actually resolves through.
+    .source and .outline are the translucent reading surfaces the backdrop
+    photo shows through (Phase 5) - rgba(var(--panel-rgb), var(--panel-opacity)),
+    not the flat --panel. If either silently fell back to --panel or --bg
+    instead, the panel would stop being see-through - the whole point of the
+    backdrop coming back - and nothing else in this file would notice, since
+    the contrast pairs above check colour values, not which token a rule
+    actually resolves through.
+
+    Popovers (.swatch-menu, .spk-menu) are the deliberate opposite case: they
+    stay on the flat --panel because a popover reads as MORE raised than its
+    translucent container, not equally see-through - see those rules' own
+    comments. Checked here too, so a future edit can't quietly blur the two
+    surfaces' roles back together.
     """
     source = CSS.read_text(encoding="utf-8")
-    for selector in (".source", ".outline"):
+    for selector in (".source", ".outline", ".file-bar"):
+        block = _rule_block(source, selector)
+        assert _property(block, "background") == "rgba(var(--panel-rgb), var(--panel-opacity))", (
+            f"{selector} must declare background: rgba(var(--panel-rgb), var(--panel-opacity))"
+        )
+    for selector in (".swatch-menu", ".spk-menu"):
         block = _rule_block(source, selector)
         assert _property(block, "background") == "var(--panel)", (
-            f"{selector} must declare background: var(--panel)"
+            f"{selector} must stay on the flat background: var(--panel)"
         )
+
+
+def test_no_blur_declarations():
+    """
+    Blur was measured (Phase 5, see the --panel-opacity comment) to buy zero
+    contrast headroom over the backdrop photo - the worst-case composite is
+    exactly as tight blurred as it is sharp, because a blur radius redistributes
+    a pixel's neighbours' colour without changing the extremes any single pixel
+    under text can land on. The panel opacity is what protects contrast; blur
+    was tried and dropped. This guards the decision, not merely today's file:
+    a live `backdrop-filter` or `filter: blur(` declaration must not reappear,
+    on `.backdrop` or anywhere else, even though a comment is free to keep
+    talking about why it was rejected (several already do).
+    """
+    source = CSS.read_text(encoding="utf-8")
+    # Strip /* ... */ comments before scanning, so a comment that merely
+    # *mentions* backdrop-filter or blur() to explain why it was rejected
+    # (several currently do, deliberately) doesn't trip this guard - only a
+    # live declaration should.
+    without_comments = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    assert "backdrop-filter" not in without_comments, (
+        "a live backdrop-filter declaration reappeared - blur was measured to "
+        "buy zero contrast headroom (see the --panel-opacity comment) and the "
+        "user does not want it back"
+    )
+    assert "filter: blur(" not in without_comments, (
+        "a live filter: blur( declaration reappeared - see the backdrop-filter "
+        "assertion above for why"
+    )
+
+
+def test_focus_ring_gated_behind_keyboard_flag():
+    """
+    Phase 7: .body and .plain-body are the two elements the user reported the
+    ring lighting up on for a plain mouse click (a Chromium quirk - it matches
+    :focus-visible on a contenteditable element for mouse focus too). The fix
+    is transcript.js's own tracked modality flag, html[data-kbd], not
+    :focus-visible alone - see the STATED EXCEPTION in this file's standing
+    rules comment at the top. Every other control keeps plain :focus-visible,
+    including #search's existing outline: none exemption and .speaker-name,
+    which is explicitly out of scope.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    assert re.search(r"html\[data-kbd\]\s+\.body:focus\s*\{", source), (
+        ".body's focus ring must be gated behind html[data-kbd] .body:focus"
+    )
+    assert re.search(r"html\[data-kbd\]\s+\.plain-body:focus\s*\{", source), (
+        ".plain-body's focus ring must be gated behind html[data-kbd] .plain-body:focus"
+    )
+    # Bare :focus-visible on either element would re-admit the mouse-click bug
+    # this phase exists to fix.
+    assert not re.search(r"(?<![-\w])\.body:focus-visible\s*\{", source)
+    assert not re.search(r"(?<![-\w])\.plain-body:focus-visible\s*\{", source)
+    # #search's own exemption (out of scope for Phase 7) must survive intact.
+    assert "#search:focus-visible { outline: none; }" in source
+
+
+def test_hover_dim_is_phase_8_value():
+    """
+    Phase 8: non-focused cards dim to 0.5 (from the original 0.72) while a
+    section is hovered - see the rule's own comment for why, and for the
+    accepted contrast trade-off that comes with dimming text toward the panel.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    block = _rule_block(source, ".source:hover .turn:not(:hover)")
+    assert _property(block, "opacity") == "0.5"

@@ -42,7 +42,7 @@ setup(
     # them produces a broken document rather than failing loudly at import.
     package_data={
         "speech_to_text": ["assets/*.ico"],
-        "speech_to_text.core": ["assets/*.css", "assets/*.js"],
+        "speech_to_text.core": ["assets/*.css", "assets/*.js", "assets/vistas/*.webp"],
     },
     zip_safe=False,
 )

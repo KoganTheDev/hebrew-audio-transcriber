@@ -291,6 +291,42 @@ class TestCheckpointing:
         assert len(seen_doc_ids) >= 2, "expected at least one checkpoint plus the final write"
         assert len(set(seen_doc_ids)) == 1
 
+    def _vista(self, html_out: str) -> str:
+        match = re.search(r'class="backdrop"[^>]*style="background-image:url\(([^)]+)\)"', html_out)
+        assert match, "expected a .backdrop element with an inline background-image"
+        return match.group(1)
+
+    def test_vista_is_stable_across_checkpoints(self, tmp_path, monkeypatch):
+        """
+        render_html() picks a fresh random vista per call by default, exactly
+        like it mints a fresh doc_id - the same reasoning as
+        test_doc_id_is_stable_across_checkpoints applies here: without a pin,
+        the backdrop photo would change on every per-file checkpoint rewrite
+        and flicker to a different image mid-batch, which is not what "one
+        document" means.
+        """
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        seen_vistas = []
+        real_write = worker._atomic_write_html
+
+        def recording_write(path, content):
+            seen_vistas.append(self._vista(content))
+            real_write(path, content)
+
+        monkeypatch.setattr(worker, "_atomic_write_html", recording_write)
+
+        worker.run_transcription_process(
+            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert len(seen_vistas) >= 2, "expected at least one checkpoint plus the final write"
+        assert len(set(seen_vistas)) == 1
+
     def test_no_stray_temp_file_survives_a_successful_run(self, tmp_path):
         output_path = str(tmp_path / "out.html")
         options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0])
