@@ -587,7 +587,22 @@ body {
   justify-content: center;
 }
 
-.tb-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tb-gap); }
+/* nowrap here, not wrap, and it is load-bearing for the one-line toolbar.
+   With the group left wrapping, a group breaks INTERNALLY the moment its own
+   content exceeds its share of the row, and the row's own nowrap cannot stop
+   it: measured at an 830px viewport, .tb-actions held 438px of buttons plus
+   the save-status span in a 438px box and dropped a line, so the toolbar
+   stood 92px tall while .tb-row itself was still, correctly, a single line.
+   The same trap catches .tb-search, whose icon, input, count and two chevrons
+   come to more than the box it is given.
+
+   Held to one line, the flexible member gives up width instead - the search
+   input, which is the one control that loses nothing but visible characters
+   when it narrows (see .tb-search's flex: 0 1 auto and .tb-actions' flex:
+   none, which together decide that the input is what shrinks). Wrapping
+   returns below the stacking breakpoint, where there genuinely is not room
+   for one line and two rows are the right answer. */
+.tb-group { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--tb-gap); }
 /* flex: 0 1 auto, not the shipped flex: 1 1 15rem - see .tb-row's own
    comment above for why a growing search box defeated the row's
    justify-content: center. min-width: 0 lets it actually give up width
