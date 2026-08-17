@@ -559,7 +559,7 @@ def render_html(
         parts.append(f"<style>{''.join(style_rules)}</style>")
         parts.append('<div class="backdrop" aria-hidden="true"></div>')
     parts.extend([
-        _render_toolbar_html(strings, has_outline=outline_html is not None),
+        _render_toolbar_html(strings),
         # .layout is the grid that puts <aside> on the visual left of the
         # RTL document by pure source order (grid-template-columns's first
         # track maps to the inline-start edge, which is the right in RTL) -
@@ -656,35 +656,23 @@ def _icon(name: str) -> str:
     return f'<svg class="icon" aria-hidden="true"><use href="#i-{name}"></use></svg>'
 
 
-def _render_toolbar_html(strings: Dict[str, str], has_outline: bool) -> str:
+def _render_toolbar_html(strings: Dict[str, str]) -> str:
     """The document's own chrome: search, view toggles, export, save status."""
     def s(key: str, fallback: str) -> str:
         return html.escape(strings.get(key, fallback))
 
     search = s("search", "Search transcript")
-    outline_btn = ""
-    if has_outline:
-        # Only meaningful, and only rendered, when there is an <aside> to
-        # open - a single-file document with no speakers has nothing for it
-        # to control. aria-expanded/aria-controls are kept in sync by
-        # transcript.js's outline toggle handler; below ~900px this is the
-        # sidebar's only entry point (see .outline in transcript.css), so it
-        # has to exist in the toolbar's own markup, not be built by script.
-        outline_btn = (
-            f'<button id="outline-toggle" class="tb-btn" aria-expanded="false"'
-            f' aria-controls="outline">{_icon("list")}'
-            f'<span>{s("outline_toggle", "Files and speakers")}</span></button>'
-        )
     return "\n".join([
         f'<header class="toolbar" role="toolbar"'
         f' aria-label="{s("toolbar", "Transcript tools")}">',
-        # The toolbar's controls sit inside their own grid-column: 2 wrapper
-        # (see .tb-row in transcript.css) rather than being grid items of
-        # .toolbar directly - .tb-group is a flex row (a search box that
-        # grows, buttons that wrap at narrow widths), and a bare
-        # display: flex on the grid items would fight the grid's own column
-        # placement instead of just occupying it. This is what ties the
-        # toolbar's controls to the same track main sits in.
+        # The toolbar's controls sit inside their own grid-column: 1 / -1
+        # wrapper (see .tb-row in transcript.css, which spans both tracks
+        # rather than sitting in a single one) rather than being grid items
+        # of .toolbar directly - .tb-group is a flex row (a search box, a
+        # cluster of action buttons), and a bare display: flex on the grid
+        # items would fight the grid's own column placement instead of just
+        # occupying it. This is what ties the toolbar's controls to the
+        # same track boundaries main and the sidebar sit within.
         '<div class="tb-row">',
         '<div class="tb-group tb-search">',
         _icon("search"),
@@ -696,7 +684,6 @@ def _render_toolbar_html(strings: Dict[str, str], has_outline: bool) -> str:
         f' aria-label="{s("search_next", "Next match")}">{_icon("down")}</button>',
         "</div>",
         '<div class="tb-group tb-actions">',
-        outline_btn,
         f'<button id="toggle-flags" class="tb-btn" aria-pressed="false">{_icon("flag")}'
         f'<span>{s("show_uncertain", "Show uncertain words")}</span></button>',
         # Server-rendered assuming the light scheme, since that is this

@@ -165,7 +165,6 @@ STRINGS = {
     "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
     "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
-    "doc_outline_toggle": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
 

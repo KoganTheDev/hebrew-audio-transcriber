@@ -204,8 +204,15 @@ class TestRenderHtml:
     def test_outline_present_only_when_there_is_something_for_it_to_show(self):
         """
         No file list to show (one document) and no speaker to manage - the
-        sidebar itself, and the toolbar button that opens it, both disappear
-        rather than rendering an empty shell.
+        sidebar itself disappears rather than rendering an empty shell.
+
+        There used to be a second thing gated the same way: a toolbar
+        button (#outline-toggle) that only made sense when there was a
+        sidebar to open. That button is gone outright now - the outline is
+        always part of the page's own flow (a two-column rail down to a
+        stacking breakpoint, then a band above the transcript - see
+        transcript.css), so there is nothing left needing a toggle to
+        reveal it, in either markup case checked here.
         """
         single = render_html([doc("only.wav", [seg(0, 1)])])
         assert 'class="outline"' not in single
@@ -213,7 +220,7 @@ class TestRenderHtml:
 
         multi = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
         assert 'class="outline"' in multi
-        assert 'id="outline-toggle"' in multi
+        assert 'id="outline-toggle"' not in multi
 
     def test_outline_file_list_anchors_resolve_to_existing_section_ids(self):
         out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
