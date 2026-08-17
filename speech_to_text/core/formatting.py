@@ -281,7 +281,21 @@ _VISTAS_DIR = _ASSETS / "vistas"
 @lru_cache(maxsize=None)
 def _vista_names() -> tuple:
     """
-    Available backdrop photos, sorted so vista-01.webp always sorts first.
+    Available LANDSCAPE backdrop photos, sorted so vista-01.webp always sorts
+    first.
+
+    Excludes *-portrait.webp: tools/build_vistas.py writes a portrait art-
+    direction crop of every photo (vista-NN-portrait.webp) next to its
+    landscape original (vista-NN.webp) in the same directory, for the
+    @media (max-aspect-ratio) swap in render_html(). Without this filter the
+    glob below would treat both crops of the same photo as two independent
+    photos, so random.choice() in _vista_data_uris() could pick a bare
+    "-portrait" file as the MAIN backdrop - and worse, doubling the pool
+    biases selection toward whichever photos happen to have shipped a
+    portrait crop. The suffix check keeps this function's contract exactly
+    what it was before portrait crops existed: one entry per photo, always
+    the landscape one, with the portrait crop reached separately by
+    _vista_portrait_name().
 
     An empty tuple - whether because the directory is missing (an installed
     copy that lost its package data) or simply has nothing in it - is not an
@@ -290,7 +304,31 @@ def _vista_names() -> tuple:
     """
     if not _VISTAS_DIR.is_dir():
         return ()
-    return tuple(sorted(p.name for p in _VISTAS_DIR.glob("*.webp")))
+    return tuple(
+        sorted(
+            p.name for p in _VISTAS_DIR.glob("*.webp")
+            if not p.stem.endswith("-portrait")
+        )
+    )
+
+
+def _vista_portrait_name(landscape_name: str) -> Optional[str]:
+    """
+    The portrait art-direction crop for a chosen landscape backdrop, e.g.
+    "vista-07.webp" -> "vista-07-portrait.webp", or None if that photo has no
+    portrait crop on disk.
+
+    A missing portrait file is not an error: build_vistas.py's byte budget
+    can in principle skip writing a variant, and an older installed copy of
+    the package may only carry landscape crops from before this feature
+    existed. render_html() reads None as "no portrait swap for this document",
+    the same "missing asset degrades gracefully" contract _vista_data_uris()
+    already has for a missing backdrop entirely.
+    """
+    candidate = f"{Path(landscape_name).stem}-portrait.webp"
+    if (_VISTAS_DIR / candidate).is_file():
+        return candidate
+    return None
 
 
 @lru_cache(maxsize=None)
@@ -304,9 +342,15 @@ def _asset_bytes(name: str) -> bytes:
     return (_ASSETS / name).read_bytes()
 
 
-def _vista_data_uri(vista: Optional[str]) -> Optional[str]:
+def _data_uri(name: str) -> str:
+    """base64-encode one file under vistas/ as a data:image/webp;... URI."""
+    encoded = base64.b64encode(_asset_bytes(f"vistas/{name}")).decode("ascii")
+    return f"data:image/webp;base64,{encoded}"
+
+
+def _vista_data_uris(vista: Optional[str]) -> Optional[tuple]:
     """
-    Choose a backdrop and return it as a data:image/webp;base64,... URI.
+    Choose a backdrop and return (landscape_uri, portrait_uri_or_None).
 
     vista=None (the default) picks uniformly at random from whatever exists.
     A caller passing a specific filename - the "vista" parameter on
@@ -316,6 +360,12 @@ def _vista_data_uri(vista: Optional[str]) -> Optional[str]:
     never raises, when there is nothing to embed: a missing or empty vistas/
     directory must still produce a working transcript, just without a
     backdrop.
+
+    The second element is None, not a duplicate of the landscape URI, when
+    the chosen photo has no portrait crop on disk - render_html() then emits
+    only the landscape rule and no @media swap, which is a landscape-only
+    backdrop rather than a broken one (see _vista_portrait_name()'s
+    docstring for why that gap can exist).
     """
     names = _vista_names()
     if not names:
@@ -325,8 +375,9 @@ def _vista_data_uri(vista: Optional[str]) -> Optional[str]:
     if chosen not in names:
         raise ValueError(f"unknown vista {chosen!r}; available: {', '.join(names)}")
 
-    encoded = base64.b64encode(_asset_bytes(f"vistas/{chosen}")).decode("ascii")
-    return f"data:image/webp;base64,{encoded}"
+    portrait_name = _vista_portrait_name(chosen)
+    portrait_uri = _data_uri(portrait_name) if portrait_name else None
+    return _data_uri(chosen), portrait_uri
 
 
 def _json_payload(data: dict) -> str:
@@ -394,17 +445,21 @@ def render_html(
         doc_id: identity used to key the browser's saved edits. Generated when
             not supplied; pass one to keep a re-render addressing the same
             saved edits.
-        vista: filename of a backdrop photo under core/assets/vistas/ to pin,
-            e.g. "vista-07.webp". None (the default) picks one at random -
-            a fresh choice on every render, which is what a person actually
-            wants and what makes two default renders differ in tests. Pin it
-            when the caller needs a specific, reproducible document - worker.py
-            does this once per batch so the photo does not change on every
-            per-file checkpoint rewrite.
+        vista: filename of the LANDSCAPE backdrop photo under
+            core/assets/vistas/ to pin, e.g. "vista-07.webp" - always the
+            bare landscape name, never a "-portrait" one; that variant is
+            looked up automatically from this same name (see
+            _vista_portrait_name()) so callers never have to know it exists.
+            None (the default) picks one at random - a fresh choice on every
+            render, which is what a person actually wants and what makes two
+            default renders differ in tests. Pin it when the caller needs a
+            specific, reproducible document - worker.py does this once per
+            batch so the photo does not change on every per-file checkpoint
+            rewrite.
     """
     strings = dict(ui_strings or {})
     doc_id = doc_id or uuid.uuid4().hex
-    vista_uri = _vista_data_uri(vista)
+    vista_uris = _vista_data_uris(vista)
 
     payload = {
         "threshold": CONFIDENCE_THRESHOLD,
@@ -462,7 +517,38 @@ def render_html(
         # to exist before any of them are parsed.
         _render_sprite_html(),
     ]
-    if vista_uri:
+    if vista_uris:
+        landscape_uri, portrait_uri = vista_uris
+        # A <style> element, not the old style="background-image:url(...)"
+        # attribute: an inline style attribute can only ever set ONE rule, but
+        # picking the right crop per viewport needs a media query (see
+        # PORTRAIT_W's comment in tools/build_vistas.py for why one crop
+        # cannot serve both desktop and phone), and a media query can only
+        # live inside a <style> block, not an attribute. The rule is still
+        # per-document, not part of the shared transcript.css - like the old
+        # inline style, it changes with which photo this render picked, while
+        # the stylesheet does not.
+        #
+        # "<" is escaped in both URIs (the data: payload is base64, which
+        # cannot itself contain "<", but escaping unconditionally rather than
+        # asserting it can't costs nothing and matches _json_payload's same
+        # defensive reasoning) so nothing in the embedded bytes could ever be
+        # read as closing this </style> early.
+        style_rules = [
+            f'.backdrop{{background-image:url({html.escape(landscape_uri)})}}'
+        ]
+        if portrait_uri:
+            # 3/4, not "orientation: portrait": orientation flips at aspect
+            # ratio 1:1, but the landscape crop's cover-scaled visible width
+            # is still an acceptable ~50%+ down to roughly 3:4 (see the
+            # measured table in tools/build_vistas.py's PORTRAIT_W comment) -
+            # switching at 1:1 would swap in the portrait crop for viewports
+            # the landscape one still frames fine, for no benefit.
+            style_rules.append(
+                '@media (max-aspect-ratio: 3/4) { '
+                f'.backdrop{{background-image:url({html.escape(portrait_uri)})}} '
+                '}'
+            )
         # Right after the sprite - the sprite paints nothing itself (zero
         # size, position:absolute), so the backdrop is still effectively the
         # first thing on the page to paint, ahead of any real content. See
@@ -470,10 +556,8 @@ def render_html(
         # why paint order here matters. No alt text and aria-hidden: it is
         # decoration, and a screen reader announcing "image" before every
         # transcript would be pure noise.
-        parts.append(
-            f'<div class="backdrop" aria-hidden="true" '
-            f'style="background-image:url({html.escape(vista_uri)})"></div>'
-        )
+        parts.append(f"<style>{''.join(style_rules)}</style>")
+        parts.append('<div class="backdrop" aria-hidden="true"></div>')
     parts.extend([
         _render_toolbar_html(strings, has_outline=outline_html is not None),
         # .layout is the grid that puts <aside> on the visual left of the

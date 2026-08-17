@@ -433,9 +433,17 @@ body {
    behind the content gets a stationary image, independently dimmable,
    without touching body's own paint at all.
 
-   No background colour of its own: the image is supplied per render as an
-   inline style (see formatting.py._vista_data_uri), because it changes per
-   document while this stylesheet does not.
+   No background-image of its own: the photo (and, on narrow viewports, a
+   second art-directed portrait crop of the same photo behind an
+   @media (max-aspect-ratio: 3/4) rule) is supplied per render as a small
+   inline <style> element (see formatting.py._vista_data_uris and its
+   render_html() call site), because it changes per document while this
+   stylesheet does not. It used to be a background-image set through a plain
+   style="" attribute on this element directly, but an attribute can only
+   ever set one CSS rule and the portrait swap needs a media query, which
+   only a <style> block can hold - see PORTRAIT_W's comment in
+   tools/build_vistas.py for why a single crop cannot serve both desktop and
+   phone.
 
    No blur here, and none is coming back: an @supports (backdrop-filter: ...)
    panel-blur block used to sit in the .source rule below, and a whole-image
@@ -832,8 +840,16 @@ main { grid-column: 2; min-width: 0; margin: 0; }
   background: var(--surface-hover);
 }
 
-.outline-speakers .speakers { margin: 0 0 1.5rem; padding-bottom: 1rem; }
-.outline-speakers .speakers:last-child { border-bottom: 0; }
+/* No border-bottom on a speaker panel any more, in any state. It was a
+   divider between one file's roster and the next file's, but .js-ready hides
+   every panel except the active file's, so with JavaScript running it never
+   had a neighbour to divide from - it just trailed under the "Add speaker"
+   button as a stray line, which is what the user reported. Removed outright
+   rather than kept for the script-free case: the 1.5rem bottom margin below
+   already separates stacked panels there, so the line bought nothing even in
+   the one state that could still show it. Purely visual - nothing reads this
+   border. */
+.outline-speakers .speakers { margin: 0 0 1.5rem; }
 /* Hidden only once transcript.js has actually taken over (.js-ready on the
    aside): with JavaScript disabled every file's panel stays visible, so
    speaker names for every recording in a batch are still readable, just not
@@ -917,7 +933,6 @@ main { grid-column: 2; min-width: 0; margin: 0; }
   flex-direction: column;
   align-items: stretch;
   gap: 0.35rem;
-  border-bottom: 1px solid var(--rule);
 }
 .speakers-title {
   display: block;
@@ -1020,6 +1035,15 @@ main { grid-column: 2; min-width: 0; margin: 0; }
   transition: border-color var(--fast) ease-out;
 }
 .speaker-name:focus { border-color: var(--accent); }
+/* Same exemption #search already carries, for the same reason: the shared
+   :focus-visible rule draws a ring 2px OUTSIDE the box, and on a name field
+   that ring lands on top of the row's own :focus-within background and
+   duplicates a cue the field already gives twice over - the accent border
+   above plus that background. The user asked for it gone while editing a
+   speaker name. The focus state stays fully visible without it, which is
+   why dropping the ring here is safe where dropping it on a bare control
+   would not be. */
+.speaker-name:focus-visible { outline: none; }
 
 /* The one always-visible colour control per speaker row: a small dot (its
    colour comes from --spk, set on .speaker-row itself by the shared

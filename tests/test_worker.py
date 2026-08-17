@@ -292,8 +292,13 @@ class TestCheckpointing:
         assert len(set(seen_doc_ids)) == 1
 
     def _vista(self, html_out: str) -> str:
-        match = re.search(r'class="backdrop"[^>]*style="background-image:url\(([^)]+)\)"', html_out)
-        assert match, "expected a .backdrop element with an inline background-image"
+        # The backdrop's image now lives in a per-document <style> element
+        # (a plain style="" attribute can only ever set one rule, and the
+        # portrait art-direction swap needs a media query - see formatting.py
+        # render_html()'s .backdrop <style> comment), not an inline style
+        # attribute on the element itself - match the landscape rule's url().
+        match = re.search(r'\.backdrop\{background-image:url\(([^)]+)\)\}', html_out)
+        assert match, "expected a .backdrop rule with a background-image url()"
         return match.group(1)
 
     def test_vista_is_stable_across_checkpoints(self, tmp_path, monkeypatch):

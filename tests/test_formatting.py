@@ -628,6 +628,123 @@ class TestVistaBackdrop:
         with pytest.raises(ValueError):
             render_html([doc("a.wav", [seg(0, 1)])], vista="not-a-real-file.webp")
 
+    def test_pinning_a_portrait_file_directly_raises(self):
+        """
+        "-portrait" files are an implementation detail of the landscape they
+        belong to (see _vista_names()'s docstring) - callers, including a
+        pinned vista=, only ever name the landscape file. Pinning the
+        portrait file directly must fail exactly like any other name outside
+        _vista_names(), not silently succeed and render a portrait-shaped
+        photo as the desktop backdrop.
+        """
+        with pytest.raises(ValueError):
+            render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01-portrait.webp")
+
+    def test_landscape_and_portrait_uris_are_both_embedded(self):
+        """
+        vista-01 ships a portrait crop (built by tools/build_vistas.py), so a
+        pinned render must carry two distinct data URIs: one for the base
+        .backdrop rule and one behind the narrow-viewport media query.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+        uris = re.findall(r'data:image/webp;base64,[A-Za-z0-9+/=]+', out)
+        assert len(uris) == 2
+        assert uris[0] != uris[1]
+
+    def test_portrait_swap_is_behind_the_narrow_aspect_media_query(self):
+        """
+        3/4, not orientation:portrait - see the media query's own comment in
+        render_html() for why the switch point is an aspect ratio, not the
+        orientation flip at 1:1.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+        assert "@media (max-aspect-ratio: 3/4)" in out
+        assert re.search(
+            r"@media \(max-aspect-ratio: 3/4\) \{ \.backdrop\{background-image:"
+            r"url\(data:image/webp;base64,[A-Za-z0-9+/=]+\)\} \}",
+            out,
+        )
+
+    def test_portrait_variants_are_excluded_from_random_vista_selection(self, monkeypatch, tmp_path):
+        """
+        Regression guard for the single most likely bug in art-directed
+        backdrops: _vista_names() globs *.webp, and once a "-portrait" file
+        sits next to its landscape original in the same directory, an
+        unfiltered glob would let random.choice() pick the portrait crop as
+        the MAIN backdrop, and would also double the odds of that photo
+        being chosen at all relative to a photo with no portrait crop.
+        """
+        import speech_to_text.core.formatting as formatting
+
+        vistas_dir = tmp_path / "vistas"
+        vistas_dir.mkdir()
+        (vistas_dir / "vista-01.webp").write_bytes(b"landscape-one")
+        (vistas_dir / "vista-01-portrait.webp").write_bytes(b"portrait-one")
+        (vistas_dir / "vista-02.webp").write_bytes(b"landscape-two")
+
+        monkeypatch.setattr(formatting, "_VISTAS_DIR", vistas_dir)
+        formatting._vista_names.cache_clear()
+        try:
+            names = formatting._vista_names()
+            assert names == ("vista-01.webp", "vista-02.webp")
+            assert not any(name.endswith("-portrait.webp") for name in names)
+        finally:
+            formatting._vista_names.cache_clear()
+
+    def test_missing_portrait_variant_renders_landscape_only(self, monkeypatch, tmp_path):
+        """
+        A photo with no portrait crop on disk (an older installed package, or
+        a photo build_vistas.py hasn't rebuilt yet) must still render its
+        landscape backdrop with no @media swap, never raise.
+
+        Both _ASSETS and _VISTAS_DIR are redirected into tmp_path (not just
+        _VISTAS_DIR, the way test_missing_vistas_directory... above does):
+        that test never reads a photo's bytes because it has zero vistas at
+        all, but this one pins a real filename and needs _asset_bytes() -
+        which reads through _ASSETS, not _VISTAS_DIR - to see the same fake,
+        portrait-less file the name lookup does.
+        """
+        import speech_to_text.core.formatting as formatting
+
+        assets_dir = tmp_path / "assets"
+        vistas_dir = assets_dir / "vistas"
+        vistas_dir.mkdir(parents=True)
+        (vistas_dir / "vista-01.webp").write_bytes(b"landscape-only")
+        # render_html() also loads transcript.css/js through _ASSETS (the
+        # text half, _asset() - unrelated to the vista byte lookup this test
+        # is about), so those two have to exist under the fake root too, or
+        # the render fails before it ever gets to the backdrop.
+        real_assets = formatting._ASSETS
+        (assets_dir / "transcript.css").write_text(
+            (real_assets / "transcript.css").read_text(encoding="utf-8"), encoding="utf-8",
+        )
+        (assets_dir / "transcript.js").write_text(
+            (real_assets / "transcript.js").read_text(encoding="utf-8"), encoding="utf-8",
+        )
+
+        monkeypatch.setattr(formatting, "_ASSETS", assets_dir)
+        monkeypatch.setattr(formatting, "_VISTAS_DIR", vistas_dir)
+        formatting._vista_names.cache_clear()
+        formatting._asset_bytes.cache_clear()
+        formatting._asset.cache_clear()
+        try:
+            out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+            assert 'class="backdrop"' in out
+            uris = re.findall(r'data:image/webp;base64,[A-Za-z0-9+/=]+', out)
+            assert len(uris) == 1
+            # A live media-query rule, not just the phrase - transcript.css's
+            # own explanatory comment (copied verbatim into <style>, like all
+            # of transcript.css) mentions "@media (max-aspect-ratio: 3/4)" by
+            # name, so a bare substring check would false-positive on that
+            # comment even with no second backdrop rule present.
+            assert not re.search(
+                r"@media \(max-aspect-ratio: 3/4\) \{ \.backdrop", out,
+            )
+        finally:
+            formatting._vista_names.cache_clear()
+            formatting._asset_bytes.cache_clear()
+            formatting._asset.cache_clear()
+
 
 class TestApplyNamesReachesTheSidebar:
     """
