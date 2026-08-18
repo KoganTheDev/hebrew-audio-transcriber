@@ -107,8 +107,13 @@ pip install -e .
 For development (tests, linting):
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
+
+`requirements.txt` and `requirements-dev.txt` still work and do the same
+thing - they are one-line pointers at this project's dependency lists rather
+than copies of them. Those lists live in `pyproject.toml`, which is the only
+file actually read at install time; edit them there.
 
 ## Usage
 
@@ -171,7 +176,9 @@ speech_to_text/
 tests/                          # pytest suite covering config, hardware detection, transcriber, and integration
 docs/
 ├── architecture.drawio         # Editable source for the architecture diagram
-└── architecture.jpg            # Rendered diagram (embedded above)
+├── architecture.jpg            # Rendered diagram (embedded above)
+├── transcript-manual-checks.md # Manual QA checklist for the generated transcript page
+└── unused-files-report.md      # Dead-file / disk-usage audit
 ```
 
 ## Testing

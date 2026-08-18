@@ -10,9 +10,27 @@ readme = "README.md"
 requires-python = ">=3.9"
 authors = [{name = "Development Team", email = "dev@example.com"}]
 license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Sound/Audio",
+]
 
+# The single source of truth for what this project depends on.
+# requirements.txt and requirements-dev.txt are thin pointers back here
+# (`-e .` and `-e .[dev]`) rather than second copies of these lists - they
+# used to duplicate them, and the dev lists had already drifted apart
+# (pytest>=7.0 here against pytest>=7.0.0 there) before anyone noticed.
 dependencies = [
     "faster-whisper>=0.10.0",
+    # Speaker diarization. onnxruntime-based, so it adds no torch dependency
+    # and needs no HuggingFace account - see core/diarization.py.
     "sherpa-onnx>=1.10.0",
     "PyQt5>=5.15.0",
     "tqdm>=4.60.0",
@@ -30,10 +48,32 @@ dev = [
     "mypy>=0.950",
 ]
 
+[project.scripts]
+speech-to-text = "speech_to_text.main:main"
+
 [project.urls]
 Homepage = "https://github.com/example/speech-to-text"
 Repository = "https://github.com/example/speech-to-text.git"
 Issues = "https://github.com/example/speech-to-text/issues"
+
+[tool.setuptools.packages.find]
+# Explicit include, not just an exclude list: with a flat layout, setuptools
+# discovers every top-level directory holding an __init__.py, which on a
+# working checkout would sweep in tests/ (and tests/eval/) alongside the real
+# package. Naming what ships is the narrower statement of the two, and it
+# does not quietly start shipping the next top-level package someone adds.
+include = ["speech_to_text*"]
+
+# The stylesheet and script inlined into every generated transcript, the
+# backdrop images they reference, and the window icon. These are read at
+# render time, not imported, so a wheel built without them installs and
+# imports cleanly and only fails later, at the point a user renders a
+# transcript - producing an unstyled document rather than an error anyone
+# could trace back to packaging. That silent-failure mode is why this block
+# is load-bearing and why tests/test_packaging.py asserts it.
+[tool.setuptools.package-data]
+"speech_to_text" = ["assets/*.ico"]
+"speech_to_text.core" = ["assets/*.css", "assets/*.js", "assets/vistas/*.webp"]
 
 [tool.black]
 line-length = 100
@@ -71,9 +111,3 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --cov=speech_to_text --cov-report=html --cov-report=term-missing"

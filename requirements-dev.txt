@@ -1,8 +1,4 @@
-# Development dependencies
-pytest>=7.0.0
-pytest-cov>=4.0.0
-pytest-mock>=3.10.0
-black>=22.0.0
-flake8>=4.0.0
-isort>=5.10.0
-mypy>=0.950
+# Development dependencies (tests, linting) are declared in pyproject.toml
+# under [project.optional-dependencies].dev - see requirements.txt for why
+# this file is a pointer rather than a list.
+-e .[dev]
