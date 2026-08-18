@@ -9,9 +9,12 @@
    Visual register: "document" - quiet and paper-like. Generous whitespace,
    hairline rules, almost no card chrome until you hover. Colour is confined
    to the speaker accent so the page reads as prose rather than as an
-   interface. The alternative "console" register explored during design lives
-   in docs/mockups/style-console.css; swapping registers means replacing this
-   file, nothing else.
+   interface. An alternative "console" register was explored during design
+   and rejected; swapping registers means replacing this file, nothing else.
+   The mockups those explorations lived in are no longer kept in the tree -
+   they were design scaffolding, not build inputs, and every decision they
+   settled is recorded in these comments instead. See git history before
+   commit "Delete the design mockups" if you need the originals.
 
    Rules being honoured deliberately (do not "tidy" these away):
      - hover is never the only route to an action; see the (hover: none) block
@@ -38,9 +41,9 @@
   color-scheme: light dark;
 
   /* Anuppuccin (the user's own Obsidian theme) = Catppuccin, Latte light /
-     Mocha dark, chosen live from docs/mockups/palette-and-chrome.html
-     against two rejected alternatives (an "adjusted" Latte with darkened
-     accents, and a do-no-harm baseline) - not picked from a swatch table.
+     Mocha dark, chosen live in a side-by-side mockup against two rejected
+     alternatives (an "adjusted" Latte with darkened accents, and a
+     do-no-harm baseline) - not picked from a swatch table.
      Every hex below is Catppuccin's own, verbatim, except the eight
      --spk-N-chip-text values, which are new (Catppuccin has no opinion on
      what text sits on top of its own accents as a filled pill).
@@ -162,8 +165,8 @@
   --spk-7-chip-text: #11111b;
 
   /* How strongly the backdrop photo shows through. DECIDED at 1.00 in both
-     schemes from a live mockup (docs/mockups/backdrop-and-chrome.html): the
-     photo runs at full strength in the margins, where nothing has to stay
+     schemes from a live mockup: the photo runs at full strength in the
+     margins, where nothing has to stay
      legible over it, and --panel-opacity below is what protects the reading
      surface, not this value. Text does not sit directly on the backdrop
      anywhere text-bearing - the reading column is a translucent panel
@@ -199,7 +202,7 @@
      real compositing, could flip it. 0.93 clears the same case by 0.24
      (4.74:1); the visual difference between 9% and 7% photo show-through is
      negligible, the difference in headroom is roughly twelvefold. See
-     docs/transcript-manual-checks.md and the mockup for the tone-mapping and
+     docs/transcript-manual-checks.md for the tone-mapping and
      per-image alternatives that were tried and closed out before landing
      here. */
   --panel-rgb: 239, 241, 245;
@@ -249,9 +252,8 @@
   --rail: 16rem;
   --layout-columns: minmax(0, var(--measure)) var(--rail);
 
-  /* Squircle - the control style picked from the four Phase 0 mockups
-     (docs/mockups/control-styles.html): a generous corner radius with a
-     thicker, load-bearing border. One radius, one border width, used by
+  /* Squircle - the control style picked from four Phase 0 mockups: a
+     generous corner radius with a thicker, load-bearing border. One radius, one border width, used by
      every interactive control (toolbar buttons, timestamp pills, speaker
      chips, the swatch trigger, copy buttons, the seek thumb, sidebar file
      and speaker entries) - not a second value per control, because a
@@ -775,10 +777,13 @@ body {
    dropped it would stop reading as a control at all, not just as a lower
    tier.
 
-   Tier 1, primary (exactly one control: #export). Filled at rest, not
-   outlined - before this there was no filled tier anywhere, so the export
-   button carried the same visual weight as a display toggle despite being
-   the one action every session ends with. */
+   Tier 1, primary (two controls: #export, and #tour-start inside the help
+   panel - see .help-panel below). Filled at rest, not outlined - before
+   this there was no filled tier anywhere, so the export button carried the
+   same visual weight as a display toggle despite being the one action
+   every session ends with. #tour-start earns the same tier for the same
+   reason: inside the help panel it is the one action the panel exists to
+   lead toward, not a peer of the reference entries listed below it. */
 .tb-btn.primary {
   background: var(--accent);
   color: var(--accent-text);
@@ -1934,6 +1939,211 @@ html[data-kbd] .plain-body:focus {
 }
 .toast[hidden] { display: none; }
 .toast.show { opacity: 1; transform: translateY(0); }
+
+/* ---------------------------------------------------------------- help --- */
+
+/* The help panel: a centred overlay sheet over a scrim, not a popover in
+   the .spk-menu/.swatch-menu sense - it opens from the toolbar rather than
+   being anchored to one control, and it has to sit above literally
+   everything else on the page while it's open, including the sticky player
+   (z-index: 50) and the toast (z-index: 60): a status announcement arriving
+   while help is open must not paint over it, and the reverse (help painting
+   under the player) would make the panel look broken rather than merely
+   layered wrong. 70 is chosen only to clear those two - it is still well
+   inside the same stacking context as .toolbar's own z-index: 40, which is
+   what keeps this from disturbing that rule: a *sibling* with a higher
+   z-index doesn't touch how the toolbar sticks to the top of its own
+   scroll, it only decides paint order between the two when they'd
+   otherwise overlap.
+
+   Server-rendered hidden, not built by transcript.js from nothing - see
+   _render_help_html()'s own docstring in formatting.py. [hidden] governs
+   what this looks like once script clears it; it says nothing about
+   whether the markup exists without script, which it always does. */
+.help-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgb(0 0 0 / 0.55);
+}
+.help-panel[hidden] { display: none; }
+
+/* The sheet: flat --panel, the same opaque token the popovers use, not
+   rgba(var(--panel-rgb), var(--panel-opacity)) - a modal sitting on top of
+   its own scrim isn't "floating over the backdrop photo" the way
+   .source/.outline are (see --panel's own comment near the top of this
+   file, and .swatch-menu's, for the same flat-vs-translucent split drawn
+   for exactly this reason). Sized with min()/vh rather than a fixed
+   height, and independently scrollable, because the help list is long
+   enough on a short viewport (a phone in landscape, a laptop with the
+   window not maximised) to outgrow the screen - overflow-y: auto keeps the
+   close button and "start tour" reachable by scrolling the sheet, not the
+   whole page underneath the scrim. */
+.help-sheet {
+  width: min(34rem, 100%);
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  padding: 1.5rem 1.5rem 1.75rem;
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-block-end: 1rem;
+}
+.help-head h2 { margin: 0; font-size: 1.15rem; }
+
+/* Sits between the close button and the reference list below it - the one
+   action this panel actively leads toward, not itself a reference entry,
+   so it is not part of .help-list. See the "Tier 1" comment on
+   .tb-btn.primary above for why it shares that tier with #export. */
+#tour-start { margin-block-end: 1.25rem; }
+
+/* One row per control, icon then name then a one- or two-sentence
+   explanation - dt/dl/dd rather than a list of paragraphs, because this
+   genuinely is a set of terms (a control) each paired with its own
+   definition (what it does), which is exactly what a description list is
+   for. */
+.help-list { margin: 0; padding: 0; }
+.help-list dt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-start: 1rem;
+  font-weight: 600;
+}
+.help-list dt:first-child { margin-block-start: 0; }
+/* padding-inline-start, not -left: the page is dir="rtl", so "start" is the
+   physical right - indenting the description under the icon+name above it
+   (rather than under the icon alone) reads correctly in both directions
+   only through the logical property, never a hardcoded side. Sized to
+   roughly the icon's own width plus the dt's gap, so the text lines up
+   under the label, not under the glyph. */
+.help-list dd {
+  margin: 0.3rem 0 0;
+  padding-inline-start: 1.75rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+/* Same "more contrast, please" request .backdrop's own rule honours above -
+   here it thickens the sheet's load-bearing edge rather than removing
+   anything, since the scrim already reads as fully opaque intent regardless
+   of contrast mode and has nothing to simplify away. */
+@media (prefers-contrast: more) {
+  .help-sheet { border-width: 2px; }
+}
+
+/* ---------------------------------------------------------------- tour --- */
+
+/* The guided tour: three elements, built and torn down entirely by
+   transcript.js's startTour()/endTour() (there is no server-rendered
+   markup for any of this, unlike .help-panel above - see startTour()'s own
+   comment on why: it is inherently script-only, since which steps even
+   exist depends on which selectors this particular document's render
+   happens to contain).
+
+   .tour-scrim is the click-blocker, .tour-ring is the visible spotlight,
+   .tour-card is the caption. Split into two elements rather than one,
+   because they need opposite pointer-events: the scrim has to intercept
+   every click on the page underneath - INCLUDING a click squarely on the
+   control a step is describing, e.g. a .ts timestamp button, which is what
+   keeps the tour non-destructive (see startTour()'s comment: it must never
+   be able to start audio, open a menu, edit text, or flip a toggle it is
+   merely narrating) - while the ring must not intercept anything itself,
+   or a click meant for the scrim beneath it would land on the ring instead
+   and do nothing worse, but also nothing useful. z-index 80+, clearing
+   .help-panel's own 70 (a tour is started FROM inside that panel, which has
+   already closed itself by the time the tour's own overlay appears, but
+   the numbers still have to stay ordered correctly against it and against
+   .player/.toast beneath it - see .help-panel's own z-index comment for the
+   full stack). */
+.tour-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: transparent;
+}
+
+/* The spotlight: a small box positioned over the current step's target,
+   whose own box-shadow does the dimming. A spread of 9999px paints the
+   scrim colour across the rest of the viewport - the standard CSS
+   spotlight trick, and the reason this file never has to compute an
+   inverse mask or a four-rectangle cutout. pointer-events: none because the
+   ring is purely visual; .tour-scrim underneath (same stacking context,
+   lower z-index) is what actually catches the click - see the comment
+   above. Sized and positioned in transcript.js from the target's own
+   getBoundingClientRect() (physical top/left/width/height, not a logical
+   property - see positionDetachedMenu()'s comment on why a rect is
+   physical by nature), with a few pixels of padding so the ring reads as
+   "around the control", not "exactly its edge". */
+.tour-ring {
+  position: fixed;
+  z-index: 81;
+  pointer-events: none;
+  border-radius: calc(var(--radius) + 4px);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.6);
+}
+
+/* The caption card: same flat --panel surface as a popover (.swatch-menu,
+   .spk-menu above), not the translucent one .source/.outline use - a
+   step-by-step overlay reads as MORE raised than the page it is walking
+   through, the same reasoning those rules give for staying opaque.
+   Positioned by positionDetachedMenu() (transcript.js), the same function
+   .swatch-menu already used - generalised to accept any target element,
+   not only a <button>, plus a horizontal clamp neither original caller
+   ever needed (a tour target can be as wide as .file-bar or as tall and
+   off-centre as .outline; a popover's button trigger never is). See that
+   function's own comment for both changes. */
+.tour-card {
+  position: fixed;
+  z-index: 82;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
+}
+/* card.focus() (transcript.js's renderTourStep(), on every step change) is
+   what re-announces the new step to a screen reader, not a visible cue for
+   a sighted reader - the card's own border already reads as "this is the
+   active surface" the way .help-sheet's does, so a second focus ring drawn
+   on top of it would be redundant chrome, not a missing affordance. */
+.tour-card:focus { outline: none; }
+
+.tour-count { margin: 0 0 0.35rem; color: var(--muted); font-size: 0.8rem; }
+.tour-title { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.tour-body { margin: 0 0 1rem; color: var(--text); font-size: 0.92rem; line-height: 1.55; }
+
+.tour-actions { display: flex; align-items: center; gap: 0.5rem; }
+/* Skip reads as an escape hatch, not a peer of Back/Next - pushed to the
+   card's own inline-start edge with the step controls held together at
+   inline-end, the same "one action set apart from the rest" grouping
+   .help-head draws between the title and the close button, just built with
+   a flex auto-margin instead of justify-content: space-between (Back's own
+   [hidden] on step 1 would otherwise leave Next alone at the far edge with
+   a visible gap where Back used to be). */
+.tour-actions .tour-skip { margin-inline-end: auto; }
+
+@media (prefers-contrast: more) {
+  .tour-card { border-width: 2px; }
+  .tour-ring { outline-width: 3px; }
+}
 
 /* ------------------------------------------------------------ responsive --- */
 

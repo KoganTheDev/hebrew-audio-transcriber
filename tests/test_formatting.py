@@ -580,6 +580,128 @@ class TestEditableDocument:
         assert '<div id="toast" class="toast" role="status" aria-live="polite" hidden>' in out
 
 
+class TestHelpPanel:
+    """
+    The help panel: a server-rendered, initially-hidden overlay explaining
+    every toolbar control and reading-column affordance, plus #tour-start -
+    the hook a separate guided-tour feature binds to. See
+    _render_help_html()'s docstring in formatting.py.
+    """
+
+    def test_help_button_renders_with_label_and_aria_controls(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={"help": "Help"})
+        button = re.search(r'<button id="help".*?</button>', out, re.S)
+        assert button, "#help button not found"
+        assert 'aria-controls="help-panel"' in button.group(0)
+        assert 'aria-expanded="false"' in button.group(0)
+        assert "<span>Help</span>" in button.group(0)
+
+    def test_help_panel_renders_hidden(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert re.search(
+            r'<div id="help-panel" class="help-panel" role="dialog" '
+            r'aria-modal="true" aria-labelledby="help-title" hidden>',
+            out,
+        )
+
+    def test_tour_start_button_exists(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<button id="tour-start" class="tb-btn primary">' in out
+
+    def test_hebrew_ui_strings_reach_the_help_panel(self):
+        """
+        Same "the worker never guesses a language" contract every other
+        doc_ string already has (see test_ui_strings_are_carried_as_data_...
+        in TestDataPayload) - Hebrew supplied via ui_strings must actually
+        appear in the panel, not the English fallback.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={
+            "help": "עזרה",
+            "help_title": "עזרה",
+            "tour_start": "התחלת סיור מודרך",
+            "help_search_title": "חיפוש",
+        })
+        assert "<span>עזרה</span>" in out
+        assert '<h2 id="help-title">עזרה</h2>' in out
+        assert '<button id="tour-start" class="tb-btn primary">התחלת סיור מודרך</button>' in out
+        assert "חיפוש" in out
+
+    def test_help_panel_covers_every_documented_control(self):
+        """
+        Regression guard for silently dropping an entry - each of these
+        controls is real functionality (see the JS this panel documents),
+        not free-standing prose, so losing one from _render_help_html()'s
+        entries list should fail here rather than only be noticed by a
+        reader who goes looking for it.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        for icon in ("search", "flag", "theme", "save", "list", "plus", "play", "edit", "copy"):
+            assert f'<dt><svg class="icon" aria-hidden="true"><use href="#i-{icon}">' in out
+
+    def test_help_close_button_has_its_own_icon(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<button id="help-close" class="icon-btn"' in out
+        assert "#i-close" in out
+
+
+class TestDocStringsHaveBothLanguages:
+    """
+    formatting.py never imports gui.i18n (see the module docstring) - it can
+    only ever render whatever a caller hands it through ui_strings, with an
+    English fallback baked into the f-string itself (the `s()` helper). The
+    actual translations still have to exist somewhere, though, and this is
+    the one place that checks they do: every doc_ key STRINGS defines must
+    carry both an "en" and a real "he" value, not just an English one with
+    Hebrew silently falling back.
+    """
+
+    def test_formatting_module_never_imports_i18n(self):
+        """
+        The hard rule the help-panel feature has to honour like everything
+        else in formatting.py: speech_to_text/core/ runs in the worker
+        process and must never import gui.i18n (or PyQt5) - every string it
+        renders has to arrive through the strings dict, with an English
+        fallback baked into the call site (see _render_help_html()'s and
+        _render_toolbar_html()'s own s() helpers).
+
+        Checked via the AST's actual import nodes, not a substring search on
+        the source text - formatting.py's own module docstring legitimately
+        *mentions* "gui.i18n" in prose (explaining why it has no access to
+        it), which a plain "not in source" check would misfire on.
+        """
+        import ast
+        import inspect
+
+        import speech_to_text.core.formatting as formatting_module
+
+        tree = ast.parse(inspect.getsource(formatting_module))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+
+        assert not any(name == "PyQt5" or name.startswith("PyQt5.") for name in imported)
+        assert not any(
+            name.endswith("gui.i18n") or ".gui.i18n" in name or name == "i18n"
+            for name in imported
+        )
+
+    def test_every_doc_key_has_english_and_hebrew(self):
+        from speech_to_text.gui.i18n import STRINGS
+
+        doc_keys = [key for key in STRINGS if key.startswith("doc_help") or key in (
+            "doc_help", "doc_tour_start",
+        )]
+        assert doc_keys, "expected at least the new help-panel doc_ keys to exist"
+        for key in doc_keys:
+            entry = STRINGS[key]
+            assert entry.get("en"), f"{key} missing an 'en' value"
+            assert entry.get("he"), f"{key} missing a 'he' value"
+            assert entry["he"] != entry["en"], f"{key}'s Hebrew value is not translated"
+
+
 class TestInlinedAssets:
 
     def test_stylesheet_and_script_are_inlined(self):
@@ -936,3 +1058,263 @@ class TestKeyboardModalityFlag:
         js = _asset("transcript.js")
         assert "addEventListener('pointerdown'" in js
         assert "removeAttribute('data-kbd')" in js
+
+
+class TestHelpPanelWiring:
+    """
+    _render_help_html() (checked in TestHelpPanel above) only ever produces
+    inert markup - #help does nothing until transcript.js's bindHelp() binds
+    it. These check that binding, not the markup.
+    """
+
+    def test_help_button_opens_and_closes_the_panel(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "function bindHelp()" in js
+        assert re.search(r"btn\.addEventListener\('click',\s*openHelp\)", js)
+        assert "panel.hidden = false" in js
+        assert "panel.hidden = true" in js
+        assert "setAttribute('aria-expanded', 'true')" in js
+        assert "setAttribute('aria-expanded', 'false')" in js
+
+    def test_escape_and_scrim_click_close_the_panel(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        # e.target === panel: a click on .help-panel itself (the scrim), not
+        # on .help-sheet or anything inside it - see bindHelp()'s own
+        # comment for why that equality check is exactly right here.
+        assert "e.target === panel" in js
+        bind_help = js[js.index("function bindHelp()"):js.index("function bindHelp()") + 3000]
+        assert "e.key === 'Escape'" in bind_help
+
+    def test_focus_trap_queries_focusable_elements_live(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "function focusableIn(" in js
+        assert "function trapTabKey(" in js
+        assert 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])' in js
+
+    def test_tour_start_closes_help_and_launches_the_tour(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert re.search(
+            r"tourBtn\.addEventListener\('click',\s*function\s*\(\)\s*\{\s*"
+            r"closeHelp\(\);\s*startTour\(\);",
+            js,
+        ), "#tour-start must close the help panel and call startTour()"
+
+
+class TestGuidedTour:
+    """
+    The guided tour transcript.js builds when #tour-start is clicked - see
+    startTour()/TOUR_STEPS/endTour() in transcript.js. No server-rendered
+    markup backs any of this (unlike the help panel): the tour is inherently
+    script-only, since which steps exist depends on which selectors this
+    particular document's render actually contains.
+    """
+
+    # Every selector a step declares, in step order - kept here as a plain
+    # list (not scraped from TOUR_STEPS, which is JS) so a step silently
+    # losing its target selector, or the step order changing without this
+    # test being updated, both fail loudly.
+    STEP_SELECTORS = [
+        ".file-bar",
+        ".outline",
+        ".tb-search",
+        ".speakers",
+        ".turn .ts",
+        ".turn .body[contenteditable]",
+        "#toggle-flags",
+        "#export",
+    ]
+
+    def test_every_step_selector_is_referenced(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        for selector in self.STEP_SELECTORS:
+            assert selector in js, f"tour step selector {selector!r} not found in transcript.js"
+
+    def test_speaker_step_prefers_the_active_strip(self):
+        """
+        Regression guard for the bug _render_outline_html()'s docstring and
+        bindOutline() both warn about: a document has one .speakers strip
+        per file, only one of which is .active (visible) at a time once
+        .outline.js-ready is present. A plain querySelector('.speakers')
+        always lands on file 0's strip, which is wrong once the reader has
+        scrolled to a later file before opening help.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "document.querySelector('.speakers.active')" in js
+
+    def test_steps_are_resolved_live_and_filtered_to_what_exists(self):
+        """
+        No hardcoded step count anywhere: resolveTourSteps() has to build
+        its list from which selectors actually match THIS render, and the
+        n/total counter has to read off that resolved list's own length,
+        not off TOUR_STEPS.length - a document missing an outline, a
+        speaker strip, or timestamps must not leave the tour counting a
+        step it will never show.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "function resolveTourSteps()" in js
+        # The counter reads off the resolved, filtered list's own length,
+        # not off the full step catalogue (TOUR_STEPS.length would be wrong
+        # the moment any one selector fails to match this render).
+        assert "var n = tour.steps.length;" in js
+
+    def test_spotlight_reuses_positioned_detached_menu_for_the_card(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "positionDetachedMenu(tour.chrome.card, entry.el)" in js
+        # The ring's box, unlike the card's, is computed directly rather
+        # than through positionDetachedMenu() - it needs its own width and
+        # height (the popover-anchoring helper only ever sets top/left), so
+        # this checks the ring is sized from the same rect the card is
+        # anchored to, not from some second, independently-read measurement
+        # that could drift out of sync with it.
+        assert "var rect = entry.el.getBoundingClientRect()" in js
+
+    def test_tour_never_touches_state_or_saves(self):
+        """
+        The hard non-destructive requirement: after a full tour, the
+        document must still read as unedited. Checked structurally here
+        (the tour's own code never mentions `state` or calls save()) as a
+        cheap, always-on guard alongside the manual browser check in
+        docs/transcript-manual-checks.md, which is the only way to verify
+        the *effective* behaviour (hasLocalChanges() still false, status
+        still "Saved") end to end.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        start = js.index("function resolveTourSteps()")
+        end = js.index("// ---------------------------------------------------------------- layout")
+        tour_code = js[start:end]
+        assert "state." not in tour_code
+        # save() as an actual call, not the word appearing in a comment
+        # explaining that the tour must never make one (see the comment
+        # directly above startTour() in transcript.js).
+        assert "save();" not in tour_code
+
+    def test_step_counter_is_bidi_isolated(self):
+        """
+        Caught in a real browser, not by a test: the card rendered step one
+        of eight as "8 / 1".
+
+        Same failure _render_file_bar_html() already guards against, for the
+        same reason - "1 / 8" is a neutral "/" sitting between two LTR digit
+        runs inside an RTL card, so the slash resolves RTL and swaps which
+        number reads as the position and which reads as the total. The
+        isolate is what pins their order; dir="ltr" alone does not, because
+        the element is a flow child of an RTL parent.
+        """
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "count.setAttribute('dir', 'ltr');" in js
+        start = js.index("chrome.count.textContent")
+        assignment = js[start:start + 260]
+        assert "PLAIN_LRI" in assignment
+        assert "PLAIN_PDI" in assignment
+
+    def test_escape_ends_the_tour_and_returns_focus_to_help(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        start = js.index("function startTour()")
+        keydown_block = js[start:start + 2000]
+        assert "e.key === 'Escape'" in keydown_block
+        assert "endTour();" in keydown_block
+        assert "document.getElementById('help')" in js
+
+    def test_cleanup_removes_every_created_element_and_listener(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        start = js.index("function endTour()")
+        end_tour = js[start:start + 1200]
+        assert "chrome.scrim.remove()" in end_tour
+        assert "chrome.ring.remove()" in end_tour
+        assert "chrome.card.remove()" in end_tour
+        assert "removeEventListener('keydown', tour.keydownHandler, true)" in end_tour
+        assert "removeEventListener('resize', tour.moveHandler)" in end_tour
+        assert "removeEventListener('scroll', tour.moveHandler, true)" in end_tour
+
+    def test_recompute_is_scheduled_on_resize_and_scroll(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "function scheduleTourUpdate()" in js
+        assert "window.requestAnimationFrame(" in js
+        assert "window.addEventListener('resize', tour.moveHandler)" in js
+        assert "document.addEventListener('scroll', tour.moveHandler, true)" in js
+
+    def test_target_is_scrolled_into_view_honouring_reduced_motion(self):
+        from speech_to_text.core.formatting import _asset
+
+        js = _asset("transcript.js")
+        assert "entry.el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })" in js
+
+
+class TestTourStrings:
+    """
+    Every doc_tour_* key STRINGS defines has to exist in both languages -
+    same contract TestDocStringsHaveBothLanguages already checks for
+    doc_help_*, extended here to cover the tour's own keys, which that
+    test's key filter deliberately does not match.
+    """
+
+    def test_every_tour_key_has_english_and_hebrew(self):
+        from speech_to_text.gui.i18n import STRINGS
+
+        # doc_tour_step_position (like the pre-existing doc_file_position it
+        # mirrors) is a bare "{i} / {n}" placeholder template with nothing
+        # language-specific to translate - legitimately identical in both
+        # languages, unlike every other key here.
+        untranslated_ok = {"doc_tour_step_position"}
+
+        doc_keys = [key for key in STRINGS if key.startswith("doc_tour")]
+        assert doc_keys, "expected the tour's doc_tour_* keys to exist"
+        for key in doc_keys:
+            entry = STRINGS[key]
+            assert entry.get("en"), f"{key} missing an 'en' value"
+            assert entry.get("he"), f"{key} missing a 'he' value"
+            if key not in untranslated_ok:
+                assert entry["he"] != entry["en"], f"{key}'s Hebrew value is not translated"
+
+    def test_step_and_control_keys_all_exist(self):
+        from speech_to_text.gui.i18n import STRINGS
+
+        required = [
+            "doc_tour_start", "doc_tour_next", "doc_tour_back", "doc_tour_skip",
+            "doc_tour_step_position",
+            "doc_tour_file_title", "doc_tour_file_body",
+            "doc_tour_outline_title", "doc_tour_outline_body",
+            "doc_tour_search_title", "doc_tour_search_body",
+            "doc_tour_speakers_title", "doc_tour_speakers_body",
+            "doc_tour_playback_title", "doc_tour_playback_body",
+            "doc_tour_editing_title", "doc_tour_editing_body",
+            "doc_tour_flags_title", "doc_tour_flags_body",
+            "doc_tour_export_title", "doc_tour_export_body",
+        ]
+        for key in required:
+            assert key in STRINGS, f"{key} missing from STRINGS"
+
+    def test_document_strings_carries_tour_keys_stripped_of_the_doc_prefix(self):
+        from speech_to_text.gui.i18n import document_strings, set_language
+
+        set_language("en")
+        strings = document_strings()
+        assert strings.get("tour_next") == "Next"
+        assert strings.get("tour_step_position") == "{i} / {n}"
+        assert "tour_file_title" in strings

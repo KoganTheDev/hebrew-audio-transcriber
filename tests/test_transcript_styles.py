@@ -576,6 +576,81 @@ def test_focus_ring_gated_behind_keyboard_flag():
     assert "#search:focus-visible { outline: none; }" in source
 
 
+def test_tour_classes_exist_and_stack_above_the_help_panel():
+    """
+    The guided tour's three overlay elements (.tour-scrim, .tour-ring,
+    .tour-card) are built entirely by transcript.js - there is no
+    server-rendered markup to check the way there is for .help-panel - so
+    this is the CSS side's only guard: the classes exist, and their z-index
+    clears .help-panel's own 70 (the tour is launched FROM inside that
+    panel - see .help-panel's own z-index comment for the rest of the
+    stack this has to stay ordered against).
+    """
+    source = CSS.read_text(encoding="utf-8")
+    scrim = _rule_block(source, ".tour-scrim")
+    ring = _rule_block(source, ".tour-ring")
+    card = _rule_block(source, ".tour-card")
+
+    assert int(_property(scrim, "z-index")) > 70
+    assert int(_property(ring, "z-index")) > int(_property(scrim, "z-index"))
+    assert int(_property(card, "z-index")) > int(_property(ring, "z-index"))
+
+
+def test_tour_scrim_lets_the_ring_pass_clicks_through_to_it():
+    """
+    Non-destructive is the hard requirement on this feature (see
+    docs/transcript-manual-checks.md): the scrim, not the ring, has to be
+    what actually intercepts a click on the page underneath - including a
+    click squarely on the very control a step is describing (a .ts
+    timestamp button, say), which is what stops the tour from being able to
+    start audio, open a menu, or flip a toggle it is merely narrating. That
+    only works if the ring itself is transparent to clicks, letting them
+    fall through to the scrim beneath it rather than swallowing them itself
+    with nothing behind that reacts.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    ring = _rule_block(source, ".tour-ring")
+    assert _property(ring, "pointer-events") == "none"
+
+
+def test_tour_card_reuses_the_popover_surface_not_the_translucent_panel():
+    """
+    Same "a floating overlay reads as MORE raised than the page it sits
+    over" reasoning test_panel_token_is_actually_used above checks for
+    .swatch-menu/.spk-menu - the tour's caption card is the same kind of
+    surface (built by script, detached from the document's normal flow),
+    so it has to stay on the flat --panel token too, not the translucent
+    rgba(var(--panel-rgb), var(--panel-opacity)) .source/.outline use.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    card = _rule_block(source, ".tour-card")
+    assert _property(card, "background") == "var(--panel)"
+
+
+def test_tour_honours_prefers_contrast_more():
+    source = CSS.read_text(encoding="utf-8")
+    # There are two prefers-contrast blocks in the file; search from the
+    # tour section onward for its own.
+    tour_start = source.index(".tour-scrim")
+    tour_source = source[tour_start:]
+    assert re.search(r"@media \(prefers-contrast: more\)\s*\{\s*\.tour-card", tour_source), (
+        "expected a prefers-contrast: more block covering .tour-card/.tour-ring"
+    )
+
+
+def test_tour_skip_is_separated_from_back_and_next():
+    """
+    Skip is an escape hatch, not a peer of Back/Next - see .tour-actions'
+    own comment for why an auto margin (rather than
+    justify-content: space-between, which would leave a visible gap where
+    Back used to sit once [hidden] removes it on step 1) is what keeps it
+    visually apart from the step controls.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    block = _rule_block(source, ".tour-actions .tour-skip")
+    assert _property(block, "margin-inline-end") == "auto"
+
+
 def test_hover_dim_is_phase_8_value():
     """
     Phase 8: non-focused cards dim to 0.5 (from the original 0.72) while a

@@ -578,6 +578,7 @@ def render_html(
         "</div>",
         _render_player_html(strings),
         _render_toast_html(),
+        _render_help_html(strings),
         '<script type="application/json" id="transcript-data">',
         _json_payload(payload),
         "</script>",
@@ -626,6 +627,23 @@ _ICON_DEFS: Dict[str, str] = {
     "pause": '<path d="M9 5v14"/><path d="M15 5v14"/>',
     "plus": '<path d="M12 5v14"/><path d="M5 12h14"/>',
     "list": '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
+    # Circle + question mark, for the toolbar's #help button and its panel's
+    # own heading. The dot under the curve is a zero-length <path> rather
+    # than a filled <circle>: a stroked line with no length still paints,
+    # as a dot at stroke-width, because .icon sets stroke-linecap: round -
+    # so the dot stays purely stroked like every other glyph in this sprite
+    # instead of being the one shape here with an actual fill.
+    "help": '<circle cx="12" cy="12" r="9"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 2.5-3 4.5"/>'
+            '<path d="M12 17.5v.01"/>',
+    # The help panel's own close control. No glyph like it existed anywhere
+    # else in the sprite (the panel is the first modal-shaped thing this
+    # page has ever needed to dismiss), so it's new here rather than reused.
+    "close": '<path d="M6 6l12 12"/><path d="M18 6L6 18"/>',
+    # A pencil, for the help panel's "editing the transcript" entry - the one
+    # help-list row with no existing toolbar icon to point at, since editing
+    # a turn's text has never needed a button of its own (see .body's
+    # contenteditable in _render_turn_html()).
+    "edit": '<path d="M4 20h4L18.5 9.5a2.121 2.121 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/>',
 }
 
 
@@ -702,6 +720,16 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         f'<span>{s("save_copy", "Save a copy")}</span></button>',
         f'<span id="status" class="status" role="status"'
         f' aria-live="polite">{s("status_saved", "Saved")}</span>',
+        # Last in the group, not first - it opens a panel that explains every
+        # OTHER control in this row, so it reads as "more about the above"
+        # rather than as the first thing a reader's eye lands on. Plain
+        # .tb-btn, not .primary: help is not the action this session builds
+        # toward the way #export is (see the "Tier 1" comment on
+        # .tb-btn.primary in transcript.css for what IS in that tier and
+        # why #help isn't one of them).
+        f'<button id="help" class="tb-btn" aria-expanded="false"'
+        f' aria-controls="help-panel">{_icon("help")}'
+        f'<span>{s("help", "Help")}</span></button>',
         "</div>",
         "</div>",
         "</header>",
@@ -759,6 +787,106 @@ def _render_toast_html() -> str:
     doing, unlike an alert() or a moved focus target would.
     """
     return '<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>'
+
+
+def _render_help_html(strings: Dict[str, str]) -> str:
+    """
+    What every toolbar control and reading-column affordance actually does,
+    plus the one hook (#tour-start) a separate guided-tour feature binds to.
+
+    Server-rendered and hidden, never built by transcript.js from nothing -
+    the same "readable with JavaScript disabled" contract the sprite has
+    (see the comment above _ICON_DEFS): the panel's own content has to exist
+    in the markup whether or not the script that reveals it ever runs.
+    [hidden] is what gates it from a sighted reader and from the
+    accessibility tree alike, exactly like .toast and .player above - it is
+    never opened without JavaScript, but it is always *present* without it,
+    which is the property that matters here.
+
+    #tour-start renders unconditionally even though nothing in this module
+    wires it up - a guided-tour feature elsewhere binds its click handler in
+    transcript.js. This module cannot depend on that: speech_to_text/core/
+    never imports anything the GUI or the page's own script owns (see the
+    module docstring), so the only contract between the two is this button's
+    id existing in the markup.
+    """
+    def s(key: str, fallback: str) -> str:
+        return html.escape(strings.get(key, fallback))
+
+    # (icon name, title key/fallback, description key/fallback) - one row
+    # per control this page has, in the same top-to-bottom order those
+    # controls appear on the page itself (toolbar left-to-right, then the
+    # sidebar, then the reading column, then the plain-text panel at the
+    # bottom), so the panel reads as a walkthrough of the page rather than
+    # an alphabetised reference.
+    entries = [
+        ("search", s("help_search_title", "Search"),
+         s("help_search_desc",
+           "Type to search every turn in this recording. The chevrons - or "
+           "Enter and Shift+Enter - jump to the next or previous match.")),
+        ("flag", s("help_flags_title", "Show uncertain words"),
+         s("help_flags_desc",
+           "Highlights the words the model itself was least sure about, "
+           "with a tinted, dotted underline - worth a second look before "
+           "you trust them.")),
+        ("theme", s("help_theme_title", "Light / dark mode"),
+         s("help_theme_desc",
+           "Switches this page's colour scheme and remembers your choice "
+           "in this browser, independent of your system's own setting.")),
+        ("save", s("help_save_title", "Save a copy"),
+         s("help_save_desc",
+           "Downloads a fresh copy of this page with every edit baked in. "
+           "Opened from a file, the page can only save your edits to this "
+           "browser automatically - this is what actually writes them to "
+           "a file on disk.")),
+        ("list", s("help_outline_title", "Files and speakers"),
+         s("help_outline_desc",
+           "Lists every file in this batch and, for each one, the "
+           "speakers detected in it. Click a filename to jump straight to "
+           "it.")),
+        ("plus", s("help_speakers_title", "Speaker names and colours"),
+         s("help_speakers_desc",
+           "Rename a speaker by typing over their name in this list, and "
+           "recolour them from the swatch beside it. To move a single turn "
+           "to a different speaker, click that speaker's name on the turn "
+           "itself.")),
+        ("play", s("help_playback_title", "Play a moment"),
+         s("help_playback_desc",
+           "Click a timestamp to play the recording from that turn; "
+           "playback stops again at the end of the turn it started from.")),
+        ("edit", s("help_editing_title", "Editing the transcript"),
+         s("help_editing_desc",
+           "Click into any turn's text to correct it directly, the same "
+           "way you would edit a document. Changes save automatically to "
+           "this browser as you type - use \"Save a copy\" to write "
+           "them into a file you can keep or share.")),
+        ("copy", s("help_plain_title", "Plain text"),
+         s("help_plain_desc",
+           "A copy-friendly version of the whole recording at the bottom "
+           "of the page, with its own toggles for timestamps and speaker "
+           "names - edit it there directly, or copy it out with one "
+           "click.")),
+    ]
+    items = "".join(
+        f"<dt>{_icon(icon)}<span>{title}</span></dt><dd>{desc}</dd>"
+        for icon, title, desc in entries
+    )
+
+    return (
+        '<div id="help-panel" class="help-panel" role="dialog" aria-modal="true"'
+        ' aria-labelledby="help-title" hidden>'
+        '<div class="help-sheet">'
+        '<div class="help-head">'
+        f'<h2 id="help-title">{s("help_title", "Help")}</h2>'
+        f'<button id="help-close" class="icon-btn"'
+        f' aria-label="{s("help_close", "Close help")}">{_icon("close")}</button>'
+        "</div>"
+        f'<button id="tour-start" class="tb-btn primary">'
+        f'{s("tour_start", "Start guided tour")}</button>'
+        f'<dl class="help-list">{items}</dl>'
+        "</div>"
+        "</div>"
+    )
 
 
 def _render_file_bar_html(source_name: str, index: int, total: int, strings: Dict[str, str]) -> str:

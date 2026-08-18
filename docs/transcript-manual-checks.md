@@ -277,6 +277,95 @@ expensive step in the pipeline and a crash near the end of a long batch used to 
 - [ ] Disconnect from the network entirely and open the file. Everything works, nothing is missing,
       and the browser's network tab shows no requests.
 
+## 12. Help panel and guided tour
+
+`#help` and the tour it launches are the one part of the page with no server-rendered fallback for
+the tour's own overlay (`.tour-scrim`/`.tour-ring`/`.tour-card`) - the whole feature is built by
+`bindHelp()`/`startTour()` in `transcript.js`. The help panel's markup and copy *are* server-rendered
+(see `_render_help_html()`), but do nothing until script binds them - same "readable without
+JavaScript, but the interaction is scripted" contract as the rest of this page.
+
+### Help panel
+
+- [ ] Click the toolbar's "עזרה" button. The panel opens over a dim scrim, `aria-expanded` on the
+      button flips to `"true"`, and focus lands on the panel's own close button (not left on the
+      toolbar button, and not on the panel's first list entry).
+- [ ] Every control the toolbar and reading column actually have is listed, each with a plain
+      explanation - nothing missing, nothing describing a control that doesn't exist.
+- [ ] Click the close button (✕). The panel closes, `aria-expanded` returns to `"false"`, and focus
+      returns to the "עזרה" button - not lost to `<body>`.
+- [ ] Reopen the panel and click on the dim scrim itself, well outside the white sheet. It closes the
+      same way. Click *inside* the sheet, anywhere that isn't a button - it must **not** close.
+- [ ] Reopen the panel and press **Escape**. It closes, same focus-return behaviour as the close
+      button.
+- [ ] Reopen the panel and press **Tab** repeatedly. Focus cycles only through the panel's own
+      controls (close button, "התחלת סיור מודרך", nothing else is focusable inside it) - it must
+      never leave the panel into the toolbar or the page behind it. **Shift+Tab** from the first
+      control wraps to the last, not out of the panel.
+- [ ] Resize the window short enough that the help list overflows. The sheet itself scrolls
+      internally; the page behind the scrim does not move.
+
+### Guided tour
+
+- [ ] With a multi-file batch that has timestamps and detected speakers, open help and click
+      "התחלת סיור מודרך". The help panel closes, and the tour's first step (the sticky file bar)
+      opens immediately - no second click needed.
+- [ ] **Step through with Next.** Each step spotlights a different real control (file bar → sidebar →
+      search → speaker roster → a timestamp → a turn's text → "הצגת מילים לא ודאיות" → "שמירת
+      עותק"), scrolling it into view and dimming everything else. The counter reads "n / total" and
+      the total matches however many of those controls this particular document actually has - not a
+      hardcoded 8.
+- [ ] **Regenerate a document that omits something** - a single file (no `.outline`), no detected
+      speakers (no `.speakers` strip), or `timestamps=False` (no `.ts` buttons) - and start the tour
+      again. The missing step is silently absent; the counter's total shrinks to match, and nothing
+      errors or shows a blank spotlight.
+- [ ] Click **Back** on any step after the first. It returns to the previous step's spotlight. Back
+      is hidden entirely on the first step.
+- [ ] Click **Skip** partway through. The tour ends immediately (not just "jump to the last step"),
+      and focus returns to the "עזרה" toolbar button.
+- [ ] Start the tour again and press **Escape** mid-tour. Same clean end as Skip.
+- [ ] Finish the tour normally (Next through the last step, whose button reads "סיום" rather than
+      "הבא"). Same clean end, focus back on "עזרה".
+- [ ] **Resize the window while a step is showing.** The spotlight ring and the caption card both
+      re-follow the target's new position rather than staying put or drifting off it.
+- [ ] **Scroll the page while a step is showing** (drag the scrollbar, or spin the wheel) rather than
+      letting the tour's own `scrollIntoView` do it. Same result - the ring tracks the target.
+- [ ] **The non-destructive check, the one that matters most.** Open a freshly generated document
+      (reload from disk, not a tab you have already edited in), confirm the status pill reads
+      "נשמר", then run the entire tour start to finish - every step, Next all the way through,
+      including the two steps that spotlight a timestamp and a turn's editable text. Afterwards:
+      - [ ] The status pill still reads **"נשמר"**, not "שומר בדפדפן" - nothing was saved.
+      - [ ] No player appeared and no audio played, even though one step points directly at a
+            timestamp button.
+      - [ ] No text changed anywhere on the page, even though one step points directly at an
+            editable turn.
+      - [ ] No speaker menu or colour popover is left open, and no speaker was renamed or
+            recoloured.
+      - [ ] "הצגת מילים לא ודאיות" is still off (`aria-pressed="false"`) even though a step
+            explains what it does.
+      - [ ] Reload the page. There is nothing to restore - the tour left no trace in localStorage.
+- [ ] **Focus trap.** During any step, press Tab repeatedly. Focus cycles only through the caption
+      card's own Skip/Back/Next buttons (Back excluded when hidden), never escaping to the dimmed
+      page behind the scrim.
+- [ ] **Click something on the dimmed page** during a step - including a click squarely on the very
+      control the current step is pointing at (a timestamp, a turn's text, the flags toggle). Nothing
+      happens: the scrim absorbs the click before it reaches the page.
+- [ ] **RTL.** The caption card sits sensibly beside or below its target with the whole layout still
+      right-to-left - button order (Skip / Back / Next) and text alignment read naturally, not
+      mirrored oddly or overflowing the viewport's edge for a wide target like the file bar or the
+      sidebar.
+- [ ] **Dark mode.** Toggle the theme, then run the tour. The scrim, ring outline and caption card are
+      all legible against the dark palette - no washed-out ring, no unreadable caption text.
+- [ ] **`prefers-contrast: more`.** The caption card and ring both gain a visibly thicker edge, the
+      same "more contrast, please" treatment `.help-sheet` gets.
+- [ ] **`prefers-reduced-motion: reduce`.** Step through the tour. The spotlight and card reposition
+      instantly with each Next/Back - no sliding or fading - and `scrollIntoView` jumps rather than
+      smooth-scrolling to each target.
+- [ ] **Start the tour, skip it, then start it again.** No leftover scrim/ring/card from the first run
+      double-painted under the second, and stepping through the second run works exactly like the
+      first (confirms cleanup actually removed every element and listener, not just visually hid
+      them).
+
 ---
 
 ## Known limitations, deliberately
