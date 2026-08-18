@@ -658,35 +658,60 @@ class TestDocStringsHaveBothLanguages:
     def test_formatting_module_never_imports_i18n(self):
         """
         The hard rule the help-panel feature has to honour like everything
-        else in formatting.py: speech_to_text/core/ runs in the worker
-        process and must never import gui.i18n (or PyQt5) - every string it
-        renders has to arrive through the strings dict, with an English
-        fallback baked into the call site (see _render_help_html()'s and
+        else in formatting/: speech_to_text/core/ runs in the worker process
+        and must never import gui.i18n (or PyQt5) - every string it renders
+        has to arrive through the strings dict, with an English fallback
+        baked into the call site (see _render_help_html()'s and
         _render_toolbar_html()'s own s() helpers).
 
         Checked via the AST's actual import nodes, not a substring search on
-        the source text - formatting.py's own module docstring legitimately
-        *mentions* "gui.i18n" in prose (explaining why it has no access to
-        it), which a plain "not in source" check would misfire on.
+        the source text - formatting/__init__.py's own module docstring
+        legitimately *mentions* "gui.i18n" in prose (explaining why it has no
+        access to it), which a plain "not in source" check would misfire on.
+
+        formatting.py used to be a single module, so this used to just parse
+        that one file. Now it's a package of six - timecode.py, turns.py,
+        assets.py, chrome.py, document.py and __init__.py - and the rule has
+        to hold for every one of them individually: a single get-the-source
+        call on the package object only ever returns __init__.py's own
+        source, so checking just that would silently stop covering the other
+        five modules the day this split happened, exactly the kind of gap
+        that defeats the point of a guard like this.
         """
         import ast
+        import importlib
         import inspect
+        import pkgutil
 
-        import speech_to_text.core.formatting as formatting_module
+        import speech_to_text.core.formatting as formatting_package
 
-        tree = ast.parse(inspect.getsource(formatting_module))
-        imported = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                imported.add(node.module)
+        # The package object itself first, then its submodules. iter_modules()
+        # yields only the latter, so leaving it out would quietly exempt
+        # __init__.py - the module that holds render_html, and the single
+        # largest one here - from the very rule this test exists to enforce.
+        # That is the same failure mode the docstring above describes, one
+        # level up.
+        modules = [formatting_package] + [
+            importlib.import_module(f"{formatting_package.__name__}.{info.name}")
+            for info in pkgutil.iter_modules(formatting_package.__path__)
+        ]
 
-        assert not any(name == "PyQt5" or name.startswith("PyQt5.") for name in imported)
-        assert not any(
-            name.endswith("gui.i18n") or ".gui.i18n" in name or name == "i18n"
-            for name in imported
-        )
+        for module in modules:
+            tree = ast.parse(inspect.getsource(module))
+            imported = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module)
+
+            assert not any(
+                name == "PyQt5" or name.startswith("PyQt5.") for name in imported
+            ), f"{module.__name__} imports PyQt5"
+            assert not any(
+                name.endswith("gui.i18n") or ".gui.i18n" in name or name == "i18n"
+                for name in imported
+            ), f"{module.__name__} imports gui.i18n"
 
     def test_every_doc_key_has_english_and_hebrew(self):
         from speech_to_text.gui.i18n import STRINGS
@@ -745,8 +770,15 @@ class TestVistaBackdrop:
     def test_missing_vistas_directory_renders_cleanly_with_no_backdrop(self, monkeypatch, tmp_path):
         import speech_to_text.core.formatting as formatting
 
+        # Patched on formatting.assets, not on the formatting package itself:
+        # _vista_names() is defined in formatting/assets.py and reads
+        # _VISTAS_DIR from THAT module's own globals (see assets.py's module
+        # docstring). Patching the re-exported formatting._VISTAS_DIR name
+        # would only rebind the package's alias, leaving the global the
+        # function actually closes over untouched - the patch would silently
+        # do nothing and this test would pass for the wrong reason.
         formatting._vista_names.cache_clear()
-        monkeypatch.setattr(formatting, "_VISTAS_DIR", tmp_path / "does-not-exist")
+        monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", tmp_path / "does-not-exist")
         try:
             out = render_html([doc("a.wav", [seg(0, 1)])])
             assert 'class="backdrop"' not in out
@@ -811,7 +843,9 @@ class TestVistaBackdrop:
         (vistas_dir / "vista-01-portrait.webp").write_bytes(b"portrait-one")
         (vistas_dir / "vista-02.webp").write_bytes(b"landscape-two")
 
-        monkeypatch.setattr(formatting, "_VISTAS_DIR", vistas_dir)
+        # See test_missing_vistas_directory_renders_cleanly_with_no_backdrop
+        # above for why this patches formatting.assets, not formatting.
+        monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", vistas_dir)
         formatting._vista_names.cache_clear()
         try:
             names = formatting._vista_names()
@@ -831,7 +865,11 @@ class TestVistaBackdrop:
         that test never reads a photo's bytes because it has zero vistas at
         all, but this one pins a real filename and needs _asset_bytes() -
         which reads through _ASSETS, not _VISTAS_DIR - to see the same fake,
-        portrait-less file the name lookup does.
+        portrait-less file the name lookup does. Both are patched on
+        formatting.assets, the module that actually defines and reads them -
+        see test_missing_vistas_directory_renders_cleanly_with_no_backdrop's
+        comment for why patching the formatting package's re-exported names
+        would not do anything.
         """
         import speech_to_text.core.formatting as formatting
 
@@ -843,7 +881,7 @@ class TestVistaBackdrop:
         # text half, _asset() - unrelated to the vista byte lookup this test
         # is about), so those two have to exist under the fake root too, or
         # the render fails before it ever gets to the backdrop.
-        real_assets = formatting._ASSETS
+        real_assets = formatting.assets._ASSETS
         (assets_dir / "transcript.css").write_text(
             (real_assets / "transcript.css").read_text(encoding="utf-8"), encoding="utf-8",
         )
@@ -851,8 +889,8 @@ class TestVistaBackdrop:
             (real_assets / "transcript.js").read_text(encoding="utf-8"), encoding="utf-8",
         )
 
-        monkeypatch.setattr(formatting, "_ASSETS", assets_dir)
-        monkeypatch.setattr(formatting, "_VISTAS_DIR", vistas_dir)
+        monkeypatch.setattr(formatting.assets, "_ASSETS", assets_dir)
+        monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", vistas_dir)
         formatting._vista_names.cache_clear()
         formatting._asset_bytes.cache_clear()
         formatting._asset.cache_clear()
