@@ -16,6 +16,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from speech_to_text import config
 from speech_to_text.core.calibration import run_calibration_process
 from speech_to_text.core.options import TranscriptionOptions
+from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
 from speech_to_text.core.worker import run_transcription_process
 from speech_to_text.gui.i18n import document_strings, t
 
@@ -85,8 +86,13 @@ class TranscriptionThread(QThread):
         """Launch the worker process and relay its progress/result as signals."""
         logger.info(f"TranscriptionThread started")
         try:
-            # Kept below run_transcription_process's own first emission (2%)
-            # so the bar only ever moves forward - see its phase breakdown.
+            # Kept below run_transcription_process's own first emission
+            # (BATCH_INIT_PERCENT, see core/progress_scale.py) so the bar
+            # only ever moves forward - see that module's phase breakdown.
+            # Not expressed as BATCH_INIT_PERCENT - 1: nothing else derives
+            # from this number, it only has to be smaller, and a bare 1 says
+            # "before the worker process has said anything at all" more
+            # plainly than a formula would.
             self.progress.emit("w_starting_thread", {}, 1)
             output_file = self._get_output_path()
 
@@ -160,8 +166,9 @@ class TranscriptionThread(QThread):
         core.worker._RetryStatusLogHandler) only describe background
         activity - e.g. faster-whisper retrying a hard-to-decode segment at
         a higher temperature - without a known percentage yet, so they're
-        emitted with percent=-1 as a sentinel meaning "update the status
-        text, but don't move the bar" (see TranscriptionStep.update_progress).
+        emitted with percent=STATUS_ONLY_PERCENT as a sentinel meaning
+        "update the status text, but don't move the bar" (see
+        TranscriptionStep.update_progress).
 
         This thread only relays (key, params) pairs; it never renders text.
         """
@@ -170,7 +177,7 @@ class TranscriptionThread(QThread):
             self.progress.emit(key, params, percent)
         elif kind == "status":
             key, params = payload
-            self.progress.emit(key, params, -1)
+            self.progress.emit(key, params, STATUS_ONLY_PERCENT)
 
     def stop(self):
         """Stop the thread and terminate the worker process if running."""

@@ -20,6 +20,34 @@ except ImportError:
     psutil = None
 
 
+def _format_duration(seconds: int, elide_zero: bool) -> str:
+    """
+    Render a whole-second duration as "Xs" / "Xm Ys" / "Xh Ym", the
+    <60s / <1h / else ladder used by both estimate_transcription_time's
+    reason string and get_time_estimate_display.
+
+    The two callers genuinely differ on one thing: the reason string always
+    shows both components once past the 60s mark ("5m 0s"), while the
+    display shown directly to the user drops a zero trailing component
+    ("5m") because a bare minute count reads cleaner in the UI than a
+    "0s"/"0m" that adds nothing. elide_zero picks which behaviour a caller
+    wants rather than forcing one on both.
+    """
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        mins, secs = divmod(seconds, 60)
+        if elide_zero and secs == 0:
+            return f"{mins}m"
+        return f"{mins}m {secs}s"
+    else:
+        hours, remainder = divmod(seconds, 3600)
+        mins = remainder // 60
+        if elide_zero and mins == 0:
+            return f"{hours}h"
+        return f"{hours}h {mins}m"
+
+
 def _required_ram_gb(model_size: str, default: int = 5) -> int:
     """
     Parse a model's RAM requirement out of config.MODELS ("3 GB" -> 3).
@@ -134,57 +162,6 @@ class HardwareDetector:
         if self.has_gpu and self.gpu_name and "NVIDIA" in self.gpu_name:
             return ("cuda", f"NVIDIA GPU detected: {self.gpu_name}")
         return ("cpu", f"Using CPU ({self.cpu_count} cores, {self.ram_gb:.1f}GB RAM)")
-    
-    def estimate_time(self, audio_duration_minutes: int, model_size: str, device: str) -> Dict:
-        """
-        Estimate transcription time based on hardware and model.
-        
-        Args:
-            audio_duration_minutes: Length of audio in minutes
-            model_size: Model size (tiny, base, small, medium, large)
-            device: "cpu" or "cuda"
-        
-        Returns:
-            Dict with estimated time and details
-        """
-        # Base processing speeds (60-min audio on reference hardware)
-        speeds = {
-            "tiny": {"cpu": 30, "cuda": 5},
-            "base": {"cpu": 240, "cuda": 30},
-            "small": {"cpu": 540, "cuda": 60},
-            "medium": {"cpu": 1200, "cuda": 120},
-            "large": {"cpu": 2400, "cuda": 240},
-            # Turbo's 4-layer decoder is what makes it cheaper than medium
-            # despite having more parameters overall.
-            "ivrit-turbo": {"cpu": 900, "cuda": 90},
-            "ivrit-large": {"cpu": 2400, "cuda": 240},
-        }
-        
-        if model_size not in speeds:
-            model_size = "medium"
-        
-        base_time = speeds[model_size].get(device, speeds[model_size]["cpu"])
-        
-        # Adjust for audio length
-        # base_time is the time to process 60 minutes of audio
-        estimated_minutes = base_time * (audio_duration_minutes / 60)
-        
-        # Adjust for hardware
-        if device == "cpu":
-            # Adjust based on CPU cores (reference: 4 cores)
-            adjustment = 4 / max(self.cpu_count, 1)
-            estimated_minutes *= adjustment
-        
-        hours = estimated_minutes / 60
-        
-        return {
-            "minutes": int(estimated_minutes),
-            "hours": hours,
-            "hours_display": f"{hours:.1f} hours" if hours >= 1 else f"{int(estimated_minutes)} minutes",
-            "model": model_size,
-            "device": device,
-            "audio_length": audio_duration_minutes,
-        }
     
     def get_hardware_info(self) -> Dict:
         """Get formatted hardware information."""
@@ -316,15 +293,8 @@ class HardwareDetector:
         
         # Generate reason string
         audio_min = audio_duration_seconds / 60
-        if estimated_seconds < 60:
-            time_str = f"{estimated_seconds}s"
-        elif estimated_seconds < 3600:
-            time_str = f"{estimated_seconds // 60}m {estimated_seconds % 60}s"
-        else:
-            hours = estimated_seconds // 3600
-            mins = (estimated_seconds % 3600) // 60
-            time_str = f"{hours}h {mins}m"
-        
+        time_str = _format_duration(estimated_seconds, elide_zero=False)
+
         reason = f"Model: {model_size.title()} | Device: {device_desc} | Audio: {audio_min:.1f}m → ~{time_str}"
         
         logger.debug(f"Time estimation: {reason}")
@@ -333,13 +303,4 @@ class HardwareDetector:
     
     def get_time_estimate_display(self, seconds: int) -> str:
         """Format seconds into human-readable time."""
-        if seconds < 60:
-            return f"{seconds}s"
-        elif seconds < 3600:
-            mins = seconds // 60
-            secs = seconds % 60
-            return f"{mins}m {secs}s" if secs > 0 else f"{mins}m"
-        else:
-            hours = seconds // 3600
-            mins = (seconds % 3600) // 60
-            return f"{hours}h {mins}m" if mins > 0 else f"{hours}h"
+        return _format_duration(seconds, elide_zero=True)

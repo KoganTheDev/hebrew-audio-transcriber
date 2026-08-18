@@ -400,6 +400,97 @@ def _json_payload(data: dict) -> str:
 SPEAKER_PALETTE_SIZE = 8
 
 
+def _t(strings: Dict[str, str], key: str, fallback: str) -> str:
+    """
+    An already-translated, HTML-escaped UI string, or its English fallback.
+
+    The single choke point for `html.escape(strings.get(key, fallback))`,
+    which used to be written out by hand at every call site that needed a
+    translated label - three functions each defined a byte-identical local
+    closure for it, and eleven more sites inlined it directly. One function
+    means one place to get the escaping right, and a diff on this function
+    is a diff every call site benefits from.
+    """
+    return html.escape(strings.get(key, fallback))
+
+
+def _palette_index(n: int) -> int:
+    """
+    A speaker's (or a file's) slot in the verified 8-swatch palette.
+
+    Same `n % SPEAKER_PALETTE_SIZE` used for a turn's speaker colour, a
+    speaker row's colour, and a file's accent stripe - three different
+    things that all wrap around the same eight-colour, contrast-verified
+    palette, so they share the one formula that does it rather than each
+    retyping the modulo.
+    """
+    return n % SPEAKER_PALETTE_SIZE
+
+
+def _speaker_fallback(speaker_label: str, speaker: int) -> str:
+    """
+    A speaker's human-facing label: 0-based internally, 1-based to a reader.
+
+    Returns unescaped text on purpose. Most call sites html.escape() this
+    themselves, right where it lands in an attribute or a text node. The
+    plain-text panel (_render_plain_row_html) is the one exception: it folds
+    this straight into a whole prefix string that gets escaped once, as a
+    unit, together with the rest of that string - escaping it again here
+    would double-escape it there. That's not an inconsistency to fix, it's
+    two callers escaping at different points in the pipeline for the same
+    single-escape guarantee.
+    """
+    return speaker_label.format(n=speaker + 1)
+
+
+def _button(
+    label: Optional[str],
+    *,
+    id_attr: Optional[str] = None,
+    css_class: str = "tb-btn",
+    icon: Optional[str] = None,
+    aria_label: Optional[str] = None,
+    extra: str = "",
+    wrap_label: bool = True,
+) -> str:
+    """
+    One <button>, assembled from the parts every toolbar/help/plain-panel
+    control shares: an id, a class, an optional icon glyph (via _icon()), an
+    optional visible label, and an optional aria-label. This idiom was
+    hand-written at twelve call sites before this helper existed.
+
+    Attribute order is id, class, aria-label, then `extra` - matching what
+    every converted call site already had, so converting them was a
+    refactor, not a rendering change. `extra` is a free-form attribute
+    string (aria-pressed, aria-expanded, data-label-*, type="button", ...)
+    rather than a parameter per attribute: the twelve sites disagree on
+    which of these they need and how many, so a parameter per attribute
+    would grow this signature by one argument for every attribute even one
+    site happens to need once.
+
+    wrap_label=False renders the label as bare text instead of inside a
+    <span> - needed by exactly one call site (#tour-start) whose original
+    markup has no <span> around its label; forcing the wrap there would be a
+    real, if harmless, change to the rendered HTML, not just a refactor.
+    """
+    attrs = []
+    if id_attr:
+        attrs.append(f'id="{id_attr}"')
+    attrs.append(f'class="{css_class}"')
+    if aria_label:
+        attrs.append(f'aria-label="{aria_label}"')
+    if extra:
+        attrs.append(extra)
+    icon_html = _icon(icon) if icon else ""
+    if not label:
+        label_html = ""
+    elif wrap_label:
+        label_html = f"<span>{label}</span>"
+    else:
+        label_html = label
+    return f'<button {" ".join(attrs)}>{icon_html}{label_html}</button>'
+
+
 def _speaker_indices(segments: List[Segment]) -> List[int]:
     """Distinct speakers in a document, in first-appearance order."""
     ordered: List[int] = []
@@ -676,8 +767,12 @@ def _icon(name: str) -> str:
 
 def _render_toolbar_html(strings: Dict[str, str]) -> str:
     """The document's own chrome: search, view toggles, export, save status."""
-    def s(key: str, fallback: str) -> str:
-        return html.escape(strings.get(key, fallback))
+    # A local alias, not a redefinition of _t's logic: this function calls it
+    # by key/fallback so often that spelling out `_t(strings, ...)` at every
+    # site would bury the strings the call sites actually care about under
+    # repeated boilerplate. The one-line lambda still routes through _t, so
+    # there is exactly one place html.escape(strings.get(...)) is written.
+    s = lambda key, fallback: _t(strings, key, fallback)
 
     search = s("search", "Search transcript")
     return "\n".join([
@@ -696,14 +791,14 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         _icon("search"),
         f'<input id="search" type="search" placeholder="{search}" aria-label="{search}">',
         '<span id="search-count" class="count" aria-live="polite"></span>',
-        f'<button id="search-prev" class="icon-btn"'
-        f' aria-label="{s("search_prev", "Previous match")}">{_icon("up")}</button>',
-        f'<button id="search-next" class="icon-btn"'
-        f' aria-label="{s("search_next", "Next match")}">{_icon("down")}</button>',
+        _button(None, id_attr="search-prev", css_class="icon-btn", icon="up",
+                aria_label=s("search_prev", "Previous match")),
+        _button(None, id_attr="search-next", css_class="icon-btn", icon="down",
+                aria_label=s("search_next", "Next match")),
         "</div>",
         '<div class="tb-group tb-actions">',
-        f'<button id="toggle-flags" class="tb-btn" aria-pressed="false">{_icon("flag")}'
-        f'<span>{s("show_uncertain", "Show uncertain words")}</span></button>',
+        _button(s("show_uncertain", "Show uncertain words"), id_attr="toggle-flags",
+                icon="flag", extra='aria-pressed="false"'),
         # Server-rendered assuming the light scheme, since that is this
         # element's state before any script runs; transcript.js corrects the
         # label on init if the system/browser is actually already in dark
@@ -711,13 +806,16 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         # every click. The label names the action ("switch to dark"), not
         # the current state - "Theme" told the reader nothing about what
         # clicking it would do.
-        f'<button id="toggle-theme" class="tb-btn"'
-        f' aria-label="{s("toggle_theme", "Switch colour scheme")}"'
-        f' data-label-dark="{s("theme_dark", "Dark mode")}"'
-        f' data-label-light="{s("theme_light", "Light mode")}">{_icon("theme")}'
-        f'<span>{s("theme_dark", "Dark mode")}</span></button>',
-        f'<button id="export" class="tb-btn primary">{_icon("save")}'
-        f'<span>{s("save_copy", "Save a copy")}</span></button>',
+        _button(
+            s("theme_dark", "Dark mode"), id_attr="toggle-theme", icon="theme",
+            aria_label=s("toggle_theme", "Switch colour scheme"),
+            extra=(
+                f'data-label-dark="{s("theme_dark", "Dark mode")}" '
+                f'data-label-light="{s("theme_light", "Light mode")}"'
+            ),
+        ),
+        _button(s("save_copy", "Save a copy"), id_attr="export", css_class="tb-btn primary",
+                icon="save"),
         f'<span id="status" class="status" role="status"'
         f' aria-live="polite">{s("status_saved", "Saved")}</span>',
         # Last in the group, not first - it opens a panel that explains every
@@ -727,9 +825,8 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         # toward the way #export is (see the "Tier 1" comment on
         # .tb-btn.primary in transcript.css for what IS in that tier and
         # why #help isn't one of them).
-        f'<button id="help" class="tb-btn" aria-expanded="false"'
-        f' aria-controls="help-panel">{_icon("help")}'
-        f'<span>{s("help", "Help")}</span></button>',
+        _button(s("help", "Help"), id_attr="help", icon="help",
+                extra='aria-expanded="false" aria-controls="help-panel"'),
         "</div>",
         "</div>",
         "</header>",
@@ -751,8 +848,8 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     # and the glyph between "play"/"pause" on the audio element's own
     # play/pause events, the same "swap on load and on every change" pattern
     # syncThemeLabel() already follows for the theme toggle.
-    label = html.escape(strings.get("play_pause", "Play"))
-    seek_label = html.escape(strings.get("seek", "Seek"))
+    label = _t(strings, "play_pause", "Play")
+    seek_label = _t(strings, "seek", "Seek")
     # A native <input type="range">, not a custom div-based track: it is
     # keyboard-operable (arrow keys, Home/End, Page Up/Down) and announced
     # with its role, value and bounds by every screen reader for free -
@@ -764,8 +861,10 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     # LRI/PDI isolate around the whole thing - same bidi shape as
     # format_range()'s "M:SS - M:SS", a neutral "/" between two LTR digit
     # runs inside an RTL document (see the module docstring).
+    toggle_button = _button(None, id_attr="player-toggle", css_class="icon-btn",
+                             icon="play", aria_label=label)
     return f"""<div id="player" class="player" hidden>
-<button id="player-toggle" class="icon-btn" aria-label="{label}">{_icon("play")}</button>
+{toggle_button}
 <span id="player-file" class="player-file"></span>
 <input id="player-seek" class="seek" type="range" min="0" max="0" step="0.1" value="0"
  aria-label="{seek_label}">
@@ -810,8 +909,7 @@ def _render_help_html(strings: Dict[str, str]) -> str:
     module docstring), so the only contract between the two is this button's
     id existing in the markup.
     """
-    def s(key: str, fallback: str) -> str:
-        return html.escape(strings.get(key, fallback))
+    s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
 
     # (icon name, title key/fallback, description key/fallback) - one row
     # per control this page has, in the same top-to-bottom order those
@@ -878,12 +976,16 @@ def _render_help_html(strings: Dict[str, str]) -> str:
         '<div class="help-sheet">'
         '<div class="help-head">'
         f'<h2 id="help-title">{s("help_title", "Help")}</h2>'
-        f'<button id="help-close" class="icon-btn"'
-        f' aria-label="{s("help_close", "Close help")}">{_icon("close")}</button>'
-        "</div>"
-        f'<button id="tour-start" class="tb-btn primary">'
-        f'{s("tour_start", "Start guided tour")}</button>'
-        f'<dl class="help-list">{items}</dl>'
+        + _button(None, id_attr="help-close", css_class="icon-btn", icon="close",
+                  aria_label=s("help_close", "Close help"))
+        + "</div>"
+        # wrap_label=False: this button's label was never wrapped in a
+        # <span> (unlike every other _button() site) - see _button()'s
+        # docstring for why that one difference is preserved rather than
+        # normalised away.
+        + _button(s("tour_start", "Start guided tour"), id_attr="tour-start",
+                  css_class="tb-btn primary", wrap_label=False)
+        + f'<dl class="help-list">{items}</dl>'
         "</div>"
         "</div>"
     )
@@ -911,7 +1013,7 @@ def _render_file_bar_html(source_name: str, index: int, total: int, strings: Dic
         .replace("{i}", str(index + 1))
         .replace("{n}", str(total))
     )
-    accent = index % SPEAKER_PALETTE_SIZE
+    accent = _palette_index(index)
     return (
         f'<header class="file-bar" data-file-accent="{accent}">'
         f"<h1>{html.escape(source_name)}</h1>"
@@ -988,7 +1090,7 @@ def _swatch_trigger_html(strings: Dict[str, str]) -> str:
     from .speaker-row down to this dot - this button carries no colour of
     its own to fall out of sync.
     """
-    label = html.escape(strings.get("speaker_colour", "Speaker colour"))
+    label = _t(strings, "speaker_colour", "Speaker colour")
     # A distinct class from the popover's own dots (.swatch), not just a
     # distinct selector - see the CSS comment on .swatch-rest for why this is
     # a structural fix rather than a specificity patch: an unscoped
@@ -1034,40 +1136,34 @@ def _render_speakers_html(
     unless .js-ready is present), so speaker names are still readable for
     every file, not just the first, on a script-disabled open.
 
-    Not a <label> wrapping the whole row any more: once a row holds a text
-    input *and* a colour trigger that opens its own menu, "label wraps one
-    control" stops being true of it. The input keeps its own aria-label
-    instead - already there before this changed, so nothing lost its
-    accessible name.
+    Not a <label> wrapping the whole row: once a row holds a text input *and*
+    a colour trigger that opens its own menu, "label wraps one control"
+    stops being true of it, so the input carries its own aria-label instead.
 
-    No locate button or turn count any more - both were removed as clutter.
-    The row is just the swatch trigger and the name input, which is why this
-    no longer needs each speaker's turns at all (turns was only ever read
-    here to compute the count).
+    The row is just the swatch trigger and the name input - no per-speaker
+    turn count next to it - which is why this never needs each speaker's
+    turns at all.
     """
     rows = []
     for speaker in speakers:
-        fallback = speaker_label.format(n=speaker + 1)
-        palette = speaker % SPEAKER_PALETTE_SIZE
+        fallback = html.escape(_speaker_fallback(speaker_label, speaker))
+        palette = _palette_index(speaker)
         rows.append(
             f'<div class="speaker-row" data-speaker="{speaker}" data-palette="{palette}">'
             + _swatch_trigger_html(strings) +
             f'<input class="speaker-name" type="text" value=""'
-            f' placeholder="{html.escape(fallback)}"'
-            f' aria-label="{html.escape(fallback)}">'
+            f' placeholder="{fallback}"'
+            f' aria-label="{fallback}">'
             "</div>"
         )
 
     apply_all = (
         f'<button class="link-btn apply-all">'
-        f'{html.escape(strings.get("apply_names_all", "Use these names in all files"))}</button>'
+        f'{_t(strings, "apply_names_all", "Use these names in all files")}</button>'
     )
-    add_label = html.escape(strings.get("add_speaker", "Add speaker"))
-    add_speaker = (
-        f'<button type="button" class="tb-btn add-speaker">{_icon("plus")}'
-        f'<span>{add_label}</span></button>'
-    )
-    title = html.escape(strings.get("speakers", "Speakers"))
+    add_speaker = _button(_t(strings, "add_speaker", "Add speaker"),
+                           css_class="tb-btn add-speaker", icon="plus", extra='type="button"')
+    title = _t(strings, "speakers", "Speakers")
     cls = "speakers active" if active else "speakers"
     return (
         f'<div class="{cls}" data-file="{file_index}">'
@@ -1092,9 +1188,8 @@ def _render_outline_html(
     moving them out of the column the reader is scrolling through is a
     relocation, not new functionality.
 
-    No longer takes turns_by_doc: that was only ever threaded down so
-    _render_speakers_html could show a per-speaker turn count, and the count
-    (along with the locate button beside it) is gone. render_html still
+    Doesn't take turns_by_doc: nothing in this sidebar shows a per-speaker
+    turn count, so there's nothing here that needs it. render_html still
     computes turns_by_doc once for _render_document_html's own use - see the
     comment there.
 
@@ -1131,13 +1226,13 @@ def _render_outline_html(
                 f'{html.escape(document.source_name)}</a></li>'
             )
         sections.append(
-            f'<h2 class="outline-title">{html.escape(strings.get("files", "Files"))}</h2>'
+            f'<h2 class="outline-title">{_t(strings, "files", "Files")}</h2>'
             f'<ol class="outline-files">{"".join(items)}</ol>'
         )
     if panels:
         sections.append(f'<div class="outline-speakers">{"".join(panels)}</div>')
 
-    label = html.escape(strings.get("outline", "Files and speakers"))
+    label = _t(strings, "outline", "Files and speakers")
     return f'<aside class="outline" aria-label="{label}" id="outline">{"".join(sections)}</aside>'
 
 
@@ -1172,8 +1267,8 @@ def _render_turn_html(
         # A <button>, not a <span>, now: this is the control that opens the
         # reassignment menu (see bindMenus() in transcript.js), so it
         # has to be reachable and activatable the way any control is.
-        label = html.escape(speaker_label.format(n=turn.speaker + 1))
-        palette = turn.speaker % SPEAKER_PALETTE_SIZE
+        label = html.escape(_speaker_fallback(speaker_label, turn.speaker))
+        palette = _palette_index(turn.speaker)
         # Wrapped in .spk-anchor (position: relative, sized to hug just this
         # button) rather than leaving .spk itself as the reassignment menu's
         # anchor - the menu is inserted as this wrapper's child, a *sibling*
@@ -1188,17 +1283,15 @@ def _render_turn_html(
             f'</span>'
         )
 
-    copy_label = html.escape(strings.get("copy_turn", "Copy this turn"))
-    actions = (
-        f'<span class="turn-actions"><button class="icon-btn copy-turn"'
-        f' aria-label="{copy_label}">{_icon("copy")}</button></span>'
-    )
+    copy_label = _t(strings, "copy_turn", "Copy this turn")
+    copy_button = _button(None, css_class="icon-btn copy-turn", icon="copy", aria_label=copy_label)
+    actions = f'<span class="turn-actions">{copy_button}</span>'
 
     speaker_attr = (
-        f' data-speaker="{turn.speaker}" data-palette="{turn.speaker % SPEAKER_PALETTE_SIZE}"'
+        f' data-speaker="{turn.speaker}" data-palette="{_palette_index(turn.speaker)}"'
         if turn.speaker is not None else ""
     )
-    body_label = html.escape(strings.get("turn_text", "Turn text"))
+    body_label = _t(strings, "turn_text", "Turn text")
 
     # An <h2> holding nothing but a copy button is a heading that says nothing,
     # so with neither a timestamp nor a speaker the actions stand on their own
@@ -1247,11 +1340,11 @@ def _render_plain_row_html(
         bare = format_range(turn.start, turn.end).replace(LRI, "").replace(PDI, "")
         prefix_parts.append(f"{LRI}[{bare}]{PDI}")
     if speaker_label is not None and turn.speaker is not None:
-        prefix_parts.append(f"{speaker_label.format(n=turn.speaker + 1)}:")
+        prefix_parts.append(f"{_speaker_fallback(speaker_label, turn.speaker)}:")
     prefix_text = f"{' '.join(prefix_parts)} " if prefix_parts else ""
 
     body_text = "\n".join(split_sentences(turn.text))
-    body_label = html.escape(strings.get("turn_text", "Turn text"))
+    body_label = _t(strings, "turn_text", "Turn text")
     return (
         f'<div class="plain-row" data-turn="{turn_id}">'
         f'<span class="plain-prefix" contenteditable="false">{html.escape(prefix_text)}</span>'
@@ -1285,20 +1378,20 @@ def _render_plain_html(
     the row or the card cannot desync it from the other, it just writes the
     same paragraph array readParagraphs() already produces from a card.
     """
-    def s(key: str, fallback: str) -> str:
-        return html.escape(strings.get(key, fallback))
+    s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
 
     rows = "".join(
         _render_plain_row_html(turn, turn_id, speaker_label, timestamps, strings)
         for turn_id, turn in zip(turn_ids, turns)
     )
+    copy_all_button = _button(s('copy_all', 'Copy all'), css_class="tb-btn copy-all", icon="copy")
     return f"""<section class="plain">
 <h2 class="plain-title"><span>{s('plain_text', 'Plain text')}</span>
 <span class="summary-hint">{s('plain_hint', 'to paste into another app')}</span></h2>
 <div class="plain-controls">
 <label><input type="checkbox" class="opt-ts" checked> {s('opt_timestamps', 'Timestamps')}</label>
 <label><input type="checkbox" class="opt-spk" checked> {s('opt_speakers', 'Speaker names')}</label>
-<button class="tb-btn copy-all">{_icon("copy")}<span>{s('copy_all', 'Copy all')}</span></button>
+{copy_all_button}
 </div>
 <div class="plain-text" tabindex="-1">{rows}</div>
 </section>"""

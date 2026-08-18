@@ -9,6 +9,8 @@ from pathlib import Path
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QFrame
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 
+from speech_to_text.core.formatting import format_mmss
+from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
 from speech_to_text.gui import theme
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
@@ -201,7 +203,7 @@ class TranscriptionStep(QFrame):
         status_key/params identify an i18n message (rendered here, in the
         current UI language - the worker only ever sends keys).
 
-        percentage == -1 is a status-only sentinel (see
+        percentage == STATUS_ONLY_PERCENT is a status-only sentinel (see
         TranscriptionThread._relay_progress_message): faster-whisper is
         doing real work - decoding a segment, retrying it at a different
         temperature - but we don't have a new, trustworthy percentage yet,
@@ -213,7 +215,7 @@ class TranscriptionStep(QFrame):
         self._dot_phase = 0
         self.status_label.setText(self._render_status())
 
-        if percentage >= 0:
+        if percentage != STATUS_ONLY_PERCENT:
             if percentage != self._last_percentage:
                 self._animate_progress_to(percentage)
             self._last_percentage = percentage
@@ -250,25 +252,19 @@ class TranscriptionStep(QFrame):
         )
 
         if percentage <= 0:
-            self.time_label.setText(t("elapsed", elapsed=self._format_mmss(elapsed)))
+            self.time_label.setText(t("elapsed", elapsed=format_mmss(elapsed)))
         elif since_last_change > self.STALL_SECONDS:
             self.time_label.setText(t(
                 "elapsed_remaining",
-                elapsed=self._format_mmss(elapsed), remaining=t("calculating"),
+                elapsed=format_mmss(elapsed), remaining=t("calculating"),
             ))
         else:
             # Simple linear projection from work done so far.
             remaining = elapsed * (100 - percentage) / percentage
             self.time_label.setText(t(
                 "elapsed_remaining",
-                elapsed=self._format_mmss(elapsed), remaining=self._format_mmss(remaining),
+                elapsed=format_mmss(elapsed), remaining=format_mmss(remaining),
             ))
-
-    @staticmethod
-    def _format_mmss(seconds: float) -> str:
-        total = max(int(seconds), 0)
-        minutes, secs = divmod(total, 60)
-        return f"{minutes}:{secs:02d}"
 
     def show_result(self, file_path: str):
         """Show completion result."""

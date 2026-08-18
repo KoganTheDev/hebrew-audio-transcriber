@@ -39,52 +39,6 @@ class TestHardwareDetector:
                 assert "CPU" in reason
     
     @patch('speech_to_text.hardware_detection.psutil')
-    def test_estimate_time_calculation(self, mock_psutil):
-        """Test time estimation calculation."""
-        mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
-        
-        with patch.object(HardwareDetector, '_detect_gpu', return_value=False):
-            detector = HardwareDetector()
-            
-            # Test small model on CPU with 60 minutes of audio
-            estimate = detector.estimate_time(60, "tiny", "cpu")
-            assert estimate["model"] == "tiny"
-            assert estimate["device"] == "cpu"
-            assert estimate["audio_length"] == 60
-            assert estimate["hours"] >= 0
-    
-    @patch('speech_to_text.hardware_detection.psutil')
-    def test_estimate_time_scales_with_audio_length(self, mock_psutil):
-        """Test that time estimation scales with audio length."""
-        mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
-        
-        with patch.object(HardwareDetector, '_detect_gpu', return_value=False):
-            detector = HardwareDetector()
-            
-            # 30 minutes should take half the time of 60 minutes
-            estimate_30 = detector.estimate_time(30, "small", "cpu")
-            estimate_60 = detector.estimate_time(60, "small", "cpu")
-            
-            ratio = estimate_60["minutes"] / estimate_30["minutes"]
-            assert ratio == pytest.approx(2.0, rel=0.01)
-    
-    @patch('speech_to_text.hardware_detection.psutil')
-    def test_estimate_time_cuda_faster_than_cpu(self, mock_psutil):
-        """Test that CUDA is faster than CPU for estimation."""
-        mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
-        
-        with patch.object(HardwareDetector, '_detect_gpu', return_value=False):
-            detector = HardwareDetector()
-            
-            estimate_cpu = detector.estimate_time(60, "medium", "cpu")
-            estimate_cuda = detector.estimate_time(60, "medium", "cuda")
-            
-            assert estimate_cuda["minutes"] < estimate_cpu["minutes"]
-    
-    @patch('speech_to_text.hardware_detection.psutil')
     def test_can_run_model_sufficient_ram(self, mock_psutil):
         """Test model validation with sufficient RAM."""
         mock_psutil.cpu_count.return_value = 4
