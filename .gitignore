@@ -57,7 +57,13 @@ transcription*.txt
 *.flac
 
 # Local audio fixtures used for accuracy evaluation (see tests/eval/).
+# Named by DIRECTORY, not just by the extension rules above: the extension
+# list only catches the formats it knows about, so one stray recording in a
+# container nobody thought to list (or a .zip/.txt export beside it) would
+# still be stageable out of a directory full of real conversations. Naming
+# the directory closes that hole for everything inside it at once.
 mp4a_test/
+mp3_test/
 eval_output/
 
 # Full-size vista originals, as downloaded. Only the processed, downscaled
