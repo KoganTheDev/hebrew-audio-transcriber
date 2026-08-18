@@ -291,44 +291,149 @@ def test_layout_and_toolbar_share_the_same_grid_columns():
     assert _property(layout, "max-width") == _property(toolbar, "max-width")
 
 
-def test_toolbar_row_sits_in_the_shared_main_column():
-    """.tb-row (not .toolbar itself) is what's actually placed in track 2 -
-    see the comment on .tb-row in transcript.css for why the controls
-    couldn't be grid items of .toolbar directly."""
+def test_toolbar_row_sits_across_both_tracks():
+    """.tb-row spans both tracks (grid-column: 1 / -1), not just track 1 -
+    see the comment on .tb-row in transcript.css for why. Confined to a
+    single track the toolbar would only have the reading column to lay its
+    controls out in, leaving the whole rail column empty above the sidebar;
+    spanning hands it the rail's width too while the row's own inline-start
+    edge still shares an edge with the reading column, same as before."""
     source = CSS.read_text(encoding="utf-8")
     tb_row = _rule_block(source, ".tb-row")
-    assert _property(tb_row, "grid-column") == "2"
+    assert _property(tb_row, "grid-column") == "1 / -1"
 
 
-def test_flanks_are_flexible_not_fixed():
+def test_rail_is_fixed_and_main_is_the_flexible_track():
     """
-    minmax(0, var(--rail)), not a bare var(--rail) - a fixed flank can't
-    give width back to main as the viewport narrows, which is what forced
-    main below its own reading measure well before the layout had to
-    collapse. See --layout-columns's own comment for the full reasoning.
+    The two-track layout (main / rail, no third empty flank - see
+    --layout-columns's own comment for why the flank is gone) deliberately
+    inverts which track is allowed to shrink, compared to the three-track
+    layout it replaced. That old layout made the FLANKS flexible
+    (minmax(0, var(--rail))) and kept the centre track (main) rigid
+    (var(--measure) alone), because a fixed flank couldn't give width back
+    to main as the viewport narrowed - main was the one thing that must
+    never shrink out of its comfortable reading width.
+
+    That reasoning still holds, but it was pointed at the wrong track once
+    the empty flank was gone: the rail carries a real functional floor of
+    its own (a colour swatch plus a name input, ~140px), while body text
+    reflows perfectly well. So now main is the flexible track
+    (minmax(0, var(--measure))) and the rail is fixed - a bare var(--rail),
+    not wrapped in minmax() - which is the reverse of the old assertion,
+    not a variation on it.
     """
     source = CSS.read_text(encoding="utf-8")
     match = re.search(r"--layout-columns:\s*([^;]+);", source)
     assert match, "--layout-columns not found in transcript.css"
-    assert "minmax(0, var(--rail))" in match.group(1)
-    # var(--measure) alone (not wrapped in minmax) is what keeps the centre
-    # track rigid - main holding its full width, rather than main shrinking
-    # in step with the flanks, is the entire point of this layout.
-    assert re.search(r"(?<!minmax\()\bvar\(--measure\)", match.group(1))
+    columns = match.group(1)
+    assert "minmax(0, var(--measure))" in columns
+    # var(--rail) alone (not wrapped in minmax) is what keeps the rail
+    # track rigid - never shrinking below its functional floor is the
+    # entire point of this reversal.
+    assert re.search(r"(?<!minmax\()\bvar\(--rail\)", columns)
+    # No third track: the old empty flank that used to sit ahead of main is
+    # gone outright, not just made non-flexible.
+    assert columns.count("var(--rail)") == 1
 
 
-def test_outline_toggle_breakpoint_matches_the_measured_flank_minimum():
+def test_stacking_breakpoint_matches_the_two_column_reading_measure():
     """
-    1200px, not the pre-Phase-2 900px - that number was measured against a
-    fixed 18rem sidebar and stopped being correct the moment the flanks
-    became flexible (they get squeezed well before 900px). See the
-    @media (max-width: 1200px) comment in transcript.css for how 1200 was
-    actually measured (a same-origin iframe at that width, real Chrome
-    layout, not a formula) rather than picked as a round number.
+    819px/820px, not the retired 1200px overlay breakpoint. That number
+    doesn't carry over: it was measured against a FLEXIBLE flank being
+    squeezed thin enough to break .speaker-name, a failure mode that no
+    longer exists now the rail is a rigid 16rem (see
+    test_rail_is_fixed_and_main_is_the_flexible_track) - a rigid track
+    never gets squeezed, so there is nothing left to time a breakpoint
+    against that way.
+
+    819/820 was chosen instead by looking at a real render: at 820px the
+    two-column layout still leaves 468px of reading measure with the
+    toolbar holding one line, and below that the measure starts
+    compressing faster than the rigid rail can give width back. See the
+    @media (max-width: 819px) block's own comment in transcript.css for
+    the full reasoning, including why max-width and not min-width (this
+    file is desktop-first throughout, matching every other breakpoint in
+    it).
     """
     source = CSS.read_text(encoding="utf-8")
-    assert "@media (max-width: 1200px)" in source
+    assert "@media (max-width: 819px)" in source
+    assert "@media (max-width: 1200px)" not in source
     assert "@media (max-width: 900px)" not in source
+
+
+def test_two_column_layout_is_the_unconditional_default():
+    """
+    This file is desktop-first: the two-column template (main / rail, no
+    upper bound) is the value --layout-columns has with no media query
+    involved at all, and the max-width: 819px block is what narrows it
+    down for small screens - not the other way around. If a later edit
+    wraps the two-column value in a min-width query instead, .layout and
+    .toolbar would go back to the old three-track default (or nothing)
+    below that width until the min-width query kicked in, which is exactly
+    the kind of accidental gap this checks for.
+    """
+    source = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    root_block = _rule_block(source, ":root")
+    assert _property(root_block, "--layout-columns") == (
+        "minmax(0, var(--measure)) var(--rail)"
+    )
+    assert "@media (min-width:" not in source
+
+
+def test_toolbar_fluid_tokens_top_out_at_the_shipped_values():
+    """
+    Every clamp() backing --tb-font/--tb-pad/--tb-gap/--tb-row-gap has to
+    top out at exactly the value that shipped before the fluid toolbar -
+    0.9rem type, 0.6rem padding, 0.4rem gap, 1.25rem row-gap - so that
+    nothing changes at the widest screens at all; the scale only engages as
+    the toolbar loses room. A clamp() that drifted from these on a later
+    edit would silently resize the toolbar on every existing wide-screen
+    render, which is the one case this feature was explicitly not supposed
+    to touch.
+    """
+    source = CSS.read_text(encoding="utf-8")
+    root_block = _rule_block(source, ":root")
+    tops = {
+        "--tb-font": "0.9rem",
+        "--tb-pad": "0.6rem",
+        "--tb-gap": "0.4rem",
+        "--tb-row-gap": "1.25rem",
+    }
+    for token, top in tops.items():
+        value = _property(root_block, token)
+        assert value.startswith("clamp(") and value.endswith(")"), (
+            f"{token} is no longer a clamp(): {value!r}"
+        )
+        args = [part.strip() for part in value[len("clamp("):-1].split(",")]
+        assert len(args) == 3, f"{token} clamp() does not have three arguments: {value!r}"
+        assert args[2] == top, f"{token} tops out at {args[2]!r}, expected {top!r}"
+
+
+def test_outline_never_fully_hidden_at_any_width():
+    """
+    The old design hid the sidebar behind a toggle below 1200px
+    (display: none, revealed only by #outline-toggle, which no longer
+    exists anywhere in the markup or this stylesheet). The whole point of
+    this layout is that the outline is always part of the page's own flow -
+    a rail beside <main> down to the stacking breakpoint, then a band above
+    it - so `display: none` must never appear anywhere .outline is styled,
+    at any width.
+    """
+    source = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", source):
+        selector, body = match.group(1).strip(), match.group(2)
+        # Only the rightmost compound - the actual element a rule targets,
+        # not an ancestor named earlier in a descendant selector. E.g.
+        # ".outline.js-ready .outline-speakers .speakers:not(.active)" sets
+        # display: none on .speakers (a per-file panel, filtered down to the
+        # current file - see that rule's own comment in transcript.css),
+        # not on the aside itself, and must not trip this check.
+        subject = re.split(r"[\s>+~]+", selector)[-1] if selector else ""
+        if re.search(r"\.outline(?![\w-])", subject):
+            assert "display: none" not in body, (
+                f"{selector} sets display: none, hiding the outline entirely"
+            )
+    assert "#outline-toggle" not in source
 
 
 def test_only_the_shared_rule_declares_layout_grid_columns():
@@ -336,10 +441,10 @@ def test_only_the_shared_rule_declares_layout_grid_columns():
     The narrow-screen media query's first draft overrode
     `.layout { grid-template-columns: ... }` directly instead of redefining
     the --layout-columns token, which collapsed .layout to a single track
-    while .toolbar kept its three - reintroducing, inside the very media
-    query meant to fix the layout, the exact 156px divergence
+    while .toolbar kept its two - reintroducing, inside the very media
+    query meant to fix the layout, the exact kind of divergence
     --layout-columns exists to prevent (see that token's own comment, and
-    the @media (max-width: 1200px) comment in transcript.css). This checks
+    the @media (max-width: 819px) comment in transcript.css). This checks
     the whole file, not just the base rules: grid-template-columns must be
     declared for .layout, and separately for .toolbar, in exactly one place
     each - the shared base rule reading var(--layout-columns) - never as a

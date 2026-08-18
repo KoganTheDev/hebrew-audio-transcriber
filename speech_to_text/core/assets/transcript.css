@@ -221,18 +221,33 @@
      grids, makes that drift structurally impossible rather than merely
      fixing today's numbers.
 
-     --rail is minmax(0, 18rem), NOT a fixed 18rem: a fixed flank forces the
-     centre track below its full --measure the moment the viewport drops
-     under roughly (2*18rem + 42rem + 3rem) ~= 1296px, because a fixed-width
-     flank cannot give any of that width back to main. A flexible flank
-     shrinks instead - symmetrically, since both flanks share the same
-     minmax() - so main keeps its full reading measure (a rigid, non-minmax
-     track size never shrinks) and stays visually centred much further down
-     before the layout has to collapse to the narrow-screen overlay (see
-     the @media block below, and its own comment on where that breakpoint
-     number came from). */
-  --rail: 18rem;
-  --layout-columns: minmax(0, var(--rail)) var(--measure) minmax(0, var(--rail));
+     Two tracks, main then rail, not three: this used to be
+     flank / main / flank, minmax(0, 18rem) on both outer tracks, with
+     track 1 permanently EMPTY - it existed purely so main sat optically
+     centred. That phantom flank cost 288px plus a gap for nothing, which
+     is exactly what forced the whole sidebar into a toggled overlay once
+     the viewport got tight: at 1024px the layout was still reserving room
+     for a track nobody ever put anything in. Losing it means centring the
+     thing a reader actually sees (main plus the rail) instead of centring
+     main alone inside a box padded out by an invisible third track - and it
+     collapses two maintained layouts (three-track wide, overlay narrow)
+     into one, with no upper bound: this is the layout at every width down
+     to the point it stacks (see the @media block below).
+
+     --rail is a fixed 16rem now, not minmax(0, 18rem) - the flexibility
+     used to belong to the FLANKS, because a fixed flank would have forced
+     main below its full --measure the moment the viewport got tight, and
+     main was the one thing here that must never shrink out of its
+     comfortable reading width. That reasoning still holds, but it was
+     pointed at the wrong track: the rail carries a hard functional floor
+     of its own - a 44px colour swatch plus a name input that needs ~80px
+     to stay typeable, a floor of roughly 140px - while body text reflows
+     perfectly well across a wide range of widths. A rigid rail and a
+     flexible main (minmax(0, var(--measure))) has the two roles the right
+     way round: the track with nothing to lose from shrinking is the one
+     that shrinks. */
+  --rail: 16rem;
+  --layout-columns: minmax(0, var(--measure)) var(--rail);
 
   /* Squircle - the control style picked from the four Phase 0 mockups
      (docs/mockups/control-styles.html): a generous corner radius with a
@@ -250,6 +265,25 @@
      a shape choice; see their own rules for why. */
   --control-radius: 14px;
   --control-border-width: 2px;
+
+  /* Fluid toolbar sizing, so the header holds one line down to the point
+     where the layout stacks (see the max-width: 819px block near the
+     bottom of this file) instead of spilling its buttons onto a second
+     row first. Every clamp() tops out at exactly the value that shipped
+     before this - 0.9rem type, 0.6rem padding, 0.4rem/1.25rem gaps - so at
+     the widest widths nothing changes at all; the scale only engages as
+     the toolbar loses room. The floors are set where the labels are still
+     comfortably readable, not as small as they could technically go.
+
+     min-height on .tb-btn/.icon-btn stays a fixed 44px and is deliberately
+     NOT one of these tokens: it is the touch target, not decoration, and
+     shrinking it to win a few more horizontal pixels would trade an
+     accessibility floor for a cosmetic one. Only the horizontal dimensions
+     and the type scale are fluid. */
+  --tb-font: clamp(0.78rem, 0.62rem + 0.31vw, 0.9rem);
+  --tb-pad: clamp(0.4rem, 0.22rem + 0.35vw, 0.6rem);
+  --tb-gap: clamp(0.25rem, 0.05rem + 0.29vw, 0.4rem);
+  --tb-row-gap: clamp(0.6rem, 0.1rem + 0.98vw, 1.25rem);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -408,8 +442,19 @@
 body {
   margin: 0;
   /* Bottom padding reserves room for the sticky player so the last turn is
-     never hidden behind it. */
-  padding: 0 1.25rem 6rem;
+     never hidden behind it.
+
+     2rem inline, not the narrower 1.25rem the max-width: 819px block
+     reverts to below the stacking breakpoint: losing the old three-track
+     layout's empty flank also lost the window the backdrop photo showed
+     through at the page edges - --panel-opacity is pinned at 0.93 by the
+     contrast tests (see its own comment), so it cannot be thinned to buy
+     that margin back instead. Funded out of the rail rather than out of
+     the reading measure: --rail shrank from 18rem to 16rem specifically to
+     pay for this and for .layout/.toolbar's wider gap, so the reading
+     column itself ends up the same width it always was - see --rail's own
+     comment near the top of this file for the arithmetic. */
+  padding: 0 2rem 6rem;
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
@@ -486,10 +531,16 @@ body {
 /* Grid, not flex, on the outer element - it has to share --layout-columns
    with .layout so their track boundaries land at identical pixel offsets
    (same template, same gap, same max-width, same margin: 0 auto all
-   guarantee that). The toolbar has nothing to put in track 1 or track 3,
-   though; only .tb-row below is placed, in track 2, which is exactly what
-   makes "the toolbar's first control shares an edge with the reading
-   column" true rather than coincidental. */
+   guarantee that). .tb-row below spans BOTH tracks (grid-column: 1 / -1),
+   not just track 1 - confined to track 1 alone, the toolbar would only have
+   the reading column to lay its controls out in, leaving the whole rail
+   column empty above the sidebar while the row's controls bunched against
+   one edge. Spanning does not break the alignment rule --layout-columns
+   exists to enforce: the row's own inline-start edge is still track 1's
+   start, so its first control still shares an edge with the reading column
+   exactly as before - spanning just hands the row the rail's width too, to
+   lay its own controls out in (see .tb-row's justify-content: center
+   below). */
 .toolbar {
   position: sticky;
   top: 0;
@@ -499,37 +550,123 @@ body {
   /* Same reason as .layout's - the two must centre their track rows
      identically or their track boundaries stop coinciding. */
   justify-content: center;
-  gap: 0 1.5rem;
+  gap: 0 2rem;
   margin: 0 auto;
   padding: 0.7rem 0;
-  max-width: calc(var(--rail) * 2 + var(--measure) + 3rem);
+  /* + 2rem, not + 3rem: one gap between the two tracks now, not two gaps
+     either side of an empty middle one - see .layout's own max-width
+     comment below for the matching change and why the gap value itself
+     grew from 1.5rem to 2rem despite there being one fewer of them. */
+  max-width: calc(var(--rail) + var(--measure) + 2rem);
   background: var(--bg);
   border-bottom: 1px solid var(--rule);
 }
 
-/* The toolbar's actual controls: still a flex row internally (a search box
-   growing to fill space, action buttons wrapping onto a second line at
-   narrow widths) - grid only decides WHERE this row sits relative to the
-   reading column, not how its own children are arranged, so the flex
-   layout that already worked here is kept intact rather than reinvented as
-   grid items. */
+/* The toolbar's actual controls: still a flex row internally (a search box,
+   action buttons that wrap as whole groups rather than compress - see the
+   squircle comment on .tb-btn/.icon-btn below) - grid only decides WHERE
+   this row sits relative to the reading column, not how its own children
+   are arranged, so the flex layout that already worked here is kept intact
+   rather than reinvented as grid items.
+
+   justify-content: center, not the shipped space-between: space-between
+   paired with a growing .tb-search (flex: 1 1 15rem, the shipped value)
+   is what actually produced "stuck to one edge" - a flex item with
+   flex-grow eats the free space that justify-content would otherwise
+   distribute, so centring was a no-op while the search box kept growing to
+   fill the row. Centring only starts working once nothing grows: see
+   .tb-search below (flex: 0 1 auto, natural width, still free to shrink)
+   and .tb-actions (flex: none, so the squeeze at narrow widths lands on the
+   search box, not shared with the buttons). */
 .tb-row {
-  grid-column: 2;
+  grid-column: 1 / -1;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
+  flex-wrap: nowrap;
+  gap: 0.75rem var(--tb-row-gap);
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
 }
 
-.tb-group { display: flex; align-items: center; gap: 0.4rem; }
-.tb-search { flex: 1 1 15rem; }
+/* nowrap here, not wrap, and it is load-bearing for the one-line toolbar.
+   With the group left wrapping, a group breaks INTERNALLY the moment its own
+   content exceeds its share of the row, and the row's own nowrap cannot stop
+   it: measured at an 830px viewport, .tb-actions held 438px of buttons plus
+   the save-status span in a 438px box and dropped a line, so the toolbar
+   stood 92px tall while .tb-row itself was still, correctly, a single line.
+   The same trap catches .tb-search, whose icon, input, count and two chevrons
+   come to more than the box it is given.
+
+   Held to one line, the flexible member gives up width instead - the search
+   input, which is the one control that loses nothing but visible characters
+   when it narrows (see .tb-search's flex: 0 1 auto and .tb-actions' flex:
+   none, which together decide that the input is what shrinks). Wrapping
+   returns below the stacking breakpoint, where there genuinely is not room
+   for one line and two rows are the right answer. */
+.tb-group { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--tb-gap); }
+/* flex: 0 1 auto, not the shipped flex: 1 1 15rem - see .tb-row's own
+   comment above for why a growing search box defeated the row's
+   justify-content: center. min-width: 0 lets it actually give up width
+   (a flex item's default min-width is auto, i.e. its content's natural
+   width, which would otherwise stop it shrinking at all) - it is the one
+   control in the row that can lose width without losing anything, since it
+   is a text box: narrower just means fewer visible characters, where a
+   button that shrinks starts wrapping or clipping its label instead. */
+.tb-search { flex: 0 1 auto; min-width: 0; }
+/* flex: none so the squeeze at narrow widths lands on .tb-search alone
+   rather than being shared proportionally with the action buttons - see
+   .tb-btn/.icon-btn's own flex: none below for why a button is the wrong
+   place for that squeeze to land. */
+.tb-actions { flex: none; }
+/* A rule between the search cluster (which ends in the prev/next chevrons)
+   and the action buttons. Drawn as .tb-actions' own ::before rather than a
+   <span> in the markup: it is decoration with no meaning to announce, so
+   keeping it out of the DOM keeps it out of the accessibility tree for
+   free, and it needs no i18n string, no renderer change and no test.
+   ::before on a flex container becomes that container's first flex item,
+   and in this dir="rtl" document the first item sits at the inline-start
+   edge - the physical RIGHT, which is precisely the edge the chevrons end
+   at. The group's own gap spaces it on both sides, so it needs no margin
+   of its own beyond the small buffer below.
+
+   --control-border, not --rule: --rule is the hairline for big separators
+   between blocks of content, and at 1px inside a toolbar it all but
+   disappears - drawn first with it, the divider measured correctly at
+   1px x 25.6px and was invisible on screen. --control-border is the token
+   whose whole job is reading as a visible edge at small sizes, which is
+   exactly what a divider between two control clusters is; matching
+   --control-border-width too, so it carries the same weight as the
+   borders of the buttons on either side of it rather than being a
+   lighter thing of its own. */
+.tb-actions::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  inline-size: var(--control-border-width);
+  /* 2rem against the 44px control height - about three quarters of the
+     buttons it sits between, so it reads as a divider spanning the row
+     rather than a tick mark floating in the middle of it. Deliberately
+     short of the full 44px: flush with the button edges it would read as
+     a border belonging to the button beside it instead of a gap between
+     clusters. The inline margin is the buffer half of the job - the
+     group's own gap alone put it closer to the buttons than to the
+     chevrons. */
+  block-size: 2rem;
+  margin-inline: 0.2rem;
+  border-radius: 1px;
+  background: var(--control-border);
+  opacity: 0.55;
+}
 
 .tb-search .icon { color: var(--muted); flex: none; }
 
 #search {
   flex: 1 1 auto;
-  min-width: 6rem;
+  /* 3rem, not the shipped 6rem: the input is the release valve for the
+     fluid one-line toolbar (see the fluid tokens on .tb-btn/.icon-btn
+     below) - it has to be allowed to give up more width than before for
+     the row to hold one line down to the stacking breakpoint instead of
+     spilling onto a second line first. */
+  min-width: 3rem;
   min-height: 44px;
   padding: 0 0.5rem;
   border: 0;
@@ -546,7 +683,11 @@ body {
   font-size: 0.8rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  min-width: 4.5rem;
+  /* 3.2rem, not the shipped 4.5rem: 4.5rem reserved room for "999 / 999",
+     but a transcript search realistically shows at most "99 / 99" - 3.2rem
+     still holds that, and hands the difference back to the row for the
+     same reason #search's min-width shrank above. */
+  min-width: 3.2rem;
   text-align: center;
 }
 
@@ -558,20 +699,39 @@ body {
    itself on hover was the original complaint, not a shape preference).
    :focus-visible is untouched here - the shared rule near the top of this
    file already outlines any focused element 2px outside its box, which
-   sits clear of this border rather than fighting it for attention. */
+   sits clear of this border rather than fighting it for attention.
+
+   flex: none; white-space: nowrap - a button is a flex item of .tb-row/
+   .tb-group with the default flex-shrink: 1 and no white-space rule, so
+   once a row runs short the BUTTON itself compresses and its label wraps
+   onto a second line inside its own border - "Save a copy" over two lines,
+   with every button in the row grown taller to match. That was always
+   latent; it only matters now that the toolbar can genuinely run short of
+   room at every width down to the stacking breakpoint, not just below it.
+   flex: none plus nowrap makes the button an incompressible box, so when
+   the row runs out of space the GROUP wraps to a second line instead (see
+   .tb-group's own flex-wrap: wrap) and every button keeps the shape it has
+   at full width - this is what the widest layout already did by simply
+   having room to spare; the rule now makes it true everywhere.
+
+   font-size/gap/padding read the fluid --tb-* tokens (see their own
+   comment near the top of this file) instead of fixed values - min-height
+   stays a literal 44px, deliberately excluded from that scale. */
 .tb-btn, .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  flex: none;
+  gap: var(--tb-gap);
   min-height: 44px;
-  padding: 0 0.6rem;
+  padding: 0 var(--tb-pad);
   border: var(--control-border-width) solid var(--control-border);
   border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--tb-font);
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--fast) ease-out, color var(--fast) ease-out,
               border-color var(--fast) ease-out;
@@ -588,15 +748,21 @@ body {
    states, and a button that looked identical while being clicked as while
    merely hovered was part of "controls don't read as controls".
 
-   Excludes a currently-on toggle ([aria-pressed="true"], or #outline-toggle
-   with [aria-expanded="true"] - the only two .tb-btn states with a
-   persistent "on" cue of their own): without the exclusion this rule ties
-   on specificity with the toggle's own :active rule below and, on source
+   Excludes a currently-on toggle ([aria-pressed="true"], the flags toggle's
+   own persistent "on" cue): without the exclusion this rule ties on
+   specificity with the toggle's own :active rule below and, on source
    order, would win and flash the whole button to plain --accent - which
    erases the exact "this is currently on" signal the toggle rule exists to
    show. See .tb-btn[aria-pressed="true"]:active below for what a toggle's
-   own press state looks like instead. */
-.tb-btn:active:not([aria-pressed="true"]):not([aria-expanded="true"]),
+   own press state looks like instead.
+
+   This used to also exclude :not([aria-expanded="true"]), for the
+   sidebar's old open/close toggle button and its matching "currently open"
+   cue - removed along with that button (the sidebar is never hidden any
+   more, so nothing opens or closes it); nothing else styled as a
+   .tb-btn/.icon-btn sets aria-expanded (the swatch trigger and the speaker
+   chip's own reassignment button do, but neither carries either class). */
+.tb-btn:active:not([aria-pressed="true"]),
 .icon-btn:active:not([aria-pressed="true"]) {
   background: var(--accent);
   color: var(--accent-text);
@@ -639,13 +805,17 @@ body {
   filter: brightness(0.88);
 }
 
-/* Tier 3, toggle-on ([aria-pressed="true"] for the flags toggle,
-   [aria-expanded="true"] for #outline-toggle - see that selector below).
-   Used to fill with --surface-hover, the exact value hovering ANY secondary
-   button already produces - so "this toggle is on" and "you are merely
-   hovering a button" looked identical, which is the bug this tier exists to
-   fix. --accent-tint reads as an accent state at a glance, at rest, with no
-   pointer involved. */
+/* Tier 3, toggle-on ([aria-pressed="true"] for the flags toggle - this used
+   to also cover [aria-expanded="true"] for the sidebar's old open/close
+   toggle, which needed the same "currently active" legibility for its own
+   persistent open/closed state; removed along with that button, since the
+   outline is no longer ever hidden behind a toggle to begin with - see the
+   outline's own rule further down for what replaced it). Used to fill
+   with --surface-hover,
+   the exact value hovering ANY secondary button already produces - so
+   "this toggle is on" and "you are merely hovering a button" looked
+   identical, which is the bug this tier exists to fix. --accent-tint reads
+   as an accent state at a glance, at rest, with no pointer involved. */
 .tb-btn[aria-pressed="true"] {
   background: var(--accent-tint);
   color: var(--text);
@@ -657,21 +827,6 @@ body {
    erased the tint would erase the "currently on" cue it is meant to
    modify, not just add a momentary effect on top of it. */
 .tb-btn[aria-pressed="true"]:active { filter: brightness(0.92); }
-
-/* #outline-toggle has no [aria-pressed] of its own (it opens a panel, it
-   does not hold a persistent boolean the way the flags toggle does) but
-   needs the same "this is currently active" legibility: on a narrow screen
-   the sidebar becomes a toggled overlay (see the responsive section below),
-   and without this a reader has no way to tell from the toolbar alone
-   whether it is already open. Keyed to [aria-expanded="true"], which
-   transcript.js already keeps in sync with the overlay's own open state. */
-#outline-toggle[aria-expanded="true"] {
-  background: var(--accent-tint);
-  color: var(--text);
-  border-color: var(--accent);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-#outline-toggle[aria-expanded="true"]:active { filter: brightness(0.92); }
 
 /* Deliberately excluded from the squircle treatment above: this reads as an
    underlined text link (its own affordance, already legible), not a
@@ -729,41 +884,65 @@ body {
 
 /* --------------------------------------------------------------- layout --- */
 
-/* Three tracks now (flank / main / flank), not two - see --layout-columns
-   above for why a shared token drives both this grid and .toolbar's. <main>
+/* Two tracks now (main / rail), not three - see --layout-columns above for
+   why a shared token drives both this grid and .toolbar's, and for why the
+   old empty third track is gone rather than kept for wide screens. <main>
    still comes first in markup for the same reason it always did (a screen
-   reader or a JS-disabled reader hits the transcript before the nav); the
-   grid-column placement below repaints that source order into the middle
-   track rather than the first one, which is what actually puts main in the
-   centre - source order and visual position are independent once
-   grid-column is explicit.
+   reader or a JS-disabled reader hits the transcript before the nav, and
+   the outline was never hidden from a script-disabled reader in the first
+   place - see .outline's own comment below for the hole this closes); the
+   grid-column placement below repaints that source order into track 1,
+   which happens to already be main's natural reading position now that
+   there is no leading empty track to repaint it out of.
 
    Verified empirically, not just reasoned about, because dir="rtl" grid
    track direction is exactly the kind of thing that is easy to get backwards
    on paper: in this dir="rtl" document, grid-template-columns track 1 still
    maps to the inline-start edge, which is the physical RIGHT here (same
    convention as normal block flow) - so <aside> (visually on the left)
-   belongs in track 3, and that placement was confirmed in a real rendered
-   page, not assumed from the RTL/LTR mapping alone. Collapses to a single
-   column below the breakpoint in the responsive section, where the sidebar
-   becomes a toggled overlay instead of a grid column. */
+   belongs in the LAST track, and that placement was confirmed in a real
+   rendered page, not assumed from the RTL/LTR mapping alone. That part of
+   the reasoning is unchanged by dropping a track; only which track number
+   counts as "last" moved, from 3 to 2.
+
+   This file is desktop-first, not mobile-first, matching every other
+   breakpoint in it (480px, 768px) - the value below is the one that
+   applies at every width with no upper bound, and the max-width: 819px
+   block near the bottom of this file is what narrows it down, not the
+   other way around. Do not "fix" that by adding a min-width query above
+   this rule; there would then be two rules fighting over the same range
+   instead of one clear override. */
 .layout {
   display: grid;
   grid-template-columns: var(--layout-columns);
-  /* Centres the track row inside the grid box. A no-op at wide widths (the
-     three tracks already fill it), but load-bearing below the breakpoint,
-     where --layout-columns becomes a single --measure-wide track narrower
-     than the box: without this it would sit at the inline-start edge and
-     main would be off-centre again, which is the whole thing this layout
-     exists to fix. */
+  /* Centres the track row inside the grid box. A no-op above the stacking
+     breakpoint (the two tracks already fill it), but load-bearing below
+     it, where --layout-columns becomes a single --measure-wide track
+     narrower than the box: without this it would sit at the inline-start
+     edge and main would be off-centre again, which is the whole thing this
+     layout exists to fix. */
   justify-content: center;
   align-items: start;
-  gap: 0 1.5rem;
-  max-width: calc(var(--rail) * 2 + var(--measure) + 3rem);
+  gap: 0 2rem;
+  /* + 2rem, not + 3rem - see .toolbar's matching max-width comment above
+     for why. Left unreset below the stacking breakpoint, same as the gap
+     above: --rail stays defined (there is nothing width-dependent about
+     it any more - see its own comment), so the calc() stays valid, and a
+     box wider than the single remaining track is harmless under
+     justify-content: center, which centres that track inside it either
+     way. This is the same trade the old three-track version already made
+     for its own narrow breakpoint - not a new shortcut. */
+  max-width: calc(var(--rail) + var(--measure) + 2rem);
   margin: 0 auto;
 }
 
-main { grid-column: 2; min-width: 0; margin: 0; }
+/* grid-column: 1 is main's permanent home now - unlike the old three-track
+   layout, this does not change at the stacking breakpoint, because main
+   was always the first (and, above the breakpoint, the widest) track.
+   Only its ROW changes there, from the implicit row 1 to an explicit
+   row 2, once the outline stops being a side column and becomes a band
+   sitting above it in the same track - see the max-width: 819px block. */
+main { grid-column: 1; min-width: 0; margin: 0; }
 
 /* ------------------------------------------------------------- outline --- */
 
@@ -781,9 +960,22 @@ main { grid-column: 2; min-width: 0; margin: 0; }
    backdrop is back. Menus opened from within it (.spk-menu, .swatch-menu)
    deliberately keep the flat --panel instead - see their own comments for
    why a popover reads as MORE raised than its container, not equally
-   translucent. */
+   translucent.
+
+   Never display: none at any width any more, and there is no toggle button
+   left anywhere in the markup or CSS to reveal it - below the stacking
+   breakpoint this rule is overridden into a band above <main> instead of a
+   toggled fullscreen overlay (see the max-width: 819px block). That also
+   closes a hole the old overlay had: with JavaScript disabled, only the
+   toggle's click handler could ever open the overlay, so a script-disabled
+   reader below that breakpoint had no way to reach the file list or speaker
+   management at all - <main> was still fully readable (it is <aside>'s
+   sibling, not its child) but the navigation and renaming controls were
+   simply gone. An element that is always part of the document flow has no
+   such hole to have: a script-disabled reader gets exactly the sighted
+   layout, band or column, with nothing to click to reveal. */
 .outline {
-  grid-column: 3;
+  grid-column: 2;
   position: sticky;
   top: var(--toolbar-height, 0px);
   max-height: calc(100vh - var(--toolbar-height, 0px));
@@ -925,9 +1117,12 @@ main { grid-column: 2; min-width: 0; margin: 0; }
 }
 
 /* A vertical stack, not the flex-wrap row this used when it lived inline
-   above the transcript: the sidebar column (18rem, see .layout) is too
-   narrow for name inputs to sit side by side the way they could across the
-   full reading measure. */
+   above the transcript: the sidebar column (16rem, see --rail near the top
+   of this file) is too narrow for name inputs to sit side by side the way
+   they could across the full reading measure. Below the max-width: 819px
+   stacking breakpoint this reverts to a wrapping row again, for the
+   opposite reason - the whole reading measure is unavailable there too,
+   but the band is wider than 16rem, wide enough for two rows side by side. */
 .speakers {
   display: flex;
   flex-direction: column;
@@ -1742,97 +1937,99 @@ html[data-kbd] .plain-body:focus {
 
 /* ------------------------------------------------------------ responsive --- */
 
-/* #outline-toggle only exists in the markup when there is an <aside> to open
-   (see has_outline in formatting.py's _render_toolbar_html) - hidden here at
-   wide widths, where the sidebar is always visible in its own grid column
-   and a button that opens it would have nothing to do. */
-#outline-toggle { display: none; }
+/* 819px, chosen by looking at a real render rather than derived on paper:
+   at 820px the two-column layout (see --layout-columns near the top of
+   this file) still leaves 468px of reading measure with the toolbar
+   holding one line, and below that point the measure starts compressing
+   faster than the rigid rail can give width back. This replaces a very
+   different old breakpoint (1200px, collapsing the sidebar into a toggled
+   fullscreen overlay opened by a dedicated toolbar button) that no longer
+   applies at all: that number was measured against a FLEXIBLE flank
+   (minmax(0, var(--rail))) getting squeezed thin enough to make
+   .speaker-name unusable, and the rail is a rigid 16rem now - it never
+   gets squeezed, so there is no flank-shrinking failure mode left to time
+   a breakpoint against. Below this width the sidebar does not disappear
+   behind a toggle any more; it reflows into a band stacked above <main>
+   in the same single track, which is a layout change, not a visibility
+   one - see .outline's own rule for why that also closes an old no-JS
+   hole this file used to have. */
+@media (max-width: 819px) {
+  /* Reverts the wider body padding from the two-column state above - see
+     that rule's own comment for why it grew to 2rem in the first place
+     (funding backdrop margin out of the rail). Below this breakpoint there
+     is no rail to fund it from any more, so the original narrower value
+     comes back; the max-width: 480px block below narrows it further
+     still, and wins there because it comes later in this file. */
+  body { padding-inline: 1.25rem; }
 
-/* Moved from 900px to 1200px because the flanks are minmax(0, var(--rail))
-   now, not a fixed 18rem (see --layout-columns) - they get squeezed well
-   before 900px, and 900px was measured against the OLD fixed-width sidebar,
-   not this one.
-
-   Re-measured directly rather than recalculated on paper: the OS window in
-   the environment this was built in could not actually be resized (repeated
-   attempts left window.innerWidth pinned at its maximized value regardless
-   of the requested size), so the real breakpoint search used a same-origin
-   <iframe src="this document"> at a chosen CSS pixel width instead - an
-   iframe gets its own independent viewport equal to its own box width, so
-   this is real Chrome layout at that width, not an emulation or a formula.
-   Scanning .speaker-name's actual rendered width (getBoundingClientRect)
-   in 20px viewport steps gave a clean, linear readout as the flank
-   shrinks:
-
-     viewport   flank    .speaker-name width
-     1300px     262.5px  129.7px
-     1200px     212.5px   79.7px  <- chosen
-     1100px     162.5px   29.7px
-     1060px     142.5px   23.2px  (== padding + border; 0px of actual text)
-
-   79.7px was picked as the floor because it is (independently) almost
-   exactly the box a real short name needs: measuring "יוסי כהן" - a
-   plausible short full name, not just a two-character placeholder digit -
-   with a canvas 2D context set to .speaker-name's own computed font
-   (14.4px, the same font stack as the page) gives 46.7px of glyph width;
-   add the input's own padding (9.6px each side) and border
-   (--control-border-width, 2px each side) and the box a name that short
-   needs to render without scrolling internally is ~70-80px. 1200px is
-   where the two independently-derived numbers meet: the swatch trigger
-   never shrinks (flex: none at a fixed 44px), so this was the last width at
-   which the row still reads as three real controls rather than two squares
-   crowding a sliver nobody could type into.
-
-   The row used to hold a third control here - a locate button that grew a
-   visible turn count and, at its widest, squeezed .speaker-name down to
-   ~58-64px, still above the 79.7px floor above only by a smaller margin than
-   the swatch-trigger-plus-input measurement gives now. That button and its
-   count were removed as clutter; the row is just the swatch trigger and the
-   name input, so .speaker-name clears the 79.7px floor with more room than
-   the numbers above show, not less - nothing left to re-measure down to. */
-@media (max-width: 1200px) {
-  /* Below this width the sidebar column would squeeze the reading measure
-     rather than sit comfortably beside it, so the grid collapses to one
-     track and the aside becomes an overlay instead - opened by the toolbar
-     button that stayed invisible above this breakpoint.
-
-     Redefines the TOKEN, not .layout's grid-template-columns. Overriding
-     the property directly was the first attempt and silently reintroduced
-     the exact bug --layout-columns exists to prevent: .layout collapsed to
-     one track while .toolbar kept its three, so the two grids' track
-     boundaries diverged again and the toolbar's controls sat 174px away
-     from the reading column they are supposed to align with. A single
-     source of truth only holds if every override goes through it.
-
-     grid-column also has to move. main and .tb-row are placed in track 2,
-     which does not exist in a one-track template - and grid does not fall
-     back gracefully there, it invents an IMPLICIT second track to hold
-     them, which is where the stray 323px/798px split came from. Both move
-     to track 1 explicitly. */
+  /* Redefines the TOKEN, not .layout's grid-template-columns, for the same
+     reason the old 1200px rule did: overriding the property directly on
+     .layout alone would leave .toolbar still reading the two-column
+     value, and the two grids' track boundaries would diverge - a single
+     source of truth only holds if every override goes through it. */
   :root { --layout-columns: minmax(0, var(--measure)); }
+
+  /* .tb-row reverts to a single track (see --layout-columns above) and to
+     wrapping - the fluid clamp on .tb-btn/.icon-btn keeps each button's
+     own shape intact, but a phone-width toolbar still cannot hold every
+     button on one line, so the row itself, and .tb-group within it (a
+     button GROUP wrapping as a whole rather than an individual button
+     compressing - see the squircle comment on .tb-btn above), both fall
+     back to the shipped wrapping behaviour instead of the one-line
+     enforcement the two-column state uses. */
+  .tb-row, .tb-group { flex-wrap: wrap; }
   main, .tb-row { grid-column: 1; }
-  #outline-toggle { display: inline-flex; }
+  /* Pushes main below the outline band without touching source order -
+     <main> stays first in the markup (see .layout's own comment on why),
+     so a screen reader or a JS-disabled reader still meets the transcript
+     before the navigation; grid-row only repaints where each lands
+     visually, the same trick the old three-track rule used for grid-column
+     instead. */
+  main { grid-row: 2; }
+
   .outline {
-    display: none;
-    position: fixed;
-    inset-block: var(--toolbar-height, 0px) 0;
-    inset-inline: 0;
-    z-index: 45;
+    grid-column: 1;
+    grid-row: 1;
+    position: static;
     max-height: none;
-    padding: 1.25rem;
-    /* Same translucent surface as the base .outline rule above - this is
-       the same element, just its narrow-viewport fullscreen presentation,
-       and there is no reason the backdrop should stop reading through it
-       purely because the sidebar became a takeover instead of a rail. */
-    background: rgba(var(--panel-rgb), var(--panel-opacity));
-    box-shadow: 0 12px 30px rgb(0 0 0 / 0.25);
+    margin-bottom: 1.5rem;
+    /* Different padding than the sticky-rail state above - a band spanning
+       the full reading width does not need the rail's narrower horizontal
+       padding, and does not need its own scroll room at the bottom either. */
+    padding: 1rem 1.25rem 1.25rem;
   }
-  /* .open is toggled by transcript.js; without JavaScript #outline-toggle
-     has no click handler to add it, so the sidebar (file nav and speaker
-     management) is unreachable below this width on a script-disabled open.
-     The transcript itself is unaffected - <main> is a sibling of <aside>,
-     not inside it, so every turn stays fully readable regardless. */
-  .outline.open { display: block; }
+
+  /* Files become a wrapping row of chips rather than a vertical list - a
+     stacked list of full-width file entries would push the transcript an
+     entire screen down on a phone, which is a worse trade than a band of
+     files already is. */
+  .outline-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .outline-files li { margin: 0; }
+  .outline-files a { min-height: 40px; padding: 0 0.75rem; }
+
+  /* Speaker rows wrap two-up where there is room. flex: 1 1 11rem keeps a
+     row above the ~140px floor its swatch-plus-input pair needs (see the
+     old breakpoint's measurement, now retired, for where that number came
+     from) while letting two share a 390px phone screen. */
+  .outline-speakers .speakers {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .speakers-title { flex-basis: 100%; margin-bottom: 0; }
+  .speaker-row { flex: 1 1 11rem; margin-inline: 0; }
+
+  /* Both actions get their own full-width line rather than being wrapped
+     in beside a speaker row, where "Add speaker" and "Use these names in
+     all files" ended up sharing a line and reading as one control. */
+  .outline-speakers .speakers .apply-all,
+  .outline-speakers .speakers .add-speaker { flex: 0 0 100%; }
 }
 
 @media (max-width: 480px) {
@@ -1840,6 +2037,16 @@ html[data-kbd] .plain-body:focus {
   .toolbar { gap: 0.4rem; }
   .tb-btn span { display: none; }
   .tb-btn.primary span { display: inline; }
+  /* .add-speaker is a .tb-btn too (see formatting.py's _render_speakers_html),
+     so the rule above strips its label along with every toolbar button's -
+     fine for the toolbar, where a button is still recognisable by its icon
+     alone, but wrong here: this button now lives in a sidebar that is
+     ALWAYS on screen (never hidden behind the old open/close toggle, which
+     no longer exists), so a reader at this width was left with a bare "+" circle and
+     no indication of what it adds. The icon-only treatment is right for
+     the toolbar and wrong for a sidebar action; this opts the one button
+     back in. */
+  .add-speaker span { display: inline; }
   .source { padding-inline: 0.9rem; }
   .file-bar { margin-inline: -0.9rem; padding-inline: 0.9rem; }
 }

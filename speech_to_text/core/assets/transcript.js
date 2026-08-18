@@ -1476,7 +1476,6 @@
 
   function bindOutline() {
     var outline = document.getElementById('outline');
-    var toggle = document.getElementById('outline-toggle');
 
     // No <aside> at all (a single file with no speakers - see
     // _render_outline_html()'s early return) - nothing here to wire up.
@@ -1497,44 +1496,7 @@
         // anyway, rather than asserting something the heuristic then has to
         // be prevented from overruling.
         setActiveFile(a.dataset.file);
-        // A real navigation (the href does the scrolling) - closing the
-        // overlay after it is only meaningful below the narrow-screen
-        // breakpoint, where .open controls visibility; toggling it off
-        // above that breakpoint is a harmless no-op since CSS ignores the
-        // class there.
-        closeOutline();
       });
-    });
-
-    function openOutline() {
-      outline.classList.add('open');
-      if (toggle) { toggle.setAttribute('aria-expanded', 'true'); }
-      var first = outline.querySelector('a, button, input');
-      if (first) { first.focus(); }
-    }
-
-    function closeOutlineImpl() {
-      outline.classList.remove('open');
-      if (toggle) { toggle.setAttribute('aria-expanded', 'false'); }
-    }
-    closeOutline = closeOutlineImpl;
-
-    if (toggle) {
-      toggle.addEventListener('click', function () {
-        if (outline.classList.contains('open')) { closeOutline(); } else { openOutline(); }
-      });
-    }
-
-    // Escape closes the overlay - not a focus trap (the plan is explicit
-    // that this must not trap focus), just the same "Escape dismisses the
-    // thing that's open" behaviour closeMenu() already gives the popovers.
-    // Tab is left alone entirely: a reader who tabs out of the overlay
-    // while it happens to be open is not stuck inside it.
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && outline.classList.contains('open')) {
-        closeOutline();
-        if (toggle) { toggle.focus(); }
-      }
     });
 
     // Which file is "current" is driven by the same observer that drives
@@ -1664,12 +1626,6 @@
       window.addEventListener('resize', pickActiveFromGeometry);
     }
   }
-
-  // Reassigned by bindOutline() once the real <aside> (if any) is found -
-  // declared up here so keydown/click handlers above can reference it
-  // before the reassignment runs, and so calling it when there is no
-  // outline at all is a safe no-op instead of a ReferenceError.
-  var closeOutline = function () {};
 
   // ---------------------------------------------------------------- layout
 
