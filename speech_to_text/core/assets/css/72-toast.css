@@ -1,0 +1,33 @@
+/* --------------------------------------------------------------- toast --- */
+
+/* role="status" + aria-live="polite" (set in formatting.py) means this is
+   announced without moving focus - unlike the .copied flash on the button
+   that triggered it, which tells you *which* control acted, this tells you
+   *what* happened, for the times the button itself is out of view (copying
+   from the plain-text panel while a card is scrolled off, for instance).
+
+   [hidden] gates presence (screen readers, tab order); the fade is a
+   separate .show class transcript.js toggles a frame later, so the
+   transition actually has something to animate from rather than jumping
+   from [hidden] straight to fully visible. */
+.toast {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 5.5rem;
+  z-index: 60;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: calc(100% - 2.5rem);
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.85rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--fast) ease-out, transform var(--fast) ease-out;
+  pointer-events: none;
+}
+.toast[hidden] { display: none; }
+.toast.show { opacity: 1; transform: translateY(0); }

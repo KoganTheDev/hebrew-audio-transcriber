@@ -1,0 +1,314 @@
+/* -------------------------------------------------------------- source --- */
+
+/* Each recording is its own translucent panel floating over the backdrop,
+   not flat content sitting directly on it - the earlier flat layout was the
+   whole reason a batch's files were hard to tell apart while scrolling.
+   rgba(var(--panel-rgb), var(--panel-opacity)), not the flat --panel: the
+   panel has to stay partly see-through for the backdrop to read as "behind
+   the text" rather than swapped out for a solid card, and the RGB triplet +
+   separate opacity (matching --backdrop-opacity's shape) is what lets
+   tests/test_transcript_styles.py compute the resulting composite instead of
+   trusting an rgba() literal by eye. */
+.source {
+  margin: 0 0 2.5rem;
+  padding: 0 1.25rem 1.5rem;
+  border-radius: calc(var(--radius) * 2);
+  background: rgba(var(--panel-rgb), var(--panel-opacity));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px rgb(0 0 0 / 0.10);
+}
+
+/* Sticks below the toolbar, not at its own top:0 - --toolbar-height is
+   measured and written by transcript.js (the toolbar wraps onto a second
+   line at narrow widths, so a hardcoded number here would drift out of sync
+   with it rather than the two ever being kept equal by hand.
+
+   Translucent like .source above, not the flat --panel: the file bar sits
+   flush against .source's own edges (the negative margin below) and fully
+   occludes whatever of .source is behind it, so an opaque file bar would be
+   a solid seam breaking the backdrop exactly where a reader's eye lands
+   first. It composites against the SAME single backdrop layer .source does
+   here, not a second one stacked on top - test_backdrop_worst_case_contrast
+   below already covers this pairing via --muted (the file position label's
+   colour), not a separate one. */
+.file-bar {
+  position: sticky;
+  top: var(--toolbar-height, 0px);
+  z-index: 20;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 -1.25rem;
+  padding: 0.85rem 1.25rem 0.7rem;
+  background: rgba(var(--panel-rgb), var(--panel-opacity));
+  border-start-start-radius: calc(var(--radius) * 2);
+  border-start-end-radius: calc(var(--radius) * 2);
+  border-bottom: 2px solid var(--rule);
+}
+/* --spk comes from data-file-accent itself, set by the shared
+   [data-palette]/[data-file-accent] block near the top of this file - see
+   its comment for how one custom property replaced this file's eight
+   separate per-index rules. */
+.file-bar { border-bottom-color: var(--spk); }
+
+.file-bar h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.file-position {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A vertical stack, not the flex-wrap row this used when it lived inline
+   above the transcript: the sidebar column (16rem, see --rail near the top
+   of this file) is too narrow for name inputs to sit side by side the way
+   they could across the full reading measure. Below the max-width: 819px
+   stacking breakpoint this reverts to a wrapping row again, for the
+   opposite reason - the whole reading measure is unavailable there too,
+   but the band is wider than 16rem, wide enough for two rows side by side. */
+.speakers {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+.speakers-title {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* No longer .swatch-menu's own anchor - the popover is detached to <body>
+   with JS-computed fixed coordinates while open (see .swatch-menu's own
+   comment for why), so position: relative here has nothing left to anchor.
+   Kept anyway: .speaker-row still establishes the stacking context its
+   :hover/:focus-within background sits in, and removing it is not part of
+   what this fix is about.
+
+   display: flex, not inline-flex any more: this row reported as inert next
+   to .turn and .outline-files a, both of which react on hover, because it
+   had no :hover rule at all - this file's own inline/gap layout worked fine
+   without one, but an inline-flex box only ever sizes to its content, and
+   the hover surface added below has to span the panel the way every other
+   interactive row in it does, not just hug the swatch/input pair.
+   As a flex item of .speakers (display: flex; flex-direction: column;
+   align-items: stretch), an item with display: flex already gets
+   blockified and stretched to the container's full width regardless of
+   inline vs block flex - this switch is about saying so explicitly, not
+   about triggering behaviour that was silently absent before.
+
+   padding + a matching negative inline margin: the padding is what gives
+   the hover background room around the packed swatch/input pair
+   (the same reason .outline-files a has its own padding), and the negative
+   margin cancels it back out so the row's *content* still starts at the
+   same inline position it always did, flush with the panel's other
+   children - only the invisible-at-rest hover box grows, not the layout. */
+.speaker-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.4rem;
+  margin-inline: -0.4rem;
+  border-radius: var(--control-radius);
+  transition: background var(--fast) ease-out;
+}
+/* :focus-within, not :hover alone - the row contains a real <input>
+   (.speaker-name), so a keyboard user tabbing into the name field needs the
+   same grouping cue a mouse user hovering the row already gets. .turn
+   follows the same reasoning for its own :hover/:focus-within pair.
+
+   No transform lift here, unlike .turn's translateY(-1px): .turn is a
+   static content card, so nudging it 1px on hover has nothing to disturb.
+   This row holds a live text input a person may be mid-keystroke in when
+   :focus-within fires - jostling the row would jostle the input (and the
+   caret inside it) at exactly that moment, which is a worse trade than the
+   lift is worth for a background-only cue. */
+.speaker-row:hover, .speaker-row:focus-within { background: var(--surface-hover); }
+
+/* .swatch is the popover dots only (the reassignment menu's and the colour
+   menu's own per-item indicators) - .swatch-rest is the one always-visible
+   dot inside .swatch-trigger. They used to share one class, which is what
+   let an unscoped `.speaker-row[data-palette="N"] .swatch` descendant rule
+   reach into the popover: buildSwatchMenu() opened the menu as a *sibling*
+   of the trigger button, still inside the same `.speaker-row`, so every
+   `.swatch` dot in that popover was also, by pure DOM nesting, a descendant
+   of the row carrying the row's own data-palette. That rule tied on
+   specificity with the popover's own per-dot `.swatch-menu-item
+   .swatch[data-palette="N"]` rule, so source order silently picked a
+   winner - which is why only palette indices *below* the row's current
+   colour painted correctly and picking the last colour made the whole menu
+   go uniform. Splitting the class removed the collision by construction.
+
+   Colour is no longer painted by per-index descendant rules like the ones
+   above at all - see the shared [data-palette]/[data-file-accent] block
+   near the top of this file. Both classes below just read the
+   inherited-or-own --spk custom property. That mechanism does not depend
+   on the class split the way the old descendant selectors did (a dot's own
+   data-palette always wins over an inherited --spk regardless of which
+   class the dot carries - see that block's own comment on why), but the
+   split stays anyway: it is what makes ".swatch-rest shows the row's OWN
+   colour, .swatch shows a MENU ITEM's colour" a property of the markup
+   itself rather than an accident of which rule happens to win, and undoing
+   it was explicitly out of scope for this pass - see _swatch_trigger_html()
+   in formatting.py, which still relies on the two classes never colliding. */
+.swatch, .swatch-rest { width: 9px; height: 9px; border-radius: 50%; background: var(--spk, var(--muted)); flex: none; }
+
+/* Squircle here too - a name field is as much "a control in the sidebar" as
+   the swatch trigger beside it, and an underlined-only input was exactly the
+   kind of control that used to disappear into the page. Full border, not
+   just the bottom rule it had before. */
+.speaker-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 0.6rem;
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  transition: border-color var(--fast) ease-out;
+}
+.speaker-name:focus { border-color: var(--accent); }
+/* Same exemption #search already carries, for the same reason: the shared
+   :focus-visible rule draws a ring 2px OUTSIDE the box, and on a name field
+   that ring lands on top of the row's own :focus-within background and
+   duplicates a cue the field already gives twice over - the accent border
+   above plus that background. The user asked for it gone while editing a
+   speaker name. The focus state stays fully visible without it, which is
+   why dropping the ring here is safe where dropping it on a bare control
+   would not be. */
+.speaker-name:focus-visible { outline: none; }
+
+/* The one always-visible colour control per speaker row: a small dot (its
+   colour comes from --spk, set on .speaker-row itself by the shared
+   [data-palette] block near the top of this file and inherited down to this
+   dot) inside a 44px hit area, not eight always-expanded buttons - see
+   _swatch_trigger_html()'s
+   docstring for why that first version had to go: with even two speakers it
+   put sixteen full-size circles above the transcript, taller than the
+   content itself. Clicking it opens .swatch-menu, built on demand by
+   transcript.js's buildSwatchMenu() - the trigger carries no colour options
+   of its own, only the current one. */
+/* Radius stays 50% - circular, not --control-radius - the one deliberate
+   shape exception the Phase 0 mockup called out: a colour indicator reads
+   as a colour, not as a shape choice, so squircle-ing it would blur the two
+   meanings. The border weight is not exempt, though: it was invisible at
+   rest before (1px solid transparent, only ever appearing on hover) and now
+   carries the same --control-border-width/--control-border every other
+   control's resting state uses, so this control reads as one *before* the
+   pointer ever reaches it too. */
+.swatch-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+  transition: background var(--fast) ease-out, border-color var(--fast) ease-out;
+}
+.swatch-trigger .swatch-rest { width: 16px; height: 16px; }
+.swatch-trigger:hover, .swatch-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+.swatch-trigger:active { background: var(--surface-hover); border-color: var(--accent); filter: brightness(0.92); }
+
+/* The popover itself - same general shape as .spk-menu (built and torn down
+   by transcript.js rather than living in the initial markup; a grid rather
+   than the menu's vertical list, because eight colours read better as a
+   small swatch grid than as eight stacked rows of text) - but NOT anchored
+   the same way. .speaker-row lives inside .outline, which is
+   overflow-y: auto so an arbitrarily long file/speaker list can scroll
+   without growing the whole page - and that overflow clips any ordinary
+   position: absolute descendant at the sidebar's own edge, which is exactly
+   what used to happen to this menu near the bottom of a long list.
+
+   Two fixes were weighed: (a) give the sidebar an inner scrolling wrapper
+   so .outline itself stays unclipped and the popover escapes upward to it,
+   or (b) detach the popover from the scrolling subtree entirely - move it
+   to <body> with position: fixed and coordinates read from the trigger's
+   own getBoundingClientRect() - when it opens. (b) was picked:
+   restructuring the sidebar into an outer/inner wrapper pair (a) touches
+   every rule that currently targets .outline's own box (padding, sticky
+   top, max-height, the panel styling) for a fix that is really
+   about one popover, where (b) is a change scoped entirely to
+   transcript.js's toggleMenu()/positionDetachedMenu() plus this rule
+   dropping its inset-inline-start/top anchoring (now set inline, in
+   physical px, once per open - see positionDetachedMenu()'s own comment on
+   why physical coordinates are correct there despite this file using
+   logical properties everywhere else). The trade-off: a detached popover
+   does not follow the trigger if the sidebar is scrolled while it is open,
+   so transcript.js closes it on scroll instead of letting it drift away
+   from the button that opened it. */
+.swatch-menu {
+  position: absolute;
+  z-index: 10;
+  inset-inline-start: 0;
+  top: 100%;
+  margin-top: 0.2rem;
+  display: grid;
+  grid-template-columns: repeat(4, 44px);
+  padding: 0.2rem;
+  /* --rule (1.26:1), not --control-border (3:1) - deliberately still
+     decorative, unlike every other interactive surface's border in this
+     file. The reason the squircle controls needed a 3:1 border in the first
+     place was that the border IS a resting control's only "this is
+     something you can act on" signal (see the squircle comment on .tb-btn).
+     A popover has no such need: its own box-shadow (below) already draws a
+     visible boundary against the page behind it before a reader even looks
+     at the 1px edge, so this line is closing the shape, not signalling that
+     the shape exists. Same reasoning applies to .spk-menu's identical
+     border below - stated once here rather than twice. */
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  /* --panel, not --bg: a popover is a raised surface over whatever it opened
+     from (here, the sidebar's own --panel), so it needs to read as MORE
+     raised than its container, not flush with the page ground two steps
+     below it. */
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+.swatch-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+.swatch-menu-item .swatch { width: 18px; height: 18px; }
+.swatch-menu-item:hover, .swatch-menu-item:focus-visible { background: var(--surface-hover); }
+/* Selection is a ring, not just the swatch's own colour - colour alone
+   never carries meaning on its own here, matching the rule the
+   low-confidence tint/underline pairing already follows elsewhere in this
+   file. */
+.swatch-menu-item[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--text); }
+
+/* .link-btn's base rule lives in css/16-toolbar.css; a second copy of
+   ".link-btn { color: ...; font-size: ...; text-decoration: ...; }" used
+   to sit here too, fully shadowed by the toolbar one (same three
+   declarations, same values, later in source order but with nothing left
+   to change) - deleted rather than kept as a "just in case" override. */
+
+.add-speaker { color: var(--accent); }
+.add-speaker .icon { color: inherit; }

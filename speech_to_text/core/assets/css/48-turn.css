@@ -1,0 +1,350 @@
+/* ---------------------------------------------------------------- turn --- */
+
+.turn {
+  position: relative;
+  margin: 0 0 0.35rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  border-inline-start: 2px solid var(--rule);
+  background: var(--surface);
+  transition: background var(--fast) ease-out, transform var(--fast) ease-out;
+}
+
+/* Raises the card holding an open .spk-menu above its own later siblings.
+   Every .turn is position: relative with no z-index of its own, so all of
+   them paint in one shared layer at stack level 0 and, within that level,
+   later DOM order wins - card N+1 paints over card N's popover, which is a
+   descendant of card N and therefore painted along with it, underneath
+   N+1. z-index alone on .turn wouldn't fix this (it's still 0, tying with
+   every sibling); this card needs a HIGHER stack level than its
+   zero-level siblings while its menu is open, which is what this class
+   supplies.
+
+   Keyed to an explicit class set by transcript.js's toggleMenu()/closeMenu()
+   (see menuOpenTurn there), not to :hover: a reassignment menu stays open
+   after the pointer leaves the card - clicking an item, or even just moving
+   the mouse toward the menu itself, unhovers .turn well before the menu
+   closes - so a hover-keyed z-index would drop the card (and its still-open
+   menu) back underneath the next card at exactly the moment the reader is
+   trying to use it. .turn:hover's own transform: translateY(-1px) already
+   creates a stacking context of its own, which is why this bug can look
+   fixed while testing with the mouse still over the card and only actually
+   shows up once you check the truly failing case: a menu left open on a
+   card the pointer is no longer touching. */
+.turn.menu-open { z-index: 1; }
+/* Keyed on data-palette, not data-speaker: identity (who is speaking, which
+   drives the name lookup in transcript.js's applyNames()) and colour
+   (which of the eight verified swatches paints this turn) used to be the
+   same number by definition. Recolouring and reassignment need to change
+   one without the other - reassigning a turn to speaker "2" must not also
+   force it to wear whatever colour speaker "2" happened to render with
+   first - so the two are tracked as separate attributes, both kept in sync
+   by transcript.js whenever either changes.
+
+   STATED EXCEPTION: in Latte, four of these eight (yellow 2.31:1, peach
+   2.64:1, lavender 2.81:1, green 2.96:1 against --panel) do not clear the
+   3:1 floor this file otherwise holds every visible-boundary colour to.
+   This is accepted, not an oversight to "fix" by darkening the shared
+   --spk-N tokens - doing so would also darken the speaker chip and the
+   swatch dots, which DO carry real information and DO clear their own
+   floors already (see the PAIRS table in tests/test_transcript_styles.py).
+   This bar is decorative under the rule this file states at the top:
+   colour never carries meaning on its own - the speaker's *name* (.spk,
+   filled and verified at 4.5:1) is what identifies who is speaking; the bar
+   is a redundant, low-cost reinforcement of that same identity for a reader
+   already scanning by colour, not the only place the identity is available.
+   Not contrast-gated for that reason - it is the one colour value in this
+   file deliberately left unmeasured by PAIRS.
+
+   --spk itself comes from .turn's own data-palette, via the shared
+   [data-palette]/[data-file-accent] block near the top of this file - this
+   used to be eight separate `.turn[data-palette="N"]` rules, one per
+   --spk-N, collapsed the same way as .swatch-rest/.file-bar above. */
+.turn { border-inline-start-color: var(--spk); }
+
+.turn:hover, .turn:focus-within {
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+/* The turn currently being spoken. Marked with a filled, widened accent edge
+   rather than a background wash, so it stays legible under the hover tint and
+   does not fight the low-confidence shading inside the text.
+
+   Previously an inset box-shadow with a hand-written :root[dir="rtl"]
+   override to flip which side it painted on. box-shadow has no "start/end"
+   concept, so mirroring it for RTL meant maintaining two copies of the same
+   rule by hand. border-inline-start is a logical property: the layout engine
+   already knows which physical side "start" resolves to from the element's
+   direction, so thickening and recolouring that one border does the same job
+   with no duplicate selector and no risk of the two copies drifting apart.
+
+   Deliberately does NOT add font-weight, unlike
+   .outline-files a[aria-current="true"] - see that rule's own comment for
+   why the two "this is current" cues stay different rather than aligned. */
+.turn[data-playing] {
+  background: var(--surface-hover);
+  border-inline-start-width: 4px;
+  border-inline-start-color: var(--accent);
+}
+
+/* Hovering one card dims the others so a single speaker's thread is easy to
+   follow. Purely decorative - the name still carries the meaning.
+
+   0.5, not the original 0.72 (Phase 8): 0.72 read as too weak a separation
+   once judged against real Hebrew paragraphs rather than short English
+   samples - dense RTL text at 0.72 barely looked different from full
+   strength. Accepted trade-off, deliberately not "fixed" later: dimming
+   composites a card's text toward the panel behind it, so a non-focused
+   card's text drops below the 4.5:1 floor while the pointer is over the
+   section (0.72 already did this, more mildly - 0.5 is a difference of
+   degree, not a new problem). That is fine because it is transient (gone
+   the moment the pointer moves, or on blur for the focus-within case below)
+   and it only ever affects text the reader is, by definition, not currently
+   reading - the card under the pointer stays at full contrast throughout.
+   If this number is revisited, revisit it having read this comment, not by
+   noticing the ratio in isolation. */
+.source:hover .turn { transition: opacity var(--fast) ease-out; }
+.source:hover .turn:not(:hover) { opacity: 0.5; }
+.source:hover .turn:focus-within { opacity: 1; }
+
+.turn h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* A real control affordance, not a bracketed label that happens to have a
+   click handler: a pill with its own border and background, a play glyph,
+   and hover/focus states distinct from plain text - the previous version
+   read as decoration and clicking it was a discoverability accident. */
+/* Squircle, same as every other control now - was a fully-rounded 999px
+   capsule with a --rule (1.26:1, decorative-only) border; both changed
+   together, since a pill shape historically WAS this control's whole
+   affordance and it needs the same load-bearing border every other control
+   just got, at the same radius, not a special case. */
+.ts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 44px;
+  padding: 0 0.6rem;
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color var(--fast) ease-out, background var(--fast) ease-out,
+              border-color var(--fast) ease-out;
+}
+.ts .icon { width: 12px; height: 12px; }
+.ts:hover { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+.ts:active { color: var(--accent-text); background: var(--accent); border-color: var(--accent); filter: brightness(0.92); }
+
+/* Set once the <audio> element fires an "error" - the file was moved away
+   from the transcript, or the container (.mkv, for instance) is one the
+   browser can't play. The timestamps stay in the markup as plain text
+   anchors, but nothing about them should still look or act like a live
+   control: no pointer cursor, no hover colour change, no click target.
+   pointer-events removes the click itself; the disabled/aria-disabled pair
+   set by transcript.js removes it from keyboard tab order and the
+   accessibility tree too, so the "this button does nothing" fact isn't
+   something only sighted mouse users find out by trying it.
+
+   Scoped to the section, not the document: a batch can mix recordings that
+   play with ones that do not, and one missing file must not take the other
+   transcripts' playback down with it. */
+.source[data-no-audio] .ts {
+  cursor: default;
+  pointer-events: none;
+  color: var(--muted);
+  background: transparent;
+  /* Strips the now-load-bearing --control-border entirely rather than
+     dimming it - a dead control keeps no border affordance at all, not a
+     fainter version of a live one's. border-width is untouched (still
+     --control-border-width) so the box does not reflow; only its colour
+     goes away. */
+  border-color: transparent;
+}
+.source[data-no-audio] .ts:hover { color: var(--muted); background: transparent; }
+
+/* Squircle here too, at the same --control-radius/--control-border-width
+   every other control uses. FILLED in both schemes, not outlined text on a
+   transparent chip as it used to be - a speaker chip's identity IS its
+   palette colour (already the thing that ties it to that speaker's turn
+   accent and swatch), and a filled pill carries that identity as strongly
+   as this system ever carries a colour, the same reasoning the primary
+   export button (Tier 1, see .tb-btn.primary) uses fill to outrank the
+   secondary/outlined tiers around it.
+
+   This is why Latte could not simply darken its accents and keep the old
+   outlined-text design: coloured text directly on --panel fails 4.5:1 for
+   every one of Latte's eight accents (see the Anuppuccin block comment in
+   :root). A filled chip sidesteps that entirely - the accent is now a
+   background, verified against its OWN paired --spk-N-chip-text at 4.5:1+
+   (PAIRS in tests/test_transcript_styles.py), not against --panel at all.
+   Mocha did not need this to pass contrast (its accents already clear
+   4.5:1 as text) but gets the same treatment anyway, for symmetry: one chip
+   design, not a component that quietly changes shape depending on scheme. */
+/* A thin, non-interactive positioning wrapper around .spk alone - not
+   position: relative on .spk itself, and not .turn either. The reassignment
+   menu has to open under the specific .spk button that was clicked, not at
+   the card's edge, which means its containing block (the ancestor
+   position: absolute measures against) has to be that button's own box. It
+   cannot be .spk directly: .spk-menu contains real <button role="menuitem">
+   items, and the HTML content model forbids interactive descendants inside
+   a <button> (this is also why .swatch-menu isn't nested inside
+   .swatch-trigger, its own button) - so the popover is inserted as this
+   wrapper's child instead, a sibling of .spk rather than a descendant of
+   it, which is the same DOM shape every accessible custom menu-button
+   pattern uses for exactly this reason. Sized to hug .spk exactly
+   (inline-flex, no padding of its own) so anchoring to the wrapper reads as
+   anchoring to the button - which is also why the header row's own
+   -0.4rem pull-in (visually tightening this control against .ts) lives on
+   the wrapper's margin, not .spk's own: a negative margin on .spk itself
+   would still look identical, but it shrinks a flex item's contribution to
+   its container's auto size without shrinking the item's own rendered box,
+   so .spk would render 0.4rem wider than .spk-anchor's box - and that gap
+   is exactly what a getBoundingClientRect()-based anchor cannot absorb,
+   the popover would open 0.4rem short of the button's real edge. Moving
+   the margin one level out costs nothing visually (h2 still gets the same
+   pull-in) and makes the wrapper's box equal the button's box exactly. */
+.spk-anchor { position: relative; display: inline-flex; margin-inline-start: -0.4rem; }
+
+.spk {
+  display: inline-flex;
+  align-items: center;
+  /* Width and style live here, at the base rule; only the colour itself
+     (background/color/border-color) is set below, reading --spk/--spk-text
+     from the shared [data-palette] block, so this line does not have to be
+     repeated per speaker just to change one value. */
+  border: var(--control-border-width) solid transparent;
+  padding: 0 0.5rem;
+  border-radius: var(--control-radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  /* Matches .ts's own 44px so the two controls that share this header line
+     - "when" and "who" - line up rather than one looking like an
+     afterthought next to the other. */
+  min-height: 44px;
+  transition: filter var(--fast) ease-out;
+}
+/* Hover and the pressed state both darken the existing fill via filter
+   rather than swapping to --surface-hover the way an outlined control
+   would - .spk has no unfilled resting state left to reveal, so "hover"
+   here means "the same chip, one step darker," the same brightness()
+   pattern .spk:active already used before this chip was filled (and that
+   .swatch-trigger:active and .ts:active still use). aria-expanded="true"
+   (the reassignment menu is open) shares the hover treatment, matching how
+   every other menu-button in this file (.swatch-trigger) marks "open" the
+   same as "hovered". */
+.spk:hover, .spk[aria-expanded="true"] { filter: brightness(0.94); }
+.spk:active { filter: brightness(0.88); }
+/* Filled with the speaker's own accent, text in its paired chip-text token
+   (verified at 4.5:1+, not against --panel but against the fill itself -
+   see the block comment above .spk for why that distinction is what makes
+   Latte's accents usable here at all) and a border in the SAME accent, not
+   --control-border: an already-filled chip's edge only needs to close the
+   shape, not add a second "this is a control" signal on top of the fill
+   that already carries one.
+
+   .spk carries its own data-palette (set in formatting.py alongside
+   data-speaker), matching the shared [data-palette]/[data-file-accent]
+   block near the top of this file directly rather than through .turn - so
+   --spk/--spk-text resolve the same whether read as inherited from the
+   surrounding .turn or as set on .spk itself; this used to be eight
+   separate `.turn[data-palette="N"] .spk` rules, one per --spk-N/
+   --spk-N-chip-text pair. */
+.spk {
+  background: var(--spk); color: var(--spk-text); border-color: var(--spk);
+}
+
+/* The reassignment menu, built on demand by transcript.js from the file's
+   current speaker roster (never baked into the initial markup, so it can
+   never go stale when a speaker is renamed or added after the page loads).
+   Anchored to .spk-anchor (see its own comment above) - inserted as
+   .spk-anchor's child via insertAdjacentElement('afterend', ...) against
+   the .spk button, so inset-inline-start: 0 / top: 100% land right under
+   the button that was actually clicked. It used to anchor against .turn,
+   the whole card, which is why the menu used to open flush with the
+   card's own edge instead of under the button. */
+.spk-menu {
+  position: absolute;
+  z-index: 10;
+  inset-inline-start: 0;
+  top: 100%;
+  margin-top: 0.2rem;
+  min-width: 10rem;
+  padding: 0.3rem;
+  /* --rule, decorative, matching .swatch-menu - see that rule's own comment
+     for why a popover's border stays at 1.26:1 while every other control's
+     moved to --control-border's 3:1. */
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  /* --panel, not --bg - same reasoning as .swatch-menu above: a popover
+     reads as raised over the card it opened from, not flush with the page
+     ground. */
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+.spk-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.spk-menu-item:hover, .spk-menu-item:focus-visible { background: var(--surface-hover); }
+.spk-menu-item[aria-checked="true"] { font-weight: 600; }
+.spk-menu-item .swatch { width: 10px; height: 10px; }
+
+.turn-actions {
+  margin-inline-start: auto;
+  display: flex;
+  gap: 0.15rem;
+  opacity: 0;
+  transition: opacity var(--fast) ease-out;
+}
+.turn:hover .turn-actions,
+.turn:focus-within .turn-actions { opacity: 1; }
+
+.copy-turn.copied, .copy-all.copied { color: var(--accent); border-color: var(--accent); }
+
+/* Keyboard-only ring - see the STATED EXCEPTION in the file's standing-rules
+   comment at the top for why this is html[data-kbd] .body:focus rather than
+   plain .body:focus-visible: :focus-visible alone matches on a
+   contenteditable element for a mouse click, which is exactly what the user
+   reported (the ring lighting up while they were only trying to select
+   text). html[data-kbd] is transcript.js's own tracked modality flag (set on
+   Tab keydown, cleared on pointerdown), not the browser's heuristic. */
+.body { outline: none; }
+html[data-kbd] .body:focus { outline: 2px solid var(--focus); outline-offset: 4px; }
+.body p { margin: 0.1rem 0; }
+
+.lowconf {
+  background: var(--warn-bg);
+  border-bottom: 2px dotted var(--warn-line);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark.hit { background: var(--hit-bg); color: inherit; border-radius: 2px; }
+/* Its own text colour, not "inherit" like the base .hit: --hit-current is a
+   mid-brightness amber in dark mode, and the inherited light body-text colour
+   only reaches 2.83:1 against it (see --hit-current-text above). */
+mark.hit.current { background: var(--hit-current); color: var(--hit-current-text); }

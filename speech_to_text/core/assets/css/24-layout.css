@@ -1,0 +1,62 @@
+/* --------------------------------------------------------------- layout --- */
+
+/* Two tracks now (main / rail), not three - see --layout-columns above for
+   why a shared token drives both this grid and .toolbar's, and for why the
+   old empty third track is gone rather than kept for wide screens. <main>
+   still comes first in markup for the same reason it always did (a screen
+   reader or a JS-disabled reader hits the transcript before the nav, and
+   the outline was never hidden from a script-disabled reader in the first
+   place - see .outline's own comment below for the hole this closes); the
+   grid-column placement below repaints that source order into track 1,
+   which happens to already be main's natural reading position now that
+   there is no leading empty track to repaint it out of.
+
+   Verified empirically, not just reasoned about, because dir="rtl" grid
+   track direction is exactly the kind of thing that is easy to get backwards
+   on paper: in this dir="rtl" document, grid-template-columns track 1 still
+   maps to the inline-start edge, which is the physical RIGHT here (same
+   convention as normal block flow) - so <aside> (visually on the left)
+   belongs in the LAST track, and that placement was confirmed in a real
+   rendered page, not assumed from the RTL/LTR mapping alone. That part of
+   the reasoning is unchanged by dropping a track; only which track number
+   counts as "last" moved, from 3 to 2.
+
+   This file is desktop-first, not mobile-first, matching every other
+   breakpoint in it (480px, 768px) - the value below is the one that
+   applies at every width with no upper bound, and the max-width: 819px
+   block in css/98-responsive.css is what narrows it down, not the other
+   way around. Do not "fix" that by adding a min-width query above this
+   rule; there would then be two rules fighting over the same range instead
+   of one clear override. */
+.layout {
+  display: grid;
+  grid-template-columns: var(--layout-columns);
+  /* Centres the track row inside the grid box. A no-op above the stacking
+     breakpoint (the two tracks already fill it), but load-bearing below
+     it, where --layout-columns becomes a single --measure-wide track
+     narrower than the box: without this it would sit at the inline-start
+     edge and main would be off-centre again, which is the whole thing this
+     layout exists to fix. */
+  justify-content: center;
+  align-items: start;
+  gap: 0 2rem;
+  /* + 2rem, not + 3rem - see .toolbar's matching max-width comment above
+     for why. Left unreset below the stacking breakpoint, same as the gap
+     above: --rail stays defined (there is nothing width-dependent about
+     it any more - see its own comment), so the calc() stays valid, and a
+     box wider than the single remaining track is harmless under
+     justify-content: center, which centres that track inside it either
+     way. This is the same trade the old three-track version already made
+     for its own narrow breakpoint - not a new shortcut. */
+  max-width: calc(var(--rail) + var(--measure) + 2rem);
+  margin: 0 auto;
+}
+
+/* grid-column: 1 is main's permanent home now - unlike the old three-track
+   layout, this does not change at the stacking breakpoint, because main
+   was always the first (and, above the breakpoint, the widest) track.
+   Only its ROW changes there, from the implicit row 1 to an explicit
+   row 2, once the outline stops being a side column and becomes a band
+   sitting above it in the same track - see the max-width: 819px block in
+   css/98-responsive.css. */
+main { grid-column: 1; min-width: 0; margin: 0; }

@@ -44,6 +44,7 @@ from .assets import (
     _VISTAS_DIR,
     _asset,
     _asset_bytes,
+    _asset_dir,
     _data_uri,
     _vista_data_uris,
     _vista_names,
@@ -171,9 +172,27 @@ def _render_head_html(doc_id: str, title: Optional[str]) -> List[str]:
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>{html.escape(title or 'Transcript')}</title>",
-        f"<style>{_asset('transcript.css')}</style>",
+        f"<style>{_asset_dir('css')}</style>",
         "</head>",
     ]
+
+
+def _render_script_html() -> str:
+    """
+    Job 3.5: transcript.js's inline <script>.
+
+    The concatenated fragments under core/assets/js/ (see _asset_dir()'s own
+    docstring) are bare statement bodies, not a standalone script - they were
+    split out of what used to be one `(function () { 'use strict'; ... })();`
+    IIFE, and every fragment still assumes it is running inside that one
+    function scope (a bare `return` in the first fragment returns from the
+    IIFE; later fragments' functions/vars are only reachable because they all
+    hoist into the same scope). This is the one place that wrapper is
+    written, so it exists exactly once no matter how many fragments there
+    are - each fragment file itself must never carry its own copy of the
+    `(function () { 'use strict'; ... })();` wrapper.
+    """
+    return "<script>(function () {\n  'use strict';\n\n" + _asset_dir("js") + "\n})();</script>"
 
 
 def _render_backdrop_html(vista: Optional[str]) -> List[str]:
@@ -355,7 +374,7 @@ def render_html(
         '<script type="application/json" id="transcript-data">',
         _json_payload(payload),
         "</script>",
-        f"<script>{_asset('transcript.js')}</script>",
+        _render_script_html(),
         "</body>",
         "</html>",
     ])

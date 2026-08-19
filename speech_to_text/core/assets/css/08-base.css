@@ -1,0 +1,80 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* Bottom padding reserves room for the sticky player so the last turn is
+     never hidden behind it.
+
+     2rem inline, not the narrower 1.25rem the max-width: 819px block
+     reverts to below the stacking breakpoint: losing the old three-track
+     layout's empty flank also lost the window the backdrop photo showed
+     through at the page edges - --panel-opacity is pinned at 0.93 by the
+     contrast tests (see its own comment), so it cannot be thinned to buy
+     that margin back instead. Funded out of the rail rather than out of
+     the reading measure: --rail shrank from 18rem to 16rem specifically to
+     pay for this and for .layout/.toolbar's wider gap, so the reading
+     column itself ends up the same width it always was - see --rail's own
+     comment near the top of this file for the arithmetic. */
+  padding: 0 2rem 6rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  /* Establishes a stacking context on body itself (without needing
+     position + z-index), so .backdrop's z-index:-1 is only compared against
+     body's own children - it paints above body's background-color and below
+     everything else in the document. Without this, .backdrop is a child of
+     an *unpositioned* body, so its negative z-index would place it in the
+     root stacking context instead, one step *before* body's own background
+     is painted - i.e. completely hidden behind it, not behind the text. */
+  isolation: isolate;
+}
+
+/* The stationary photo layer. A plain background-attachment: fixed on body
+   was the obvious first idea and was rejected: it's broken on iOS Safari,
+   it forces a repaint on every scroll frame on the browsers where it does
+   work, and it cannot carry its own opacity - opacity on body would fade the
+   text along with the image. A dedicated fixed, negative-z-index element
+   behind the content gets a stationary image, independently dimmable,
+   without touching body's own paint at all.
+
+   No background-image of its own: the photo (and, on narrow viewports, a
+   second art-directed portrait crop of the same photo behind an
+   @media (max-aspect-ratio: 3/4) rule) is supplied per render as a small
+   inline <style> element (see formatting.py._vista_data_uris and its
+   render_html() call site), because it changes per document while this
+   stylesheet does not. It used to be a background-image set through a plain
+   style="" attribute on this element directly, but an attribute can only
+   ever set one CSS rule and the portrait swap needs a media query, which
+   only a <style> block can hold - see PORTRAIT_W's comment in
+   tools/build_vistas.py for why a single crop cannot serve both desktop and
+   phone.
+
+   No blur here, and none is coming back: an @supports (backdrop-filter: ...)
+   panel-blur block used to sit in the .source rule below, and a whole-image
+   filter: blur() alternative was tried against this element directly.
+   Measured contrast impact of either was zero - blurring a photo changes
+   which pixels sit under which letter, it does not lighten or darken any of
+   them, so it bought no headroom against the worst-case test below and was
+   dropped along with the @supports blocks that implemented it.
+
+   Its own prefers-contrast: more rule used to sit right here, along with
+   .help-sheet's and .tour-card/.tour-ring's, three near-identical blocks
+   scattered next to whatever they touched - see css/92-contrast.css, where
+   all three are consolidated into one now. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  opacity: var(--backdrop-opacity);
+  pointer-events: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}

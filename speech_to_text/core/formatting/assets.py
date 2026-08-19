@@ -40,6 +40,38 @@ def _asset(name: str) -> str:
     return (_ASSETS / name).read_text(encoding="utf-8")
 
 
+@lru_cache(maxsize=None)
+def _asset_dir(name: str) -> str:
+    """
+    Read every fragment in an assets subdirectory and concatenate them, in
+    sorted filename order.
+
+    transcript.js and transcript.css each grew to roughly 2200 lines in one
+    file before this existed - long enough that finding "the audio section"
+    or "the dark palette" meant scrolling past a dozen unrelated concerns
+    first. Both are now a directory of numerically-prefixed fragments
+    (js/00-preamble.js, js/08-storage.js, ... js/99-init.js; css/00-tokens.css
+    ... css/98-responsive.css) instead of one file, and this is what glues
+    them back into the single inlined asset render_html() still needs.
+
+    The two-digit prefix on each fragment's filename IS the ordering, on
+    purpose, rather than a separate manifest file that could name fragments
+    in one order while they actually concatenate in another: sorting the
+    directory listing is exactly what a human editor sees in a file browser
+    too. This matters more for the JS side than the CSS side - see the
+    module docstring transcript.js's own 00-preamble.js fragment carries for
+    why the JS split has hard ordering constraints (a `return` that has to
+    stay literally first, an init epilogue that has to stay literally last)
+    that plain CSS concatenation does not.
+
+    Cached for the same reason _asset() is: a batch render would otherwise
+    re-read and re-join the same fragments once per document.
+    """
+    directory = _ASSETS / name
+    fragments = sorted(p for p in directory.iterdir() if p.is_file())
+    return "\n".join(fragment.read_text(encoding="utf-8") for fragment in fragments)
+
+
 _VISTAS_DIR = _ASSETS / "vistas"
 
 

@@ -16,11 +16,22 @@ same pairing in light mode was fine at 11.24:1.
 """
 
 import re
-from pathlib import Path
 
 import pytest
 
-CSS = Path(__file__).resolve().parents[1] / "speech_to_text" / "core" / "assets" / "transcript.css"
+from speech_to_text.core.formatting.assets import _asset_dir
+
+
+def _css_source() -> str:
+    """
+    The full stylesheet, concatenated from its css/ fragments in load order
+    - the same text render_html() actually inlines. transcript.css became a
+    directory of numerically-prefixed fragments (see _asset_dir()'s own
+    docstring); this is the one place that reassembly happens for every test
+    below, so each of them keeps checking exactly what ships rather than a
+    single transcript.css file that no longer exists.
+    """
+    return _asset_dir("css")
 
 # Minimums from WCAG 2.1: 4.5:1 for normal-size text, 3:1 for non-text UI that
 # still has to be seen (borders that signal state, the focus ring).
@@ -116,29 +127,50 @@ def contrast_ratio(foreground, background):
     return (lighter + 0.05) / (darker + 0.05)
 
 
-def _tokens(block_source):
-    """Custom properties in one block, with single-level var() indirection resolved."""
+def _tokens(block_source, extra=None):
+    """
+    Custom properties in one block, with one level of var() indirection
+    resolved - first against this block's own declarations, then (if
+    `extra` is given) against another block's tokens too. The second lookup
+    exists for the dark palette: both dark-mode activation rules
+    (@media (prefers-color-scheme: dark) and :root[data-theme="dark"]) now
+    only ever write `var(--dark-X)` references (see the --dark-* block's
+    own comment in css/00-tokens.css) - the actual hex values live once, in
+    the plain :root block, so resolving an activation rule's tokens needs
+    that block's tokens as a fallback.
+    """
     found = dict(re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", block_source))
+    lookup = dict(extra or {})
+    lookup.update(found)
     resolved = {}
     for name, value in found.items():
         value = value.strip()
         reference = re.fullmatch(r"var\((--[\w-]+)\)", value)
         if reference:
-            value = found.get(reference.group(1), value).strip()
+            value = lookup.get(reference.group(1), value).strip()
         resolved[name] = value
     return resolved
 
 
-def _block(pattern):
-    source = CSS.read_text(encoding="utf-8")
+def _raw_block(pattern):
+    """The unresolved declaration text of one `selector { ... }` block."""
+    source = _css_source()
     match = re.search(pattern + r"\s*\{(.*?)\n\}", source, re.S | re.M)
-    assert match, f"could not find the {pattern!r} block in transcript.css"
-    return _tokens(match.group(1))
+    assert match, f"could not find the {pattern!r} block in the stylesheet"
+    return match.group(1)
 
 
+def _block(pattern, extra=None):
+    return _tokens(_raw_block(pattern), extra=extra)
+
+
+_LIGHT = _block(r"^:root")
 SCHEMES = {
-    "light": _block(r"^:root"),
-    "dark": _block(r"^:root\[data-theme=\"dark\"\]"),
+    "light": _LIGHT,
+    # extra=_LIGHT: see _tokens()'s own docstring for why the dark
+    # activation rule's tokens only resolve with the plain :root block's
+    # tokens (where the --dark-* canonical values actually live) in scope.
+    "dark": _block(r"^:root\[data-theme=\"dark\"\]", extra=_LIGHT),
 }
 
 
@@ -237,18 +269,54 @@ def test_backdrop_worst_case_contrast_meets_wcag(scheme, foreground, minimum, pi
     )
 
 
-def test_both_dark_blocks_stay_in_step():
+def test_dark_activation_rules_reference_shared_canonical_tokens():
     """
-    Dark mode is declared twice - once under prefers-color-scheme for the
-    system default, once under [data-theme="dark"] for the in-page toggle. They
-    have to hold the same values, or the toggle silently changes the palette
-    rather than only changing when it applies.
+    Dark mode has to be reachable two ways - the system default, under
+    @media (prefers-color-scheme: dark), and an explicit in-page toggle,
+    under :root[data-theme="dark"] - and those two conditions cannot be
+    joined into one selector (one only applies inside a media query, the
+    other has to apply regardless of the system preference). That used to
+    mean the same 38 hex values were typed out twice, independently, in the
+    two activation blocks - caught only by this test comparing the two
+    blocks value for value, which is exactly the kind of check that is easy
+    to forget to run in your head while hand-editing a colour.
+
+    Each hex value now lives exactly once, as a --dark-* token in :root
+    (see css/00-tokens.css); both activation blocks below only ever write
+    `var(--dark-X)` references to it. That makes the two blocks impossible
+    to disagree about a *value* - there is only one value left to disagree
+    about - so what is left to check is the structural guarantee itself:
+    every declaration in both blocks has to be a var(--dark-*) reference,
+    and the two blocks have to name the same set of variables. A future
+    edit that typed a raw hex into either block again, instead of adding a
+    new --dark-* token and referencing it, would fail here immediately.
     """
-    media = _block(
+    media_raw = _raw_block(
         r"@media \(prefers-color-scheme: dark\)\s*\{"
         r"\s*:root:not\(\[data-theme=\"light\"\]\)"
     )
-    assert media == SCHEMES["dark"]
+    toggle_raw = _raw_block(r"^:root\[data-theme=\"dark\"\]")
+
+    def declared_vars(raw):
+        decls = dict(re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", raw))
+        assert decls, "no custom properties found in the activation block"
+        for name, value in decls.items():
+            match = re.fullmatch(r"var\((--dark-[\w-]+)\)", value.strip())
+            assert match, (
+                f"{name} does not resolve through a --dark-* token: {value!r} "
+                "- every declaration in a dark-mode activation rule must be "
+                "a var(--dark-X) reference into the canonical block in "
+                "css/00-tokens.css, never a literal value"
+            )
+        return decls
+
+    media_vars = declared_vars(media_raw)
+    toggle_vars = declared_vars(toggle_raw)
+    assert media_vars == toggle_vars, (
+        "the two dark-mode activation rules reference different --dark-* "
+        "tokens (or different sets of properties) - see this test's own "
+        "docstring for why they must name exactly the same ones"
+    )
 
 
 def _rule_block(source, selector):
@@ -278,7 +346,7 @@ def test_layout_and_toolbar_share_the_same_grid_columns():
     boxes stop being guaranteed to agree, even if today's numbers happen to
     match by coincidence.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     assert "--layout-columns:" in source
 
     layout = _rule_block(source, ".layout")
@@ -298,7 +366,7 @@ def test_toolbar_row_sits_across_both_tracks():
     controls out in, leaving the whole rail column empty above the sidebar;
     spanning hands it the rail's width too while the row's own inline-start
     edge still shares an edge with the reading column, same as before."""
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     tb_row = _rule_block(source, ".tb-row")
     assert _property(tb_row, "grid-column") == "1 / -1"
 
@@ -322,7 +390,7 @@ def test_rail_is_fixed_and_main_is_the_flexible_track():
     not wrapped in minmax() - which is the reverse of the old assertion,
     not a variation on it.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     match = re.search(r"--layout-columns:\s*([^;]+);", source)
     assert match, "--layout-columns not found in transcript.css"
     columns = match.group(1)
@@ -355,7 +423,7 @@ def test_stacking_breakpoint_matches_the_two_column_reading_measure():
     file is desktop-first throughout, matching every other breakpoint in
     it).
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     assert "@media (max-width: 819px)" in source
     assert "@media (max-width: 1200px)" not in source
     assert "@media (max-width: 900px)" not in source
@@ -372,7 +440,7 @@ def test_two_column_layout_is_the_unconditional_default():
     below that width until the min-width query kicked in, which is exactly
     the kind of accidental gap this checks for.
     """
-    source = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    source = re.sub(r"/\*.*?\*/", "", _css_source(), flags=re.S)
     root_block = _rule_block(source, ":root")
     assert _property(root_block, "--layout-columns") == (
         "minmax(0, var(--measure)) var(--rail)"
@@ -391,7 +459,7 @@ def test_toolbar_fluid_tokens_top_out_at_the_shipped_values():
     render, which is the one case this feature was explicitly not supposed
     to touch.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     root_block = _rule_block(source, ":root")
     tops = {
         "--tb-font": "0.9rem",
@@ -419,7 +487,7 @@ def test_outline_never_fully_hidden_at_any_width():
     it - so `display: none` must never appear anywhere .outline is styled,
     at any width.
     """
-    source = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    source = re.sub(r"/\*.*?\*/", "", _css_source(), flags=re.S)
     for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", source):
         selector, body = match.group(1).strip(), match.group(2)
         # Only the rightmost compound - the actual element a rule targets,
@@ -450,7 +518,7 @@ def test_only_the_shared_rule_declares_layout_grid_columns():
     each - the shared base rule reading var(--layout-columns) - never as a
     direct property override anywhere else, including inside a media query.
     """
-    source = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    source = re.sub(r"/\*.*?\*/", "", _css_source(), flags=re.S)
 
     def rules_declaring_gtc_for(class_name):
         hits = []
@@ -480,7 +548,7 @@ def test_speaker_row_reacts_to_hover_and_focus():
     (.speaker-name) and a keyboard user tabbing into it needs the same
     grouping cue a mouse user hovering the row already gets.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     match = re.search(
         r"\.speaker-row:hover,\s*\.speaker-row:focus-within\s*\{([^}]*)\}", source
     )
@@ -508,7 +576,7 @@ def test_panel_token_is_actually_used():
     comments. Checked here too, so a future edit can't quietly blur the two
     surfaces' roles back together.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     for selector in (".source", ".outline", ".file-bar"):
         block = _rule_block(source, selector)
         assert _property(block, "background") == "rgba(var(--panel-rgb), var(--panel-opacity))", (
@@ -533,7 +601,7 @@ def test_no_blur_declarations():
     on `.backdrop` or anywhere else, even though a comment is free to keep
     talking about why it was rejected (several already do).
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     # Strip /* ... */ comments before scanning, so a comment that merely
     # *mentions* backdrop-filter or blur() to explain why it was rejected
     # (several currently do, deliberately) doesn't trip this guard - only a
@@ -561,7 +629,7 @@ def test_focus_ring_gated_behind_keyboard_flag():
     including #search's existing outline: none exemption and .speaker-name,
     which is explicitly out of scope.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     assert re.search(r"html\[data-kbd\]\s+\.body:focus\s*\{", source), (
         ".body's focus ring must be gated behind html[data-kbd] .body:focus"
     )
@@ -586,7 +654,7 @@ def test_tour_classes_exist_and_stack_above_the_help_panel():
     panel - see .help-panel's own z-index comment for the rest of the
     stack this has to stay ordered against).
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     scrim = _rule_block(source, ".tour-scrim")
     ring = _rule_block(source, ".tour-ring")
     card = _rule_block(source, ".tour-card")
@@ -608,7 +676,7 @@ def test_tour_scrim_lets_the_ring_pass_clicks_through_to_it():
     fall through to the scrim beneath it rather than swallowing them itself
     with nothing behind that reacts.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     ring = _rule_block(source, ".tour-ring")
     assert _property(ring, "pointer-events") == "none"
 
@@ -622,13 +690,13 @@ def test_tour_card_reuses_the_popover_surface_not_the_translucent_panel():
     so it has to stay on the flat --panel token too, not the translucent
     rgba(var(--panel-rgb), var(--panel-opacity)) .source/.outline use.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     card = _rule_block(source, ".tour-card")
     assert _property(card, "background") == "var(--panel)"
 
 
 def test_tour_honours_prefers_contrast_more():
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     # There are two prefers-contrast blocks in the file; search from the
     # tour section onward for its own.
     tour_start = source.index(".tour-scrim")
@@ -646,7 +714,7 @@ def test_tour_skip_is_separated_from_back_and_next():
     Back used to sit once [hidden] removes it on step 1) is what keeps it
     visually apart from the step controls.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     block = _rule_block(source, ".tour-actions .tour-skip")
     assert _property(block, "margin-inline-end") == "auto"
 
@@ -657,6 +725,6 @@ def test_hover_dim_is_phase_8_value():
     section is hovered - see the rule's own comment for why, and for the
     accepted contrast trade-off that comes with dimming text toward the panel.
     """
-    source = CSS.read_text(encoding="utf-8")
+    source = _css_source()
     block = _rule_block(source, ".source:hover .turn:not(:hover)")
     assert _property(block, "opacity") == "0.5"
