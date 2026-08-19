@@ -165,9 +165,174 @@ STRINGS = {
     "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
     "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
-    "doc_outline_toggle": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
+
+    # --- Help panel -----------------------------------------------------
+    # The toolbar button and the panel it opens - see _render_help_html() in
+    # core/formatting.py, which builds the panel server-side from these same
+    # keys (via document_strings(), same as every other doc_ key above).
+    "doc_help": {"en": "Help", "he": "עזרה"},
+    "doc_help_title": {"en": "Help", "he": "עזרה"},
+    "doc_help_close": {"en": "Close help", "he": "סגירת העזרה"},
+    "doc_tour_start": {"en": "Start guided tour", "he": "התחלת סיור מודרך"},
+    "doc_help_search_title": {"en": "Search", "he": "חיפוש"},
+    "doc_help_search_desc": {
+        "en": "Type to search every turn in this recording. The chevrons - "
+              "or Enter and Shift+Enter - jump to the next or previous "
+              "match.",
+        "he": "הקלידו כדי לחפש בכל הפסקאות בהקלטה. החצים - או Enter ו-"
+              "Shift+Enter - עוברים להתאמה הבאה או הקודמת.",
+    },
+    "doc_help_flags_title": {"en": "Show uncertain words", "he": "הצגת מילים לא ודאיות"},
+    "doc_help_flags_desc": {
+        "en": "Highlights the words the model itself was least sure about, "
+              "with a tinted, dotted underline - worth a second look before "
+              "you trust them.",
+        "he": "מדגיש את המילים שהמודל היה הכי פחות בטוח לגביהן, בקו תחתון "
+              "מנוקד וצבוע - כדאי לבדוק אותן שוב לפני שסומכים עליהן.",
+    },
+    "doc_help_theme_title": {"en": "Light / dark mode", "he": "מצב בהיר / כהה"},
+    "doc_help_theme_desc": {
+        "en": "Switches this page's colour scheme and remembers your choice "
+              "in this browser, independent of your system's own setting.",
+        "he": "מחליף את ערכת הצבעים של הדף וזוכר את הבחירה בדפדפן הזה, "
+              "בנפרד מהגדרת המערכת שלכם.",
+    },
+    "doc_help_save_title": {"en": "Save a copy", "he": "שמירת עותק"},
+    "doc_help_save_desc": {
+        "en": "Downloads a fresh copy of this page with every edit baked "
+              "in. Opened from a file, the page can only save your edits "
+              "to this browser automatically - this is what actually "
+              "writes them to a file on disk.",
+        "he": "מוריד עותק חדש של הדף עם כל השינויים משולבים בו. כשהדף נפתח "
+              "מקובץ, הוא יכול לשמור את השינויים באופן אוטומטי רק בדפדפן "
+              "הזה - זו הפעולה שבאמת כותבת אותם לקובץ בדיסק.",
+    },
+    "doc_help_outline_title": {"en": "Files and speakers", "he": "קבצים ודוברים"},
+    "doc_help_outline_desc": {
+        "en": "Lists every file in this batch and, for each one, the "
+              "speakers detected in it. Click a filename to jump straight "
+              "to it.",
+        "he": "מציג את כל הקבצים באצווה ואת הדוברים שזוהו בכל אחד מהם. "
+              "לחיצה על שם קובץ קופצת אליו ישירות.",
+    },
+    "doc_help_speakers_title": {"en": "Speaker names and colours", "he": "שמות וצבעי דוברים"},
+    "doc_help_speakers_desc": {
+        "en": "Rename a speaker by typing over their name in this list, "
+              "and recolour them from the swatch beside it. To move a "
+              "single turn to a different speaker, click that speaker's "
+              "name on the turn itself.",
+        "he": "שנו את שם הדובר על ידי הקלדה מעל השם ברשימה, והחליפו את "
+              "צבעו דרך העיגול הצבעוני שלצידו. כדי לשייך פסקה בודדת לדובר "
+              "אחר, לחצו על שם הדובר בפסקה עצמה.",
+    },
+    "doc_help_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
+    "doc_help_playback_desc": {
+        "en": "Click a timestamp to play the recording from that turn; "
+              "playback stops again at the end of the turn it started "
+              "from.",
+        "he": "לחצו על חותמת זמן כדי להשמיע את ההקלטה מאותה פסקה; ההשמעה "
+              "נעצרת שוב בסוף הפסקה שממנה היא התחילה.",
+    },
+    "doc_help_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
+    "doc_help_editing_desc": {
+        "en": "Click into any turn's text to correct it directly, the same "
+              "way you would edit a document. Changes save automatically "
+              "to this browser as you type - use \"Save a copy\" to write "
+              "them into a file you can keep or share.",
+        "he": "לחצו לתוך הטקסט של כל פסקה כדי לתקן אותו ישירות, כמו עריכת "
+              "מסמך רגיל. השינויים נשמרים אוטומטית בדפדפן תוך כדי ההקלדה - "
+              "השתמשו ב\"שמירת עותק\" כדי לכתוב אותם לקובץ שאפשר לשמור או "
+              "לשתף.",
+    },
+    "doc_help_plain_title": {"en": "Plain text", "he": "טקסט רגיל"},
+    "doc_help_plain_desc": {
+        "en": "A copy-friendly version of the whole recording at the "
+              "bottom of the page, with its own toggles for timestamps and "
+              "speaker names - edit it there directly, or copy it out with "
+              "one click.",
+        "he": "גרסה נוחה להעתקה של ההקלטה כולה בתחתית הדף, עם מתגים משלה "
+              "לחותמות זמן ולשמות דוברים - אפשר לערוך אותה שם ישירות, או "
+              "להעתיק אותה בלחיצה אחת.",
+    },
+
+    # --- Guided tour ------------------------------------------------------
+    # Bound entirely in transcript.js (bindTour()) - #tour-start above is the
+    # only server-rendered hook; every spotlight step, its caption card, and
+    # this copy are built by script. Steps are worded as direct address
+    # ("this sidebar", "click a timestamp") rather than the help panel's
+    # third-person reference style ("Lists every file..."), since a tour step
+    # is spoken while the reader is looking straight at the control, not
+    # reading a list of them afterward.
+    "doc_tour_next": {"en": "Next", "he": "הבא"},
+    "doc_tour_back": {"en": "Back", "he": "הקודם"},
+    "doc_tour_skip": {"en": "Skip", "he": "דילוג"},
+    "doc_tour_done": {"en": "Done", "he": "סיום"},
+    "doc_tour_step_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
+    "doc_tour_file_title": {"en": "This recording", "he": "ההקלטה הזו"},
+    "doc_tour_file_body": {
+        "en": "This bar stays on screen and names the file you're reading - "
+              "in a batch, it also shows its position among the others.",
+        "he": "הסרגל הזה נשאר צמוד למסך ומציג את שם הקובץ שבו אתם צופים "
+              "כרגע - באצווה, הוא גם מציג את מיקומו מבין שאר הקבצים.",
+    },
+    "doc_tour_outline_title": {"en": "Files and speakers", "he": "קבצים ודוברים"},
+    "doc_tour_outline_body": {
+        "en": "This sidebar lists every file in the batch and, for each "
+              "one, the speakers detected inside it. Click a filename to "
+              "jump straight to it.",
+        "he": "בסרגל הצד הזה רשומים כל הקבצים באצווה, ולכל אחד מהם - "
+              "הדוברים שזוהו בו. לחיצה על שם קובץ קופצת אליו ישירות.",
+    },
+    "doc_tour_search_title": {"en": "Search", "he": "חיפוש"},
+    "doc_tour_search_body": {
+        "en": "Type here to search every turn in this recording. The "
+              "chevrons - or Enter and Shift+Enter - jump to the next or "
+              "previous match.",
+        "he": "הקלידו כאן כדי לחפש בכל הפסקאות בהקלטה. החצים - או Enter "
+              "ו-Shift+Enter - עוברים להתאמה הבאה או הקודמת.",
+    },
+    "doc_tour_speakers_title": {"en": "Speaker names and colours", "he": "שמות וצבעי דוברים"},
+    "doc_tour_speakers_body": {
+        "en": "Rename a speaker here, or recolour them from the swatch "
+              "beside their name. Clicking a speaker's name on one turn "
+              "reassigns just that turn to someone else.",
+        "he": "כאן אפשר לשנות את שם הדובר, או להחליף את צבעו דרך העיגול "
+              "הצבעוני שלצידו. לחיצה על שם דובר בפסקה מסוימת משייכת רק "
+              "את הפסקה הזו לדובר אחר.",
+    },
+    "doc_tour_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
+    "doc_tour_playback_body": {
+        "en": "Click a timestamp to play the recording from that turn - a "
+              "small player appears, and stops again at the end of the "
+              "turn it started from.",
+        "he": "לחיצה על חותמת זמן משמיעה את ההקלטה מאותה פסקה - נגן קטן "
+              "מופיע, ועוצר שוב בסוף הפסקה שממנה הוא התחיל.",
+    },
+    "doc_tour_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
+    "doc_tour_editing_body": {
+        "en": "Click into any turn's text to correct it directly. Changes "
+              "save automatically to this browser as you type.",
+        "he": "לחצו לתוך הטקסט של כל פסקה כדי לתקן אותו ישירות. השינויים "
+              "נשמרים אוטומטית בדפדפן תוך כדי ההקלדה.",
+    },
+    "doc_tour_flags_title": {"en": "Show uncertain words", "he": "הצגת מילים לא ודאיות"},
+    "doc_tour_flags_body": {
+        "en": "This button highlights the words the model itself was "
+              "least sure about, so you know what's worth a second look.",
+        "he": "הכפתור הזה מדגיש את המילים שהמודל היה הכי פחות בטוח "
+              "לגביהן, כך שתדעו מה כדאי לבדוק שוב.",
+    },
+    "doc_tour_export_title": {"en": "Save a copy", "he": "שמירת עותק"},
+    "doc_tour_export_body": {
+        "en": "This page can only save your edits to this browser "
+              "automatically. \"Save a copy\" is what actually writes them "
+              "into a real file you can keep or share.",
+        "he": "הדף הזה יכול לשמור את השינויים באופן אוטומטי רק בדפדפן. "
+              "\"שמירת עותק\" היא הפעולה שבאמת כותבת אותם לקובץ אמיתי "
+              "שאפשר לשמור או לשתף.",
+    },
 
     # --- Worker / thread progress messages (keys cross the process boundary) ---
     "w_starting_thread": {"en": "Starting...", "he": "מתחיל..."},

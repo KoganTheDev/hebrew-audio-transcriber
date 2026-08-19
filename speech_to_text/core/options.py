@@ -7,7 +7,6 @@ through TranscriptionThread and multiprocessing.Process args and was already
 seven items long.
 
 Stdlib only and trivially picklable, since instances cross a process boundary.
-Like everything in core/, this must not import PyQt5 or gui.i18n.
 """
 
 from dataclasses import dataclass, field

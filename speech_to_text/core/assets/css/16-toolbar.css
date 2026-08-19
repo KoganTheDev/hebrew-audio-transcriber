@@ -1,0 +1,358 @@
+/* ------------------------------------------------------------- toolbar --- */
+
+/* Grid, not flex, on the outer element - it has to share --layout-columns
+   with .layout so their track boundaries land at identical pixel offsets
+   (same template, same gap, same max-width, same margin: 0 auto all
+   guarantee that). .tb-row below spans BOTH tracks (grid-column: 1 / -1),
+   not just track 1 - confined to track 1 alone, the toolbar would only have
+   the reading column to lay its controls out in, leaving the whole rail
+   column empty above the sidebar while the row's controls bunched against
+   one edge. Spanning does not break the alignment rule --layout-columns
+   exists to enforce: the row's own inline-start edge is still track 1's
+   start, so its first control still shares an edge with the reading column
+   exactly as before - spanning just hands the row the rail's width too, to
+   lay its own controls out in (see .tb-row's justify-content: center
+   below). */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: var(--layout-columns);
+  /* Same reason as .layout's - the two must centre their track rows
+     identically or their track boundaries stop coinciding. */
+  justify-content: center;
+  gap: 0 2rem;
+  margin: 0 auto;
+  padding: 0.7rem 0;
+  /* + 2rem, not + 3rem: one gap between the two tracks now, not two gaps
+     either side of an empty middle one - see .layout's own max-width
+     comment below for the matching change and why the gap value itself
+     grew from 1.5rem to 2rem despite there being one fewer of them. */
+  max-width: calc(var(--rail) + var(--measure) + 2rem);
+  background: var(--bg);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The toolbar's actual controls: still a flex row internally (a search box,
+   action buttons that wrap as whole groups rather than compress - see the
+   squircle comment on .tb-btn/.icon-btn below) - grid only decides WHERE
+   this row sits relative to the reading column, not how its own children
+   are arranged, so the flex layout that already worked here is kept intact
+   rather than reinvented as grid items.
+
+   justify-content: center, not the shipped space-between: space-between
+   paired with a growing .tb-search (flex: 1 1 15rem, the shipped value)
+   is what actually produced "stuck to one edge" - a flex item with
+   flex-grow eats the free space that justify-content would otherwise
+   distribute, so centring was a no-op while the search box kept growing to
+   fill the row. Centring only starts working once nothing grows: see
+   .tb-search below (flex: 0 1 auto, natural width, still free to shrink)
+   and .tb-actions (flex: none, so the squeeze at narrow widths lands on the
+   search box, not shared with the buttons). */
+.tb-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.75rem var(--tb-row-gap);
+  align-items: center;
+  justify-content: center;
+}
+
+/* nowrap here, not wrap, and it is load-bearing for the one-line toolbar.
+   With the group left wrapping, a group breaks INTERNALLY the moment its own
+   content exceeds its share of the row, and the row's own nowrap cannot stop
+   it: measured at an 830px viewport, .tb-actions held 438px of buttons plus
+   the save-status span in a 438px box and dropped a line, so the toolbar
+   stood 92px tall while .tb-row itself was still, correctly, a single line.
+   The same trap catches .tb-search, whose icon, input, count and two chevrons
+   come to more than the box it is given.
+
+   Held to one line, the flexible member gives up width instead - the search
+   input, which is the one control that loses nothing but visible characters
+   when it narrows (see .tb-search's flex: 0 1 auto and .tb-actions' flex:
+   none, which together decide that the input is what shrinks). Wrapping
+   returns below the stacking breakpoint, where there genuinely is not room
+   for one line and two rows are the right answer. */
+.tb-group { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--tb-gap); }
+/* flex: 0 1 auto, not the shipped flex: 1 1 15rem - see .tb-row's own
+   comment above for why a growing search box defeated the row's
+   justify-content: center. min-width: 0 lets it actually give up width
+   (a flex item's default min-width is auto, i.e. its content's natural
+   width, which would otherwise stop it shrinking at all) - it is the one
+   control in the row that can lose width without losing anything, since it
+   is a text box: narrower just means fewer visible characters, where a
+   button that shrinks starts wrapping or clipping its label instead. */
+.tb-search { flex: 0 1 auto; min-width: 0; }
+/* flex: none so the squeeze at narrow widths lands on .tb-search alone
+   rather than being shared proportionally with the action buttons - see
+   .tb-btn/.icon-btn's own flex: none below for why a button is the wrong
+   place for that squeeze to land. */
+.tb-actions { flex: none; }
+/* A rule between the search cluster (which ends in the prev/next chevrons)
+   and the action buttons. Drawn as .tb-actions' own ::before rather than a
+   <span> in the markup: it is decoration with no meaning to announce, so
+   keeping it out of the DOM keeps it out of the accessibility tree for
+   free, and it needs no i18n string, no renderer change and no test.
+   ::before on a flex container becomes that container's first flex item,
+   and in this dir="rtl" document the first item sits at the inline-start
+   edge - the physical RIGHT, which is precisely the edge the chevrons end
+   at. The group's own gap spaces it on both sides, so it needs no margin
+   of its own beyond the small buffer below.
+
+   --control-border, not --rule: --rule is the hairline for big separators
+   between blocks of content, and at 1px inside a toolbar it all but
+   disappears - drawn first with it, the divider measured correctly at
+   1px x 25.6px and was invisible on screen. --control-border is the token
+   whose whole job is reading as a visible edge at small sizes, which is
+   exactly what a divider between two control clusters is; matching
+   --control-border-width too, so it carries the same weight as the
+   borders of the buttons on either side of it rather than being a
+   lighter thing of its own. */
+.tb-actions::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  inline-size: var(--control-border-width);
+  /* 2rem against the 44px control height - about three quarters of the
+     buttons it sits between, so it reads as a divider spanning the row
+     rather than a tick mark floating in the middle of it. Deliberately
+     short of the full 44px: flush with the button edges it would read as
+     a border belonging to the button beside it instead of a gap between
+     clusters. The inline margin is the buffer half of the job - the
+     group's own gap alone put it closer to the buttons than to the
+     chevrons. */
+  block-size: 2rem;
+  margin-inline: 0.2rem;
+  border-radius: 1px;
+  background: var(--control-border);
+  opacity: 0.55;
+}
+
+.tb-search .icon { color: var(--muted); flex: none; }
+
+#search {
+  flex: 1 1 auto;
+  /* 3rem, not the shipped 6rem: the input is the release valve for the
+     fluid one-line toolbar (see the fluid tokens on .tb-btn/.icon-btn
+     below) - it has to be allowed to give up more width than before for
+     the row to hold one line down to the stacking breakpoint instead of
+     spilling onto a second line first. */
+  min-width: 3rem;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.95rem;
+}
+#search:focus { border-bottom-color: var(--accent); outline: none; }
+#search:focus-visible { outline: none; }
+
+.count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  /* 3.2rem, not the shipped 4.5rem: 4.5rem reserved room for "999 / 999",
+     but a transcript search realistically shows at most "99 / 99" - 3.2rem
+     still holds that, and hands the difference back to the row for the
+     same reason #search's min-width shrank above. */
+  min-width: 3.2rem;
+  text-align: center;
+}
+
+/* Squircle: every toolbar button and icon button carries a visible resting
+   border in --control-border (see that token's definition for why it is
+   not --rule) at --control-border-width, radius --control-radius - the
+   border is the primary "this is a control" signal at rest, which is the
+   state the redesign was actually about (a control that only reveals
+   itself on hover was the original complaint, not a shape preference).
+   :focus-visible is untouched here - the shared rule near the top of this
+   file already outlines any focused element 2px outside its box, which
+   sits clear of this border rather than fighting it for attention.
+
+   flex: none; white-space: nowrap - a button is a flex item of .tb-row/
+   .tb-group with the default flex-shrink: 1 and no white-space rule, so
+   once a row runs short the BUTTON itself compresses and its label wraps
+   onto a second line inside its own border - "Save a copy" over two lines,
+   with every button in the row grown taller to match. That was always
+   latent; it only matters now that the toolbar can genuinely run short of
+   room at every width down to the stacking breakpoint, not just below it.
+   flex: none plus nowrap makes the button an incompressible box, so when
+   the row runs out of space the GROUP wraps to a second line instead (see
+   .tb-group's own flex-wrap: wrap) and every button keeps the shape it has
+   at full width - this is what the widest layout already did by simply
+   having room to spare; the rule now makes it true everywhere.
+
+   font-size/gap/padding read the fluid --tb-* tokens (see their own
+   comment near the top of this file) instead of fixed values - min-height
+   stays a literal 44px, deliberately excluded from that scale. */
+.tb-btn, .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: var(--tb-gap);
+  min-height: 44px;
+  padding: 0 var(--tb-pad);
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--tb-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out,
+              border-color var(--fast) ease-out;
+}
+.icon-btn { min-width: 44px; padding: 0; }
+
+.tb-btn:hover, .icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--text);
+}
+/* A real, momentary press state, not just the persistent [aria-pressed]
+   toggle below - resting/hover/pressed all have to read as different
+   states, and a button that looked identical while being clicked as while
+   merely hovered was part of "controls don't read as controls".
+
+   Excludes a currently-on toggle ([aria-pressed="true"], the flags toggle's
+   own persistent "on" cue): without the exclusion this rule ties on
+   specificity with the toggle's own :active rule below and, on source
+   order, would win and flash the whole button to plain --accent - which
+   erases the exact "this is currently on" signal the toggle rule exists to
+   show. See .tb-btn[aria-pressed="true"]:active below for what a toggle's
+   own press state looks like instead.
+
+   This used to also exclude :not([aria-expanded="true"]), for the
+   sidebar's old open/close toggle button and its matching "currently open"
+   cue - removed along with that button (the sidebar is never hidden any
+   more, so nothing opens or closes it); nothing else styled as a
+   .tb-btn/.icon-btn sets aria-expanded (the swatch trigger and the speaker
+   chip's own reassignment button do, but neither carries either class). */
+.tb-btn:active:not([aria-pressed="true"]),
+.icon-btn:active:not([aria-pressed="true"]) {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* Control hierarchy: tiers differ by fill and colour weight only, never by
+   removing a border - the resting border is this file's primary "this is a
+   control" signal (see the squircle comment above .tb-btn), so a tier that
+   dropped it would stop reading as a control at all, not just as a lower
+   tier.
+
+   Tier 1, primary (two controls: #export, and #tour-start inside the help
+   panel - see .help-panel below). Filled at rest, not outlined - before
+   this there was no filled tier anywhere, so the export button carried the
+   same visual weight as a display toggle despite being the one action
+   every session ends with. #tour-start earns the same tier for the same
+   reason: inside the help panel it is the one action the panel exists to
+   lead toward, not a peer of the reference entries listed below it. */
+.tb-btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+/* Its own hover token (--accent-hover), not --surface-hover: the generic
+   .tb-btn:hover rule above would paint a NEUTRAL hover over an already
+   accent-filled button, which reads as "losing" its colour rather than
+   responding to the pointer. */
+.tb-btn.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-text);
+}
+/* Darkens the hover fill rather than jumping to plain --accent (which,
+   underneath --accent-hover, would look like the button LIGHTENED on
+   press) - filter: brightness(0.88) is the same pressed-state pattern
+   .spk:active already established for a filled control. */
+.tb-btn.primary:active {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-text);
+  filter: brightness(0.88);
+}
+
+/* Tier 3, toggle-on ([aria-pressed="true"] for the flags toggle - this used
+   to also cover [aria-expanded="true"] for the sidebar's old open/close
+   toggle, which needed the same "currently active" legibility for its own
+   persistent open/closed state; removed along with that button, since the
+   outline is no longer ever hidden behind a toggle to begin with - see the
+   outline's own rule further down for what replaced it). Used to fill
+   with --surface-hover,
+   the exact value hovering ANY secondary button already produces - so
+   "this toggle is on" and "you are merely hovering a button" looked
+   identical, which is the bug this tier exists to fix. --accent-tint reads
+   as an accent state at a glance, at rest, with no pointer involved. */
+.tb-btn[aria-pressed="true"] {
+  background: var(--accent-tint);
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* Must darken FROM --accent-tint, not fall through to the shared
+   :active rule's plain --accent (excluded above) - a press flash that
+   erased the tint would erase the "currently on" cue it is meant to
+   modify, not just add a momentary effect on top of it. */
+.tb-btn[aria-pressed="true"]:active { filter: brightness(0.92); }
+
+/* Deliberately excluded from the squircle treatment above: this reads as an
+   underlined text link (its own affordance, already legible), not a
+   button-shaped control - giving it a border and radius would contradict
+   the very cue that identifies it. It was never one of the four styles
+   compared in the Phase 0 mockup either, for the same reason. */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 0.3rem;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--text); }
+
+.status {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-inline-end: 0.35rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.status[data-kind="saving"]::before { background: var(--warn-line); }
+.status[data-kind="error"]::before  { background: var(--error-line); }
+/* Saved in this browser but not into any file - a hollow dot rather than a
+   filled one, so the difference is visible without reading the label. */
+.status[data-kind="local"]::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+
+.icon {
+  width: 18px; height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}

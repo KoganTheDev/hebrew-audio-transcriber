@@ -1,0 +1,502 @@
+/* ===========================================================================
+   Transcript document styling.
+
+   Inlined into the generated HTML by core/formatting.py - it is never linked,
+   because the output has to stay a single self-contained file that works with
+   no network at all. Kept as real .css files rather than a Python string so
+   it stays lintable and readable - and, since this split, as a directory of
+   numerically-prefixed fragments (this one first) rather than one ~2270-line
+   file, concatenated back into one stylesheet by
+   formatting.assets._asset_dir(). Unlike transcript.js's fragments, these are
+   ordinary top-level CSS rules with no shared wrapper and no @import/
+   @supports anywhere in the file, so concatenation in sorted-filename order
+   is safe on its own terms - the one real ordering rule left is this file's
+   own cascade: :root (below) has to precede both dark-mode activation rules
+   later in this same fragment, and the responsive @media blocks (the last
+   fragment, css/98-responsive.css) have to stay last so their overrides win.
+
+   Visual register: "document" - quiet and paper-like. Generous whitespace,
+   hairline rules, almost no card chrome until you hover. Colour is confined
+   to the speaker accent so the page reads as prose rather than as an
+   interface. An alternative "console" register was explored during design
+   and rejected; swapping registers means replacing this file, nothing else.
+   The mockups those explorations lived in are no longer kept in the tree -
+   they were design scaffolding, not build inputs, and every decision they
+   settled is recorded in these comments instead. See git history before
+   commit "Delete the design mockups" if you need the originals.
+
+   Rules being honoured deliberately (do not "tidy" these away):
+     - hover is never the only route to an action; see the (hover: none) block
+     - focus rings stay visible; :focus-visible is styled, never removed.
+       STATED EXCEPTION: .body and .plain-body (see their own rules) gate the
+       ring behind html[data-kbd] instead of :focus-visible alone, because
+       Chromium matches :focus-visible on a contenteditable element for mouse
+       clicks too - merely clicking into a card to select text lit a full-box
+       ring on .body and a per-line-fragment stepped ring on .plain-body's
+       multi-line inline span. transcript.js sets data-kbd on Tab keydown and
+       clears it on pointerdown, so the ring survives for a keyboard reader
+       (who still needs to see which block they are about to type into) and
+       disappears for a mouse click. Every other focused control on this page
+       keeps plain :focus-visible - this exception is scoped to exactly those
+       two elements, per the user's report.
+     - motion is transform/opacity only, and is disabled under
+       prefers-reduced-motion
+     - colour never carries meaning on its own - speaker colour sits on top of
+       the speaker's name, and low-confidence shading pairs a tint with a
+       dotted underline so it survives greyscale
+   =========================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  /* Anuppuccin (the user's own Obsidian theme) = Catppuccin, Latte light /
+     Mocha dark, chosen live in a side-by-side mockup against two rejected
+     alternatives (an "adjusted" Latte with darkened accents, and a
+     do-no-harm baseline) - not picked from a swatch table.
+     Every hex below is Catppuccin's own, verbatim, except the eight
+     --spk-N-chip-text values, which are new (Catppuccin has no opinion on
+     what text sits on top of its own accents as a filled pill).
+
+     Mocha passes every pairing this file checks at 5.4:1 or better as-is.
+     Latte does not: every one of its accents fails as coloured text on a
+     light surface (blue 3.18:1, peach 1.93:1, yellow 1.70:1, ...) - Latte's
+     palette is tuned as syntax/UI colour on a light ground, not as body
+     text. "Faithful-fill" is the fix that was chosen over darkening the
+     accents to compensate: keep every Latte hex exactly as Catppuccin
+     defines it, and make the speaker chip a *filled* pill instead of
+     outlined text - see .spk below and --spk-N-chip-text. */
+  --bg: #dce0e8;
+  /* The raised reading surface (.source, .outline, .spk-menu,
+     .swatch-menu) - needed once the backdrop photo (Phase 3.5) stopped
+     being the thing that visually separated a panel from the page. --bg and
+     --panel are Catppuccin's own elevation ramp (crust and base), not two
+     independently chosen colours: crust is deliberately the DARKEST step in
+     Latte and the same step is deliberately the darkest in Mocha too, so
+     "panel is one step lighter than the page" is true in both schemes even
+     though the schemes are otherwise unrelated. */
+  --panel: #eff1f5;
+  --surface: transparent;
+  /* NOT the same direction as Mocha's hover step below, and that is
+     deliberate, not an inconsistency to "fix" into one shared value: Latte's
+     ramp runs crust (darkest) -> base (lightest), so a hover step reads as
+     "further along that ramp" only if it goes darker still, to mantle.
+     Mocha's ramp runs the same direction (crust darkest -> base lightest),
+     so ITS hover step goes lighter, to surface0 (see --dark-surface-hover
+     below). The rule is "hover = one step of contrast away from the panel";
+     the token value differs because which direction is "away" depends on
+     which end of the ramp the scheme lives at. */
+  --surface-hover: #e6e9ef;
+  --text: #4c4f69;
+  --muted: #5c5f77;
+  --rule: #bcc0cc;
+  /* subtext0, NOT overlay2 (#7c7f93) - overlay2 was the first choice, taken
+     from the Phase 0 mockup, and it measures 2.99:1 against the new --bg -
+     one hundredth under the 3:1 floor WCAG 1.4.11 sets for a border that is
+     a control's primary "this is a control" signal (see the squircle
+     redesign this token predates). subtext0 clears all three surfaces this
+     file checks (3.73 against --bg, 4.37 against --surface-hover, 4.06
+     against --panel). It is the SAME hex as --muted below, but that is a
+     coincidence of Latte's own ramp, not a coupling of meaning - a border's
+     floor is 3:1, a text colour's is 4.5:1, and --muted itself fails the
+     4.5:1 floor it would need to double as a border-and-text token (see
+     --muted's own comment). Do not fold the two into one token for that
+     reason - it already burned once, see the pre-Anuppuccin comment this
+     one replaced. */
+  --control-border: #6c6f85;
+  /* Mauve, not the blue already spoken for by --spk-0 - reusing --spk-0 for
+     "the one primary action" would make "this is the export button" and
+     "this is speaker 1" the same colour, which is exactly the kind of
+     coincidence this palette's closed, verified design exists to rule out
+     everywhere else (see SPEAKER_PALETTE_SIZE in formatting.py). */
+  --accent: #8839ef;
+  --accent-text: #ffffff;
+  /* Tier 1 (see .tb-btn.primary) needs its own hover value, distinct from
+     --accent itself: the shared .tb-btn:active rule already flashes every
+     button, including the primary, to plain --accent on press - without a
+     separate hover token, a permanently accent-filled primary button would
+     look identical hovered and actively pressed. */
+  --accent-hover: #7430cb;
+  /* Tier 3, "this toggle is on" (see .tb-btn[aria-pressed="true"]). Used to
+     share --surface-hover with plain hover, which made "on" and "merely
+     hovered" indistinguishable - the bug Phase 4 exists to fix. A light
+     mauve tint, not a fourth shade of grey, so "on" reads as an accent
+     state, not a hover state that forgot to go away. */
+  --accent-tint: #e0d5f4;
+  --focus: #1e66f5;
+  --warn-bg: #ede2d5;
+  --warn-line: #9c6314;
+  /* Catppuccin Latte's own red, verbatim - was a raw #c0392b (not Catppuccin
+     at all) sitting on .status[data-kind="error"]::before, the only literal
+     colour left in this file once every other value became a token. This
+     dot is decorative: it is always paired with a text status label ("שגיאה"
+     / "error") that already carries the meaning on its own (see this file's
+     opening comment - colour never carries meaning alone), so it is NOT
+     contrast-gated the way --warn-line above is; no PAIRS row is expected or
+     needed for it. */
+  --error-line: #d20f39;
+  --hit-bg: #e9cea9;
+  --hit-current: #e8c494;
+  /* --text over --hit-current is already 4.5:1+ in light mode - the same
+     colour that works everywhere else works here too, so no override is
+     needed. Declared explicitly (rather than left implicit) so the light and
+     dark blocks stay symmetrical and a future palette change can't silently
+     reintroduce the dark-mode failure below. */
+  --hit-current-text: var(--text);
+
+  /* Catppuccin Latte's own eight accents, verbatim - see the block comment
+     above for why Latte needs the filled-chip treatment (.spk below) rather
+     than darkened hexes to carry coloured text directly. */
+  --spk-0: #1e66f5;
+  --spk-1: #fe640b;
+  --spk-2: #40a02b;
+  --spk-3: #8839ef;
+  --spk-4: #e64553;
+  --spk-5: #179299;
+  --spk-6: #7287fd;
+  --spk-7: #df8e1d;
+  /* The speaker chip's own text colour once it becomes a filled pill (see
+     .spk below) rather than coloured text on a transparent one - a role
+     with real precedent in this file already (--hit-current-text, for
+     exactly the same "this text now sits ON a colour, not beside it"
+     reason). Two of the eight accents (--spk-0 blue, --spk-3 mauve) are dark
+     enough to need white text (4.91:1 / 5.41:1); the other six take crust,
+     Catppuccin's own near-black (4.77:1 to 7.17:1) - crust was picked over
+     plain black because it is the same token the page ground is built from,
+     so a chip's text colour is never a colour that appears nowhere else in
+     the palette. */
+  --spk-0-chip-text: #ffffff;
+  --spk-1-chip-text: #11111b;
+  --spk-2-chip-text: #11111b;
+  --spk-3-chip-text: #ffffff;
+  --spk-4-chip-text: #11111b;
+  --spk-5-chip-text: #11111b;
+  --spk-6-chip-text: #11111b;
+  --spk-7-chip-text: #11111b;
+
+  /* How strongly the backdrop photo shows through. DECIDED at 1.00 in both
+     schemes from a live mockup: the photo runs at full strength in the
+     margins, where nothing has to stay
+     legible over it, and --panel-opacity below is what protects the reading
+     surface, not this value. Text does not sit directly on the backdrop
+     anywhere text-bearing - the reading column is a translucent panel
+     (--panel-opacity) floating over it - which is why this can be 1.00
+     without failing the worst-case contrast test in
+     tests/test_transcript_styles.py: that test composites --panel-rgb over a
+     pure-black and a pure-white pixel (the extremes any photo pixel could
+     be, and ones that genuinely occur in several of the 32 shipped vistas)
+     and checks --text/--muted still clear 4.5:1 through the panel. */
+  --backdrop-opacity: 1.00;
+
+  /* The reading panel: a raised surface at less than full opacity, floating
+     over the backdrop rather than masking it out completely. Split into an
+     RGB triplet plus a separate opacity (matching the --backdrop-opacity
+     pattern above) rather than a single rgba() literal, because
+     rgba(var(--panel-rgb), var(--panel-opacity)) lets both halves stay
+     theme tokens - a literal would need a light and a dark copy compared by
+     eye instead of computed by the contrast test. This is --panel-rgb, not a
+     --bg-rgb token - this palette (Anuppuccin) added a second elevation
+     step, --panel, one step above --bg, specifically for the panel surface,
+     see --panel's own comment above, so compositing against --bg would
+     model the wrong surface's colour.
+
+     0.93, not the user's originally-preferred 0.70: 0.70 measured 2.65:1 for
+     --muted against a 4.5:1 floor and was not shippable. Per-image
+     measurement across all 32 vistas (correct RGB-space compositing) found
+     the minimum safe panel opacity ranges only 0.89 to 0.91 - they are
+     ordinary photographs spanning nearly the full tonal range, not a
+     situation where a thinner panel is available for some images and not
+     others. 0.91 itself was tried first and clears the 4.5:1 floor by only
+     0.02 (4.52:1) for light --muted, the tightest of the four worst cases -
+     close enough that a later palette adjustment, or integer RGB rounding in
+     real compositing, could flip it. 0.93 clears the same case by 0.24
+     (4.74:1); the visual difference between 9% and 7% photo show-through is
+     negligible, the difference in headroom is roughly twelvefold. See
+     docs/transcript-manual-checks.md for the tone-mapping and
+     per-image alternatives that were tried and closed out before landing
+     here. */
+  --panel-rgb: 239, 241, 245;
+  --panel-opacity: 0.93;
+
+  --measure: 42rem;
+  --radius: 6px;
+  --fast: 160ms;
+
+  /* One shared source of truth for both grids that need to agree on where
+     the reading column sits - see .layout and .toolbar below. Before this,
+     .toolbar was max-width: var(--measure) centred in <body> while .layout
+     was max-width: calc(var(--measure) + 18rem + 1.5rem) ALSO centred in
+     <body> - two independently centred boxes of different widths, whose
+     centres therefore differed by exactly half the sidebar track plus its
+     gap (9.75rem / 156px at the values in play then). Nothing "pushed" the
+     toolbar off-centre; it was simply never tied to the same measurement as
+     the column it sits above. A single --layout-columns value, read by both
+     grids, makes that drift structurally impossible rather than merely
+     fixing today's numbers.
+
+     Two tracks, main then rail, not three: this used to be
+     flank / main / flank, minmax(0, 18rem) on both outer tracks, with
+     track 1 permanently EMPTY - it existed purely so main sat optically
+     centred. That phantom flank cost 288px plus a gap for nothing, which
+     is exactly what forced the whole sidebar into a toggled overlay once
+     the viewport got tight: at 1024px the layout was still reserving room
+     for a track nobody ever put anything in. Losing it means centring the
+     thing a reader actually sees (main plus the rail) instead of centring
+     main alone inside a box padded out by an invisible third track - and it
+     collapses two maintained layouts (three-track wide, overlay narrow)
+     into one, with no upper bound: this is the layout at every width down
+     to the point it stacks (see the @media block near the end of this
+     stylesheet, in css/98-responsive.css).
+
+     --rail is a fixed 16rem now, not minmax(0, 18rem) - the flexibility
+     used to belong to the FLANKS, because a fixed flank would have forced
+     main below its full --measure the moment the viewport got tight, and
+     main was the one thing here that must never shrink out of its
+     comfortable reading width. That reasoning still holds, but it was
+     pointed at the wrong track: the rail carries a hard functional floor
+     of its own - a 44px colour swatch plus a name input that needs ~80px
+     to stay typeable, a floor of roughly 140px - while body text reflows
+     perfectly well across a wide range of widths. A rigid rail and a
+     flexible main (minmax(0, var(--measure))) has the two roles the right
+     way round: the track with nothing to lose from shrinking is the one
+     that shrinks. */
+  --rail: 16rem;
+  --layout-columns: minmax(0, var(--measure)) var(--rail);
+
+  /* Squircle - the control style picked from four Phase 0 mockups: a
+     generous corner radius with a thicker, load-bearing border. One radius, one border width, used by
+     every interactive control (toolbar buttons, timestamp pills, speaker
+     chips, the swatch trigger, copy buttons, the seek thumb, sidebar file
+     and speaker entries) - not a second value per control, because a
+     one-off radius here is exactly the kind of drift that made the
+     original controls read as inconsistent scraps rather than one system.
+     --radius above is unchanged and stays what it always was: the *panel*
+     corner radius (.source, .file-bar, .outline), a different, larger
+     scale for a different kind of shape. Two circular exceptions keep their
+     own 50% radius rather than this token - .swatch-trigger and the seek
+     thumb - because a colour/position indicator reads as a colour, not as
+     a shape choice; see their own rules for why. */
+  --control-radius: 14px;
+  --control-border-width: 2px;
+
+  /* Fluid toolbar sizing, so the header holds one line down to the point
+     where the layout stacks (see the max-width: 819px block near the
+     bottom of css/98-responsive.css) instead of spilling its buttons onto a
+     second row first. Every clamp() tops out at exactly the value that
+     shipped before this - 0.9rem type, 0.6rem padding, 0.4rem/1.25rem gaps -
+     so at the widest widths nothing changes at all; the scale only engages
+     as the toolbar loses room. The floors are set where the labels are
+     still comfortably readable, not as small as they could technically go.
+
+     min-height on .tb-btn/.icon-btn stays a fixed 44px and is deliberately
+     NOT one of these tokens: it is the touch target, not decoration, and
+     shrinking it to win a few more horizontal pixels would trade an
+     accessibility floor for a cosmetic one. Only the horizontal dimensions
+     and the type scale are fluid. */
+  --tb-font: clamp(0.78rem, 0.62rem + 0.31vw, 0.9rem);
+  --tb-pad: clamp(0.4rem, 0.22rem + 0.35vw, 0.6rem);
+  --tb-gap: clamp(0.25rem, 0.05rem + 0.29vw, 0.4rem);
+  --tb-row-gap: clamp(0.6rem, 0.1rem + 0.98vw, 1.25rem);
+
+  /* Shared box-shadow literal for .help-sheet and .tour-card (see the
+     shared surface-cluster rule in css/80-help.css) - tokened because the
+     same "0 20px 60px, 0.35 alpha" value used to be written out twice,
+     once per rule, with nothing tying the two copies together. */
+  --overlay-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
+
+  /* Canonical Catppuccin Mocha (dark) values - the single source every dark
+     activation rule below reads from. Dark mode has to be reachable two
+     ways (the system default via @media (prefers-color-scheme: dark), and
+     an explicit in-page toggle via :root[data-theme="dark"] - see both
+     blocks right after this one), and those two conditions cannot be
+     joined into one selector: one only applies inside a media query, the
+     other has to apply regardless of the system preference whenever the
+     reader has explicitly picked dark. Historically that meant the same 38
+     hex values were typed out twice, verbatim, in the two activation
+     blocks - drift between the copies was only caught by a test comparing
+     them line for line (see the test this replaced,
+     test_dark_activation_rules_reference_shared_canonical_tokens in
+     tests/test_transcript_styles.py, for what actually replaced it).
+     Each colour now has exactly ONE literal, here; both activation blocks
+     below only ever write `var(--dark-X)` references to it, which makes
+     the two rules impossible to disagree with each other about a value -
+     there is only one value left to disagree about. */
+  --dark-bg: #11111b;
+  --dark-panel: #1e1e2e;
+  --dark-surface: transparent;
+  --dark-surface-hover: #313244;
+  --dark-text: #cdd6f4;
+  --dark-muted: #a6adc8;
+  --dark-rule: #45475a;
+  --dark-control-border: #7f849c;
+  --dark-accent: #cba6f7;
+  --dark-accent-text: #11111b;
+  --dark-accent-hover: #d5b8f9;
+  --dark-accent-tint: #38324c;
+  --dark-focus: #74c7ec;
+  --dark-warn-bg: #38363d;
+  --dark-warn-line: #f9e2af;
+  --dark-error-line: #f38ba8;
+  --dark-hit-bg: #5b5552;
+  --dark-hit-current: #8c806e;
+  /* Same reasoning as the light --hit-current-text above: --text over
+     --hit-current falls short in Mocha, so --dark-accent-text (already
+     tuned as a dark colour sitting on the mid-toned --dark-accent) is
+     reused rather than adding a fourth palette value. */
+  --dark-hit-current-text: var(--dark-accent-text);
+  --dark-spk-0: #89b4fa;
+  --dark-spk-1: #fab387;
+  --dark-spk-2: #a6e3a1;
+  --dark-spk-3: #cba6f7;
+  --dark-spk-4: #eba0ac;
+  --dark-spk-5: #94e2d5;
+  --dark-spk-6: #b4befe;
+  --dark-spk-7: #f9e2af;
+  /* Every Mocha accent is light enough that crust (Catppuccin's own
+     near-black, #11111b) works as chip text across the board - 8.91:1 to
+     14.76:1 - so symmetry with Latte's per-accent split above costs
+     nothing here; all eight just happen to land on the same value. */
+  --dark-spk-0-chip-text: #11111b;
+  --dark-spk-1-chip-text: #11111b;
+  --dark-spk-2-chip-text: #11111b;
+  --dark-spk-3-chip-text: #11111b;
+  --dark-spk-4-chip-text: #11111b;
+  --dark-spk-5-chip-text: #11111b;
+  --dark-spk-6-chip-text: #11111b;
+  --dark-spk-7-chip-text: #11111b;
+  /* Both DECIDED at the same value as the light block above - see
+     --panel-opacity's own comment for why 1.00/0.93, not a per-scheme
+     number. --dark-panel-rgb is Mocha's own --panel (#1e1e2e), not a
+     darkened guess. */
+  --dark-backdrop-opacity: 1.00;
+  --dark-panel-rgb: 30, 30, 46;
+  --dark-panel-opacity: 0.93;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--dark-bg);
+    --panel: var(--dark-panel);
+    --surface: var(--dark-surface);
+    --surface-hover: var(--dark-surface-hover);
+    --text: var(--dark-text);
+    --muted: var(--dark-muted);
+    --rule: var(--dark-rule);
+    --control-border: var(--dark-control-border);
+    --accent: var(--dark-accent);
+    --accent-text: var(--dark-accent-text);
+    --accent-hover: var(--dark-accent-hover);
+    --accent-tint: var(--dark-accent-tint);
+    --focus: var(--dark-focus);
+    --warn-bg: var(--dark-warn-bg);
+    --warn-line: var(--dark-warn-line);
+    --error-line: var(--dark-error-line);
+    --hit-bg: var(--dark-hit-bg);
+    --hit-current: var(--dark-hit-current);
+    --hit-current-text: var(--dark-hit-current-text);
+
+    --spk-0: var(--dark-spk-0);
+    --spk-1: var(--dark-spk-1);
+    --spk-2: var(--dark-spk-2);
+    --spk-3: var(--dark-spk-3);
+    --spk-4: var(--dark-spk-4);
+    --spk-5: var(--dark-spk-5);
+    --spk-6: var(--dark-spk-6);
+    --spk-7: var(--dark-spk-7);
+
+    --spk-0-chip-text: var(--dark-spk-0-chip-text);
+    --spk-1-chip-text: var(--dark-spk-1-chip-text);
+    --spk-2-chip-text: var(--dark-spk-2-chip-text);
+    --spk-3-chip-text: var(--dark-spk-3-chip-text);
+    --spk-4-chip-text: var(--dark-spk-4-chip-text);
+    --spk-5-chip-text: var(--dark-spk-5-chip-text);
+    --spk-6-chip-text: var(--dark-spk-6-chip-text);
+    --spk-7-chip-text: var(--dark-spk-7-chip-text);
+
+    --backdrop-opacity: var(--dark-backdrop-opacity);
+    --panel-rgb: var(--dark-panel-rgb);
+    --panel-opacity: var(--dark-panel-opacity);
+  }
+}
+
+/* Identical to the media-query block above, reference for reference - see
+   the --dark-* block's own comment near the top of this fragment for why
+   that is now a structural guarantee (both blocks read the same canonical
+   tokens) rather than something a test has to catch after the fact. */
+:root[data-theme="dark"] {
+  --bg: var(--dark-bg);
+  --panel: var(--dark-panel);
+  --surface: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --text: var(--dark-text);
+  --muted: var(--dark-muted);
+  --rule: var(--dark-rule);
+  --control-border: var(--dark-control-border);
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-accent-text);
+  --accent-hover: var(--dark-accent-hover);
+  --accent-tint: var(--dark-accent-tint);
+  --focus: var(--dark-focus);
+  --warn-bg: var(--dark-warn-bg);
+  --warn-line: var(--dark-warn-line);
+  --error-line: var(--dark-error-line);
+  --hit-bg: var(--dark-hit-bg);
+  --hit-current: var(--dark-hit-current);
+  --hit-current-text: var(--dark-hit-current-text);
+
+  --spk-0: var(--dark-spk-0);
+  --spk-1: var(--dark-spk-1);
+  --spk-2: var(--dark-spk-2);
+  --spk-3: var(--dark-spk-3);
+  --spk-4: var(--dark-spk-4);
+  --spk-5: var(--dark-spk-5);
+  --spk-6: var(--dark-spk-6);
+  --spk-7: var(--dark-spk-7);
+
+  --spk-0-chip-text: var(--dark-spk-0-chip-text);
+  --spk-1-chip-text: var(--dark-spk-1-chip-text);
+  --spk-2-chip-text: var(--dark-spk-2-chip-text);
+  --spk-3-chip-text: var(--dark-spk-3-chip-text);
+  --spk-4-chip-text: var(--dark-spk-4-chip-text);
+  --spk-5-chip-text: var(--dark-spk-5-chip-text);
+  --spk-6-chip-text: var(--dark-spk-6-chip-text);
+  --spk-7-chip-text: var(--dark-spk-7-chip-text);
+
+  --backdrop-opacity: var(--dark-backdrop-opacity);
+  --panel-rgb: var(--dark-panel-rgb);
+  --panel-opacity: var(--dark-panel-opacity);
+}
+
+/* Replaces four families of eight near-identical [data-palette="N"] /
+   [data-file-accent="N"] rules (.swatch-rest, .turn's left border, .spk's
+   fill, .file-bar's bottom border - 32 rules total) with one custom
+   property, --spk (plus --spk-text where the colour is a fill rather than a
+   border/dot), that every consumer below just reads.
+
+   Safe because custom properties inherit AND a direct declaration always
+   beats an inherited one, regardless of selector specificity - two things
+   confirmed by reading transcript.js, not assumed:
+
+   1. A .turn or .speaker-row carrying data-palette="N" sets --spk for its
+      whole subtree, so e.g. .turn's own border-inline-start-color and the
+      .swatch-rest nested inside .speaker-row's .swatch-trigger pick up the
+      right value with no selector of their own naming N.
+
+   2. Anything needing its OWN colour regardless of ancestor sets --spk
+      directly, by carrying its own data-palette (this rule matches ANY such
+      element, not just .turn/.speaker-row). Every dot buildSwatchMenu()/
+      buildSpeakerMenu() creates in transcript.js does this: .swatch-menu is
+      appended to <body> when open, so its dots are not descendants of the
+      .speaker-row they opened from at all, and .spk-menu-item's dot has to
+      show every OTHER speaker's colour while sitting inside the CURRENT
+      speaker's .turn - an inherited --spk would be wrong there. Do not
+      remove a dot's own data-palette to "simplify" further; it is the one
+      piece of state doing the actual work now that the per-index rules are
+      gone. */
+[data-palette="0"], [data-file-accent="0"] { --spk: var(--spk-0); --spk-text: var(--spk-0-chip-text); }
+[data-palette="1"], [data-file-accent="1"] { --spk: var(--spk-1); --spk-text: var(--spk-1-chip-text); }
+[data-palette="2"], [data-file-accent="2"] { --spk: var(--spk-2); --spk-text: var(--spk-2-chip-text); }
+[data-palette="3"], [data-file-accent="3"] { --spk: var(--spk-3); --spk-text: var(--spk-3-chip-text); }
+[data-palette="4"], [data-file-accent="4"] { --spk: var(--spk-4); --spk-text: var(--spk-4-chip-text); }
+[data-palette="5"], [data-file-accent="5"] { --spk: var(--spk-5); --spk-text: var(--spk-5-chip-text); }
+[data-palette="6"], [data-file-accent="6"] { --spk: var(--spk-6); --spk-text: var(--spk-6-chip-text); }
+[data-palette="7"], [data-file-accent="7"] { --spk: var(--spk-7); --spk-text: var(--spk-7-chip-text); }

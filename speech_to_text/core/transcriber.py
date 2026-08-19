@@ -8,6 +8,12 @@ from typing import Callable, List, Optional
 
 from speech_to_text import config
 from speech_to_text.core.formatting import format_mmss
+from speech_to_text.core.progress_scale import (
+    TRANSCRIBER_LOAD_START_PERCENT,
+    TRANSCRIBER_MODEL_LOADED_PERCENT,
+    TRANSCRIBER_TRANSCRIBE_END_PERCENT,
+    TRANSCRIBER_TRANSCRIBE_SPAN,
+)
 from speech_to_text.core.segments import Segment, Word
 
 try:
@@ -68,7 +74,9 @@ class Transcriber:
             # Progress messages are (i18n key, params) tuples, not text -
             # this module runs in the worker process, which knows nothing
             # about the UI language; the GUI renders keys at display time.
-            self.progress_callback(("w_loading_model", {"model": self.model_size}), 5)
+            self.progress_callback(
+                ("w_loading_model", {"model": self.model_size}), TRANSCRIBER_LOAD_START_PERCENT
+            )
 
             self.model = WhisperModel(
                 self.model_repo,
@@ -78,7 +86,9 @@ class Transcriber:
             )
 
             logger.info(f"✓ Model loaded successfully: {self.model_size} ({self.device})")
-            self.progress_callback(("w_model_loaded", {"model": self.model_size}), 15)
+            self.progress_callback(
+                ("w_model_loaded", {"model": self.model_size}), TRANSCRIBER_MODEL_LOADED_PERCENT
+            )
             return True
 
         except Exception as e:
@@ -119,7 +129,7 @@ class Transcriber:
 
         try:
             # Transcribing phase occupies 15-90% of the overall progress bar.
-            self.progress_callback(("w_starting", {}), 15)
+            self.progress_callback(("w_starting", {}), TRANSCRIBER_MODEL_LOADED_PERCENT)
 
             segments, info = self.model.transcribe(
                 audio_file,
@@ -172,11 +182,11 @@ class Transcriber:
                     fraction = min(0.03 * segment_count, 0.95)
                     message = ("w_transcribing_seg", {"n": segment_count})
 
-                progress = 15 + int(fraction * 75)
+                progress = TRANSCRIBER_MODEL_LOADED_PERCENT + int(fraction * TRANSCRIBER_TRANSCRIBE_SPAN)
                 self.progress_callback(message, progress)
 
             logger.info(f"✓ Transcription complete: {len(collected)} segments")
-            self.progress_callback(("w_transcription_done", {}), 90)
+            self.progress_callback(("w_transcription_done", {}), TRANSCRIBER_TRANSCRIBE_END_PERCENT)
             return collected
 
         except Exception as e:

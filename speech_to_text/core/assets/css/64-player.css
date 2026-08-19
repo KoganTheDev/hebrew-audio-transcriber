@@ -1,0 +1,98 @@
+/* -------------------------------------------------------------- player --- */
+
+.player {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: var(--measure);
+  margin: 0 auto 1rem;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.12);
+  font-size: 0.85rem;
+}
+/* An explicit display value beats the UA stylesheet's [hidden] rule, so the
+   attribute has to be honoured here or the player is visible before any
+   timestamp has been clicked. */
+.player[hidden] { display: none; }
+.player[data-disabled="true"] #player-toggle { opacity: 0.35; pointer-events: none; }
+.player-file { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Native <input type="range">, not a custom div-based track - see the
+   comment on the markup in formatting.py's _render_player_html() for why:
+   free keyboard operation and screen-reader announcement, which a styled
+   div would have to reimplement (and would inevitably reimplement worse).
+   The 44px height is hit-area padding around a slim visible track, not the
+   track itself grown to 44px - same "hit area, not painted glyph" rule the
+   swatch-trigger and icon-btn already follow, kept here via a transparent
+   ::-webkit-slider-runnable-track/::-moz-range-track sized to the full
+   element and a thin ::-webkit-slider-thumb/::-moz-range-thumb drawn over
+   it, rather than sizing the native track itself. */
+.seek {
+  flex: 1 1 auto;
+  min-width: 4rem;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  /* The document is RTL, but a seek control's "further along" direction is a
+     physical, learned convention (every media player on earth fills left to
+     right), not a text-flow one - unlike the layout grid or the reading
+     column, there is no RTL-appropriate alternative to flip to. Forcing LTR
+     here, and driving the fill from a JS-set --seek-fill percentage rather
+     than relying on the input's own value/max (browsers disagree on whether
+     a range's native fill direction follows `direction` at all), is what
+     makes the track advance left to right regardless of the page direction -
+     see bindAudio()'s throttled timeupdate handler in transcript.js, the
+     single place --seek-fill is written. */
+  direction: ltr;
+}
+.seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--seek-fill, 0%), var(--rule) var(--seek-fill, 0%));
+}
+.seek::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--seek-fill, 0%), var(--rule) var(--seek-fill, 0%));
+}
+/* "Where it makes sense" for the thumb means giving it the same load-
+   bearing border weight every other control now has, not literally
+   squircle-ing it - it stays circular for the same reason .swatch-trigger
+   does (a position handle reads as a handle via its shape; a 14px square
+   with rounded corners would read as a tiny, out-of-place button instead).
+   The border is --control-border-width in --bg, not --control-border: the
+   thumb already sits on a filled --accent circle, its own strongest
+   possible signal, so the border's job here is only to separate the handle
+   from the track behind it - the same "ring around a filled shape" reading
+   .swatch-menu-item[aria-checked] already uses, not a second colour
+   competing with --accent for attention. */
+.seek::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: var(--control-border-width) solid var(--bg);
+}
+.seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: var(--control-border-width) solid var(--bg);
+}
+.seek:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.player-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -1,0 +1,107 @@
+/* ---------------------------------------------------------------- help --- */
+
+/* The help panel: a centred overlay sheet over a scrim, not a popover in
+   the .spk-menu/.swatch-menu sense - it opens from the toolbar rather than
+   being anchored to one control, and it has to sit above literally
+   everything else on the page while it's open, including the sticky player
+   (z-index: 50) and the toast (z-index: 60): a status announcement arriving
+   while help is open must not paint over it, and the reverse (help painting
+   under the player) would make the panel look broken rather than merely
+   layered wrong. 70 is chosen only to clear those two - it is still well
+   inside the same stacking context as .toolbar's own z-index: 40, which is
+   what keeps this from disturbing that rule: a *sibling* with a higher
+   z-index doesn't touch how the toolbar sticks to the top of its own
+   scroll, it only decides paint order between the two when they'd
+   otherwise overlap.
+
+   Server-rendered hidden, not built by transcript.js from nothing - see
+   _render_help_html()'s own docstring in formatting.py. [hidden] governs
+   what this looks like once script clears it; it says nothing about
+   whether the markup exists without script, which it always does. */
+.help-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgb(0 0 0 / 0.55);
+}
+.help-panel[hidden] { display: none; }
+
+/* .help-sheet and .tour-card (built by transcript.js, see css/86-tour.css)
+   are the same kind of surface: a floating overlay's own content card,
+   flat --panel (not the translucent rgba(var(--panel-rgb), ...) .source/
+   .outline use - see that split's own comment on .swatch-menu in
+   css/40-source.css) because an overlay reads as MORE raised than the page
+   it sits over, with the same border, radius and shadow. The two rules
+   used to write out that five-declaration cluster twice, byte for byte,
+   with nothing tying the copies together; shared here instead, with each
+   rule below keeping only the handful of properties that are actually its
+   own (sizing/positioning). --overlay-shadow (see the tokens fragment) is
+   the same "tokened, not typed twice" treatment for the one property in
+   this cluster that was also duplicated a second time elsewhere as a bare
+   literal. */
+.help-sheet, .tour-card {
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--overlay-shadow);
+}
+
+/* Sized with min()/vh rather than a fixed height, and independently
+   scrollable, because the help list is long enough on a short viewport (a
+   phone in landscape, a laptop with the window not maximised) to outgrow
+   the screen - overflow-y: auto keeps the close button and "start tour"
+   reachable by scrolling the sheet, not the whole page underneath the
+   scrim. */
+.help-sheet {
+  width: min(34rem, 100%);
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  padding: 1.5rem 1.5rem 1.75rem;
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-block-end: 1rem;
+}
+.help-head h2 { margin: 0; font-size: 1.15rem; }
+
+/* Sits between the close button and the reference list below it - the one
+   action this panel actively leads toward, not itself a reference entry,
+   so it is not part of .help-list. See the "Tier 1" comment on
+   .tb-btn.primary above for why it shares that tier with #export. */
+#tour-start { margin-block-end: 1.25rem; }
+
+/* One row per control, icon then name then a one- or two-sentence
+   explanation - dt/dl/dd rather than a list of paragraphs, because this
+   genuinely is a set of terms (a control) each paired with its own
+   definition (what it does), which is exactly what a description list is
+   for. */
+.help-list { margin: 0; padding: 0; }
+.help-list dt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-start: 1rem;
+  font-weight: 600;
+}
+.help-list dt:first-child { margin-block-start: 0; }
+/* padding-inline-start, not -left: the page is dir="rtl", so "start" is the
+   physical right - indenting the description under the icon+name above it
+   (rather than under the icon alone) reads correctly in both directions
+   only through the logical property, never a hardcoded side. Sized to
+   roughly the icon's own width plus the dt's gap, so the text lines up
+   under the label, not under the glyph. */
+.help-list dd {
+  margin: 0.3rem 0 0;
+  padding-inline-start: 1.75rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}

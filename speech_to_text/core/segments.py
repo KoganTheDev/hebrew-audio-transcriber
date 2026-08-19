@@ -13,10 +13,10 @@ transcription all the way to the renderer, and only flattens to text in
 core.formatting as the very last step.
 
 Deliberately dependency-free (stdlib only): this is imported by the worker
-process, which must never pull in PyQt5 (see core/worker.py for the
-MSVCP140.dll conflict), and by the GUI process, which must never pull in
-faster-whisper for the same reason. A shared vocabulary type can't belong to
-either side.
+process (see core/__init__.py for why core/ must never pull in PyQt5) and by
+the GUI process, which must never pull in faster-whisper for the same
+MSVCP140.dll reason from the other direction. A shared vocabulary type can't
+belong to either side.
 """
 
 from dataclasses import dataclass, field

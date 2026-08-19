@@ -204,8 +204,15 @@ class TestRenderHtml:
     def test_outline_present_only_when_there_is_something_for_it_to_show(self):
         """
         No file list to show (one document) and no speaker to manage - the
-        sidebar itself, and the toolbar button that opens it, both disappear
-        rather than rendering an empty shell.
+        sidebar itself disappears rather than rendering an empty shell.
+
+        There used to be a second thing gated the same way: a toolbar
+        button (#outline-toggle) that only made sense when there was a
+        sidebar to open. That button is gone outright now - the outline is
+        always part of the page's own flow (a two-column rail down to a
+        stacking breakpoint, then a band above the transcript - see
+        transcript.css), so there is nothing left needing a toggle to
+        reveal it, in either markup case checked here.
         """
         single = render_html([doc("only.wav", [seg(0, 1)])])
         assert 'class="outline"' not in single
@@ -213,7 +220,7 @@ class TestRenderHtml:
 
         multi = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
         assert 'class="outline"' in multi
-        assert 'id="outline-toggle"' in multi
+        assert 'id="outline-toggle"' not in multi
 
     def test_outline_file_list_anchors_resolve_to_existing_section_ids(self):
         out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
@@ -573,6 +580,102 @@ class TestEditableDocument:
         assert '<div id="toast" class="toast" role="status" aria-live="polite" hidden>' in out
 
 
+class TestHelpPanel:
+    """
+    The help panel: a server-rendered, initially-hidden overlay explaining
+    every toolbar control and reading-column affordance, plus #tour-start -
+    the hook a separate guided-tour feature binds to. See
+    _render_help_html()'s docstring in formatting.py.
+    """
+
+    def test_help_button_renders_with_label_and_aria_controls(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={"help": "Help"})
+        button = re.search(r'<button id="help".*?</button>', out, re.S)
+        assert button, "#help button not found"
+        assert 'aria-controls="help-panel"' in button.group(0)
+        assert 'aria-expanded="false"' in button.group(0)
+        assert "<span>Help</span>" in button.group(0)
+
+    def test_help_panel_renders_hidden(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert re.search(
+            r'<div id="help-panel" class="help-panel" role="dialog" '
+            r'aria-modal="true" aria-labelledby="help-title" hidden>',
+            out,
+        )
+
+    def test_tour_start_button_exists(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<button id="tour-start" class="tb-btn primary">' in out
+
+    def test_hebrew_ui_strings_reach_the_help_panel(self):
+        """
+        Same "the worker never guesses a language" contract every other
+        doc_ string already has (see test_ui_strings_are_carried_as_data_...
+        in TestDataPayload) - Hebrew supplied via ui_strings must actually
+        appear in the panel, not the English fallback.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={
+            "help": "עזרה",
+            "help_title": "עזרה",
+            "tour_start": "התחלת סיור מודרך",
+            "help_search_title": "חיפוש",
+        })
+        assert "<span>עזרה</span>" in out
+        assert '<h2 id="help-title">עזרה</h2>' in out
+        assert '<button id="tour-start" class="tb-btn primary">התחלת סיור מודרך</button>' in out
+        assert "חיפוש" in out
+
+    def test_help_panel_covers_every_documented_control(self):
+        """
+        Regression guard for silently dropping an entry - each of these
+        controls is real functionality (see the JS this panel documents),
+        not free-standing prose, so losing one from _render_help_html()'s
+        entries list should fail here rather than only be noticed by a
+        reader who goes looking for it.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        for icon in ("search", "flag", "theme", "save", "list", "plus", "play", "edit", "copy"):
+            assert f'<dt><svg class="icon" aria-hidden="true"><use href="#i-{icon}">' in out
+
+    def test_help_close_button_has_its_own_icon(self):
+        out = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<button id="help-close" class="icon-btn"' in out
+        assert "#i-close" in out
+
+
+class TestDocStringsHaveBothLanguages:
+    """
+    formatting.py never imports gui.i18n (see the module docstring) - it can
+    only ever render whatever a caller hands it through ui_strings, with an
+    English fallback baked into the f-string itself (the `s()` helper). The
+    actual translations still have to exist somewhere, though, and this is
+    the one place that checks they do: every doc_ key STRINGS defines must
+    carry both an "en" and a real "he" value, not just an English one with
+    Hebrew silently falling back.
+    """
+
+    # The PyQt5/gui.i18n layering guard that used to live here now covers
+    # every module under core/, not just formatting/ - see
+    # tests/test_layering.py for the AST-walking check itself and its own
+    # docstring for why the single-package version this replaced left the
+    # other ~16 core/ modules with only a prose promise and no test behind
+    # it.
+
+    def test_every_doc_key_has_english_and_hebrew(self):
+        from speech_to_text.gui.i18n import STRINGS
+
+        doc_keys = [key for key in STRINGS if key.startswith("doc_help") or key in (
+            "doc_help", "doc_tour_start",
+        )]
+        assert doc_keys, "expected at least the new help-panel doc_ keys to exist"
+        for key in doc_keys:
+            entry = STRINGS[key]
+            assert entry.get("en"), f"{key} missing an 'en' value"
+            assert entry.get("he"), f"{key} missing a 'he' value"
+            assert entry["he"] != entry["en"], f"{key}'s Hebrew value is not translated"
+
+
 class TestInlinedAssets:
 
     def test_stylesheet_and_script_are_inlined(self):
@@ -616,8 +719,15 @@ class TestVistaBackdrop:
     def test_missing_vistas_directory_renders_cleanly_with_no_backdrop(self, monkeypatch, tmp_path):
         import speech_to_text.core.formatting as formatting
 
+        # Patched on formatting.assets, not on the formatting package itself:
+        # _vista_names() is defined in formatting/assets.py and reads
+        # _VISTAS_DIR from THAT module's own globals (see assets.py's module
+        # docstring). Patching the re-exported formatting._VISTAS_DIR name
+        # would only rebind the package's alias, leaving the global the
+        # function actually closes over untouched - the patch would silently
+        # do nothing and this test would pass for the wrong reason.
         formatting._vista_names.cache_clear()
-        monkeypatch.setattr(formatting, "_VISTAS_DIR", tmp_path / "does-not-exist")
+        monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", tmp_path / "does-not-exist")
         try:
             out = render_html([doc("a.wav", [seg(0, 1)])])
             assert 'class="backdrop"' not in out
@@ -628,41 +738,163 @@ class TestVistaBackdrop:
         with pytest.raises(ValueError):
             render_html([doc("a.wav", [seg(0, 1)])], vista="not-a-real-file.webp")
 
+    def test_pinning_a_portrait_file_directly_raises(self):
+        """
+        "-portrait" files are an implementation detail of the landscape they
+        belong to (see _vista_names()'s docstring) - callers, including a
+        pinned vista=, only ever name the landscape file. Pinning the
+        portrait file directly must fail exactly like any other name outside
+        _vista_names(), not silently succeed and render a portrait-shaped
+        photo as the desktop backdrop.
+        """
+        with pytest.raises(ValueError):
+            render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01-portrait.webp")
 
-class TestApplyNamesReachesTheSidebar:
+    def test_landscape_and_portrait_uris_are_both_embedded(self):
+        """
+        vista-01 ships a portrait crop (built by tools/build_vistas.py), so a
+        pinned render must carry two distinct data URIs: one for the base
+        .backdrop rule and one behind the narrow-viewport media query.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+        uris = re.findall(r'data:image/webp;base64,[A-Za-z0-9+/=]+', out)
+        assert len(uris) == 2
+        assert uris[0] != uris[1]
+
+    def test_portrait_swap_is_behind_the_narrow_aspect_media_query(self):
+        """
+        3/4, not orientation:portrait - see the media query's own comment in
+        render_html() for why the switch point is an aspect ratio, not the
+        orientation flip at 1:1.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+        assert "@media (max-aspect-ratio: 3/4)" in out
+        assert re.search(
+            r"@media \(max-aspect-ratio: 3/4\) \{ \.backdrop\{background-image:"
+            r"url\(data:image/webp;base64,[A-Za-z0-9+/=]+\)\} \}",
+            out,
+        )
+
+    def test_portrait_variants_are_excluded_from_random_vista_selection(self, monkeypatch, tmp_path):
+        """
+        Regression guard for the single most likely bug in art-directed
+        backdrops: _vista_names() globs *.webp, and once a "-portrait" file
+        sits next to its landscape original in the same directory, an
+        unfiltered glob would let random.choice() pick the portrait crop as
+        the MAIN backdrop, and would also double the odds of that photo
+        being chosen at all relative to a photo with no portrait crop.
+        """
+        import speech_to_text.core.formatting as formatting
+
+        vistas_dir = tmp_path / "vistas"
+        vistas_dir.mkdir()
+        (vistas_dir / "vista-01.webp").write_bytes(b"landscape-one")
+        (vistas_dir / "vista-01-portrait.webp").write_bytes(b"portrait-one")
+        (vistas_dir / "vista-02.webp").write_bytes(b"landscape-two")
+
+        # See test_missing_vistas_directory_renders_cleanly_with_no_backdrop
+        # above for why this patches formatting.assets, not formatting.
+        monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", vistas_dir)
+        formatting._vista_names.cache_clear()
+        try:
+            names = formatting._vista_names()
+            assert names == ("vista-01.webp", "vista-02.webp")
+            assert not any(name.endswith("-portrait.webp") for name in names)
+        finally:
+            formatting._vista_names.cache_clear()
+
+    def test_missing_portrait_variant_renders_landscape_only(self, monkeypatch, tmp_path):
+        """
+        A photo with no portrait crop on disk (an older installed package, or
+        a photo build_vistas.py hasn't rebuilt yet) must still render its
+        landscape backdrop with no @media swap, never raise.
+
+        Both _ASSETS and _VISTAS_DIR are redirected into tmp_path (not just
+        _VISTAS_DIR, the way test_missing_vistas_directory... above does):
+        that test never reads a photo's bytes because it has zero vistas at
+        all, but this one pins a real filename and needs _asset_bytes() -
+        which reads through _ASSETS, not _VISTAS_DIR - to see the same fake,
+        portrait-less file the name lookup does. Both are patched on
+        formatting.assets, the module that actually defines and reads them -
+        see test_missing_vistas_directory_renders_cleanly_with_no_backdrop's
+        comment for why patching the formatting package's re-exported names
+        would not do anything.
+        """
+        import speech_to_text.core.formatting as formatting
+
+        assets_dir = tmp_path / "assets"
+        vistas_dir = assets_dir / "vistas"
+        vistas_dir.mkdir(parents=True)
+        (vistas_dir / "vista-01.webp").write_bytes(b"landscape-only")
+        # render_html() also loads transcript.css/js through _ASSETS (the
+        # text half, _asset() - unrelated to the vista byte lookup this test
+        # is about), so those two have to exist under the fake root too, or
+        # the render fails before it ever gets to the backdrop.
+        real_assets = formatting.assets._ASSETS
+        (assets_dir / "transcript.css").write_text(
+            (real_assets / "transcript.css").read_text(encoding="utf-8"), encoding="utf-8",
+        )
+        (assets_dir / "transcript.js").write_text(
+            (real_assets / "transcript.js").read_text(encoding="utf-8"), encoding="utf-8",
+        )
+
+        monkeypatch.setattr(formatting.assets, "_ASSETS", assets_dir)
+        monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", vistas_dir)
+        formatting._vista_names.cache_clear()
+        formatting._asset_bytes.cache_clear()
+        formatting._asset.cache_clear()
+        try:
+            out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
+            assert 'class="backdrop"' in out
+            uris = re.findall(r'data:image/webp;base64,[A-Za-z0-9+/=]+', out)
+            assert len(uris) == 1
+            # A live media-query rule, not just the phrase - transcript.css's
+            # own explanatory comment (copied verbatim into <style>, like all
+            # of transcript.css) mentions "@media (max-aspect-ratio: 3/4)" by
+            # name, so a bare substring check would false-positive on that
+            # comment even with no second backdrop rule present.
+            assert not re.search(
+                r"@media \(max-aspect-ratio: 3/4\) \{ \.backdrop", out,
+            )
+        finally:
+            formatting._vista_names.cache_clear()
+            formatting._asset_bytes.cache_clear()
+            formatting._asset.cache_clear()
+
+
+class TestRemovedIdentifiersNeverReappear:
     """
-    "Use these names in all files" used to repaint every turn's .spk chip
-    (still inside .source) but leave every other file's sidebar name input
-    untouched, because applyNames() queried .speaker-name inside .source -
-    where the inputs stopped living once the speaker strip moved into the
-    outline sidebar. See applyNames() in transcript.js for the fix.
+    The one place transcript.js/transcript.css are still checked by plain
+    text search, and the only sanctioned reason left to do so: proving an
+    identifier is ABSENT is not something behaviour can demonstrate. A
+    passing jsdom test only ever proves the code paths it actually exercises
+    behave correctly - it cannot prove a dead code path was never re-added,
+    because nothing calls into a dead path to observe the difference. A grep
+    can, cheaply, on every run.
 
-    A DOM-level assertion (does file 2's actual input.value carry the name
-    after a click) needs a real browser - that is covered by the manual
-    check and the plan's own browser verification step, not by pytest. What
-    is checked here, cheaply and on every run, is the mechanism: applyNames
-    resolves its name inputs from .speakers, not .source.
+    spk-locate (a sidebar "step through this speaker" button) and its whole
+    supporting mechanism (spk-count, stepSpeakerTurns, speakerCycle,
+    refreshSpeakerCounts, i-locate) were deleted outright, not relocated -
+    see TestEditableDocument.test_speaker_row_has_no_locate_button_or_turn_count
+    above for the render_html()-level half of this same guard (that one
+    checks the rendered markup; this one checks the source those identifiers
+    would have to appear in even if nothing wired them up to anything). A
+    regression that brought either one back anywhere in the JS or CSS source
+    should fail here rather than only be noticed by a reader who goes
+    looking for it.
+
+    Everything else that used to live here as a source-text assertion -
+    applyNames() resolving its inputs from .speakers rather than .source,
+    the menu-open class, the keyboard-modality flag, the help panel's
+    wiring, the guided tour's stepping/cleanup/bidi/focus behaviour - is now
+    a behavioural test in tests/js/ (see harness.mjs and its sibling
+    *.test.mjs files), run via node --test and surfaced through pytest by
+    tests/test_js_behaviour.py. Those assertions could observe the actual
+    behaviour a reader experiences, so they moved; this one can't, so it
+    stayed.
     """
-
-    def test_apply_names_resolves_inputs_from_the_speakers_panel(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        match = re.search(r"function applyNames\(fileIndex\) \{.*?\n  \}", js, re.S)
-        assert match, "applyNames() not found in transcript.js"
-        body = match.group(0)
-        assert "strip.querySelectorAll('.speaker-name')" in body
-        # The old, wrong selector must not have come back either - a fix
-        # that adds the sidebar lookup without removing the stale one would
-        # still look plausible in a diff.
-        assert "section.querySelectorAll('.speaker-name')" not in body
 
     def test_no_locate_button_or_turn_count_mechanism_remains(self):
-        """
-        Both were deleted, not relocated - a regression that brought either
-        one back anywhere (markup, styles or behaviour) should fail here
-        rather than only be caught by eyeballing a rendered page.
-        """
         from speech_to_text.core.formatting import _asset
 
         for name in ("spk-locate", "spk-count", "stepSpeakerTurns", "speakerCycle",
@@ -695,21 +927,10 @@ class TestPlayPauseGlyph:
         assert '#i-play' in toggle
         assert '#i-pause' not in toggle
 
-    def test_javascript_swaps_both_the_glyph_and_the_aria_label(self):
-        """
-        A button whose icon shows "pause" while its accessible name still
-        says "play" is worse than not swapping at all - both halves have to
-        move together, driven off the audio element's own play/pause
-        events (not the click handler) so a programmatic pause, like the
-        range-bound stop in the timeupdate handler, updates it too.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "'#i-pause'" in js and "'#i-play'" in js
-        assert "toggle.setAttribute('aria-label'" in js
-        assert "audio.addEventListener('play', syncToggleGlyph)" in js
-        assert "audio.addEventListener('pause', syncToggleGlyph)" in js
+    # The JS half - the glyph and aria-label actually swapping on the
+    # audio element's own play/pause events - is now
+    # tests/js/chrome.test.mjs's "the play/pause glyph and its aria-label
+    # swap together off the audio element's own play/pause events" test.
 
 
 class TestPopoverStackingAndAnchoring:
@@ -722,9 +943,12 @@ class TestPopoverStackingAndAnchoring:
     The actual painting behaviour (does this pixel really sit on top of that
     one) is not something a Python test can observe - it was verified in a
     real browser instead (see the plan's verification section). What IS
-    checked here, cheaply and on every run, is that the mechanism each fix
-    depends on still exists: the explicit open-state class CSS keys off of,
-    and the JS that sets/clears it.
+    checked here, cheaply and on every run, is that the CSS mechanism each
+    fix depends on still exists: the explicit open-state class, and
+    .spk-anchor's own positioning context. The JS half of each - transcript.js
+    actually toggling .menu-open, and actually detaching the swatch menu to
+    <body> as position: fixed - is now behavioural, in
+    tests/js/chrome.test.mjs.
     """
 
     def test_turn_menu_open_class_exists_with_a_higher_stack_level(self):
@@ -745,18 +969,6 @@ class TestPopoverStackingAndAnchoring:
             "with (rather than beats) its zero-level siblings"
         )
 
-    def test_javascript_sets_and_clears_the_menu_open_class(self):
-        """
-        The class is only useful if transcript.js actually toggles it when a
-        .spk-menu opens and closes - see menuOpenTurn in toggleMenu()/
-        closeMenu().
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "classList.add('menu-open')" in js
-        assert "classList.remove('menu-open')" in js
-
     def test_spk_menu_is_anchored_to_its_own_wrapper_not_the_turn(self):
         """
         .spk-anchor - not .spk itself (which cannot hold the menu's own
@@ -771,44 +983,56 @@ class TestPopoverStackingAndAnchoring:
         assert match, ".spk-anchor rule not found in transcript.css"
         assert "position: relative" in match.group(1)
 
-    def test_swatch_menu_is_detached_from_the_scrolling_sidebar_when_opened(self):
-        """
-        .outline is overflow-y: auto, which clips any ordinary
-        position: absolute popover inside it at the sidebar's own edge - see
-        the .swatch-menu comment in transcript.css for the two options
-        weighed and why detaching to <body> with computed fixed coordinates
-        was picked over restructuring the sidebar's scroll container.
-        """
-        from speech_to_text.core.formatting import _asset
 
-        js = _asset("transcript.js")
-        assert "document.body.appendChild(menu)" in js
-        assert "positionDetachedMenu" in js
-        assert "menu.style.position = 'fixed'" in js
-
-
-class TestKeyboardModalityFlag:
+class TestTourStrings:
     """
-    Phase 7: the .body/.plain-body focus ring (see the STATED EXCEPTION
-    comment at the top of transcript.css) is gated behind html[data-kbd]
-    rather than :focus-visible alone, because Chromium matches
-    :focus-visible on a contenteditable element for a mouse click too - the
-    entire bug the user reported. transcript.js is what has to set and clear
-    that flag; the CSS side (which selectors it gates) is checked in
-    test_transcript_styles.py instead.
+    Every doc_tour_* key STRINGS defines has to exist in both languages -
+    same contract TestDocStringsHaveBothLanguages already checks for
+    doc_help_*, extended here to cover the tour's own keys, which that
+    test's key filter deliberately does not match.
     """
 
-    def test_tab_keydown_sets_the_flag(self):
-        from speech_to_text.core.formatting import _asset
+    def test_every_tour_key_has_english_and_hebrew(self):
+        from speech_to_text.gui.i18n import STRINGS
 
-        js = _asset("transcript.js")
-        assert re.search(
-            r"e\.key === 'Tab'.*?setAttribute\('data-kbd', 'true'\)", js, re.S
-        ), "Tab keydown must set data-kbd on <html>"
+        # doc_tour_step_position (like the pre-existing doc_file_position it
+        # mirrors) is a bare "{i} / {n}" placeholder template with nothing
+        # language-specific to translate - legitimately identical in both
+        # languages, unlike every other key here.
+        untranslated_ok = {"doc_tour_step_position"}
 
-    def test_pointerdown_clears_the_flag(self):
-        from speech_to_text.core.formatting import _asset
+        doc_keys = [key for key in STRINGS if key.startswith("doc_tour")]
+        assert doc_keys, "expected the tour's doc_tour_* keys to exist"
+        for key in doc_keys:
+            entry = STRINGS[key]
+            assert entry.get("en"), f"{key} missing an 'en' value"
+            assert entry.get("he"), f"{key} missing a 'he' value"
+            if key not in untranslated_ok:
+                assert entry["he"] != entry["en"], f"{key}'s Hebrew value is not translated"
 
-        js = _asset("transcript.js")
-        assert "addEventListener('pointerdown'" in js
-        assert "removeAttribute('data-kbd')" in js
+    def test_step_and_control_keys_all_exist(self):
+        from speech_to_text.gui.i18n import STRINGS
+
+        required = [
+            "doc_tour_start", "doc_tour_next", "doc_tour_back", "doc_tour_skip",
+            "doc_tour_step_position",
+            "doc_tour_file_title", "doc_tour_file_body",
+            "doc_tour_outline_title", "doc_tour_outline_body",
+            "doc_tour_search_title", "doc_tour_search_body",
+            "doc_tour_speakers_title", "doc_tour_speakers_body",
+            "doc_tour_playback_title", "doc_tour_playback_body",
+            "doc_tour_editing_title", "doc_tour_editing_body",
+            "doc_tour_flags_title", "doc_tour_flags_body",
+            "doc_tour_export_title", "doc_tour_export_body",
+        ]
+        for key in required:
+            assert key in STRINGS, f"{key} missing from STRINGS"
+
+    def test_document_strings_carries_tour_keys_stripped_of_the_doc_prefix(self):
+        from speech_to_text.gui.i18n import document_strings, set_language
+
+        set_language("en")
+        strings = document_strings()
+        assert strings.get("tour_next") == "Next"
+        assert strings.get("tour_step_position") == "{i} / {n}"
+        assert "tour_file_title" in strings

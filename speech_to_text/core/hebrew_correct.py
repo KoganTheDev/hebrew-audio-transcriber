@@ -34,8 +34,6 @@ are anyway:
 
 Set expectations accordingly: this fixes proper nouns and domain vocabulary. It
 does not fix general Hebrew misrecognition - only a better model does that.
-
-Stdlib only, no PyQt5: this runs in the worker process.
 """
 
 import logging

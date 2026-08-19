@@ -19,6 +19,26 @@ import tempfile
 import uuid
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from speech_to_text.core.progress_scale import (
+    BATCH_FORMATTING_PERCENT,
+    BATCH_INIT_PERCENT,
+    BATCH_SAVING_PERCENT,
+    BATCH_COMPLETE_PERCENT,
+    BATCH_TRANSCRIBE_END,
+    BATCH_TRANSCRIBE_SPAN,
+    BATCH_TRANSCRIBE_START,
+    FILE_LOCAL_ANALYZING_PERCENT,
+    FILE_LOCAL_CORRECTING_PERCENT,
+    FILE_LOCAL_MAX,
+    FILE_LOCAL_SPEAKER_ID_END,
+    FILE_LOCAL_SPEAKER_ID_SPAN,
+    FILE_LOCAL_TRANSCRIBE_END,
+    FILE_LOCAL_TRANSCRIBE_SPAN,
+    FILE_LOCAL_TRANSCRIBE_START,
+    TRANSCRIBER_MODEL_LOADED_PERCENT,
+    TRANSCRIBER_TRANSCRIBE_SPAN,
+)
+
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
     from speech_to_text.core.options import TranscriptionOptions
     from speech_to_text.core.segments import Segment
@@ -127,19 +147,25 @@ def run_transcription_process(
 
     Overall progress bar phase breakdown, batch-wide (all emitted
     percentages are on this single 0-100 scale, so they only ever move
-    forward):
-      0-5%    initializing this process
-      5-12%   loading the Whisper model - once for the whole batch, which is
-              the entire reason this loop lives here rather than in the GUI
-              looping over one-file-at-a-time runs (a 1.6 GB default model
-              load is a real cost, not worth paying N times)
-      12-98%  transcribing every file in turn - decode, transcribe, identify
-              speakers, correct Hebrew terms - each file's share of this
-              band is weighted by its share of total audio duration (see
-              _global_percent below), so one long recording among several
-              short ones doesn't make the bar crawl through the short ones
-              and then stall
-      98-100% rendering the one combined HTML document and writing it once
+    forward). The boundaries below are named constants in
+    core/progress_scale.py, not numbers retyped here - a bare integer in a
+    docstring cannot be checked against the code it describes, and this
+    table used to drift from the actual boundaries for exactly that reason.
+      0 .. BATCH_INIT_PERCENT
+          initializing this process
+      BATCH_INIT_PERCENT .. TRANSCRIBER_MODEL_LOADED_PERCENT
+          loading the Whisper model - once for the whole batch, which is the
+          entire reason this loop lives here rather than in the GUI looping
+          over one-file-at-a-time runs (a 1.6 GB default model load is a
+          real cost, not worth paying N times)
+      BATCH_TRANSCRIBE_START .. BATCH_TRANSCRIBE_END
+          transcribing every file in turn - decode, transcribe, identify
+          speakers, correct Hebrew terms - each file's share of this band is
+          weighted by its share of total audio duration (see emit_local
+          below), so one long recording among several short ones doesn't
+          make the bar crawl through the short ones and then stall
+      BATCH_TRANSCRIBE_END .. BATCH_COMPLETE_PERCENT
+          rendering the one combined HTML document and writing it once
 
     One file failing does not fail the batch: it's logged, marked on that
     file's TranscriptDocument, and the loop continues (see _transcribe_one's
@@ -163,7 +189,7 @@ def run_transcription_process(
     writes happened at all.
     """
     try:
-        progress_queue.put(("progress", "w_initializing", {}, 2))
+        progress_queue.put(("progress", "w_initializing", {}, BATCH_INIT_PERCENT))
 
         from speech_to_text.core import formatting
         from speech_to_text.core.segments import TranscriptDocument
@@ -172,6 +198,25 @@ def run_transcription_process(
         def emit_progress(message, percent: int) -> None:
             key, params = message
             progress_queue.put(("progress", key, params, percent))
+
+        # documents/doc_id/vista are the three things the checkpoint render
+        # (below, once per file) and the final render (at the end of this
+        # function) both need but none of the eight OTHER render_html
+        # arguments vary between the two call sites - they're both rendering
+        # the same batch under the same options, just at different points in
+        # the run. Closing over that fixed set here means a ninth render
+        # option is one edit, not two kept in sync by hand.
+        def render_document() -> str:
+            return formatting.render_html(
+                documents,
+                speaker_label=options.speaker_label,
+                timestamps=options.timestamps,
+                failed_label=options.failed_label,
+                title=os.path.splitext(os.path.basename(output_file))[0],
+                ui_strings=options.ui_strings,
+                doc_id=doc_id,
+                vista=vista,
+            )
 
         transcriber = Transcriber(
             model_size=options.model_size,
@@ -246,14 +291,16 @@ def run_transcription_process(
                     key, params = message
                     if total_duration > 0:
                         done = _done_before + (local_percent / 100.0) * _file_duration
-                        global_percent = 12 + int(86 * done / total_duration)
+                        global_percent = BATCH_TRANSCRIBE_START + int(
+                            BATCH_TRANSCRIBE_SPAN * done / total_duration
+                        )
                     else:
                         # Durations unknown (the GUI always probes them, but a
                         # direct caller need not): pin to the start of the band
                         # rather than divide by zero. The bar stalls, which is
                         # honest - there is nothing to measure progress against.
-                        global_percent = 12
-                    global_percent = max(12, min(98, global_percent))
+                        global_percent = BATCH_TRANSCRIBE_START
+                    global_percent = max(BATCH_TRANSCRIBE_START, min(BATCH_TRANSCRIBE_END, global_percent))
                     progress_queue.put(("progress", key, params, global_percent))
 
                 try:
@@ -292,17 +339,7 @@ def run_transcription_process(
                 # gets another chance.
                 if succeeded > 0:
                     try:
-                        checkpoint_html = formatting.render_html(
-                            documents,
-                            speaker_label=options.speaker_label,
-                            timestamps=options.timestamps,
-                            failed_label=options.failed_label,
-                            title=os.path.splitext(os.path.basename(output_file))[0],
-                            ui_strings=options.ui_strings,
-                            doc_id=doc_id,
-                            vista=vista,
-                        )
-                        _atomic_write_html(output_file, checkpoint_html)
+                        _atomic_write_html(output_file, render_document())
                     except Exception as e:
                         logger.warning(
                             f"Checkpoint write failed after {audio_file}: {e}", exc_info=True
@@ -316,17 +353,8 @@ def run_transcription_process(
             result_queue.put(("error", "err_transcription_failed", {}))
             return
 
-        emit_progress(("w_formatting", {}), 98)
-        rendered = formatting.render_html(
-            documents,
-            speaker_label=options.speaker_label,
-            timestamps=options.timestamps,
-            failed_label=options.failed_label,
-            title=os.path.splitext(os.path.basename(output_file))[0],
-            ui_strings=options.ui_strings,
-            doc_id=doc_id,
-            vista=vista,
-        )
+        emit_progress(("w_formatting", {}), BATCH_FORMATTING_PERCENT)
+        rendered = render_document()
 
         # Unlike the per-file checkpoints above, this write is not allowed to
         # fail silently: it's the last chance to persist the batch, so a
@@ -336,10 +364,10 @@ def run_transcription_process(
         # reason the final write should be less safe than the ones before
         # it; a crash during this write must not be able to destroy the last
         # good checkpoint on disk.
-        emit_progress(("w_saving", {}), 99)
+        emit_progress(("w_saving", {}), BATCH_SAVING_PERCENT)
         _atomic_write_html(output_file, rendered)
 
-        emit_progress(("w_complete", {}), 100)
+        emit_progress(("w_complete", {}), BATCH_COMPLETE_PERCENT)
         result_queue.put(("finished", output_file))
 
     except Exception as e:
@@ -374,13 +402,20 @@ def _transcribe_one(
     losing the rest of the batch.
     """
     def from_transcriber_scale(message, percent: int) -> None:
-        # Transcriber emits 15 at the start of transcribe() and climbs to 90
-        # as segments complete; map that onto this file's own 5-90 local
-        # band (leaving 0-5 for decoding and 90-100 for speakers/correction
+        # Transcriber emits TRANSCRIBER_MODEL_LOADED_PERCENT at the start of
+        # transcribe() and climbs to TRANSCRIBER_TRANSCRIBE_END_PERCENT as
+        # segments complete; map that onto this file's own
+        # FILE_LOCAL_TRANSCRIBE_START..FILE_LOCAL_TRANSCRIBE_END local band
+        # (leaving 0..FILE_LOCAL_TRANSCRIBE_START for decoding and
+        # FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_MAX for speakers/correction
         # below). A stray 0 (Transcriber's own error sentinel) clamps to 0
         # rather than going negative - the file is about to be marked
         # failed regardless of the exact number shown at that instant.
-        local = max(0, min(100, round(5 + (percent - 15) / 75 * 85)))
+        local = max(0, min(FILE_LOCAL_MAX, round(
+            FILE_LOCAL_TRANSCRIBE_START
+            + (percent - TRANSCRIBER_MODEL_LOADED_PERCENT)
+            / TRANSCRIBER_TRANSCRIBE_SPAN * FILE_LOCAL_TRANSCRIBE_SPAN
+        )))
         emit_progress(message, local)
 
     transcriber.progress_callback = from_transcriber_scale
@@ -406,7 +441,7 @@ def _transcribe_one(
 
     _correct_hebrew(segments, options, emit_progress)
 
-    emit_progress(("w_transcription_done", {}), 100)
+    emit_progress(("w_transcription_done", {}), FILE_LOCAL_MAX)
     return segments
 
 
@@ -423,12 +458,12 @@ def _prepare_audio(
     if not options.identify_speakers:
         return None, False
 
-    emit_progress(("w_analyzing_audio", {}), 2)
+    emit_progress(("w_analyzing_audio", {}), FILE_LOCAL_ANALYZING_PERCENT)
     from speech_to_text.core import audio_source
 
     channels, two_party = audio_source.load(audio_file)
     if two_party:
-        emit_progress(("w_stereo_detected", {}), 5)
+        emit_progress(("w_stereo_detected", {}), FILE_LOCAL_TRANSCRIBE_START)
     return channels, two_party
 
 
@@ -473,10 +508,10 @@ def _identify_speakers(segments, channels, options, emit_progress):
     try:
         from speech_to_text.core import audio_source, diarization
 
-        emit_progress(("w_identifying_speakers", {}), 90)
+        emit_progress(("w_identifying_speakers", {}), FILE_LOCAL_TRANSCRIBE_END)
 
         if not diarization.models_present():
-            emit_progress(("w_downloading_diarization", {}), 90)
+            emit_progress(("w_downloading_diarization", {}), FILE_LOCAL_TRANSCRIBE_END)
             diarization.ensure_models()
 
         mono = audio_source.to_mono(channels)
@@ -485,7 +520,7 @@ def _identify_speakers(segments, channels, options, emit_progress):
             if total > 0:
                 emit_progress(
                     ("w_identifying_speakers", {}),
-                    90 + int(min(processed / total, 1.0) * 7),
+                    FILE_LOCAL_TRANSCRIBE_END + int(min(processed / total, 1.0) * FILE_LOCAL_SPEAKER_ID_SPAN),
                 )
 
         spans = diarization.diarize(
@@ -498,7 +533,7 @@ def _identify_speakers(segments, channels, options, emit_progress):
 
     except Exception as e:
         logger.warning(f"Speaker identification skipped: {e}", exc_info=True)
-        emit_progress(("w_speakers_unavailable", {}), 97)
+        emit_progress(("w_speakers_unavailable", {}), FILE_LOCAL_SPEAKER_ID_END)
 
 
 def _correct_hebrew(segments, options, emit_progress):
@@ -521,7 +556,7 @@ def _correct_hebrew(segments, options, emit_progress):
         if not len(terms):
             return
 
-        emit_progress(("w_correcting_terms", {}), 98)
+        emit_progress(("w_correcting_terms", {}), FILE_LOCAL_CORRECTING_PERCENT)
         changes = hebrew_correct.correct(segments, terms)
         if changes:
             logger.info(f"Applied {len(changes)} Hebrew term correction(s)")

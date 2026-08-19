@@ -414,8 +414,29 @@
   var menuOpenTurn = null;
 
   function closeMenu() {
-    document.querySelectorAll('.spk-menu, .swatch-menu').forEach(function (m) { m.remove(); });
-    if (openMenuBtn) { openMenuBtn.setAttribute('aria-expanded', 'false'); }
+    var menus = document.querySelectorAll('.spk-menu, .swatch-menu');
+    // Keyboard users who have moved focus into the menu (its first item is
+    // focused on open - see toggleMenu()'s own first.focus() below) lose
+    // their place entirely once the menu is removed from the DOM: focus
+    // silently falls back to <body>, with nothing announced and nowhere to
+    // Tab from. bindHelp()'s openHelp()/closeHelp() pair already solves the
+    // same problem for the help panel and tour card by capturing the
+    // trigger on open and refocusing it on close - reused here rather than
+    // inventing a second pattern, with one difference the menus need and
+    // the panels don't: closeMenu() doubles as bindMenus()'s catch-all for
+    // "the reader clicked somewhere else entirely", where focus has already
+    // landed on whatever was clicked. Refocusing the trigger unconditionally
+    // there would fight that click, so the restore only fires when focus
+    // was actually inside the menu being torn down - true after Escape or
+    // after activating a menu item, false after a click elsewhere.
+    var focusWasInMenu = openMenuBtn && Array.prototype.some.call(menus, function (m) {
+      return m.contains(document.activeElement);
+    });
+    menus.forEach(function (m) { m.remove(); });
+    if (openMenuBtn) {
+      openMenuBtn.setAttribute('aria-expanded', 'false');
+      if (focusWasInMenu) { openMenuBtn.focus(); }
+    }
     if (menuOpenTurn) { menuOpenTurn.classList.remove('menu-open'); menuOpenTurn = null; }
     openMenuBtn = null;
   }
@@ -431,20 +452,27 @@
     if (menu && e.target.contains && e.target.contains(openMenuBtn)) { closeMenu(); }
   }, true);
 
-  // Reads the trigger's real on-screen box via getBoundingClientRect() and
+  // Reads the target's real on-screen box via getBoundingClientRect() and
   // writes it back as fixed, physical left/top - not inset-inline-start,
   // unlike everywhere else in this file. Logical properties describe a
   // position relative to a box's own writing direction; a rect from
   // getBoundingClientRect() is already a physical viewport measurement with
   // no writing-direction of its own to be logical *about*, so resolving
   // "which physical side is inline-start" has to happen here explicitly
-  // instead (via getComputedStyle(btn).direction) rather than being free,
+  // instead (via getComputedStyle(target).direction) rather than being free,
   // the way it is for anything actually laid out by the CSS box model.
-  function positionDetachedMenu(menu, btn) {
-    var rect = btn.getBoundingClientRect();
+  //
+  // Originally written only for the two popovers (.spk-menu, .swatch-menu),
+  // both anchored to a small <button>. The guided tour reuses this as-is for
+  // its caption card, anchored instead to whatever element the current step
+  // is pointing at - a plain rename from `btn` to `target` is the only
+  // change that reuse needed, since getBoundingClientRect() and
+  // getComputedStyle() work identically on any element, button or not.
+  function positionDetachedMenu(menu, target) {
+    var rect = target.getBoundingClientRect();
     menu.style.position = 'fixed';
     menu.style.top = (rect.bottom + 4) + 'px';
-    var rtl = getComputedStyle(btn).direction === 'rtl';
+    var rtl = getComputedStyle(target).direction === 'rtl';
     // clientWidth, NOT window.innerWidth. innerWidth includes the scrollbar
     // gutter; a fixed element's containing block does not. Mixing the two
     // put the menu exactly one scrollbar-width (16px here) inline-start of
@@ -464,6 +492,47 @@
     var menuRect = menu.getBoundingClientRect();
     if (menuRect.bottom > window.innerHeight) {
       menu.style.top = (rect.top - menuRect.height - 4) + 'px';
+    }
+
+    // Horizontal clamp, added for the tour card and never exercised by the
+    // two original callers: a popover's trigger is always a small button
+    // comfortably inside the viewport, but a tour step's target can be as
+    // wide as the whole toolbar row (.file-bar) or as tall and off to one
+    // side as the sidebar (.outline), so the plain "start flush with the
+    // target's own edge" placement above can push the card partway off the
+    // opposite side of the screen. Re-measured after the vertical flip
+    // above (which only ever changes `top`), and nudged into
+    // [8px, viewport width - card width - 8px] the same "clamp to the
+    // viewport, not an ancestor's box" reasoning as the vertical case.
+    //
+    // Which CSS property gets nudged has to follow the same `rtl` branch the
+    // anchoring above used, not default to `left` unconditionally - the
+    // first version of this clamp always wrote menu.style.left and blanked
+    // menu.style.right, which silently overwrote the RTL branch's own
+    // `right` positioning for any popover that tripped the clamp. That is
+    // invisible in an LTR document (the clamp's `left` write is exactly
+    // what the anchor above already used) but misplaces the popover in this
+    // RTL-first app: an element anchored from its inline-start (physically
+    // its right edge, in RTL) would end up pinned by `left` instead,
+    // sliding to the opposite side of its trigger. Writing back into
+    // whichever property (`right` for RTL, `left` for LTR) anchored the
+    // popover in the first place keeps the clamp a pure "pull back onto
+    // screen" adjustment rather than a second, conflicting placement.
+    menuRect = menu.getBoundingClientRect();
+    if (menuRect.left < 8) {
+      if (rtl) {
+        menu.style.right = (document.documentElement.clientWidth - menuRect.width - 8) + 'px';
+      } else {
+        menu.style.left = '8px';
+        menu.style.right = '';
+      }
+    } else if (menuRect.right > document.documentElement.clientWidth - 8) {
+      if (rtl) {
+        menu.style.right = '8px';
+      } else {
+        menu.style.left = (document.documentElement.clientWidth - menuRect.width - 8) + 'px';
+        menu.style.right = '';
+      }
     }
   }
 
@@ -1476,7 +1545,6 @@
 
   function bindOutline() {
     var outline = document.getElementById('outline');
-    var toggle = document.getElementById('outline-toggle');
 
     // No <aside> at all (a single file with no speakers - see
     // _render_outline_html()'s early return) - nothing here to wire up.
@@ -1491,45 +1559,13 @@
 
     outline.querySelectorAll('.outline-file').forEach(function (a) {
       a.addEventListener('click', function () {
+        // Instant feedback: the anchor jump and the observer that follows it
+        // land on the same answer (see pickActiveFromGeometry), so this only
+        // moves the highlight a few milliseconds earlier than it would move
+        // anyway, rather than asserting something the heuristic then has to
+        // be prevented from overruling.
         setActiveFile(a.dataset.file);
-        // A real navigation (the href does the scrolling) - closing the
-        // overlay after it is only meaningful below the narrow-screen
-        // breakpoint, where .open controls visibility; toggling it off
-        // above that breakpoint is a harmless no-op since CSS ignores the
-        // class there.
-        closeOutline();
       });
-    });
-
-    function openOutline() {
-      outline.classList.add('open');
-      if (toggle) { toggle.setAttribute('aria-expanded', 'true'); }
-      var first = outline.querySelector('a, button, input');
-      if (first) { first.focus(); }
-    }
-
-    function closeOutlineImpl() {
-      outline.classList.remove('open');
-      if (toggle) { toggle.setAttribute('aria-expanded', 'false'); }
-    }
-    closeOutline = closeOutlineImpl;
-
-    if (toggle) {
-      toggle.addEventListener('click', function () {
-        if (outline.classList.contains('open')) { closeOutline(); } else { openOutline(); }
-      });
-    }
-
-    // Escape closes the overlay - not a focus trap (the plan is explicit
-    // that this must not trap focus), just the same "Escape dismisses the
-    // thing that's open" behaviour closeMenu() already gives the popovers.
-    // Tab is left alone entirely: a reader who tabs out of the overlay
-    // while it happens to be open is not stuck inside it.
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && outline.classList.contains('open')) {
-        closeOutline();
-        if (toggle) { toggle.focus(); }
-      }
     });
 
     // Which file is "current" is driven by the same observer that drives
@@ -1542,40 +1578,559 @@
     // actually reading - wins over one just barely peeking in at the
     // bottom edge.
     if (window.IntersectionObserver) {
-      var toolbarHeight = parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height')
-      ) || 0;
-      // A short file's whole section can fit inside the shrunk band at once,
-      // which means more than one section is "intersecting" at the same
-      // time - a single "last entry wins" would then depend on whatever
-      // order the browser happened to deliver entries in, not on which
-      // file is actually on screen first. Tracking every section's current
-      // intersection state and picking the smallest file index among the
-      // ones still true is the fix: since sections render top-to-bottom in
-      // document order, the smallest index among currently-intersecting
-      // ones is always the topmost one - the file the reader reached first.
-      var intersecting = {};
-      function pickActiveFromIntersecting() {
-        var current = Object.keys(intersecting)
-          .filter(function (file) { return intersecting[file]; })
-          .sort(function (a, b) { return Number(a) - Number(b); });
-        if (current.length) { setActiveFile(current[0]); }
+      var sources = document.querySelectorAll('.source');
+
+      function currentToolbarHeight() {
+        return parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height')
+        ) || 0;
       }
-      var observer = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          intersecting[entry.target.dataset.file] = entry.isIntersecting;
+
+      // The observer is only a "something moved, look again" trigger here.
+      // The answer itself comes from reading the sections' real geometry at
+      // the moment of the decision, NOT from entry.isIntersecting.
+      //
+      // This used to keep an `intersecting` map, writing each entry's
+      // isIntersecting into it and picking the smallest file index still
+      // marked true. The map was an incrementally-built cache trusted
+      // forever, and that is what broke clicking a file link: the browser
+      // samples intersections at a rendering step but runs the callback
+      // afterwards, so an anchor jump lands BETWEEN the two and the callback
+      // arrives carrying the pre-jump truth. Clicking file 2 wrote a stale
+      // "file 1 is intersecting" into the map one tick after the click
+      // handler had correctly highlighted file 2, and since the picker takes
+      // the LOWEST index marked true, the stale entry won. Nothing then
+      // corrected it: no further threshold is crossed until the next scroll,
+      // so the wrong highlight stuck until the reader clicked a second time
+      // (which no longer scrolls, being already at the anchor, so no
+      // observer callback fires to overwrite the click handler).
+      //
+      // Reading rects here cannot go stale by construction - it is measured
+      // when it is used. The cost is one getBoundingClientRect per file per
+      // callback, and callbacks only fire when a section actually crosses
+      // the band, so this is a handful of reads on an event that is already
+      // rare.
+      function pickActiveFromGeometry() {
+        // The reading line, normally the bottom edge of the band the
+        // observer's rootMargin describes.
+        //
+        // At the very end of the document it moves to the bottom of the
+        // viewport instead. Once the page cannot scroll any further, a short
+        // final file can be fully on screen with its top edge still BELOW
+        // the reading line - measured here at a 772px-tall window, the last
+        // file's top sits at 361px against a line at 309px - so no rule of
+        // the form "the last section above the line" can ever name it while
+        // the line stays put. Dropping the line to the viewport bottom in
+        // that one state makes "the last section the reader can see" the
+        // answer, which is what arriving at the end of the document actually
+        // means.
+        var line = (window.innerHeight + window.scrollY >=
+                    document.documentElement.scrollHeight - 2)
+          ? window.innerHeight
+          : window.innerHeight * 0.4;
+
+        // The current file is the LAST one whose heading the reader has
+        // reached - the section furthest down the document whose top edge is
+        // above the reading line.
+        //
+        // The rule used to be "the topmost section intersecting the band",
+        // and that is what made clicking the last file in the list land on
+        // its predecessor. A jump to the final file scrolls as far as the
+        // page can go, which is usually not far enough to lift that file
+        // into the band at all, while the file before it still sits in the
+        // band - so the topmost-in-band rule kept naming the wrong one, and
+        // no amount of further scrolling could change its mind because the
+        // page had already hit its end.
+        //
+        // A pin ("the clicked file wins until the reader scrolls away") was
+        // built first and thrown away: it needed the post-jump scroll
+        // position, which meant a requestAnimationFrame, and rAF does not
+        // run in a background or occluded tab - so the pin could never
+        // release there and the highlight froze permanently, which is a
+        // worse failure than the one being fixed. Measuring against the
+        // reading line needs no such state: it is a pure function of the
+        // current layout, gives the same answer for a click and for a scroll
+        // that ends in the same place, and names the last file correctly
+        // because that file's top edge does rise above the line even when
+        // the page runs out of scroll.
+        var best = null;
+        sources.forEach(function (section) {
+          if (section.getBoundingClientRect().top >= line) { return; }
+          var index = Number(section.dataset.file);
+          if (best === null || index > best) { best = index; }
         });
-        pickActiveFromIntersecting();
-      }, { rootMargin: '-' + (toolbarHeight + 1) + 'px 0px -60% 0px', threshold: 0 });
-      document.querySelectorAll('.source').forEach(function (section) { observer.observe(section); });
+        // Nothing has reached the line yet (the reader is above the first
+        // section, e.g. at the very top of a document with a tall toolbar):
+        // the first file is the only sensible answer.
+        setActiveFile(best === null ? 0 : best);
+      }
+
+      var observer = new IntersectionObserver(
+        pickActiveFromGeometry,
+        { rootMargin: '-' + (currentToolbarHeight() + 1) + 'px 0px -60% 0px', threshold: 0 }
+      );
+      sources.forEach(function (section) { observer.observe(section); });
+
+      // The observer alone is not a sufficient trigger, which is worth
+      // spelling out because it looks like it should be: it only fires when
+      // a section crosses the band's edge, and the answer above can change
+      // without any such crossing. Scrolling up from the end of a document
+      // is the case that proved it - the last file leaves the "no scroll
+      // left" state, which moves the reading line, while every section stays
+      // exactly as in-band or out-of-band as it already was. No crossing, no
+      // callback, and the highlight stayed on the previous file.
+      //
+      // The original code avoided a scroll handler on the grounds that it
+      // would be a second source of truth able to disagree with the
+      // observer. That objection no longer applies: both triggers call the
+      // same pure function, which reads live layout and holds no state
+      // between calls, so they cannot reach different answers - they can
+      // only reach the same one at different moments. Resize matters for the
+      // same reason (the line is a fraction of the viewport height).
+      //
+      // Unthrottled on purpose: the work is one getBoundingClientRect per
+      // file, on documents that hold a handful of files, which is cheaper
+      // than the bookkeeping a throttle would add.
+      window.addEventListener('scroll', pickActiveFromGeometry, { passive: true });
+      window.addEventListener('resize', pickActiveFromGeometry);
     }
   }
 
-  // Reassigned by bindOutline() once the real <aside> (if any) is found -
-  // declared up here so keydown/click handlers above can reference it
-  // before the reassignment runs, and so calling it when there is no
-  // outline at all is a safe no-op instead of a ReferenceError.
-  var closeOutline = function () {};
+  // ------------------------------------------------------------- help & tour
+
+  // Shared by the help panel and the tour's caption card: both are modal
+  // overlays that have to keep Tab cycling inside themselves rather than
+  // leaking focus out to the page underneath. Queried live rather than
+  // cached, because the help panel's content is static but the tour card's
+  // Back button toggles [hidden] on and off as the step index moves, which
+  // would silently go stale in a cached list.
+  function focusableIn(container) {
+    var all = container.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    return Array.prototype.filter.call(all, function (el) {
+      // offsetParent is null for both `display: none` and a [hidden]
+      // ancestor - either way, an element a reader cannot see must not be
+      // reachable by Tab either, or the cycle would silently include dead
+      // stops.
+      return !el.disabled && el.offsetParent !== null;
+    });
+  }
+
+  function trapTabKey(e, container) {
+    if (e.key !== 'Tab') { return; }
+    var focusable = focusableIn(container);
+    if (!focusable.length) { return; }
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  // The help panel: markup and content are entirely server-rendered (see
+  // _render_help_html() in core/formatting.py) - this only ever toggles
+  // [hidden] and aria-expanded, and manages focus. Never reaches into
+  // `state` or calls save(): the panel is pure reference material, and
+  // opening or closing it must be invisible to hasLocalChanges().
+  function bindHelp() {
+    var btn = document.getElementById('help');
+    var panel = document.getElementById('help-panel');
+    var closeBtn = document.getElementById('help-close');
+    var tourBtn = document.getElementById('tour-start');
+    if (!btn || !panel) { return; }
+
+    // The element focus should return to on close - the toolbar button in
+    // the ordinary case, but captured fresh on every open rather than
+    // hardcoded to `btn` in case some future caller opens help by another
+    // route (a keyboard shortcut, say) with a different element focused.
+    var opener = null;
+
+    function openHelp() {
+      opener = document.activeElement;
+      panel.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      if (closeBtn) { closeBtn.focus(); }
+    }
+
+    function closeHelp() {
+      panel.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      if (opener && typeof opener.focus === 'function') { opener.focus(); }
+      opener = null;
+    }
+
+    btn.addEventListener('click', openHelp);
+    if (closeBtn) { closeBtn.addEventListener('click', closeHelp); }
+
+    // .help-panel is the full-viewport flex container that centres
+    // .help-sheet inside it - a click anywhere in that container that is
+    // NOT on the sheet (or one of the sheet's own children, which never
+    // bubble past it without being handled first) is a click on the scrim
+    // itself, i.e. e.target === panel exactly.
+    panel.addEventListener('click', function (e) {
+      if (e.target === panel) { closeHelp(); }
+    });
+
+    panel.addEventListener('keydown', function (e) {
+      if (panel.hidden) { return; }
+      if (e.key === 'Escape') { closeHelp(); return; }
+      trapTabKey(e, panel);
+    });
+
+    if (tourBtn) {
+      tourBtn.addEventListener('click', function () {
+        closeHelp();
+        startTour();
+      });
+    }
+  }
+
+  // (selector, find) - `selector` documents which markup this step points
+  // at (and is what tests assert against); `find` is how the step is
+  // actually located, since one step (the speaker roster) needs more than a
+  // plain querySelector - see its own comment below. Every other step's
+  // `find` is just document.querySelector(selector).
+  //
+  // Order matters: it is the order steps are walked in, and it deliberately
+  // matches the page's own top-to-bottom reading order (toolbar/file
+  // context first, then the sidebar, then the reading column's own
+  // affordances in the order a reader meets them), the same choice
+  // _render_help_html() documents for the help panel's own entry order.
+  var TOUR_STEPS = [
+    {
+      selector: '.file-bar',
+      titleKey: 'tour_file_title', titleFallback: 'This recording',
+      bodyKey: 'tour_file_body',
+      bodyFallback: "This bar stays on screen and names the file you're "
+        + 'reading - in a batch, it also shows its position among the others.',
+    },
+    {
+      selector: '.outline',
+      titleKey: 'tour_outline_title', titleFallback: 'Files and speakers',
+      bodyKey: 'tour_outline_body',
+      bodyFallback: 'This sidebar lists every file in the batch and, for '
+        + 'each one, the speakers detected inside it. Click a filename to '
+        + 'jump straight to it.',
+    },
+    {
+      selector: '.tb-search',
+      titleKey: 'tour_search_title', titleFallback: 'Search',
+      bodyKey: 'tour_search_body',
+      bodyFallback: 'Type here to search every turn in this recording. The '
+        + 'chevrons - or Enter and Shift+Enter - jump to the next or '
+        + 'previous match.',
+    },
+    {
+      // Every file in the batch renders its own .speakers strip, but only
+      // one is visible at a time once .outline.js-ready is present (see
+      // bindOutline() and the .outline.js-ready .speakers:not(.active) rule
+      // in transcript.css) - a plain document.querySelector('.speakers')
+      // would always land on file 0's strip regardless of which file the
+      // reader is actually looking at, including mid-tour if a reader
+      // scrolled before opening help. .active is preferred; falling back to
+      // the first .speakers covers the (script-disabled-at-render-time,
+      // impossible in practice once this file is running, but cheap to
+      // guard) case where nothing has been marked active yet.
+      selector: '.speakers',
+      find: function () {
+        return document.querySelector('.speakers.active') || document.querySelector('.speakers');
+      },
+      titleKey: 'tour_speakers_title', titleFallback: 'Speaker names and colours',
+      bodyKey: 'tour_speakers_body',
+      bodyFallback: 'Rename a speaker here, or recolour them from the '
+        + "swatch beside their name. Clicking a speaker's name on one turn "
+        + 'reassigns just that turn to someone else.',
+    },
+    {
+      selector: '.turn .ts',
+      titleKey: 'tour_playback_title', titleFallback: 'Play a moment',
+      bodyKey: 'tour_playback_body',
+      bodyFallback: 'Click a timestamp to play the recording from that '
+        + 'turn - a small player appears, and stops again at the end of '
+        + 'the turn it started from.',
+    },
+    {
+      selector: '.turn .body[contenteditable]',
+      titleKey: 'tour_editing_title', titleFallback: 'Editing the transcript',
+      bodyKey: 'tour_editing_body',
+      bodyFallback: "Click into any turn's text to correct it directly. "
+        + 'Changes save automatically to this browser as you type.',
+    },
+    {
+      selector: '#toggle-flags',
+      titleKey: 'tour_flags_title', titleFallback: 'Show uncertain words',
+      bodyKey: 'tour_flags_body',
+      bodyFallback: 'This button highlights the words the model itself '
+        + "was least sure about, so you know what's worth a second look.",
+    },
+    {
+      selector: '#export',
+      titleKey: 'tour_export_title', titleFallback: 'Save a copy',
+      bodyKey: 'tour_export_body',
+      bodyFallback: 'This page can only save your edits to this browser '
+        + 'automatically. "Save a copy" is what actually writes them into '
+        + 'a real file you can keep or share.',
+    },
+  ];
+
+  // Everything the running tour needs to clean itself up - a single object
+  // rather than a scatter of module-level variables, so endTour() has one
+  // thing to null out and cannot half-forget a piece of it. null whenever no
+  // tour is running, which doubles as the re-entrancy guard in startTour().
+  var tour = null;
+
+  // Resolved fresh every time the tour starts, never cached across a
+  // render: which selectors match depends on what this particular document
+  // actually contains (a single file has no .outline; a document rendered
+  // without timestamps has no .ts; a document with one detected speaker has
+  // no .speakers strip at all - see _render_outline_html()'s own docstring
+  // for the conditions). A step whose target is missing is dropped
+  // silently, and the n/total counter is built from what is LEFT, not from
+  // TOUR_STEPS.length - a hardcoded 8 would immediately be wrong on the
+  // first document that omits anything.
+  function resolveTourSteps() {
+    var resolved = [];
+    TOUR_STEPS.forEach(function (step) {
+      var el = step.find ? step.find() : document.querySelector(step.selector);
+      if (el) { resolved.push({ def: step, el: el }); }
+    });
+    return resolved;
+  }
+
+  function buildTourChrome() {
+    var scrim = document.createElement('div');
+    scrim.className = 'tour-scrim';
+    scrim.setAttribute('aria-hidden', 'true');
+
+    var ring = document.createElement('div');
+    ring.className = 'tour-ring';
+    ring.setAttribute('aria-hidden', 'true');
+
+    var card = document.createElement('div');
+    card.className = 'tour-card';
+    card.id = 'tour-card';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+    card.setAttribute('aria-labelledby', 'tour-title');
+    // Not part of the normal Tab order (that is what the trap is for) - this
+    // is only so card.focus() below can move the accessibility focus onto
+    // the dialog itself when a step changes, the same "focus the container,
+    // let its aria-labelledby announce the new content" pattern any dialog
+    // that swaps its own content on the fly needs.
+    card.setAttribute('tabindex', '-1');
+
+    var count = document.createElement('p');
+    count.className = 'tour-count';
+    // Same bidi shape as .file-position and format_range()'s
+    // "M:SS - M:SS" (see the LRI/PDI comment block in
+    // core/formatting.py): a neutral "/" sitting between two LTR
+    // digit runs inside an RTL paragraph. Without the isolate
+    // renderTourStep() wraps this in, step one of eight rendered as
+    // "8 / 1" - the slash resolved RTL and swapped which number read
+    // as the position and which read as the total, the exact bug
+    // .file-position already carries a guard against. dir="ltr" is
+    // not sufficient alone: this is a flow child of an RTL card, so
+    // the isolate is what stops the surrounding direction reaching
+    // into the digit runs in the first place.
+    count.setAttribute('dir', 'ltr');
+    var title = document.createElement('h2');
+    title.className = 'tour-title';
+    title.id = 'tour-title';
+    var body = document.createElement('p');
+    body.className = 'tour-body';
+
+    var actions = document.createElement('div');
+    actions.className = 'tour-actions';
+
+    var skipBtn = document.createElement('button');
+    skipBtn.type = 'button';
+    skipBtn.className = 'tb-btn tour-skip';
+
+    var backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'tb-btn tour-back';
+
+    var nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'tb-btn primary tour-next';
+
+    actions.appendChild(skipBtn);
+    actions.appendChild(backBtn);
+    actions.appendChild(nextBtn);
+    card.appendChild(count);
+    card.appendChild(title);
+    card.appendChild(body);
+    card.appendChild(actions);
+
+    return {
+      scrim: scrim, ring: ring, card: card,
+      count: count, title: title, body: body,
+      skipBtn: skipBtn, backBtn: backBtn, nextBtn: nextBtn,
+    };
+  }
+
+  // Re-measures the current step's target and repaints the ring and card
+  // around it. Cheap enough (one getBoundingClientRect plus
+  // positionDetachedMenu's own couple of reads) to run unthrottled from a
+  // rAF callback rather than needing its own further debounce.
+  function updateTourSpotlight() {
+    if (!tour) { return; }
+    var entry = tour.steps[tour.index];
+    var rect = entry.el.getBoundingClientRect();
+    var pad = 6;
+
+    var ring = tour.chrome.ring;
+    ring.style.top = (rect.top - pad) + 'px';
+    ring.style.left = (rect.left - pad) + 'px';
+    ring.style.width = (rect.width + pad * 2) + 'px';
+    ring.style.height = (rect.height + pad * 2) + 'px';
+
+    positionDetachedMenu(tour.chrome.card, entry.el);
+  }
+
+  function scheduleTourUpdate() {
+    if (!tour || tour.raf) { return; }
+    tour.raf = window.requestAnimationFrame(function () {
+      if (!tour) { return; }
+      tour.raf = null;
+      updateTourSpotlight();
+    });
+  }
+
+  function renderTourStep(index) {
+    var entry = tour.steps[index];
+    tour.index = index;
+    var chrome = tour.chrome;
+    var n = tour.steps.length;
+
+    chrome.count.textContent = PLAIN_LRI
+      + t('tour_step_position', '{i} / {n}')
+        .replace('{i}', String(index + 1)).replace('{n}', String(n))
+      + PLAIN_PDI;
+    chrome.title.textContent = t(entry.def.titleKey, entry.def.titleFallback);
+    chrome.body.textContent = t(entry.def.bodyKey, entry.def.bodyFallback);
+    chrome.skipBtn.textContent = t('tour_skip', 'Skip');
+    chrome.backBtn.textContent = t('tour_back', 'Back');
+    chrome.nextBtn.textContent = (index === n - 1)
+      ? t('tour_done', 'Done')
+      : t('tour_next', 'Next');
+    chrome.backBtn.hidden = index === 0;
+
+    // Positioned once immediately, so the ring/card do not flash at (0, 0)
+    // for a frame before the first scroll event lands - then left to the
+    // scroll listener below to keep tracking the target as
+    // scrollIntoView's own (possibly smooth, possibly instant per
+    // scrollBehavior()) animation actually moves it.
+    updateTourSpotlight();
+    entry.el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
+
+    // Re-announces the step to a screen reader on every change (a dialog's
+    // aria-labelledby is read out when the dialog itself receives focus),
+    // and keeps Tab cycling inside a container that is guaranteed to still
+    // exist even on the step where Back has just been hidden.
+    chrome.card.focus();
+  }
+
+  function endTour() {
+    if (!tour) { return; }
+    var chrome = tour.chrome;
+    if (tour.raf) { window.cancelAnimationFrame(tour.raf); }
+    document.removeEventListener('keydown', tour.keydownHandler, true);
+    window.removeEventListener('resize', tour.moveHandler);
+    document.removeEventListener('scroll', tour.moveHandler, true);
+    chrome.scrim.remove();
+    chrome.ring.remove();
+    chrome.card.remove();
+    tour = null;
+
+    // Always #help, per the tour's own accessibility contract - not
+    // whichever element happened to be focused before the tour started,
+    // which by construction is #help anyway (bindHelp()'s tour-start click
+    // handler closes the help panel, which already returns focus to #help,
+    // immediately before calling startTour()). Naming it explicitly here
+    // rather than relying on that chain means this still does the right
+    // thing if a future caller ever starts the tour some other way.
+    var helpBtn = document.getElementById('help');
+    if (helpBtn) { helpBtn.focus(); }
+  }
+
+  // Manual trigger only - bound to #tour-start's click in bindHelp(). No
+  // auto-launch, no first-visit flag in `state`: a reader who has not asked
+  // for the tour must never have it start itself, and nothing about running
+  // it may touch localStorage (see the module docstring's autosave
+  // contract) - the tour reads the DOM and getBoundingClientRect(), full
+  // stop, and every handler below is careful never to call save() or reach
+  // into `state`.
+  function startTour() {
+    var steps = resolveTourSteps();
+    if (!steps.length) { return; }
+    // Re-entrancy guard: starting the tour again while one is already
+    // running (there is no UI path to do this today, since #tour-start only
+    // exists inside the help panel the tour itself closes, but a future
+    // second entry point should not be able to leak the first run's
+    // overlay) tears the old one down cleanly first rather than stacking a
+    // second scrim/ring/card on top of it.
+    if (tour) { endTour(); }
+
+    var chrome = buildTourChrome();
+    document.body.appendChild(chrome.scrim);
+    document.body.appendChild(chrome.ring);
+    document.body.appendChild(chrome.card);
+
+    tour = { steps: steps, index: 0, chrome: chrome, raf: null };
+
+    chrome.skipBtn.addEventListener('click', endTour);
+    chrome.backBtn.addEventListener('click', function () {
+      if (tour && tour.index > 0) { renderTourStep(tour.index - 1); }
+    });
+    chrome.nextBtn.addEventListener('click', function () {
+      if (!tour) { return; }
+      if (tour.index < tour.steps.length - 1) {
+        renderTourStep(tour.index + 1);
+      } else {
+        endTour();
+      }
+    });
+
+    // Capture-phase, like closeMenu()'s own Escape handler and the
+    // scroll-closes-the-swatch-menu listener above - the tour is modal, so
+    // it has to see these keys before any other keydown listener on the
+    // page gets a chance to react to them (bindChrome()'s own "/" focuses
+    // search" handler, for one, would otherwise fire while the tour has the
+    // page pinned behind its scrim).
+    tour.keydownHandler = function (e) {
+      if (e.key === 'Escape') { endTour(); return; }
+      // Left/Right-as-next/back is a bonus, not the primary path (Tab to
+      // the buttons and press them is) - kept intentionally simple, with no
+      // attempt to flip the pair for RTL, since an arrow key's physical
+      // direction on the keyboard is what a reader's hand actually knows,
+      // independent of which way the text on screen flows.
+      if (e.key === 'ArrowRight') { e.preventDefault(); chrome.nextBtn.click(); return; }
+      if (e.key === 'ArrowLeft' && !chrome.backBtn.hidden) {
+        e.preventDefault();
+        chrome.backBtn.click();
+        return;
+      }
+      trapTabKey(e, chrome.card);
+    };
+    document.addEventListener('keydown', tour.keydownHandler, true);
+
+    // Same rAF-scheduled recompute drives both triggers - a resize and a
+    // scroll (of the window, or of any scrollable ancestor, hence capture:
+    // true, the same reasoning as closeMenu()'s own capture-phase scroll
+    // listener above) are just two different reasons the target's rect
+    // might have changed.
+    tour.moveHandler = scheduleTourUpdate;
+    window.addEventListener('resize', tour.moveHandler);
+    document.addEventListener('scroll', tour.moveHandler, true);
+
+    renderTourStep(0);
+  }
 
   // ---------------------------------------------------------------- layout
 
@@ -1622,6 +2177,7 @@
   bindAudio();
   bindChrome();
   bindOutline();
+  bindHelp();
 
   syncToolbarHeight();
   window.addEventListener('resize', syncToolbarHeight);

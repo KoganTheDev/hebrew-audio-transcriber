@@ -1,0 +1,82 @@
+/* ----------------------------------------------------------- plain text --- */
+
+/* No longer a collapsible disclosure element - see _render_plain_html()'s
+   docstring for why: this is the panel that gets used most (copying the
+   whole recording out to somewhere else), and burying the most-used feature
+   one click below a collapsed summary line was the wrong trade. Always
+   visible instead. */
+.plain {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.plain-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.summary-hint { font-size: 0.78rem; opacity: 0.75; }
+
+.plain-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.plain-controls label { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 44px; }
+
+/* No longer a single <pre> of static text - one .plain-row per turn, each
+   holding an inert prefix and an editable body tied to its card by
+   data-turn (see _render_plain_html()'s docstring in formatting.py and
+   rebuildPlain() in transcript.js for the two-way sync this shape exists
+   for). white-space: pre-wrap moves down onto .plain-body specifically,
+   since it's the element whose text can now contain real newlines (one per
+   card paragraph) that have to render as line breaks rather than collapse. */
+.plain-text {
+  margin: 0;
+  padding: 0.25rem 1rem;
+  max-height: 22rem;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-hover);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.plain-row {
+  padding: 0.6rem 0;
+  border-bottom: 1px dashed var(--rule);
+}
+.plain-row:last-child { border-bottom: 0; }
+.plain-prefix {
+  color: var(--muted);
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  user-select: none;
+}
+.plain-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+}
+/* Same STATED EXCEPTION as .body above, and doubly needed here: .plain-body
+   is a multi-line INLINE element, so a plain outline (drawn per line
+   fragment) rendered a stepped staircase of boxes rather than one ring - the
+   second half of the user's report. Gating on the tracked keyboard flag
+   fixes both symptoms at once: no ring on a mouse click that only selects
+   text, and the ring only ever has to be judged in the one situation
+   (Tab-focus) where the per-line stepping is visible anyway. */
+html[data-kbd] .plain-body:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
