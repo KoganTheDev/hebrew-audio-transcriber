@@ -6,8 +6,6 @@ once segments carried timing and speaker data: the renderer needs to know
 about turn merging, bidi control characters and speaker label templates,
 none of which have anything to do with running a Whisper model.
 
-Stdlib only, and no PyQt5 - this runs inside the worker process.
-
 This used to be one ~1300-line module. It is a package now because
 render_html() had grown into four unrelated jobs - page chrome, per-document
 content, backdrop photo lookup, and time/bidi formatting - each with its own

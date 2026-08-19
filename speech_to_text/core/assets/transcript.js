@@ -414,8 +414,29 @@
   var menuOpenTurn = null;
 
   function closeMenu() {
-    document.querySelectorAll('.spk-menu, .swatch-menu').forEach(function (m) { m.remove(); });
-    if (openMenuBtn) { openMenuBtn.setAttribute('aria-expanded', 'false'); }
+    var menus = document.querySelectorAll('.spk-menu, .swatch-menu');
+    // Keyboard users who have moved focus into the menu (its first item is
+    // focused on open - see toggleMenu()'s own first.focus() below) lose
+    // their place entirely once the menu is removed from the DOM: focus
+    // silently falls back to <body>, with nothing announced and nowhere to
+    // Tab from. bindHelp()'s openHelp()/closeHelp() pair already solves the
+    // same problem for the help panel and tour card by capturing the
+    // trigger on open and refocusing it on close - reused here rather than
+    // inventing a second pattern, with one difference the menus need and
+    // the panels don't: closeMenu() doubles as bindMenus()'s catch-all for
+    // "the reader clicked somewhere else entirely", where focus has already
+    // landed on whatever was clicked. Refocusing the trigger unconditionally
+    // there would fight that click, so the restore only fires when focus
+    // was actually inside the menu being torn down - true after Escape or
+    // after activating a menu item, false after a click elsewhere.
+    var focusWasInMenu = openMenuBtn && Array.prototype.some.call(menus, function (m) {
+      return m.contains(document.activeElement);
+    });
+    menus.forEach(function (m) { m.remove(); });
+    if (openMenuBtn) {
+      openMenuBtn.setAttribute('aria-expanded', 'false');
+      if (focusWasInMenu) { openMenuBtn.focus(); }
+    }
     if (menuOpenTurn) { menuOpenTurn.classList.remove('menu-open'); menuOpenTurn = null; }
     openMenuBtn = null;
   }
@@ -483,13 +504,35 @@
     // above (which only ever changes `top`), and nudged into
     // [8px, viewport width - card width - 8px] the same "clamp to the
     // viewport, not an ancestor's box" reasoning as the vertical case.
+    //
+    // Which CSS property gets nudged has to follow the same `rtl` branch the
+    // anchoring above used, not default to `left` unconditionally - the
+    // first version of this clamp always wrote menu.style.left and blanked
+    // menu.style.right, which silently overwrote the RTL branch's own
+    // `right` positioning for any popover that tripped the clamp. That is
+    // invisible in an LTR document (the clamp's `left` write is exactly
+    // what the anchor above already used) but misplaces the popover in this
+    // RTL-first app: an element anchored from its inline-start (physically
+    // its right edge, in RTL) would end up pinned by `left` instead,
+    // sliding to the opposite side of its trigger. Writing back into
+    // whichever property (`right` for RTL, `left` for LTR) anchored the
+    // popover in the first place keeps the clamp a pure "pull back onto
+    // screen" adjustment rather than a second, conflicting placement.
     menuRect = menu.getBoundingClientRect();
     if (menuRect.left < 8) {
-      menu.style.left = '8px';
-      menu.style.right = '';
+      if (rtl) {
+        menu.style.right = (document.documentElement.clientWidth - menuRect.width - 8) + 'px';
+      } else {
+        menu.style.left = '8px';
+        menu.style.right = '';
+      }
     } else if (menuRect.right > document.documentElement.clientWidth - 8) {
-      menu.style.left = (document.documentElement.clientWidth - menuRect.width - 8) + 'px';
-      menu.style.right = '';
+      if (rtl) {
+        menu.style.right = '8px';
+      } else {
+        menu.style.left = (document.documentElement.clientWidth - menuRect.width - 8) + 'px';
+        menu.style.right = '';
+      }
     }
   }
 

@@ -15,8 +15,6 @@ Accuracy note: fixing the speaker count is the single largest lever available.
 Threshold-based clustering has to infer how many people are present, and it
 gets that wrong often enough to fragment one speaker into several. If the user
 knows there are two people, saying so removes the hardest part of the problem.
-
-Stdlib + numpy + sherpa_onnx only - no PyQt5, this runs in the worker process.
 """
 
 import logging

@@ -87,3 +87,8 @@ Thumbs.db
 # Logs
 *.log
 launcher-log.txt
+
+# Node - the tests/js/ jsdom harness's only dependency source. See
+# package.json at the repo root and tests/test_js_behaviour.py, which shells
+# out to `node --test` and skips (not fails) when this directory is absent.
+node_modules/

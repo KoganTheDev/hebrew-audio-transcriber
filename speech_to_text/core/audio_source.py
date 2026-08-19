@@ -12,8 +12,6 @@ case where speaker attribution can be exact rather than inferred.
 PyAV is used for decoding. It is already present as a faster-whisper
 dependency, and gui/audio_utils.py already uses it to probe duration, so this
 adds no new requirement.
-
-Stdlib + numpy/av only - no PyQt5, this runs in the worker process.
 """
 
 import logging

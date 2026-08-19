@@ -655,63 +655,12 @@ class TestDocStringsHaveBothLanguages:
     Hebrew silently falling back.
     """
 
-    def test_formatting_module_never_imports_i18n(self):
-        """
-        The hard rule the help-panel feature has to honour like everything
-        else in formatting/: speech_to_text/core/ runs in the worker process
-        and must never import gui.i18n (or PyQt5) - every string it renders
-        has to arrive through the strings dict, with an English fallback
-        baked into the call site (see _render_help_html()'s and
-        _render_toolbar_html()'s own s() helpers).
-
-        Checked via the AST's actual import nodes, not a substring search on
-        the source text - formatting/__init__.py's own module docstring
-        legitimately *mentions* "gui.i18n" in prose (explaining why it has no
-        access to it), which a plain "not in source" check would misfire on.
-
-        formatting.py used to be a single module, so this used to just parse
-        that one file. Now it's a package of six - timecode.py, turns.py,
-        assets.py, chrome.py, document.py and __init__.py - and the rule has
-        to hold for every one of them individually: a single get-the-source
-        call on the package object only ever returns __init__.py's own
-        source, so checking just that would silently stop covering the other
-        five modules the day this split happened, exactly the kind of gap
-        that defeats the point of a guard like this.
-        """
-        import ast
-        import importlib
-        import inspect
-        import pkgutil
-
-        import speech_to_text.core.formatting as formatting_package
-
-        # The package object itself first, then its submodules. iter_modules()
-        # yields only the latter, so leaving it out would quietly exempt
-        # __init__.py - the module that holds render_html, and the single
-        # largest one here - from the very rule this test exists to enforce.
-        # That is the same failure mode the docstring above describes, one
-        # level up.
-        modules = [formatting_package] + [
-            importlib.import_module(f"{formatting_package.__name__}.{info.name}")
-            for info in pkgutil.iter_modules(formatting_package.__path__)
-        ]
-
-        for module in modules:
-            tree = ast.parse(inspect.getsource(module))
-            imported = set()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    imported.update(alias.name for alias in node.names)
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    imported.add(node.module)
-
-            assert not any(
-                name == "PyQt5" or name.startswith("PyQt5.") for name in imported
-            ), f"{module.__name__} imports PyQt5"
-            assert not any(
-                name.endswith("gui.i18n") or ".gui.i18n" in name or name == "i18n"
-                for name in imported
-            ), f"{module.__name__} imports gui.i18n"
+    # The PyQt5/gui.i18n layering guard that used to live here now covers
+    # every module under core/, not just formatting/ - see
+    # tests/test_layering.py for the AST-walking check itself and its own
+    # docstring for why the single-package version this replaced left the
+    # other ~16 core/ modules with only a prose promise and no test behind
+    # it.
 
     def test_every_doc_key_has_english_and_hebrew(self):
         from speech_to_text.gui.i18n import STRINGS
@@ -913,40 +862,39 @@ class TestVistaBackdrop:
             formatting._asset.cache_clear()
 
 
-class TestApplyNamesReachesTheSidebar:
+class TestRemovedIdentifiersNeverReappear:
     """
-    "Use these names in all files" used to repaint every turn's .spk chip
-    (still inside .source) but leave every other file's sidebar name input
-    untouched, because applyNames() queried .speaker-name inside .source -
-    where the inputs stopped living once the speaker strip moved into the
-    outline sidebar. See applyNames() in transcript.js for the fix.
+    The one place transcript.js/transcript.css are still checked by plain
+    text search, and the only sanctioned reason left to do so: proving an
+    identifier is ABSENT is not something behaviour can demonstrate. A
+    passing jsdom test only ever proves the code paths it actually exercises
+    behave correctly - it cannot prove a dead code path was never re-added,
+    because nothing calls into a dead path to observe the difference. A grep
+    can, cheaply, on every run.
 
-    A DOM-level assertion (does file 2's actual input.value carry the name
-    after a click) needs a real browser - that is covered by the manual
-    check and the plan's own browser verification step, not by pytest. What
-    is checked here, cheaply and on every run, is the mechanism: applyNames
-    resolves its name inputs from .speakers, not .source.
+    spk-locate (a sidebar "step through this speaker" button) and its whole
+    supporting mechanism (spk-count, stepSpeakerTurns, speakerCycle,
+    refreshSpeakerCounts, i-locate) were deleted outright, not relocated -
+    see TestEditableDocument.test_speaker_row_has_no_locate_button_or_turn_count
+    above for the render_html()-level half of this same guard (that one
+    checks the rendered markup; this one checks the source those identifiers
+    would have to appear in even if nothing wired them up to anything). A
+    regression that brought either one back anywhere in the JS or CSS source
+    should fail here rather than only be noticed by a reader who goes
+    looking for it.
+
+    Everything else that used to live here as a source-text assertion -
+    applyNames() resolving its inputs from .speakers rather than .source,
+    the menu-open class, the keyboard-modality flag, the help panel's
+    wiring, the guided tour's stepping/cleanup/bidi/focus behaviour - is now
+    a behavioural test in tests/js/ (see harness.mjs and its sibling
+    *.test.mjs files), run via node --test and surfaced through pytest by
+    tests/test_js_behaviour.py. Those assertions could observe the actual
+    behaviour a reader experiences, so they moved; this one can't, so it
+    stayed.
     """
-
-    def test_apply_names_resolves_inputs_from_the_speakers_panel(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        match = re.search(r"function applyNames\(fileIndex\) \{.*?\n  \}", js, re.S)
-        assert match, "applyNames() not found in transcript.js"
-        body = match.group(0)
-        assert "strip.querySelectorAll('.speaker-name')" in body
-        # The old, wrong selector must not have come back either - a fix
-        # that adds the sidebar lookup without removing the stale one would
-        # still look plausible in a diff.
-        assert "section.querySelectorAll('.speaker-name')" not in body
 
     def test_no_locate_button_or_turn_count_mechanism_remains(self):
-        """
-        Both were deleted, not relocated - a regression that brought either
-        one back anywhere (markup, styles or behaviour) should fail here
-        rather than only be caught by eyeballing a rendered page.
-        """
         from speech_to_text.core.formatting import _asset
 
         for name in ("spk-locate", "spk-count", "stepSpeakerTurns", "speakerCycle",
@@ -979,21 +927,10 @@ class TestPlayPauseGlyph:
         assert '#i-play' in toggle
         assert '#i-pause' not in toggle
 
-    def test_javascript_swaps_both_the_glyph_and_the_aria_label(self):
-        """
-        A button whose icon shows "pause" while its accessible name still
-        says "play" is worse than not swapping at all - both halves have to
-        move together, driven off the audio element's own play/pause
-        events (not the click handler) so a programmatic pause, like the
-        range-bound stop in the timeupdate handler, updates it too.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "'#i-pause'" in js and "'#i-play'" in js
-        assert "toggle.setAttribute('aria-label'" in js
-        assert "audio.addEventListener('play', syncToggleGlyph)" in js
-        assert "audio.addEventListener('pause', syncToggleGlyph)" in js
+    # The JS half - the glyph and aria-label actually swapping on the
+    # audio element's own play/pause events - is now
+    # tests/js/chrome.test.mjs's "the play/pause glyph and its aria-label
+    # swap together off the audio element's own play/pause events" test.
 
 
 class TestPopoverStackingAndAnchoring:
@@ -1006,9 +943,12 @@ class TestPopoverStackingAndAnchoring:
     The actual painting behaviour (does this pixel really sit on top of that
     one) is not something a Python test can observe - it was verified in a
     real browser instead (see the plan's verification section). What IS
-    checked here, cheaply and on every run, is that the mechanism each fix
-    depends on still exists: the explicit open-state class CSS keys off of,
-    and the JS that sets/clears it.
+    checked here, cheaply and on every run, is that the CSS mechanism each
+    fix depends on still exists: the explicit open-state class, and
+    .spk-anchor's own positioning context. The JS half of each - transcript.js
+    actually toggling .menu-open, and actually detaching the swatch menu to
+    <body> as position: fixed - is now behavioural, in
+    tests/js/chrome.test.mjs.
     """
 
     def test_turn_menu_open_class_exists_with_a_higher_stack_level(self):
@@ -1029,18 +969,6 @@ class TestPopoverStackingAndAnchoring:
             "with (rather than beats) its zero-level siblings"
         )
 
-    def test_javascript_sets_and_clears_the_menu_open_class(self):
-        """
-        The class is only useful if transcript.js actually toggles it when a
-        .spk-menu opens and closes - see menuOpenTurn in toggleMenu()/
-        closeMenu().
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "classList.add('menu-open')" in js
-        assert "classList.remove('menu-open')" in js
-
     def test_spk_menu_is_anchored_to_its_own_wrapper_not_the_turn(self):
         """
         .spk-anchor - not .spk itself (which cannot hold the menu's own
@@ -1054,254 +982,6 @@ class TestPopoverStackingAndAnchoring:
         match = re.search(r"\.spk-anchor\s*\{([^}]*)\}", css)
         assert match, ".spk-anchor rule not found in transcript.css"
         assert "position: relative" in match.group(1)
-
-    def test_swatch_menu_is_detached_from_the_scrolling_sidebar_when_opened(self):
-        """
-        .outline is overflow-y: auto, which clips any ordinary
-        position: absolute popover inside it at the sidebar's own edge - see
-        the .swatch-menu comment in transcript.css for the two options
-        weighed and why detaching to <body> with computed fixed coordinates
-        was picked over restructuring the sidebar's scroll container.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "document.body.appendChild(menu)" in js
-        assert "positionDetachedMenu" in js
-        assert "menu.style.position = 'fixed'" in js
-
-
-class TestKeyboardModalityFlag:
-    """
-    Phase 7: the .body/.plain-body focus ring (see the STATED EXCEPTION
-    comment at the top of transcript.css) is gated behind html[data-kbd]
-    rather than :focus-visible alone, because Chromium matches
-    :focus-visible on a contenteditable element for a mouse click too - the
-    entire bug the user reported. transcript.js is what has to set and clear
-    that flag; the CSS side (which selectors it gates) is checked in
-    test_transcript_styles.py instead.
-    """
-
-    def test_tab_keydown_sets_the_flag(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert re.search(
-            r"e\.key === 'Tab'.*?setAttribute\('data-kbd', 'true'\)", js, re.S
-        ), "Tab keydown must set data-kbd on <html>"
-
-    def test_pointerdown_clears_the_flag(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "addEventListener('pointerdown'" in js
-        assert "removeAttribute('data-kbd')" in js
-
-
-class TestHelpPanelWiring:
-    """
-    _render_help_html() (checked in TestHelpPanel above) only ever produces
-    inert markup - #help does nothing until transcript.js's bindHelp() binds
-    it. These check that binding, not the markup.
-    """
-
-    def test_help_button_opens_and_closes_the_panel(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "function bindHelp()" in js
-        assert re.search(r"btn\.addEventListener\('click',\s*openHelp\)", js)
-        assert "panel.hidden = false" in js
-        assert "panel.hidden = true" in js
-        assert "setAttribute('aria-expanded', 'true')" in js
-        assert "setAttribute('aria-expanded', 'false')" in js
-
-    def test_escape_and_scrim_click_close_the_panel(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        # e.target === panel: a click on .help-panel itself (the scrim), not
-        # on .help-sheet or anything inside it - see bindHelp()'s own
-        # comment for why that equality check is exactly right here.
-        assert "e.target === panel" in js
-        bind_help = js[js.index("function bindHelp()"):js.index("function bindHelp()") + 3000]
-        assert "e.key === 'Escape'" in bind_help
-
-    def test_focus_trap_queries_focusable_elements_live(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "function focusableIn(" in js
-        assert "function trapTabKey(" in js
-        assert 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])' in js
-
-    def test_tour_start_closes_help_and_launches_the_tour(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert re.search(
-            r"tourBtn\.addEventListener\('click',\s*function\s*\(\)\s*\{\s*"
-            r"closeHelp\(\);\s*startTour\(\);",
-            js,
-        ), "#tour-start must close the help panel and call startTour()"
-
-
-class TestGuidedTour:
-    """
-    The guided tour transcript.js builds when #tour-start is clicked - see
-    startTour()/TOUR_STEPS/endTour() in transcript.js. No server-rendered
-    markup backs any of this (unlike the help panel): the tour is inherently
-    script-only, since which steps exist depends on which selectors this
-    particular document's render actually contains.
-    """
-
-    # Every selector a step declares, in step order - kept here as a plain
-    # list (not scraped from TOUR_STEPS, which is JS) so a step silently
-    # losing its target selector, or the step order changing without this
-    # test being updated, both fail loudly.
-    STEP_SELECTORS = [
-        ".file-bar",
-        ".outline",
-        ".tb-search",
-        ".speakers",
-        ".turn .ts",
-        ".turn .body[contenteditable]",
-        "#toggle-flags",
-        "#export",
-    ]
-
-    def test_every_step_selector_is_referenced(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        for selector in self.STEP_SELECTORS:
-            assert selector in js, f"tour step selector {selector!r} not found in transcript.js"
-
-    def test_speaker_step_prefers_the_active_strip(self):
-        """
-        Regression guard for the bug _render_outline_html()'s docstring and
-        bindOutline() both warn about: a document has one .speakers strip
-        per file, only one of which is .active (visible) at a time once
-        .outline.js-ready is present. A plain querySelector('.speakers')
-        always lands on file 0's strip, which is wrong once the reader has
-        scrolled to a later file before opening help.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "document.querySelector('.speakers.active')" in js
-
-    def test_steps_are_resolved_live_and_filtered_to_what_exists(self):
-        """
-        No hardcoded step count anywhere: resolveTourSteps() has to build
-        its list from which selectors actually match THIS render, and the
-        n/total counter has to read off that resolved list's own length,
-        not off TOUR_STEPS.length - a document missing an outline, a
-        speaker strip, or timestamps must not leave the tour counting a
-        step it will never show.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "function resolveTourSteps()" in js
-        # The counter reads off the resolved, filtered list's own length,
-        # not off the full step catalogue (TOUR_STEPS.length would be wrong
-        # the moment any one selector fails to match this render).
-        assert "var n = tour.steps.length;" in js
-
-    def test_spotlight_reuses_positioned_detached_menu_for_the_card(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "positionDetachedMenu(tour.chrome.card, entry.el)" in js
-        # The ring's box, unlike the card's, is computed directly rather
-        # than through positionDetachedMenu() - it needs its own width and
-        # height (the popover-anchoring helper only ever sets top/left), so
-        # this checks the ring is sized from the same rect the card is
-        # anchored to, not from some second, independently-read measurement
-        # that could drift out of sync with it.
-        assert "var rect = entry.el.getBoundingClientRect()" in js
-
-    def test_tour_never_touches_state_or_saves(self):
-        """
-        The hard non-destructive requirement: after a full tour, the
-        document must still read as unedited. Checked structurally here
-        (the tour's own code never mentions `state` or calls save()) as a
-        cheap, always-on guard alongside the manual browser check in
-        docs/transcript-manual-checks.md, which is the only way to verify
-        the *effective* behaviour (hasLocalChanges() still false, status
-        still "Saved") end to end.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        start = js.index("function resolveTourSteps()")
-        end = js.index("// ---------------------------------------------------------------- layout")
-        tour_code = js[start:end]
-        assert "state." not in tour_code
-        # save() as an actual call, not the word appearing in a comment
-        # explaining that the tour must never make one (see the comment
-        # directly above startTour() in transcript.js).
-        assert "save();" not in tour_code
-
-    def test_step_counter_is_bidi_isolated(self):
-        """
-        Caught in a real browser, not by a test: the card rendered step one
-        of eight as "8 / 1".
-
-        Same failure _render_file_bar_html() already guards against, for the
-        same reason - "1 / 8" is a neutral "/" sitting between two LTR digit
-        runs inside an RTL card, so the slash resolves RTL and swaps which
-        number reads as the position and which reads as the total. The
-        isolate is what pins their order; dir="ltr" alone does not, because
-        the element is a flow child of an RTL parent.
-        """
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "count.setAttribute('dir', 'ltr');" in js
-        start = js.index("chrome.count.textContent")
-        assignment = js[start:start + 260]
-        assert "PLAIN_LRI" in assignment
-        assert "PLAIN_PDI" in assignment
-
-    def test_escape_ends_the_tour_and_returns_focus_to_help(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        start = js.index("function startTour()")
-        keydown_block = js[start:start + 2000]
-        assert "e.key === 'Escape'" in keydown_block
-        assert "endTour();" in keydown_block
-        assert "document.getElementById('help')" in js
-
-    def test_cleanup_removes_every_created_element_and_listener(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        start = js.index("function endTour()")
-        end_tour = js[start:start + 1200]
-        assert "chrome.scrim.remove()" in end_tour
-        assert "chrome.ring.remove()" in end_tour
-        assert "chrome.card.remove()" in end_tour
-        assert "removeEventListener('keydown', tour.keydownHandler, true)" in end_tour
-        assert "removeEventListener('resize', tour.moveHandler)" in end_tour
-        assert "removeEventListener('scroll', tour.moveHandler, true)" in end_tour
-
-    def test_recompute_is_scheduled_on_resize_and_scroll(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "function scheduleTourUpdate()" in js
-        assert "window.requestAnimationFrame(" in js
-        assert "window.addEventListener('resize', tour.moveHandler)" in js
-        assert "document.addEventListener('scroll', tour.moveHandler, true)" in js
-
-    def test_target_is_scrolled_into_view_honouring_reduced_motion(self):
-        from speech_to_text.core.formatting import _asset
-
-        js = _asset("transcript.js")
-        assert "entry.el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })" in js
 
 
 class TestTourStrings:
