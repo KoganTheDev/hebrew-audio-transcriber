@@ -1,0 +1,137 @@
+/* ------------------------------------------------------------ responsive --- */
+
+/* Hover is an enhancement, never the only route: on touch and narrow screens
+   the actions are simply always visible.
+
+   This block used to sit ~450 lines up, inside the turn section, because
+   that is where .turn-actions is defined. Every other width-dependent rule
+   lives here instead, and a breakpoint hiding among unconditional rules is
+   one nobody finds when they go looking for what changes at a given
+   width. */
+@media (hover: none), (max-width: 768px) {
+  .turn-actions { opacity: 1; }
+  .source:hover .turn:not(:hover) { opacity: 1; }
+}
+/* 819px, chosen by looking at a real render rather than derived on paper:
+   at 820px the two-column layout (see --layout-columns near the top of
+   this file) still leaves 468px of reading measure with the toolbar
+   holding one line, and below that point the measure starts compressing
+   faster than the rigid rail can give width back. This replaces a very
+   different old breakpoint (1200px, collapsing the sidebar into a toggled
+   fullscreen overlay opened by a dedicated toolbar button) that no longer
+   applies at all: that number was measured against a FLEXIBLE flank
+   (minmax(0, var(--rail))) getting squeezed thin enough to make
+   .speaker-name unusable, and the rail is a rigid 16rem now - it never
+   gets squeezed, so there is no flank-shrinking failure mode left to time
+   a breakpoint against. Below this width the sidebar does not disappear
+   behind a toggle any more; it reflows into a band stacked above <main>
+   in the same single track, which is a layout change, not a visibility
+   one - see .outline's own rule for why that also closes an old no-JS
+   hole this file used to have. */
+@media (max-width: 819px) {
+  /* Reverts the wider body padding from the two-column state above - see
+     that rule's own comment for why it grew to 2rem in the first place
+     (funding backdrop margin out of the rail). Below this breakpoint there
+     is no rail to fund it from any more, so the original narrower value
+     comes back; the max-width: 480px block below narrows it further
+     still, and wins there because it comes later in this file. */
+  body { padding-inline: 1.25rem; }
+
+  /* Redefines the TOKEN, not .layout's grid-template-columns, for the same
+     reason the old 1200px rule did: overriding the property directly on
+     .layout alone would leave .toolbar still reading the two-column
+     value, and the two grids' track boundaries would diverge - a single
+     source of truth only holds if every override goes through it. */
+  :root { --layout-columns: minmax(0, var(--measure)); }
+
+  /* .tb-row reverts to a single track (see --layout-columns above) and to
+     wrapping - the fluid clamp on .tb-btn/.icon-btn keeps each button's
+     own shape intact, but a phone-width toolbar still cannot hold every
+     button on one line, so the row itself, and .tb-group within it (a
+     button GROUP wrapping as a whole rather than an individual button
+     compressing - see the squircle comment on .tb-btn above), both fall
+     back to the shipped wrapping behaviour instead of the one-line
+     enforcement the two-column state uses. */
+  .tb-row, .tb-group { flex-wrap: wrap; }
+  main, .tb-row { grid-column: 1; }
+  /* Pushes main below the outline band without touching source order -
+     <main> stays first in the markup (see .layout's own comment on why),
+     so a screen reader or a JS-disabled reader still meets the transcript
+     before the navigation; grid-row only repaints where each lands
+     visually, the same trick the old three-track rule used for grid-column
+     instead. */
+  main { grid-row: 2; }
+
+  .outline {
+    grid-column: 1;
+    grid-row: 1;
+    position: static;
+    max-height: none;
+    margin-bottom: 1.5rem;
+    /* Different padding than the sticky-rail state above - a band spanning
+       the full reading width does not need the rail's narrower horizontal
+       padding, and does not need its own scroll room at the bottom either. */
+    padding: 1rem 1.25rem 1.25rem;
+  }
+
+  /* Files become a wrapping row of chips rather than a vertical list - a
+     stacked list of full-width file entries would push the transcript an
+     entire screen down on a phone, which is a worse trade than a band of
+     files already is. */
+  .outline-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .outline-files li { margin: 0; }
+  .outline-files a { min-height: 40px; padding: 0 0.75rem; }
+
+  /* Speaker rows wrap two-up where there is room. flex: 1 1 11rem keeps a
+     row above the ~140px floor its swatch-plus-input pair needs (see the
+     old breakpoint's measurement, now retired, for where that number came
+     from) while letting two share a 390px phone screen. */
+  .outline-speakers .speakers {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .speakers-title { flex-basis: 100%; margin-bottom: 0; }
+  .speaker-row { flex: 1 1 11rem; margin-inline: 0; }
+
+  /* Both actions get their own full-width line rather than being wrapped
+     in beside a speaker row, where "Add speaker" and "Use these names in
+     all files" ended up sharing a line and reading as one control. */
+  .outline-speakers .speakers .apply-all,
+  .outline-speakers .speakers .add-speaker { flex: 0 0 100%; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 1rem; padding-inline: 0.9rem; }
+  .toolbar { gap: 0.4rem; }
+  .tb-btn span { display: none; }
+  .tb-btn.primary span { display: inline; }
+  /* .add-speaker is a .tb-btn too (see formatting.py's _render_speakers_html),
+     so the rule above strips its label along with every toolbar button's -
+     fine for the toolbar, where a button is still recognisable by its icon
+     alone, but wrong here: this button now lives in a sidebar that is
+     ALWAYS on screen (never hidden behind the old open/close toggle, which
+     no longer exists), so a reader at this width was left with a bare "+" circle and
+     no indication of what it adds. The icon-only treatment is right for
+     the toolbar and wrong for a sidebar action; this opts the one button
+     back in. */
+  .add-speaker span { display: inline; }
+  .source { padding-inline: 0.9rem; }
+  .file-bar { margin-inline: -0.9rem; padding-inline: 0.9rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .turn:hover, .turn:focus-within { transform: none; }
+  .toast { transform: none; }
+}

@@ -92,3 +92,8 @@ launcher-log.txt
 # package.json at the repo root and tests/test_js_behaviour.py, which shells
 # out to `node --test` and skips (not fails) when this directory is absent.
 node_modules/
+
+# Claude Code local state. worktrees/ in particular holds full duplicate
+# checkouts of this repo - one was committed as a stray gitlink once, which
+# is how a 160000-mode entry ends up in a tree that has no submodules.
+.claude/

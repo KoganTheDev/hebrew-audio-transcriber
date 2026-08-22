@@ -1,0 +1,100 @@
+/* ---------------------------------------------------------------- tour --- */
+
+/* The guided tour: three elements, built and torn down entirely by
+   transcript.js's startTour()/endTour() (there is no server-rendered
+   markup for any of this, unlike .help-panel above - see startTour()'s own
+   comment on why: it is inherently script-only, since which steps even
+   exist depends on which selectors this particular document's render
+   happens to contain).
+
+   .tour-scrim is the click-blocker, .tour-ring is the visible spotlight,
+   .tour-card is the caption. Split into two elements rather than one,
+   because they need opposite pointer-events: the scrim has to intercept
+   every click on the page underneath - INCLUDING a click squarely on the
+   control a step is describing, e.g. a .ts timestamp button, which is what
+   keeps the tour non-destructive (see startTour()'s comment: it must never
+   be able to start audio, open a menu, edit text, or flip a toggle it is
+   merely narrating) - while the ring must not intercept anything itself,
+   or a click meant for the scrim beneath it would land on the ring instead
+   and do nothing worse, but also nothing useful. z-index 80+, clearing
+   .help-panel's own 70 (a tour is started FROM inside that panel, which has
+   already closed itself by the time the tour's own overlay appears, but
+   the numbers still have to stay ordered correctly against it and against
+   .player/.toast beneath it - see .help-panel's own z-index comment for the
+   full stack). */
+.tour-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: transparent;
+}
+
+/* The spotlight: a small box positioned over the current step's target,
+   whose own box-shadow does the dimming. A spread of 9999px paints the
+   scrim colour across the rest of the viewport - the standard CSS
+   spotlight trick, and the reason this file never has to compute an
+   inverse mask or a four-rectangle cutout. pointer-events: none because the
+   ring is purely visual; .tour-scrim underneath (same stacking context,
+   lower z-index) is what actually catches the click - see the comment
+   above. Sized and positioned in transcript.js from the target's own
+   getBoundingClientRect() (physical top/left/width/height, not a logical
+   property - see positionDetachedMenu()'s comment on why a rect is
+   physical by nature), with a few pixels of padding so the ring reads as
+   "around the control", not "exactly its edge". */
+.tour-ring {
+  position: fixed;
+  z-index: 81;
+  pointer-events: none;
+  border-radius: calc(var(--radius) + 4px);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.6);
+}
+
+/* The caption card: same flat --panel surface as a popover (.swatch-menu,
+   .spk-menu above), not the translucent one .source/.outline use - a
+   step-by-step overlay reads as MORE raised than the page it is walking
+   through, the same reasoning those rules give for staying opaque.
+   Positioned by positionDetachedMenu() (transcript.js), the same function
+   .swatch-menu already used - generalised to accept any target element,
+   not only a <button>, plus a horizontal clamp neither original caller
+   ever needed (a tour target can be as wide as .file-bar or as tall and
+   off-centre as .outline; a popover's button trigger never is). See that
+   function's own comment for both changes. */
+.tour-card {
+  position: fixed;
+  z-index: 82;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
+}
+/* card.focus() (transcript.js's renderTourStep(), on every step change) is
+   what re-announces the new step to a screen reader, not a visible cue for
+   a sighted reader - the card's own border already reads as "this is the
+   active surface" the way .help-sheet's does, so a second focus ring drawn
+   on top of it would be redundant chrome, not a missing affordance. */
+.tour-card:focus { outline: none; }
+
+.tour-count { margin: 0 0 0.35rem; color: var(--muted); font-size: 0.8rem; }
+.tour-title { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.tour-body { margin: 0 0 1rem; color: var(--text); font-size: 0.92rem; line-height: 1.55; }
+
+.tour-actions { display: flex; align-items: center; gap: 0.5rem; }
+/* Skip reads as an escape hatch, not a peer of Back/Next - pushed to the
+   card's own inline-start edge with the step controls held together at
+   inline-end, the same "one action set apart from the rest" grouping
+   .help-head draws between the title and the close button, just built with
+   a flex auto-margin instead of justify-content: space-between (Back's own
+   [hidden] on step 1 would otherwise leave Next alone at the far edge with
+   a visible gap where Back used to be). */
+.tour-actions .tour-skip { margin-inline-end: auto; }
+
+@media (prefers-contrast: more) {
+  .tour-card { border-width: 2px; }
+  .tour-ring { outline-width: 3px; }
+}
+

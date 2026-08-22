@@ -40,7 +40,7 @@
 
 import { JSDOM } from 'jsdom';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,11 +74,19 @@ function runPython(args) {
 const CACHE_DIR = path.join(os.tmpdir(), 'hebrew-transcript-js-fixture-cache');
 
 function sourceKey() {
-  const watched = [
-    path.join(REPO_ROOT, 'speech_to_text', 'core', 'assets', 'transcript.js'),
-    path.join(REPO_ROOT, 'speech_to_text', 'core', 'assets', 'transcript.css'),
-    path.join(__dirname, 'render_fixture.py'),
-  ];
+  // Every fragment, not two monolith files: the stylesheet and script are
+  // now directories of numerically-prefixed parts concatenated at render
+  // time, so editing any one of them has to invalidate this cache. Watching
+  // a fixed pair of paths would have gone stale silently the moment the
+  // split happened - the fixture would keep being served from cache while
+  // the code under test changed underneath it.
+  const assets = path.join(REPO_ROOT, 'speech_to_text', 'core', 'assets');
+  const watched = [path.join(__dirname, 'render_fixture.py')];
+  for (const kind of ['js', 'css']) {
+    for (const name of readdirSync(path.join(assets, kind))) {
+      watched.push(path.join(assets, kind, name));
+    }
+  }
   const newest = Math.max(...watched.map((f) => statSync(f).mtimeMs));
   return String(Math.round(newest));
 }

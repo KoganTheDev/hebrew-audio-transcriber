@@ -65,9 +65,30 @@ def _covered(rel_path: Path) -> bool:
         except ValueError:
             continue
         for pattern in patterns:
-            if fnmatch.fnmatch(inside.as_posix(), pattern):
+            if _glob_match(inside.as_posix(), pattern):
                 return True
     return False
+
+
+def _glob_match(path: str, pattern: str) -> bool:
+    """
+    Segment-wise match, because fnmatch alone gets this wrong in the one
+    direction that matters.
+
+    fnmatch's `*` happily matches across a `/`, so fnmatch("assets/js/a.js",
+    "assets/*.js") is True - while setuptools' own package-data globbing
+    treats `*` as within-one-segment and does not match it. Using fnmatch
+    directly therefore reports an asset as covered when a real wheel build
+    would silently omit it, which is precisely the failure this module
+    exists to catch, inverted into a false negative. It did exactly that
+    when the stylesheet and script were split into assets/css/ and
+    assets/js/: the sweep stayed green while the fragments shipped in no
+    wheel at all.
+    """
+    parts, globs = path.split("/"), pattern.split("/")
+    if len(parts) != len(globs):
+        return False
+    return all(fnmatch.fnmatch(part, glob) for part, glob in zip(parts, globs))
 
 
 class TestPackageData:

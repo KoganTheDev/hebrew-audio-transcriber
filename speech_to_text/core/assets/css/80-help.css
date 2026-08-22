@@ -105,3 +105,11 @@
   font-size: 0.92rem;
   line-height: 1.6;
 }
+
+/* Same "more contrast, please" request .backdrop's own rule honours above -
+   here it thickens the sheet's load-bearing edge rather than removing
+   anything, since the scrim already reads as fully opaque intent regardless
+   of contrast mode and has nothing to simplify away. */
+@media (prefers-contrast: more) {
+  .help-sheet { border-width: 2px; }
+}

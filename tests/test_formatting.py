@@ -688,9 +688,9 @@ class TestInlinedAssets:
         They are package data, not source-tree files - an install that drops
         them produces a silently broken document rather than an import error.
         """
-        from speech_to_text.core.formatting import _asset
-        assert "body {" in _asset("transcript.css")
-        assert "localStorage" in _asset("transcript.js")
+        from speech_to_text.core.formatting.assets import _asset_dir
+        assert "body {" in _asset_dir("css")
+        assert "localStorage" in _asset_dir("js")
 
 
 class TestVistaBackdrop:
@@ -826,17 +826,18 @@ class TestVistaBackdrop:
         vistas_dir = assets_dir / "vistas"
         vistas_dir.mkdir(parents=True)
         (vistas_dir / "vista-01.webp").write_bytes(b"landscape-only")
-        # render_html() also loads transcript.css/js through _ASSETS (the
-        # text half, _asset() - unrelated to the vista byte lookup this test
-        # is about), so those two have to exist under the fake root too, or
-        # the render fails before it ever gets to the backdrop.
+        # render_html() also inlines the stylesheet and script through
+        # _ASSETS (the text half, _asset_dir() - unrelated to the vista byte
+        # lookup this test is about), so the css/ and js/ fragment
+        # directories have to exist under the fake root too, or the render
+        # fails before it ever reaches the backdrop.
         real_assets = formatting.assets._ASSETS
-        (assets_dir / "transcript.css").write_text(
-            (real_assets / "transcript.css").read_text(encoding="utf-8"), encoding="utf-8",
-        )
-        (assets_dir / "transcript.js").write_text(
-            (real_assets / "transcript.js").read_text(encoding="utf-8"), encoding="utf-8",
-        )
+        for kind in ("css", "js"):
+            (assets_dir / kind).mkdir()
+            for fragment in sorted((real_assets / kind).iterdir()):
+                (assets_dir / kind / fragment.name).write_text(
+                    fragment.read_text(encoding="utf-8"), encoding="utf-8",
+                )
 
         monkeypatch.setattr(formatting.assets, "_ASSETS", assets_dir)
         monkeypatch.setattr(formatting.assets, "_VISTAS_DIR", vistas_dir)
@@ -895,13 +896,14 @@ class TestRemovedIdentifiersNeverReappear:
     """
 
     def test_no_locate_button_or_turn_count_mechanism_remains(self):
-        from speech_to_text.core.formatting import _asset
+        from speech_to_text.core.formatting.assets import _asset_dir
 
+        js, css = _asset_dir("js"), _asset_dir("css")
         for name in ("spk-locate", "spk-count", "stepSpeakerTurns", "speakerCycle",
                      "refreshSpeakerCounts", "i-locate"):
-            assert name not in _asset("transcript.js"), f"{name} still in transcript.js"
+            assert name not in js, f"{name} still in the transcript script"
         for name in ("spk-locate", "spk-count"):
-            assert name not in _asset("transcript.css"), f"{name} still in transcript.css"
+            assert name not in css, f"{name} still in the transcript stylesheet"
 
 
 class TestPlayPauseGlyph:
@@ -959,9 +961,9 @@ class TestPopoverStackingAndAnchoring:
         same stack level 0) cover it - see the long comment on
         .turn.menu-open in transcript.css for why this can't be :hover-keyed.
         """
-        from speech_to_text.core.formatting import _asset
+        from speech_to_text.core.formatting.assets import _asset_dir
 
-        css = _asset("transcript.css")
+        css = _asset_dir("css")
         match = re.search(r"\.turn\.menu-open\s*\{([^}]*)\}", css)
         assert match, ".turn.menu-open rule not found in transcript.css"
         assert re.search(r"z-index\s*:\s*[1-9]", match.group(1)), (
@@ -976,9 +978,9 @@ class TestPopoverStackingAndAnchoring:
         transcript.css) and not .turn (the old, wrong anchor that opened the
         menu at the card's edge) - has to be the positioned ancestor.
         """
-        from speech_to_text.core.formatting import _asset
+        from speech_to_text.core.formatting.assets import _asset_dir
 
-        css = _asset("transcript.css")
+        css = _asset_dir("css")
         match = re.search(r"\.spk-anchor\s*\{([^}]*)\}", css)
         assert match, ".spk-anchor rule not found in transcript.css"
         assert "position: relative" in match.group(1)

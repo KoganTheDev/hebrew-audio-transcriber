@@ -73,7 +73,13 @@ include = ["speech_to_text*"]
 # is load-bearing and why tests/test_packaging.py asserts it.
 [tool.setuptools.package-data]
 "speech_to_text" = ["assets/*.ico"]
-"speech_to_text.core" = ["assets/*.css", "assets/*.js", "assets/vistas/*.webp"]
+"speech_to_text.core" = [
+    "assets/*.css",
+    "assets/*.js",
+    "assets/css/*.css",
+    "assets/js/*.js",
+    "assets/vistas/*.webp",
+]
 
 [tool.black]
 line-length = 100
