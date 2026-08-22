@@ -695,14 +695,41 @@ def test_tour_card_reuses_the_popover_surface_not_the_translucent_panel():
     assert _property(card, "background") == "var(--panel)"
 
 
-def test_tour_honours_prefers_contrast_more():
+def test_high_contrast_overrides_are_all_present():
+    """
+    Asserts the three high-contrast overrides exist, without caring which
+    block each sits in or in what order.
+
+    The previous version of this test searched from ".tour-scrim" onward and
+    required ".tour-card" to be the literally-first selector inside a
+    prefers-contrast block. That pinned an accident of layout rather than a
+    guarantee, and it constrained the very cleanup that was needed: the
+    overrides used to be three separate blocks scattered beside whatever
+    each one touched, which is how .backdrop's - the only one that removes
+    an element rather than thickening a border - went missing entirely
+    during the split into fragments with nothing noticing. They now live
+    together in css/92-contrast.css, so this checks for the declarations
+    themselves.
+    """
     source = _css_source()
-    # There are two prefers-contrast blocks in the file; search from the
-    # tour section onward for its own.
-    tour_start = source.index(".tour-scrim")
-    tour_source = source[tour_start:]
-    assert re.search(r"@media \(prefers-contrast: more\)\s*\{\s*\.tour-card", tour_source), (
-        "expected a prefers-contrast: more block covering .tour-card/.tour-ring"
+    blocks = re.findall(
+        r"@media \(prefers-contrast: more\)\s*\{(.*?)^\}", source, re.S | re.M
+    )
+    assert blocks, "no prefers-contrast: more block found at all"
+    combined = "\n".join(blocks)
+
+    # The load-bearing one: a photo behind the text is the opposite of what
+    # "more contrast" asks for. docs/transcript-manual-checks.md checks this
+    # by eye; this is the automated half.
+    assert re.search(r"\.backdrop\s*\{[^}]*display:\s*none", combined), (
+        "the backdrop must be hidden under prefers-contrast: more"
+    )
+    for selector in (".help-sheet", ".tour-card"):
+        assert re.search(re.escape(selector) + r"\s*\{[^}]*border-width", combined), (
+            f"{selector} should thicken its border under prefers-contrast: more"
+        )
+    assert re.search(r"\.tour-ring\s*\{[^}]*outline-width", combined), (
+        ".tour-ring should thicken its outline under prefers-contrast: more"
     )
 
 

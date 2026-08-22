@@ -92,9 +92,3 @@
    [hidden] on step 1 would otherwise leave Next alone at the far edge with
    a visible gap where Back used to be). */
 .tour-actions .tour-skip { margin-inline-end: auto; }
-
-@media (prefers-contrast: more) {
-  .tour-card { border-width: 2px; }
-  .tour-ring { outline-width: 3px; }
-}
-

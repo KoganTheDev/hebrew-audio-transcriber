@@ -1,0 +1,38 @@
+/* ------------------------------------------------------------- contrast --- */
+
+/* Every "more contrast, please" override, in one place.
+
+   These used to be three near-identical @media blocks scattered next to
+   whatever each one touched - the backdrop's beside .backdrop, the help
+   sheet's at the end of the help section, the tour card's at the end of the
+   tour section. Three blocks with the same condition, none of them visible
+   from the others, is how the backdrop's rule came to be dropped entirely
+   during the split into fragments without anything noticing: it was the one
+   of the three that removes something rather than thickening a border, so
+   losing it changed what a reader actually sees rather than by how much.
+
+   Collected here, at the end of the cascade, they are also trivially
+   greppable: one place answers "what changes under high contrast?".
+
+   Order note: this fragment sorts after 90-responsive.css on purpose. These
+   are overrides gated behind a user preference, so they should win against
+   the unconditional rules they modify, and none of them competes with a
+   width query. */
+
+/* A reader who has told the OS "more contrast, please" is explicitly asking
+   for the plainest possible reading surface - a photo behind the text,
+   however subtle, is the opposite of that request. This is the only one of
+   the three that removes an element rather than adjusting a border, which
+   is why docs/transcript-manual-checks.md calls it out by name. */
+@media (prefers-contrast: more) {
+  .backdrop { display: none; }
+}
+
+/* The panels keep their surfaces but thicken their load-bearing edge - the
+   scrim behind each already reads as fully opaque intent regardless of
+   contrast mode, so there is nothing there to simplify away. */
+@media (prefers-contrast: more) {
+  .help-sheet { border-width: 2px; }
+  .tour-card { border-width: 2px; }
+  .tour-ring { outline-width: 3px; }
+}

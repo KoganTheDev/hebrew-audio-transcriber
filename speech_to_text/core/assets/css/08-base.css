@@ -60,9 +60,9 @@ body {
    dropped along with the @supports blocks that implemented it.
 
    Its own prefers-contrast: more rule used to sit right here, along with
-   .help-sheet's and .tour-card/.tour-ring's, three near-identical blocks
-   scattered next to whatever they touched - see css/92-contrast.css, where
-   all three are consolidated into one now. */
+   .help-sheet's and .tour-card/.tour-ring's - three near-identical blocks
+   scattered next to whatever they touched. All three now live together in
+   css/92-contrast.css. */
 .backdrop {
   position: fixed;
   inset: 0;

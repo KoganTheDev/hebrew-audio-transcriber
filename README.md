@@ -153,8 +153,9 @@ speech_to_text/
 ├── core/
 │   ├── transcriber.py         # Wraps faster_whisper.WhisperModel
 │   ├── segments.py            # Structured transcript: timings, per-word confidence, speaker
-│   ├── formatting.py          # Turn merging and self-contained RTL HTML rendering
-│   ├── assets/                # transcript.css / transcript.js, inlined into the output
+│   ├── progress_scale.py      # Named boundaries for the progress bar's 3 coordinate systems
+│   ├── formatting/            # Turn merging & self-contained RTL HTML rendering (package: timecode/turns/assets/chrome/document)
+│   ├── assets/                # css/ and js/ fragment directories, numbered and concatenated at render time, inlined into the output
 │   ├── options.py             # Settings for one run, passed to the worker process
 │   ├── audio_source.py        # PyAV decoding and one-speaker-per-channel detection
 │   ├── diarization.py         # sherpa-onnx speaker identification and span assignment
@@ -189,11 +190,29 @@ pytest --cov=speech_to_text --cov-report=html   # with coverage report
 pytest tests/test_transcriber.py -v       # a single module
 ```
 
-**One gap worth knowing about:** the transcript document's JavaScript - editing, autosave, speaker
-renaming, search, audio, export - has no automated coverage. There is no JS test runner here, and
-adding one would be a bigger change than the feature it tests. The Python suite covers what Python
-can honestly assert about generated HTML (markup shape, data payload, escaping, the offline
-guarantee, and WCAG colour contrast in both schemes). Everything else is a written checklist:
+The transcript document's JavaScript - editing, autosave, speaker renaming, search, audio, export,
+help panel, guided tour - is covered by a jsdom behavioural suite at `tests/js/`, run with Node
+instead of pytest. Install once with `npm install` (needs Node.js; jsdom is the only dependency),
+then run it directly:
+
+```bash
+node --test "tests/js/*.test.mjs"
+```
+
+`pytest` runs this suite too (`tests/test_js_behaviour.py`), so plain `pytest` still catches a JS
+regression - but it skips with an explicit reason, rather than failing, when `node` isn't on `PATH`
+or `node_modules/` hasn't been installed.
+
+The stylesheet and script are no longer single files: `core/assets/css/` and `core/assets/js/` are
+each a directory of numerically-prefixed fragments, concatenated in sorted filename order at render
+time (`_asset_dir()` in `core/formatting/assets.py`). The JS fragments are bare bodies of one shared
+IIFE - the wrapper and `'use strict'` are emitted once by Python - so `node --check` on a single
+fragment fails by design; only the concatenation the app actually renders is valid JS.
+
+Even with the jsdom suite, one gap remains: jsdom implements no real layout and no `matchMedia`
+(the harness stubs it to "no preference"), so responsive breakpoints, the tour spotlight's on-screen
+position, and prefers-contrast/prefers-reduced-motion/dark-mode media queries are still untested by
+either suite. That gap is a written checklist:
 [`docs/transcript-manual-checks.md`](docs/transcript-manual-checks.md). Work it before shipping a
 change to `core/assets/`.
 

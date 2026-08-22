@@ -3,18 +3,27 @@
 ## Why this file exists
 
 The generated transcript is a small application: it edits, autosaves, renames speakers, searches,
-plays audio and exports itself. **None of that JavaScript is covered by automated tests.** This
-project has no JS test runner, and adding jsdom or vitest would be a larger change than the feature
-it would be testing.
+plays audio and exports itself. A jsdom behavioural suite (`tests/js/*.test.mjs`, run via
+`node --test` and wrapped by `pytest` - see the README's Testing section) now covers most of that
+JavaScript: editing, autosave, speaker renaming/reassignment, search, the plain-text panel, theme
+toggling, the help panel and the guided tour.
 
-The Python suite covers what Python can honestly assert about a generated document - that the
-markup, data payload, escaping, offline guarantee and colour contrast are correct. It cannot tell
-you whether typing in a card actually saves. This checklist is that gap, written down rather than
-left implicit. Work it before shipping a change to `core/assets/transcript.js` or
-`core/assets/transcript.css`.
+What that suite structurally cannot cover is anything that depends on real layout: jsdom lays out
+no page at all, and stubs `window.matchMedia` to "no preference" unconditionally. So responsive
+breakpoints, the tour spotlight ring's actual on-screen geometry, and every `prefers-contrast` /
+`prefers-reduced-motion` / dark-mode media query are still browser-only concerns - checked here,
+not in `tests/js/`. The Python suite, separately, covers what Python can honestly assert about a
+generated document - markup, data payload, escaping, the offline guarantee, and WCAG colour
+contrast in both schemes. Neither suite can tell you whether typing in a card actually saves, or
+whether a spotlight ring visually lands on its target at 1400px. This checklist is that remaining
+gap, written down rather than left implicit. Work it before shipping a change to `core/assets/js/`
+or `core/assets/css/`.
 
-**The trap that will waste your time:** the CSS and JS are *inlined at render time*. Editing
-`transcript.js` does nothing to an HTML file that already exists. Regenerate before testing.
+**The trap that will waste your time:** the CSS and JS are *inlined at render time*, and each is
+now a directory of numbered fragments (`core/assets/js/00-preamble.js` ... `99-init.js`,
+`core/assets/css/00-tokens.css` ... `90-responsive.css`) concatenated in sorted order by
+`_asset_dir()` in `core/formatting/assets.py`. Editing a fragment does nothing to an HTML file that
+already exists. Regenerate before testing.
 
 Generate a document to test against:
 
@@ -259,7 +268,7 @@ Best tested with a multi-file batch (three recordings is enough) so there is som
 
 ## 10. Crash recovery
 
-This is a worker-process check, not a transcript.js one: the output HTML is rewritten after every
+This is a worker-process check, not a transcript JS one: the output HTML is rewritten after every
 file in a batch finishes, not only once at the very end, since transcription is by far the most
 expensive step in the pipeline and a crash near the end of a long batch used to lose the whole run.
 
@@ -281,9 +290,9 @@ expensive step in the pipeline and a crash near the end of a long batch used to 
 
 `#help` and the tour it launches are the one part of the page with no server-rendered fallback for
 the tour's own overlay (`.tour-scrim`/`.tour-ring`/`.tour-card`) - the whole feature is built by
-`bindHelp()`/`startTour()` in `transcript.js`. The help panel's markup and copy *are* server-rendered
-(see `_render_help_html()`), but do nothing until script binds them - same "readable without
-JavaScript, but the interaction is scripted" contract as the rest of this page.
+`bindHelp()`/`startTour()` in `core/assets/js/88-help-tour.js`. The help panel's markup and copy
+*are* server-rendered (see `_render_help_html()`), but do nothing until script binds them - same
+"readable without JavaScript, but the interaction is scripted" contract as the rest of this page.
 
 ### Help panel
 
