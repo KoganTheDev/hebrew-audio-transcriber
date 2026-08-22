@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from speech_to_text import config
 from speech_to_text.core.dependencies import ensure_dependencies
+from speech_to_text.core.log_bidi import VisualOrderFormatter
 
 # Setup logging: fixed-width, column-aligned format with millisecond precision
 # and source location (file:line) - easy to scan and to grep by level/module.
@@ -23,20 +24,15 @@ LOG_FORMAT = (
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# Debug lines can carry Hebrew segment text wrapped in RTL isolate control
-# characters (see core/hebrew_text.isolate_rtl) - characters outside every
-# legacy single-byte Windows code page (cp1255, cp1252, cp862, cp437, ...).
-# A real console bypasses this entirely (Python's WriteConsoleW path takes
-# UTF-16 directly, regardless of code page), which is why run.bat's chcp
-# switch is about display, not encoding safety. The gap is redirected
-# stdout - "run.bat > out.txt" - where Python falls back to a TextIOWrapper
-# whose encoding comes from the system's ANSI code page, not the console's,
-# and strict-errors that on any character it can't represent. logging's own
-# StreamHandler.emit() already catches that and calls handleError() instead
-# of crashing the app, but the cost is a silently dropped log line - the
-# thing being debugged - plus a "Logging error" dump to stderr. Reconfiguring
-# with errors="backslashreplace" turns that failure into a visible, lossy
-# fallback (⁧ etc. printed literally) instead of losing the line.
+# Redirected stdout ("run.bat > out.txt") gets its encoding from the
+# system's ANSI code page, not the console's, and strict-errors on any
+# Hebrew character it can't represent. logging's StreamHandler.emit()
+# catches that and calls handleError() instead of crashing, but the cost is
+# a silently dropped log line. errors="backslashreplace" turns that into a
+# visible, lossy fallback instead of losing the line. With bidi isolates
+# now stripped from the console stream by core/log_bidi before this point,
+# this is the only remaining reason for it - a real console's WriteConsoleW
+# path doesn't need it at all.
 try:
     sys.stdout.reconfigure(errors="backslashreplace")
 except (AttributeError, ValueError):
@@ -46,14 +42,23 @@ except (AttributeError, ValueError):
     # is best-effort robustness for an edge case - not worth failing over.
     pass
 
+# Two different formatters, not one shared via basicConfig(format=...): the
+# console gets visual order (core/log_bidi.VisualOrderFormatter, see its
+# module comment and core/hebrew_text.to_visual_order for why), the log
+# file keeps logical order so a real bidi-aware reader still renders it
+# correctly. Setting each handler's formatter before basicConfig() matters -
+# basicConfig only assigns its own formatter to handlers that don't already
+# have one, so leaving format=/datefmt= out of the call keeps that explicit
+# rather than relying on the fallback behaviour.
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setFormatter(VisualOrderFormatter(LOG_FORMAT, DATE_FORMAT))
+
+file_handler = logging.FileHandler("speech_to_text.log", encoding="utf-8")
+file_handler.setFormatter(logging.Formatter(LOG_FORMAT, DATE_FORMAT))
+
 logging.basicConfig(
     level=logging.DEBUG,
-    format=LOG_FORMAT,
-    datefmt=DATE_FORMAT,
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("speech_to_text.log", encoding="utf-8")
-    ]
+    handlers=[stdout_handler, file_handler],
 )
 logger = logging.getLogger(__name__)
 
