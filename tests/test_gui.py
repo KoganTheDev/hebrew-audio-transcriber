@@ -223,3 +223,79 @@ class TestTranscriptionStepOpenButton:
         step.retranslate()
         assert step.open_button.text() == "פתיחת התמלול"
         i18n.set_language("en")
+
+
+class TestDropZoneEventPath:
+    """
+    Drag-and-drop exercised through Qt's own event delivery, not by calling
+    _add_files() directly.
+
+    Every other drop test in this file reaches past the event handlers and
+    invokes _add_files() itself, so the wiring between them - setAcceptDrops,
+    the three assigned handlers, and the mimeData/URL unpacking in _drop() -
+    was covered by nothing. Deleting any one of those lines would have left
+    the suite green while the drop zone became inert, which is exactly the
+    kind of silent loss that prompts "was this feature ever there?".
+
+    The handlers are assigned onto the QFrame instance rather than defined on
+    a subclass (see FileSelectStep._init_ui). That works, but it is the sort
+    of thing a refactor rewrites without thinking, so it is worth pinning
+    from the outside.
+    """
+
+    @staticmethod
+    def _mime(*paths):
+        from PyQt5.QtCore import QMimeData, QUrl
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(p) for p in paths])
+        return mime
+
+    def test_a_real_drop_event_adds_the_file(self, qapp, file_select_step, tmp_path):
+        from PyQt5.QtCore import QPoint, Qt
+        from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+
+        audio = tmp_path / "meeting.wav"
+        audio.write_bytes(b"RIFF")
+        mime = self._mime(str(audio))
+
+        received = []
+        file_select_step.files_selected.connect(
+            lambda paths, seconds: received.append(paths)
+        )
+
+        enter = QDragEnterEvent(
+            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+        )
+        qapp.sendEvent(file_select_step.drop_zone, enter)
+        assert enter.isAccepted(), (
+            "the drop zone refused a drag carrying file URLs - _drag_enter is "
+            "not reaching the zone, so nothing can ever be dropped on it"
+        )
+
+        drop = QDropEvent(
+            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+        )
+        qapp.sendEvent(file_select_step.drop_zone, drop)
+        assert received, "a dropped file produced no files_selected signal"
+        assert received[0][0].endswith("meeting.wav")
+
+    def test_the_zone_accepts_drops_at_all(self, file_select_step):
+        """
+        The one line the whole feature hangs off. Without it Windows never
+        offers the window as a drop target and the cursor shows "no entry"
+        before any handler could run.
+        """
+        assert file_select_step.drop_zone.acceptDrops()
+
+    def test_a_drag_carrying_no_urls_is_refused(self, qapp, file_select_step):
+        """Dragged text is not a file - the zone should not light up for it."""
+        from PyQt5.QtCore import QMimeData, QPoint, Qt
+        from PyQt5.QtGui import QDragEnterEvent
+
+        mime = QMimeData()
+        mime.setText("just some text")
+        enter = QDragEnterEvent(
+            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+        )
+        qapp.sendEvent(file_select_step.drop_zone, enter)
+        assert not enter.isAccepted()
