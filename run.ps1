@@ -59,7 +59,25 @@ try {
     }
 
     Write-Host "Using: $exe $($exeArgs -join ' ') -m speech_to_text.main" -ForegroundColor DarkGray
-    & $exe @exeArgs -m speech_to_text.main
+
+    # The console's output code page defaults to the system's legacy one
+    # (often 862/1255 on a Hebrew locale, 437/1252 elsewhere), not UTF-8 -
+    # the app's DEBUG log prints Hebrew segment text straight to this
+    # console, and on a non-UTF-8 page that renders as mojibake or "?".
+    # Setting [Console]::OutputEncoding is PowerShell's equivalent of
+    # run.bat's "chcp 65001": on Windows it calls SetConsoleOutputCP under
+    # the hood, so it changes the same thing chcp changes, without shelling
+    # out to chcp.com or its "Active code page: ..." echo. Restored in
+    # finally so the launcher doesn't leave the user's console in a
+    # different state than it found it.
+    $prevOutputEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        & $exe @exeArgs -m speech_to_text.main
+    }
+    finally {
+        [Console]::OutputEncoding = $prevOutputEncoding
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Fail "The app exited with code $LASTEXITCODE - scroll up or check speech_to_text.log for details."

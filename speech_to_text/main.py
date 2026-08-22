@@ -23,6 +23,29 @@ LOG_FORMAT = (
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+# Debug lines can carry Hebrew segment text wrapped in RTL isolate control
+# characters (see core/hebrew_text.isolate_rtl) - characters outside every
+# legacy single-byte Windows code page (cp1255, cp1252, cp862, cp437, ...).
+# A real console bypasses this entirely (Python's WriteConsoleW path takes
+# UTF-16 directly, regardless of code page), which is why run.bat's chcp
+# switch is about display, not encoding safety. The gap is redirected
+# stdout - "run.bat > out.txt" - where Python falls back to a TextIOWrapper
+# whose encoding comes from the system's ANSI code page, not the console's,
+# and strict-errors that on any character it can't represent. logging's own
+# StreamHandler.emit() already catches that and calls handleError() instead
+# of crashing the app, but the cost is a silently dropped log line - the
+# thing being debugged - plus a "Logging error" dump to stderr. Reconfiguring
+# with errors="backslashreplace" turns that failure into a visible, lossy
+# fallback (⁧ etc. printed literally) instead of losing the line.
+try:
+    sys.stdout.reconfigure(errors="backslashreplace")
+except (AttributeError, ValueError):
+    # AttributeError: sys.stdout is None (e.g. a windowed build with no
+    # console) or something else stood in for it before this ran.
+    # ValueError: the stream is already closed/detached. Either way, this
+    # is best-effort robustness for an edge case - not worth failing over.
+    pass
+
 logging.basicConfig(
     level=logging.DEBUG,
     format=LOG_FORMAT,

@@ -8,6 +8,7 @@ from typing import Callable, List, Optional
 
 from speech_to_text import config
 from speech_to_text.core.formatting import format_mmss
+from speech_to_text.core.hebrew_text import isolate_rtl
 from speech_to_text.core.progress_scale import (
     TRANSCRIBER_LOAD_START_PERCENT,
     TRANSCRIBER_MODEL_LOADED_PERCENT,
@@ -159,7 +160,13 @@ class Transcriber:
                 segment_count += 1
                 try:
                     segment_preview = segment.text[:50] if segment.text else "(empty)"
-                    logger.debug(f"Segment {segment_count}: {segment_preview}")
+                    # The preview is often Hebrew, and it's the last thing on
+                    # the line - LOG_FORMAT (main.py) puts %(message)s after
+                    # only LTR fields. Isolated so a trailing neutral
+                    # character (faster-whisper leaves a comma on truncated
+                    # segments) resolves against this LTR line instead of
+                    # reordering into the Hebrew. See hebrew_text.isolate_rtl.
+                    logger.debug(f"Segment {segment_count}: {isolate_rtl(segment_preview)}")
                 except Exception:
                     pass  # Skip debug logging if segment attributes are problematic
 

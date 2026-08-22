@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from speech_to_text.core.hebrew_text import PDI, RLI
 from speech_to_text.core.segments import plain_text
 from speech_to_text.core.transcriber import Transcriber
 
@@ -234,6 +235,48 @@ class TestTranscriber:
         # Should skip empty segment
         assert len(result) == 2
         assert plain_text(result) == "Hello World"
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_segment_debug_log_isolates_hebrew_preview(self, mock_whisper_model_class, caplog):
+        """
+        The reported bug: a Hebrew segment preview logged into the
+        otherwise-LTR DEBUG line must be wrapped in an RTL isolate so a
+        trailing neutral character (here, the comma) can't reorder to the
+        wrong side. See core/hebrew_text.isolate_rtl.
+        """
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = (
+            [fake_segment(" סניף כשר למהדרין,")],
+            MagicMock()
+        )
+        mock_whisper_model_class.return_value = mock_model
+
+        transcriber = Transcriber()
+        transcriber.load_model()
+        with caplog.at_level("DEBUG", logger="speech_to_text.core.transcriber"):
+            transcriber.transcribe("dummy_audio.mp3")
+
+        debug_lines = [r.message for r in caplog.records if r.message.startswith("Segment ")]
+        assert len(debug_lines) == 1
+        assert debug_lines[0] == f"Segment 1: {RLI} סניף כשר למהדרין,{PDI}"
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_segment_debug_log_does_not_isolate_ascii_preview(self, mock_whisper_model_class, caplog):
+        """An ASCII-only preview has no bidi problem, so no isolate noise."""
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = (
+            [fake_segment("Hello World")],
+            MagicMock()
+        )
+        mock_whisper_model_class.return_value = mock_model
+
+        transcriber = Transcriber()
+        transcriber.load_model()
+        with caplog.at_level("DEBUG", logger="speech_to_text.core.transcriber"):
+            transcriber.transcribe("dummy_audio.mp3")
+
+        debug_lines = [r.message for r in caplog.records if r.message.startswith("Segment ")]
+        assert debug_lines == ["Segment 1: Hello World"]
 
 
 # Transcript rendering is covered in tests/test_formatting.py - it grew its own
