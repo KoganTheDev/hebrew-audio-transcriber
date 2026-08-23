@@ -43,6 +43,15 @@
     document.querySelectorAll('.speaker-name').forEach(function (input) {
       input.setAttribute('value', input.value);
     });
+    // Per-bubble speaker overrides (state.assignLine, js/24-speakers-menus.js)
+    // need no baking here, unlike the name inputs just above: an override
+    // lives entirely as element attributes (.bubble[data-override],
+    // .bubble-spk's data-speaker/data-palette/data-fallback) and a text node
+    // (the chip's own label), all written by paintBubbleOverride() straight
+    // onto the DOM rather than into a JS-only property outerHTML would miss.
+    // document.documentElement.outerHTML in exportCopy() already carries
+    // every one of those verbatim, the same way it already carries a
+    // cluster's own reassigned .spk with no baking step of its own.
     document.querySelectorAll('.plain input[type="checkbox"]').forEach(function (box) {
       if (box.checked) {
         box.setAttribute('checked', '');

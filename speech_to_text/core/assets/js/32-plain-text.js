@@ -35,14 +35,90 @@
     return line.replace(LINE_NUMBER_RE, '');
   }
 
-  // The inverse of stripLineNumber(): lays the same "{LRI}{n}{PDI} " lead-in
-  // formatting.py's _render_plain_row_html() uses over one turn's paragraph
-  // array, numbered from `first` - so a row rebuilt client-side (a reader
-  // typed into the card, not the plain panel) shows the same numbers a
-  // fresh server render would.
-  function numberedLines(paragraphs, first) {
+  // A per-line speaker tag - "{LRI}[Name]{PDI} " - marking the one sentence
+  // in a turn that disagrees with the row's own prefix (see
+  // rowSpeakerName()'s docstring for why a row can only ever show ONE name
+  // in its prefix, and what "disagrees" means there). Bracketed inside the
+  // same LRI/PDI isolate bracketedRange() already uses for the timestamp,
+  // for the same reason: a bare "[" is a mirrored character that can
+  // reorder inside RTL text once it leaves the browser's own bidi engine
+  // (see the module docstring above and timecode.py's own).
+  function bracketedName(name) {
+    return PLAIN_LRI + '[' + name + ']' + PLAIN_PDI;
+  }
+
+  // The inverse half of bracketedName(): strips a leading tag back off
+  // before a plain-panel edit is written back into a bubble's <p>, the same
+  // "display artifact, not real text" treatment stripLineNumber() already
+  // gives the line number it always precedes (see numberedLines() below for
+  // why the tag always comes right after the number, never before it).
+  var LINE_TAG_RE = new RegExp('^' + PLAIN_LRI + '\\[[^\\]]*\\]' + PLAIN_PDI + ' ?');
+
+  function stripLineOverrideTag(line) {
+    return line.replace(LINE_TAG_RE, '');
+  }
+
+  // A bubble's own effective speaker name: its override's, if it has one
+  // (paintBubbleOverride() in js/24-speakers-menus.js sets data-override,
+  // and the button's own textContent is kept in step by applyNames() - see
+  // its widened selector there), otherwise the cluster's own name, passed
+  // in by the caller so this never has to re-look-up the same .spk twice
+  // for every bubble in a turn.
+  function bubbleSpeakerName(bubble, clusterName) {
+    if (!bubble.hasAttribute('data-override')) { return clusterName; }
+    var btn = bubble.querySelector('.bubble-spk');
+    var name = btn ? btn.textContent.trim() : '';
+    return name || clusterName;
+  }
+
+  // What name a TURN's plain-text row shows in its own "{Name}:" prefix,
+  // now that a bubble can carry a per-sentence override (the "no feature
+  // loss" checklist's "Reassign speaker" row - see reassignLine() in
+  // js/24-speakers-menus.js). A row is per-turn, not per-line, and its
+  // prefix has exactly one slot for "who" - it was never rebuilt to hold a
+  // set of names - so this is the one place that decision gets made:
+  //
+  //   - If every bubble in the turn currently agrees on a name (the
+  //     ordinary case with no override at all, AND the less-ordinary case
+  //     where every sentence has been overridden to the SAME other
+  //     speaker), that agreed name is simply correct and is shown here.
+  //   - If they genuinely disagree, the prefix falls back to the cluster's
+  //     own name - the row's default, unsurprising meaning - and each
+  //     disagreeing sentence is tagged individually instead (see
+  //     bracketedName() above and its callers below), the same way the
+  //     card itself shows the cluster's chip once at the top and only a
+  //     disagreeing bubble grows a chip of its own.
+  //
+  // This is why a bubble is only ever tagged when its own name differs from
+  // whatever rowSpeakerName() decided, rather than whenever it merely
+  // carries an override: an override that everyone in the turn shares is
+  // not a disagreement, so the row's own prefix already says all of it.
+  function rowSpeakerName(turn, clusterName) {
+    var names = [];
+    turn.querySelectorAll('.body .bubble').forEach(function (bubble) {
+      names.push(bubbleSpeakerName(bubble, clusterName));
+    });
+    for (var i = 1; i < names.length; i++) {
+      if (names[i] !== names[0]) { return clusterName; }
+    }
+    return names.length ? names[0] : clusterName;
+  }
+
+  // The inverse of stripLineNumber()/stripLineOverrideTag(): lays the same
+  // "{LRI}{n}{PDI} " lead-in formatting.py's _render_plain_row_html() uses
+  // over one turn's paragraph array, numbered from `first`, with an
+  // optional bracketed name tag (see bracketedName()) right after the
+  // number and before the sentence text - so a row rebuilt client-side (a
+  // reader typed into the card, or an override was just set) shows the same
+  // numbers a fresh server render would, plus whichever per-line tags
+  // rowSpeakerName()'s decision calls for. `tags[idx]` is a name string to
+  // tag that line with, or falsy for an ordinary, untagged line.
+  function numberedLines(paragraphs, first, tags) {
     return paragraphs.map(function (text, idx) {
-      return PLAIN_LRI + (first + idx) + PLAIN_PDI + ' ' + text;
+      var lead = PLAIN_LRI + (first + idx) + PLAIN_PDI + ' ';
+      var tag = tags && tags[idx];
+      if (tag) { lead += bracketedName(tag) + ' '; }
+      return lead + text;
     }).join('\n');
   }
 
@@ -50,13 +126,21 @@
     var prefix = [];
     var ts = turn.querySelector('.ts');
     var spk = turn.querySelector('.spk');
+    var clusterName = spk ? spk.textContent.trim() : '';
+    var rowName = spk ? rowSpeakerName(turn, clusterName) : clusterName;
     if (withTs && ts) { prefix.push(bracketedRange(ts)); }
-    if (withSpk && spk) { prefix.push(spk.textContent.trim() + ':'); }
+    if (withSpk && spk) { prefix.push(rowName + ':'); }
 
     var lines = [];
-    turn.querySelectorAll('.body p').forEach(function (p) {
-      var text = p.textContent.trim();
-      if (text) { lines.push(text); }
+    turn.querySelectorAll('.body .bubble').forEach(function (bubble) {
+      var p = bubble.querySelector('p');
+      var text = p ? p.textContent.trim() : '';
+      if (!text) { return; }
+      if (withSpk && spk) {
+        var name = bubbleSpeakerName(bubble, clusterName);
+        if (name !== rowName) { text = bracketedName(name) + ' ' + text; }
+      }
+      lines.push(text);
     });
     if (!lines.length) { return ''; }
 
@@ -96,7 +180,38 @@
     var sentenceNumber = 1;
     section.querySelectorAll('.turn').forEach(function (turn) {
       var turnId = turn.dataset.turn;
-      var paragraphs = readParagraphs(turn.querySelector('.body'));
+      // Own name (cardBody), deliberately not `bodyEl` - a .plain-row's own
+      // .plain-body span is built or looked up further down this same loop
+      // body under that exact name, and reusing it here for the CARD's
+      // .body would be one identifier meaning two different elements across
+      // one iteration.
+      var cardBody = turn.querySelector('.body');
+      var clusterSpk = turn.querySelector('.spk');
+      var clusterName = clusterSpk ? clusterSpk.textContent.trim() : '';
+      var rowName = clusterSpk ? rowSpeakerName(turn, clusterName) : clusterName;
+
+      // Walked from the bubbles themselves, not readParagraphs(), so each
+      // paragraph's own per-line tag (see numberedLines()/rowSpeakerName())
+      // can be read off the SAME element the text came from. Falls back to
+      // readParagraphs()'s flatter shape - no tags, since there is nothing
+      // to read one off - for the one case writeParagraphs() itself already
+      // documents: a body with no .bubble wrapper at all.
+      var bubbleEls = Array.prototype.slice.call(cardBody.querySelectorAll('.bubble'));
+      var paragraphs, tags;
+      if (bubbleEls.length) {
+        paragraphs = bubbleEls.map(function (b) {
+          var p = b.querySelector('p');
+          return p ? p.textContent : '';
+        });
+        tags = bubbleEls.map(function (b) {
+          var name = bubbleSpeakerName(b, clusterName);
+          return name !== rowName ? name : null;
+        });
+      } else {
+        paragraphs = readParagraphs(cardBody);
+        tags = paragraphs.map(function () { return null; });
+      }
+
       var trimmed = paragraphs.join('\n').replace(/^\s+|\s+$/g, '');
       var row = container.querySelector('.plain-row[data-turn="' + turnId + '"]');
 
@@ -105,7 +220,7 @@
         sentenceNumber += paragraphs.length;
         return;
       }
-      var text = numberedLines(paragraphs, sentenceNumber);
+      var text = numberedLines(paragraphs, sentenceNumber, tags);
       sentenceNumber += paragraphs.length;
       seen[turnId] = true;
 
@@ -129,9 +244,10 @@
 
       var prefix = [];
       var ts = turn.querySelector('.ts');
-      var spk = turn.querySelector('.spk');
       if (withTs && ts) { prefix.push(bracketedRange(ts)); }
-      if (withSpk && spk) { prefix.push(spk.textContent.trim() + ':'); }
+      // rowName, not clusterSpk.textContent directly - see rowSpeakerName()
+      // for the full "what does a mixed-speaker row's prefix say" decision.
+      if (withSpk && clusterSpk) { prefix.push(rowName + ':'); }
       var prefixText = prefix.length ? prefix.join(' ') + ' ' : '';
 
       var prefixEl = row.querySelector('.plain-prefix');
@@ -213,8 +329,14 @@
         // "{LRI}{n}{PDI} " lead-in _render_plain_row_html() renders (see
         // the comment on stripLineNumber() above) - splitting on '\n' alone
         // would capture that number as part of the sentence and
-        // writeParagraphs() would bake it into the card permanently.
-        var paragraphs = bodyEl.textContent.split('\n').map(stripLineNumber);
+        // writeParagraphs() would bake it into the card permanently. A
+        // disagreeing line can carry a second, optional "{LRI}[Name]{PDI} "
+        // tag right after the number (see numberedLines()/bracketedName())
+        // that needs stripping for exactly the same reason - otherwise
+        // reassigning a sentence and then merely editing its text through
+        // THIS panel would bake "[Name] " into the sentence permanently.
+        var paragraphs = bodyEl.textContent.split('\n')
+          .map(stripLineNumber).map(stripLineOverrideTag);
         state.turns[row.dataset.turn] = paragraphs;
         turn.dataset.edited = 'true';
         unflagTurn(turn);

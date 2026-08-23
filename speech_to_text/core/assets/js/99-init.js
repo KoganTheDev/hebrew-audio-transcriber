@@ -19,6 +19,11 @@
   // it back - each step depends on the DOM state the one before it left.
   applySpeakerState();
   applyAssignments();
+  // Per-bubble overrides are relative to their cluster's speaker (choosing
+  // the cluster's own speaker is what clears one - see reassignLine() in
+  // js/24-speakers-menus.js), so this has to run after applyAssignments()
+  // has already settled every cluster's final speaker for this reload.
+  applyLineAssignments();
   applyEdits();
   // applyAssignments() has already replayed any saved reassignments by this
   // point, so .turn[data-speaker] reflects the real, final state - applying

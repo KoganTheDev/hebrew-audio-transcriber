@@ -292,12 +292,36 @@ def _render_bubble_html(
     a line, and readParagraphs() would then persist the damage. The
     plain-panel prefix already guards itself the same way for the same
     reason - see _render_plain_row_html.
+
+    The .bubble-spk-anchor/.bubble-spk pair is the per-sentence counterpart
+    to the cluster header's .spk-anchor/.spk (_render_turn_html) - the "no
+    feature loss" checklist's "Reassign speaker" row explicitly asks for
+    this at bubble scope, since a mid-cluster diarization miss cannot
+    otherwise be corrected by hand at all. It carries no data-speaker of its
+    own at render time: this module has no client-side state to read (an
+    override lives only in localStorage, via state.assignLine), so the
+    button renders inert and transcript.js's paintBubbleOverride() /
+    applyLineAssignments() (js/24-speakers-menus.js) fill it in - and blank
+    it back out - entirely client-side, the same division of labour
+    applyAssignments() already has with the cluster-level .spk. Always
+    present, not injected only when an override exists, for the same reason
+    every other control on this page is server-rendered: it has to be a
+    valid click target the moment the page loads, with or without
+    JavaScript history to replay. contenteditable="false" for the same
+    reason as .line-no/.ts above - it is UI chrome sitting inside .body's
+    editable region, not sentence text.
     """
+    reassign_label = html.escape(strings.get("reassign_line", "Reassign this sentence"))
     lines = [
         f'<div class="bubble" data-line="{line_id}"'
         f' data-start="{sentence.start:.2f}" data-end="{sentence.end:.2f}">',
         f'<span class="line-no" dir="ltr" contenteditable="false">{LRI}{number}{PDI}</span>',
         f"<p>{html.escape(sentence.text)}</p>",
+        f'<span class="bubble-spk-anchor" contenteditable="false">'
+        f'<button type="button" class="bubble-spk" aria-haspopup="true"'
+        f' aria-expanded="false" aria-label="{reassign_label}">{_icon("user")}'
+        f'<span class="bubble-spk-label"></span></button>'
+        f'</span>',
     ]
     if timestamps:
         # A real <button>, like the cluster header's own timestamp, not a

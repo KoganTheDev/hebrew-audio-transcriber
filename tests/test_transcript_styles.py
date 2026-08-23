@@ -755,3 +755,61 @@ def test_hover_dim_is_phase_8_value():
     source = _css_source()
     block = _rule_block(source, ".source:hover .turn:not(:hover)")
     assert _property(block, "opacity") == "0.5"
+
+
+def test_bubble_sizes_to_its_content_rather_than_the_column():
+    """
+    What makes a bubble read as a message rather than as a row.
+
+    The first version of 52-bubble.css gave .bubble p a flex-basis of 100%,
+    which forced the number, the sentence and the time onto three separate
+    lines and left every bubble full-width and three rows tall - a list of
+    boxes, not a conversation. It passed every test in the suite, because
+    nothing here described the shape. This is that description: a bubble is
+    as wide as it needs to be, and no wider than a comfortable reading
+    measure.
+    """
+    source = _css_source()
+    block = _rule_block(source, ".bubble")
+    assert _property(block, "width") == "fit-content"
+    max_width = _property(block, "max-width")
+    assert max_width.startswith("min("), max_width
+    assert "ch" in max_width, (
+        "the cap needs a reading-measure component, not only a percentage - "
+        f"a percentage alone runs the full column on a wide window: {max_width}"
+    )
+    assert "flex: 1 1 100%" not in source, (
+        "a full-basis paragraph is what broke the shape the first time"
+    )
+
+
+def test_bubble_has_a_visible_edge_against_the_card():
+    """
+    --surface-hover sits a couple of percent off --panel, which is enough for
+    a hover state on a full-width card and not enough for a bubble: rendered,
+    the fill alone left the bubbles nearly invisible against the card behind
+    them. The hairline is what carries the shape, so it is not decoration.
+    """
+    block = _rule_block(_css_source(), ".bubble")
+    assert "var(--rule)" in _property(block, "border")
+
+
+def test_bubble_dim_matches_the_cluster_dim_it_nests_inside():
+    """
+    Two dim rules now exist: 48-turn.css dims whole clusters the pointer is
+    not on, and 52-bubble.css dims sentences inside the cluster it IS on.
+    They must carry the same value. Different values would be arbitrary, and
+    if the bubble rule ever escaped its .turn:hover scope the two would
+    compound - 0.5 * 0.5 is 0.25, far below any readable contrast. Pinning
+    them equal is cheaper than re-deriving that argument later.
+    """
+    source = _css_source()
+    cluster = _rule_block(source, ".source:hover .turn:not(:hover)")
+    bubble = _rule_block(source, ".turn:hover .bubble:not(:hover)")
+    assert _property(bubble, "opacity") == _property(cluster, "opacity")
+    # Scope guard: the bubble rule must stay nested under a hovered cluster,
+    # which is precisely the cluster the rule above is NOT dimming.
+    assert ".turn:hover .bubble:not(:hover)" in source
+    assert "\n.bubble:not(:hover)" not in source, (
+        "unscoped bubble dim would compound with the cluster dim"
+    )

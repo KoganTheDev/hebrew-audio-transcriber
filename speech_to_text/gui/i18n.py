@@ -166,6 +166,7 @@ STRINGS = {
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
     "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
+    "doc_reassign_line": {"en": "Reassign this sentence", "he": "שיוך המשפט הזה לדובר אחר"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
 
     # --- Help panel -----------------------------------------------------

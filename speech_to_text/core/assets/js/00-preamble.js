@@ -14,9 +14,17 @@
   // assign[turnId] = speaker id - set only for turns whose speaker has been
   // changed since render, so a reload knows to move them off the id the
   // server gave them.
+  // assignLine[lineId] = speaker id - the sentence-level counterpart to
+  // assign above: a bubble's OWN override of its cluster's speaker, set
+  // only when a single sentence has been reassigned away from whatever its
+  // cluster currently is. Deliberately a separate bucket rather than reusing
+  // assign with a "0-0-2" style key - the two are replayed in a fixed order
+  // (cluster first, see applyLineAssignments() in js/24-speakers-menus.js)
+  // and keeping them in separate objects makes that ordering dependency
+  // obvious at the call site instead of hidden in a shared key shape.
   var state = {
     turns: {}, names: {}, flags: false, theme: null, opts: {},
-    speakers: {}, assign: {},
+    speakers: {}, assign: {}, assignLine: {},
   };
   var exported = true;
   var saveTimer = null;

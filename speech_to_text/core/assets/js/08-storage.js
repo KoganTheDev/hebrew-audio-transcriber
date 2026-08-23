@@ -13,7 +13,8 @@
 
   function hasLocalChanges() {
     return Object.keys(state.turns).length > 0 || Object.keys(state.names).length > 0
-      || Object.keys(state.speakers).length > 0 || Object.keys(state.assign).length > 0;
+      || Object.keys(state.speakers).length > 0 || Object.keys(state.assign).length > 0
+      || Object.keys(state.assignLine).length > 0;
   }
 
   function save() {

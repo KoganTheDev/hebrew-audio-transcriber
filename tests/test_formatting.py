@@ -673,6 +673,9 @@ class TestBubbles:
             r' data-start="0\.00" data-end="1\.00">'
             r'<span class="line-no" dir="ltr" contenteditable="false">.*?1.*?</span>'
             r'<p>אחד\.</p>'
+            r'<span class="bubble-spk-anchor" contenteditable="false">'
+            r'<button type="button" class="bubble-spk" aria-haspopup="true"'
+            r' aria-expanded="false" aria-label="[^"]+">.*?</button></span>'
             r'<button type="button" class="ts" dir="ltr" contenteditable="false"'
             r' aria-label="[^"]+">.*?</button>'
             r'</div>',

@@ -124,16 +124,31 @@ export function getFixtureHtml(kind) {
  * `beforeParse`, which jsdom guarantees runs before ANY script in the
  * document - including transcript.js itself - has executed.
  *
+ * `storageSeed`, when given, is an object of {key: value} strings written
+ * into localStorage in that same `beforeParse` hook - before load()
+ * (js/08-storage.js) runs as part of the page's own top-to-bottom script
+ * execution. This is what a "survives a reload" test needs: each `new
+ * JSDOM(...)` call gets its own isolated storage area (jsdom does not share
+ * one across separate instances even for the same origin), so there is no
+ * other way to hand a second buildWindow() call the first one's saved state
+ * short of reading it back out of the DOM and replaying it in here.
+ *
  * @param {string} html
+ * @param {Record<string, string>} [storageSeed]
  * @returns {{window: any, document: any}}
  */
-export function buildWindow(html) {
+export function buildWindow(html, storageSeed) {
   const dom = new JSDOM(html, {
     url: 'https://transcript.test/transcript.html',
     runScripts: 'dangerously',
     resources: 'usable',
     pretendToBeVisual: true,
     beforeParse(window) {
+      if (storageSeed) {
+        Object.keys(storageSeed).forEach((key) => {
+          window.localStorage.setItem(key, storageSeed[key]);
+        });
+      }
       window.matchMedia = function (query) {
         return {
           media: query,

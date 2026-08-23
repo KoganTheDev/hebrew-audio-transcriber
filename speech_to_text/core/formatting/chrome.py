@@ -176,6 +176,14 @@ _ICON_DEFS: Dict[str, str] = {
     # a turn's text has never needed a button of its own (see .body's
     # contenteditable in _render_turn_html()).
     "edit": '<path d="M4 20h4L18.5 9.5a2.121 2.121 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/>',
+    # A minimal head-and-shoulders mark for the per-bubble reassignment
+    # control (_render_bubble_html() in core/formatting/document.py) - the
+    # sentence-level sibling of the cluster header's own .spk, which needs
+    # no icon of its own because it always carries a visible speaker name.
+    # A bubble's control usually carries no text at all (see that function's
+    # docstring), so it needs a glyph to read as a control rather than an
+    # empty box.
+    "user": '<path d="M12 12a4 4 0 100-8 4 4 0 000 8z"/><path d="M4.5 20c0-4.1 3.4-7.5 7.5-7.5s7.5 3.4 7.5 7.5"/>',
 }
 
 
@@ -388,7 +396,8 @@ def _render_help_html(strings: Dict[str, str]) -> str:
            "Rename a speaker by typing over their name in this list, and "
            "recolour them from the swatch beside it. To move a single turn "
            "to a different speaker, click that speaker's name on the turn "
-           "itself.")),
+           "itself - or, to fix just one mislabelled sentence, click the "
+           "small speaker control on that sentence's own bubble.")),
         ("play", s("help_playback_title", "Play a moment"),
          s("help_playback_desc",
            "Click a timestamp to play the recording from that turn; "
