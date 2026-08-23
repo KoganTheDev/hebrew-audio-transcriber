@@ -529,7 +529,14 @@ def _identify_speakers(segments, channels, options, emit_progress):
             num_speakers=options.num_speakers,
             progress=on_progress,
         )
-        diarization.assign_speakers(segments, spans)
+        # assign_speakers now returns a new list - a segment whose words cross
+        # a speaker boundary is split into consecutive sub-segments instead of
+        # being labelled by majority vote (core/diarization.py). Assigning
+        # into the caller's list in place (rather than rebinding the local
+        # `segments` name) keeps this change contained to this function: the
+        # caller in _transcribe_one still holds and returns the same list
+        # object, now with any splits reflected in its contents.
+        segments[:] = diarization.assign_speakers(segments, spans)
 
     except Exception as e:
         logger.warning(f"Speaker identification skipped: {e}", exc_info=True)

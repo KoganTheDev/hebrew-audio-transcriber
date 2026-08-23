@@ -20,6 +20,32 @@
     return PLAIN_LRI + '[' + bare + ']' + PLAIN_PDI;
   }
 
+  // _render_plain_row_html() (core/formatting/document.py) leads every line
+  // of a row's .plain-body with "{LRI}{n}{PDI} " - the same sentence number
+  // shown on the matching bubble's .line-no, so a reader can cross-reference
+  // one against the other. rebuildPlain() below has to reproduce that same
+  // lead-in when it regenerates a row from a card's own text (see
+  // numberedLines()), and the panel's own input handler has to strip it
+  // back off before that text is ever written back into a bubble's <p> -
+  // otherwise the number stops being a display artifact and becomes part of
+  // the sentence, permanently, the next time this row is edited.
+  var LINE_NUMBER_RE = new RegExp('^' + PLAIN_LRI + '\\d+' + PLAIN_PDI + ' ?');
+
+  function stripLineNumber(line) {
+    return line.replace(LINE_NUMBER_RE, '');
+  }
+
+  // The inverse of stripLineNumber(): lays the same "{LRI}{n}{PDI} " lead-in
+  // formatting.py's _render_plain_row_html() uses over one turn's paragraph
+  // array, numbered from `first` - so a row rebuilt client-side (a reader
+  // typed into the card, not the plain panel) shows the same numbers a
+  // fresh server render would.
+  function numberedLines(paragraphs, first) {
+    return paragraphs.map(function (text, idx) {
+      return PLAIN_LRI + (first + idx) + PLAIN_PDI + ' ' + text;
+    }).join('\n');
+  }
+
   function turnPlainText(turn, withTs, withSpk) {
     var prefix = [];
     var ts = turn.querySelector('.ts');
@@ -59,16 +85,28 @@
     var withTs = tsBox ? tsBox.checked : false;
     var withSpk = spkBox ? spkBox.checked : false;
 
+    // A per-document running count, 1-based, exactly like render_html's own
+    // sentence_number in core/formatting/document.py - it has to walk every
+    // turn in the same document order that renderer does, incrementing by
+    // each turn's own paragraph count regardless of whether that turn ends
+    // up with a visible row, or a card's bubble numbers and this panel's
+    // row numbers would drift apart the first time a turn's text is edited
+    // down to nothing.
     var seen = {};
+    var sentenceNumber = 1;
     section.querySelectorAll('.turn').forEach(function (turn) {
       var turnId = turn.dataset.turn;
-      var text = readParagraphs(turn.querySelector('.body')).join('\n').replace(/^\s+|\s+$/g, '');
+      var paragraphs = readParagraphs(turn.querySelector('.body'));
+      var trimmed = paragraphs.join('\n').replace(/^\s+|\s+$/g, '');
       var row = container.querySelector('.plain-row[data-turn="' + turnId + '"]');
 
-      if (!text) {
+      if (!trimmed) {
         if (row) { row.remove(); }
+        sentenceNumber += paragraphs.length;
         return;
       }
+      var text = numberedLines(paragraphs, sentenceNumber);
+      sentenceNumber += paragraphs.length;
       seen[turnId] = true;
 
       if (!row) {
@@ -171,7 +209,12 @@
         var turn = document.querySelector('.turn[data-turn="' + row.dataset.turn + '"]');
         if (!turn) { return; }
 
-        var paragraphs = bodyEl.textContent.split('\n');
+        // Every line of a row's .plain-body starts with the same
+        // "{LRI}{n}{PDI} " lead-in _render_plain_row_html() renders (see
+        // the comment on stripLineNumber() above) - splitting on '\n' alone
+        // would capture that number as part of the sentence and
+        // writeParagraphs() would bake it into the card permanently.
+        var paragraphs = bodyEl.textContent.split('\n').map(stripLineNumber);
         state.turns[row.dataset.turn] = paragraphs;
         turn.dataset.edited = 'true';
         unflagTurn(turn);

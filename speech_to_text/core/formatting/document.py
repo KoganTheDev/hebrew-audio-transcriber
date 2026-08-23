@@ -25,10 +25,11 @@ from .timecode import (
     LRI,
     PDI,
     format_hhmmss,
+    format_instant,
     format_range,
     split_sentences,
 )
-from .turns import Turn, _speaker_indices
+from .turns import Sentence, Turn, _speaker_indices
 from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
 from speech_to_text.core.segments import TranscriptDocument
 
@@ -104,11 +105,25 @@ def _render_document_html(
 
     turn_ids = [f"{index}-{position}" for position in range(len(turns))]
 
+    # A running count of sentences seen so far in THIS document, 1-based -
+    # not per turn. It is what lets a bubble's .line-no and its matching row
+    # in the plain-text panel below show the same number for the same
+    # sentence, which is the entire point of numbering them at all (see the
+    # sentence-bubbles plan, 1.2). _render_plain_html walks the same turns in
+    # the same order below and keeps its own identical counter rather than
+    # sharing this one - two independent counts over one identical sequence
+    # land on the same numbers without the two render passes needing to talk
+    # to each other.
+    sentence_number = 1
     for turn_id, turn in zip(turn_ids, turns):
         flagged = turn.low_confidence(CONFIDENCE_THRESHOLD)
         if flagged:
             payload["low"][turn_id] = flagged
-        lines.append(_render_turn_html(turn, turn_id, speaker_label, timestamps, strings))
+        sentences = turn.sentences()
+        lines.append(_render_turn_html(
+            turn, turn_id, sentences, sentence_number, speaker_label, timestamps, strings,
+        ))
+        sentence_number += len(sentences)
 
     lines.append(_render_plain_html(turns, turn_ids, speaker_label, timestamps, strings))
     lines.append("</section>")
@@ -244,14 +259,77 @@ def _render_outline_html(
     return f'<aside class="outline" aria-label="{label}" id="outline">{"".join(sections)}</aside>'
 
 
+def _render_bubble_html(
+    sentence: Sentence,
+    line_id: str,
+    number: int,
+    timestamps: bool,
+) -> str:
+    """
+    One <div class="bubble">: a numbered, individually-timed sentence.
+
+    The messaging-app-style unit the turn (now a cluster - see
+    _render_turn_html's own docstring) is made of. data-start/data-end live
+    on the bubble itself, unconditionally, the same way the turn article
+    already always carries data-start regardless of the timestamps toggle -
+    see this function's caller. That is what lets per-bubble playback (the
+    "no feature loss" checklist item this replaces the turn-only version of)
+    work independent of whether the visible timestamp span is shown.
+
+    The number and the time are both LTR runs inside RTL text, so both get
+    the same LRI/PDI isolate plus dir="ltr" the file position
+    (_render_file_bar_html) and the plain-panel prefix
+    (_render_plain_row_html) already use - see timecode.py's module
+    docstring for why a bare digit run still needs it once it sits next to
+    other LTR runs inside one RTL line.
+
+    Both also carry contenteditable="false", because a bubble sits inside
+    .body, which is contenteditable="true" so the sentence text can be
+    corrected in place. Without the opt-out the number and the timestamp are
+    editable too: they are ordinary text nodes inside an editable subtree, so
+    a user can type over them or delete them with a backspace at the start of
+    a line, and readParagraphs() would then persist the damage. The
+    plain-panel prefix already guards itself the same way for the same
+    reason - see _render_plain_row_html.
+    """
+    lines = [
+        f'<div class="bubble" data-line="{line_id}"'
+        f' data-start="{sentence.start:.2f}" data-end="{sentence.end:.2f}">',
+        f'<span class="line-no" dir="ltr" contenteditable="false">{LRI}{number}{PDI}</span>',
+        f"<p>{html.escape(sentence.text)}</p>",
+    ]
+    if timestamps:
+        lines.append(
+            f'<span class="ts" dir="ltr" contenteditable="false">'
+            f"{format_instant(sentence.start)}</span>"
+        )
+    lines.append("</div>")
+    return "".join(lines)
+
+
 def _render_turn_html(
     turn: Turn,
     turn_id: str,
+    sentences: List[Sentence],
+    first_number: int,
     speaker_label: Optional[str],
     timestamps: bool,
     strings: Dict[str, str],
 ) -> str:
-    """One <article class="turn">: an optional header, then one <p> per sentence."""
+    """One <article class="turn">: an optional header, then one bubble per sentence.
+
+    "turn" is now the WhatsApp-style CLUSTER of same-speaker bubbles, not the
+    unit of text itself - see the sentence-bubbles plan, 1.2, for why
+    data-turn stays on this element unchanged rather than being replaced:
+    everything already keyed on it (saved edits, localStorage, low-confidence
+    flags, plain-row sync, outline, search) keeps working untouched, and only
+    the level one down (the bubble) is new.
+
+    sentences and first_number come from the caller (_render_document_html)
+    rather than being computed here, because the running sentence number is a
+    PER-DOCUMENT count across every turn, not something this function - which
+    only ever sees one turn - has enough context to produce on its own.
+    """
     header_parts = []
     if timestamps:
         # dir="ltr" is what the browser acts on for layout; the LRI/PDI isolate
@@ -314,8 +392,9 @@ def _render_turn_html(
         f'<div class="body" contenteditable="true" role="textbox"'
         f' aria-multiline="true" aria-label="{body_label}">',
     ]
-    for sentence in split_sentences(turn.text):
-        lines.append(f"<p>{html.escape(sentence)}</p>")
+    for idx, sentence in enumerate(sentences):
+        line_id = f"{turn_id}-{idx}"
+        lines.append(_render_bubble_html(sentence, line_id, first_number + idx, timestamps))
     lines.append("</div>")
     lines.append("</article>")
     return "\n".join(lines)
@@ -324,6 +403,7 @@ def _render_turn_html(
 def _render_plain_row_html(
     turn: Turn,
     turn_id: str,
+    first_number: int,
     speaker_label: Optional[str],
     timestamps: bool,
     strings: Dict[str, str],
@@ -338,6 +418,14 @@ def _render_plain_row_html(
     rebuildPlain() finds this same element by its data-turn id afterwards
     and only ever updates its text, never recreates it from scratch, unless
     a speaker was added client-side with no server-rendered turn to match.
+
+    first_number is this turn's first sentence's number in the per-document
+    running count _render_plain_html keeps - see that function's docstring.
+    Each line of body_text gets its own number rather than the row as a
+    whole getting one, because the point of numbering at all is that a
+    number here and the same number on a bubble (_render_bubble_html)
+    identify the same sentence; a single per-row number could not do that
+    for a multi-sentence turn.
     """
     prefix_parts = []
     if timestamps:
@@ -351,7 +439,31 @@ def _render_plain_row_html(
         prefix_parts.append(f"{_speaker_fallback(speaker_label, turn.speaker)}:")
     prefix_text = f"{' '.join(prefix_parts)} " if prefix_parts else ""
 
-    body_text = "\n".join(split_sentences(turn.text))
+    # Each line gets its own "{LRI}{number}{PDI} " lead-in, the same isolate
+    # shape the timestamp bracket above uses and for the same reason: a bare
+    # digit run sitting next to the sentence's Hebrew text is still an LTR
+    # run inside an RTL line, even with no neutral character of its own to
+    # misresolve. No dir="ltr" element wraps it - unlike the file-position
+    # span, this text has to stay a single contenteditable text node (one
+    # <span class="plain-body">, matching the card's single <div class="body">
+    # contenteditable contract) so a wrapping element isn't available here;
+    # the plain-prefix span just above takes the same plain-text-isolate
+    # approach for its own bracketed range.
+    #
+    # NOTE for the JS pass that follows this one: js/32-plain-text.js's input
+    # handler currently does `bodyEl.textContent.split('\n')` to rebuild the
+    # paragraph array it writes back into the card via writeParagraphs(). That
+    # will now capture this "{LRI}{n}{PDI} " lead-in as part of the paragraph
+    # text unless it is stripped first - the number has to come back out
+    # before a plain-panel edit is written back to the card, or every future
+    # edit through this panel bakes a stale number into the transcript text
+    # itself. Not fixed here: this module is Python-only and does not touch
+    # transcript.js.
+    sentence_lines = [
+        f"{LRI}{first_number + idx}{PDI} {sentence}"
+        for idx, sentence in enumerate(split_sentences(turn.text))
+    ]
+    body_text = "\n".join(sentence_lines)
     body_label = _t(strings, "turn_text", "Turn text")
     return (
         f'<div class="plain-row" data-turn="{turn_id}">'
@@ -385,13 +497,25 @@ def _render_plain_html(
     reverse) by data-turn id: no parsing either direction, so editing either
     the row or the card cannot desync it from the other, it just writes the
     same paragraph array readParagraphs() already produces from a card.
+
+    Keeps its own per-document sentence counter, starting at 1, rather than
+    receiving one from _render_document_html's turn-rendering loop: both
+    loops walk the same turns in the same order and re-derive the same
+    sentence texts from the same turn.text, so two independent counts over
+    one identical sequence land on identical numbers without the two loops
+    needing to share mutable state - see the sentence-bubbles plan, 1.2, for
+    why the numbers must match at all.
     """
     s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
 
-    rows = "".join(
-        _render_plain_row_html(turn, turn_id, speaker_label, timestamps, strings)
-        for turn_id, turn in zip(turn_ids, turns)
-    )
+    row_parts = []
+    sentence_number = 1
+    for turn_id, turn in zip(turn_ids, turns):
+        row_parts.append(_render_plain_row_html(
+            turn, turn_id, sentence_number, speaker_label, timestamps, strings,
+        ))
+        sentence_number += len(turn.sentences())
+    rows = "".join(row_parts)
     copy_all_button = _button(s('copy_all', 'Copy all'), css_class="tb-btn copy-all", icon="copy")
     return f"""<section class="plain">
 <h2 class="plain-title"><span>{s('plain_text', 'Plain text')}</span>

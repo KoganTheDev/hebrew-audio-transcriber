@@ -7,9 +7,14 @@ formatted - render_html() and format_plain() both consume Turn objects
 without either being able to influence how they were grouped.
 """
 
+import logging
+from dataclasses import dataclass, field
 from typing import List
 
 from speech_to_text.core.segments import Segment, Word
+from .timecode import split_sentences
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Turn merging
@@ -25,6 +30,26 @@ TURN_GAP_SECONDS = 2.0
 # this whole rewrite. Halving the cap keeps every block short enough to
 # scan even before the sentence-per-<p> layout gets involved.
 TURN_MAX_SECONDS = 30.0
+
+
+@dataclass
+class Sentence:
+    """
+    One sentence within a Turn, with its own time span.
+
+    Exists because the bubble layout needs a click target and a playback
+    range per sentence, not just per turn - split_sentences() already cuts
+    a turn's text into sentences for the <p>-per-sentence body, but a
+    string has no timing of its own. `words` carries the slice of the
+    turn's Word list this sentence consumed, the same per-word confidence
+    data Turn.low_confidence() reads, in case a future caller wants
+    per-sentence flags instead of per-turn ones.
+    """
+
+    text: str
+    start: float
+    end: float
+    words: List[Word] = field(default_factory=list)
 
 
 class Turn:
@@ -79,6 +104,72 @@ class Turn:
                 flagged.append([token, round(float(word.probability), 3), index])
 
         return flagged
+
+    def sentences(self) -> List[Sentence]:
+        """
+        Split this turn's text into Sentence objects, each with its own span.
+
+        split_sentences() already produces the text of each sentence; this
+        walks self.words in order, consuming words until the collapsed
+        (whitespace-stripped) text consumed matches the collapsed sentence
+        text's length. word.text carries leading spaces from faster-whisper,
+        so comparing lengths after collapsing whitespace is what makes this
+        robust to that - matching on exact concatenation would require every
+        space to line up exactly, which the words list gives no guarantee of.
+
+        REQUIRED FALLBACK, matching split_sentences' own degrade-on-failure
+        shape: no words at all (word timestamps absent, or a segment from the
+        per-channel stereo path that never carried them) gives every sentence
+        the turn's own start/end rather than raising. The same fallback is
+        used, per sentence, if the word list runs out before a sentence's
+        text is fully matched - a text/word mismatch is a data quirk, not a
+        reason to crash a render.
+        """
+        try:
+            texts = split_sentences(self.text)
+        except Exception as e:
+            logger.warning(f"Could not split turn into sentences: {e}")
+            texts = [self.text] if self.text else []
+
+        if not texts:
+            return []
+
+        if not self.words:
+            return [Sentence(text=t, start=self.start, end=self.end, words=[]) for t in texts]
+
+        try:
+            result: List[Sentence] = []
+            word_index = 0
+            word_count = len(self.words)
+            previous_end = self.start
+
+            for text in texts:
+                target_len = len("".join(text.split()))
+                consumed_len = 0
+                sentence_words: List[Word] = []
+
+                while word_index < word_count and consumed_len < target_len:
+                    w = self.words[word_index]
+                    consumed_len += len("".join((w.text or "").split()))
+                    sentence_words.append(w)
+                    word_index += 1
+
+                if sentence_words:
+                    start = sentence_words[0].start
+                    end = sentence_words[-1].end
+                else:
+                    # Words ran out before this sentence matched anything -
+                    # fall back rather than leave it with no span at all.
+                    start = previous_end
+                    end = self.end
+
+                result.append(Sentence(text=text, start=start, end=end, words=sentence_words))
+                previous_end = end
+
+            return result
+        except Exception as e:
+            logger.warning(f"Could not derive sentence spans from words: {e}")
+            return [Sentence(text=t, start=self.start, end=self.end, words=[]) for t in texts]
 
 
 def merge_turns(

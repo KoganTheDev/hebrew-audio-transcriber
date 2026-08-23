@@ -88,6 +88,7 @@ from .timecode import (
 from .turns import (
     TURN_GAP_SECONDS,
     TURN_MAX_SECONDS,
+    Sentence,
     Turn,
     _speaker_indices,
     merge_turns,
@@ -104,6 +105,7 @@ __all__ = [
     "format_plain",
     "TURN_GAP_SECONDS",
     "TURN_MAX_SECONDS",
+    "Sentence",
     "Turn",
     "merge_turns",
     "render_html",

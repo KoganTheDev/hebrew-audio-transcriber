@@ -104,11 +104,23 @@
     var seek = document.getElementById('player-seek');
     var pstate = createPlayerState();
 
+    // Every ".ts" on the page, not just the turn header's own <button> - a
+    // bubble's <span class="ts"> (see _render_bubble_html() in
+    // core/formatting/document.py) is the same shape of click target, one
+    // sentence wide instead of up to 30s. It carries no data-start/data-end
+    // of its own, though: those live on the wrapping .bubble (unconditionally,
+    // regardless of whether the visible timestamp span is even rendered - see
+    // that same function's docstring), so a bubble click has to read its
+    // range from the ancestor, while a header click still reads its own.
     document.querySelectorAll('.ts').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var section = btn.closest('.source');
         var file = section.dataset.audio;
         if (!file) { return; }
+
+        var bubble = btn.closest('.bubble');
+        var start = Number(bubble ? bubble.dataset.start : btn.dataset.start);
+        var end = Number(bubble ? bubble.dataset.end : btn.dataset.end);
 
         player.hidden = false;
         fileEl.textContent = file;
@@ -118,8 +130,8 @@
           audio.src = encodeURIComponent(file);
           seek.max = '0';
         }
-        audio.currentTime = Number(btn.dataset.start);
-        pstate.boundEnd = Number(btn.dataset.end);
+        audio.currentTime = start;
+        pstate.boundEnd = end;
         seek.value = String(audio.currentTime);
         updateSeekFill(seek);
         // Clicking a timestamp is the one moment the readout has to update

@@ -97,3 +97,9 @@ node_modules/
 # checkouts of this repo - one was committed as a stray gitlink once, which
 # is how a 160000-mode entry ends up in a tree that has no submodules.
 .claude/
+
+# Diarization ground-truth fixtures (AMI corpus audio + pyannote RTTM).
+# Downloaded on demand by tests/eval, never committed: the audio is 33 MB and
+# both files are third-party artifacts with their own licences (CC BY 4.0 and
+# MIT). The DER harness skips cleanly when they are absent.
+tests/eval/fixtures/

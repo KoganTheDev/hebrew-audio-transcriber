@@ -1,0 +1,104 @@
+/* -------------------------------------------------------------- bubble --- */
+
+/* One sentence, messaging-app style. .turn (48-turn.css) is now the CLUSTER
+   - a run of same-speaker bubbles, header shown once at the top of the run -
+   and this is the level down inside it: what used to be a bare paragraph
+   per sentence in .body is now one .bubble per sentence, each with its own
+   number, its own play range, and its own vertical rhythm. Sits between
+   48-turn.css and 56-plain.css in load order (see assets.py's own docstring
+   for why the two-digit prefix IS the order) because a bubble is visually a
+   child of .turn and logically adjacent to .body's own rules there, ahead of
+   the unrelated plain-text panel.
+
+   Uses --surface-hover rather than a new token for its resting fill: a
+   bubble is a lighter substructure inside an already-distinct .turn card,
+   not a second card that needs its own identity, and --surface-hover is
+   already verified against --text/--muted (see PAIRS in
+   tests/test_transcript_styles.py) since .turn:hover uses the exact same
+   token. No new colour token is introduced by this file for that reason -
+   every value below reads an existing one. */
+.bubble {
+  position: relative;
+  margin: 0.2rem 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius);
+  background: var(--surface-hover);
+}
+.bubble:first-child { margin-top: 0; }
+.bubble:last-child { margin-bottom: 0; }
+
+.bubble p {
+  margin: 0;
+}
+
+/* Both children are metadata about the sentence, not the sentence itself -
+   flex keeps them out of the reading line's own wrap rather than letting
+   the number or the range break mid-run inside the Hebrew text, which is
+   what happens if they are left as ordinary inline content. */
+.bubble {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+}
+.bubble p { flex: 1 1 100%; order: 2; }
+.bubble .line-no { order: 1; }
+.bubble .ts { order: 3; }
+
+/* Both the number and the range are LTR digit runs inside an RTL bubble -
+   see timecode.py's module docstring and _render_bubble_html()'s own
+   comment for why each needs both dir="ltr" (what the browser lays the box
+   out by) and the LRI/PDI isolate baked into its text (what keeps the run
+   ordered correctly once the markup is copied out as plain text, where
+   dir="ltr" does not travel). Neither is a <button> - a bubble's own
+   data-start/data-end carry the click target js/64-audio.js's per-bubble
+   playback binding reads, not this span - but .ts still IS the click target
+   (bindAudio() listens for a click on every ".ts" on the page, header
+   button or bubble span alike), so it needs the same affordance treatment
+   as the header's own .ts even though it isn't a real button.
+
+   font-variant-numeric: tabular-nums on both matches every other digit
+   run on this page (.ts in 48-turn.css, .file-position in 40-source.css)
+   so a column of bubbles does not visibly jitter as sentence numbers pass
+   from single to double digits. */
+.line-no, .bubble .ts {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.bubble .ts {
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 0 0.2rem;
+}
+/* Plain :focus-visible, not html[data-kbd]-gated - that gating is the
+   STATED EXCEPTION in 00-tokens.css's own standing-rules comment, scoped
+   deliberately to .body and .plain-body (contenteditable regions where
+   Chromium's :focus-visible fires on a mouse click too). .bubble .ts is
+   neither contenteditable nor text-selectable, so it has no such false
+   positive to guard against and follows the page's ordinary rule instead -
+   the same pairing .spk-menu-item and .swatch-menu-item already use.
+   Written out explicitly here even though the global :focus-visible rule
+   (08-base.css) would apply the same outline unstyled, matching the
+   existing hover rule right above it rather than leaving this one control's
+   focus treatment implicit.
+
+   The span itself has no tabindex - contenteditable="false" makes it inert
+   to typing, but not focusable - so it is a mouse-only click target today,
+   same as the rest of this file. Giving it one is a markup change, which is
+   core/formatting/document.py's territory, not this stylesheet's. */
+.bubble .ts:hover, .bubble .ts:focus-visible { color: var(--accent-text); background: var(--accent); }
+
+/* Matches .source[data-no-audio] .ts in 48-turn.css: once the recording has
+   failed to load there is nothing left for a bubble's timestamp to start
+   playback from either, so the same click-target affordance has to come off
+   it too. */
+.source[data-no-audio] .bubble .ts {
+  cursor: default;
+  pointer-events: none;
+}
+.source[data-no-audio] .bubble .ts:hover { color: var(--muted); background: transparent; }

@@ -26,6 +26,7 @@ from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 
+from speech_to_text import config
 from speech_to_text.core.segments import Segment
 
 logger = logging.getLogger(__name__)
@@ -157,7 +158,16 @@ def diarize(
 
     ensure_models(progress=None)
 
-    config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+    # Named diar_config, not config: this module imports the application's
+    # own settings module as `config` at the top, and a local of that name
+    # shadows it for the whole function body - including the right-hand side
+    # of this very assignment, where the min_duration_* values below are read.
+    # That shadowing turned every diarization run into an UnboundLocalError,
+    # which worker.py's deliberately non-fatal except swallowed into
+    # "Speaker identification skipped", so the feature failed silently rather
+    # than loudly. diarize() has no unit test - it needs real models and real
+    # audio - so nothing caught it but an end-to-end run.
+    diar_config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
         segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
                 model=_SEGMENTATION_MODEL
@@ -170,11 +180,16 @@ def diarize(
             num_clusters=num_speakers if num_speakers and num_speakers > 0 else -1,
             threshold=0.5,
         ),
+        # Named constants in config.py, kept equal to sherpa-onnx's own
+        # defaults - see the comment there for why they are stated explicitly
+        # rather than left to the library.
+        min_duration_on=config.DIARIZATION_MIN_DURATION_ON,
+        min_duration_off=config.DIARIZATION_MIN_DURATION_OFF,
     )
-    if not config.validate():
+    if not diar_config.validate():
         raise DiarizationUnavailable("Invalid diarization configuration")
 
-    engine = sherpa_onnx.OfflineSpeakerDiarization(config)
+    engine = sherpa_onnx.OfflineSpeakerDiarization(diar_config)
 
     if sample_rate != engine.sample_rate:
         raise DiarizationUnavailable(
@@ -214,37 +229,192 @@ class SpeakerSpan:
         return f"SpeakerSpan({self.start:.2f}-{self.end:.2f}, speaker={self.speaker})"
 
 
-def assign_speakers(segments: Sequence[Segment], spans: Sequence[SpeakerSpan]) -> None:
+# A run of words attributed to one speaker has to be at least this long
+# before assign_speakers will cut the segment there. A single stray word
+# voting for the other speaker is far more likely to be a boundary-rounding
+# error in the diarizer than a genuine one-word interjection, so a run this
+# short is folded back into its neighbour instead of fracturing the segment.
+MIN_SPEAKER_RUN_WORDS = 2
+
+
+def assign_speakers(segments: Sequence[Segment], spans: Sequence[SpeakerSpan]) -> List[Segment]:
     """
-    Attach a speaker to each transcript segment, in place.
+    Attach a speaker to each transcript segment, splitting where the speaker
+    changes mid-segment.
 
     Works at word level, not segment level. Whisper's segment boundaries are
     decided by its decoder and have no relationship to who is talking, so a
     speaker change lands mid-segment routinely. Attributing whole segments by
     their overall time span would smear every such change across an entire
-    turn. Instead each word is matched to the span it overlaps most, and the
-    segment takes the majority vote of its words - which puts the boundary at
-    the nearest word rather than the nearest segment.
+    turn, and even majority-voting the whole segment to one label throws the
+    minority words' speaker away. Instead each word is matched to the span it
+    overlaps most, and consecutive words that agree become one sub-segment -
+    so a straddling segment is cut into two (or more) at the word boundary
+    where the speaker actually changed, rather than losing that boundary.
+
+    Segment(start, end, text, speaker, words) is fully reconstructible (see
+    core/segments.py), so a split rebuilds new Segment objects rather than
+    mutating the input. A segment that does not need splitting is returned
+    unchanged - same object, not a copy - so callers that compare identity
+    (or just want the common case to be cheap) see that.
 
     Segments with no word timings (or no overlapping span at all) fall back to
     matching on the segment's own span, and stay None if even that fails.
-    Leaving a segment unattributed is better than guessing: the renderer simply
-    omits the label.
+    Leaving a segment unattributed is better than guessing: the renderer
+    simply omits the label.
+
+    The returned list is new: `segments` itself is never reordered, extended
+    or shortened, and a split segment's pieces are new Segment objects. But a
+    segment that is not split IS mutated - its `.speaker` is set in place
+    (in the no-split and fallback branches above) and that same object,
+    not a copy, is what comes back in the result. So `segments is not
+    assign_speakers(segments, spans)` always holds, but
+    `segments[i] is result[j]` can still be true for an unsplit segment.
     """
     if not spans:
-        return
+        return list(segments)
 
+    result: List[Segment] = []
     for segment in segments:
-        votes = {}
-        for word in segment.words:
-            speaker = _best_speaker(spans, word.start, word.end)
-            if speaker is not None:
-                votes[speaker] = votes.get(speaker, 0) + 1
+        result.extend(_split_segment(segment, spans))
+    return result
 
-        if votes:
-            segment.speaker = max(votes.items(), key=lambda kv: kv[1])[0]
+
+def _split_segment(segment: Segment, spans: Sequence[SpeakerSpan]) -> List[Segment]:
+    """Attribute one segment, splitting it if a real speaker change is found."""
+    if not segment.words:
+        # No word timings at all - the per-channel stereo path never carries
+        # them, and neither does a segment faster-whisper emitted without
+        # word_timestamps. Only the segment's own span is available.
+        segment.speaker = _best_speaker(spans, segment.start, segment.end)
+        return [segment]
+
+    labels = [_best_speaker(spans, word.start, word.end) for word in segment.words]
+
+    if all(label is None for label in labels):
+        # Every word missed every span - e.g. the whole segment falls in a
+        # gap min_duration_on/off dropped. Leave it unattributed rather than
+        # inventing a label from nothing.
+        segment.speaker = None
+        return [segment]
+
+    # A word with no overlap of its own (a rounding gap at a span boundary,
+    # or a span dropped by min_duration_on) does not get to start a run or a
+    # None-labelled sub-segment - it is filled in from its neighbours, the
+    # same way it would have simply not voted under the old majority scheme.
+    filled = _fill_unmatched(labels)
+    runs = _coalesce_adjacent(_merge_short_runs(_runs(filled), MIN_SPEAKER_RUN_WORDS))
+
+    if len(runs) == 1:
+        segment.speaker = runs[0][2]
+        return [segment]
+
+    pieces: List[Segment] = []
+    last_index = len(runs) - 1
+    for i, (start_idx, end_idx, label) in enumerate(runs):
+        run_words = segment.words[start_idx:end_idx]
+        # Rejoining word texts and stripping mirrors exactly how the original
+        # segment text itself was produced: faster-whisper decodes the whole
+        # token run and strips it once, and each word's own decoded text
+        # already carries whatever leading space separates it from its
+        # neighbour (verified against the installed faster-whisper: word
+        # text comes from tokenizer.decode() on that word's token slice, so
+        # concatenating word texts reproduces the segment text exactly).
+        # Stripping only the ends - not collapsing internal whitespace -
+        # keeps inter-word spacing exactly as the model produced it.
+        text = "".join(word.text for word in run_words).strip()
+        # Endpoints: the first piece keeps the segment's own start (which can
+        # lead the first word, e.g. VAD padding) and the last piece keeps its
+        # own end, for the same reason. Interior boundaries use the word
+        # timings themselves, since that word boundary is the split point.
+        start = segment.start if i == 0 else run_words[0].start
+        end = segment.end if i == last_index else run_words[-1].end
+        pieces.append(Segment(start=start, end=end, text=text, words=list(run_words), speaker=label))
+    return pieces
+
+
+def _fill_unmatched(labels: Sequence[Optional[int]]) -> List[Optional[int]]:
+    """
+    Carry the nearest real label over words with no span overlap of their own.
+
+    Forward-fill first (a gap word takes on the speaker who was just
+    talking), then back-fill any still-None prefix from the first real label
+    found. This only runs after the all-None case has already been handled,
+    so a real label always exists to fill from.
+    """
+    filled: List[Optional[int]] = list(labels)
+    last: Optional[int] = None
+    for i, label in enumerate(filled):
+        if label is None:
+            filled[i] = last
         else:
-            segment.speaker = _best_speaker(spans, segment.start, segment.end)
+            last = label
+
+    if filled[0] is None:
+        first_real = next(label for label in filled if label is not None)
+        for i, label in enumerate(filled):
+            if label is None:
+                filled[i] = first_real
+            else:
+                break
+
+    return filled
+
+
+def _runs(labels: Sequence[Optional[int]]) -> List[List]:
+    """Consecutive equal-label stretches, as mutable [start, end, label]."""
+    runs: List[List] = []
+    start = 0
+    for i in range(1, len(labels) + 1):
+        if i == len(labels) or labels[i] != labels[start]:
+            runs.append([start, i, labels[start]])
+            start = i
+    return runs
+
+
+def _merge_short_runs(runs: List[List], min_words: int) -> List[List]:
+    """
+    Fold any run shorter than min_words into a neighbour so it cannot, on its
+    own, split the segment (see MIN_SPEAKER_RUN_WORDS).
+
+    Restarts the scan after each merge rather than trying to merge in one
+    pass, because folding a short run into its neighbour can make that
+    neighbour's other side newly eligible to merge too. The number of runs in
+    one Whisper segment is small (a handful of words at most), so the
+    restart's extra cost is negligible.
+    """
+    if len(runs) <= 1:
+        return runs
+
+    merged = [list(run) for run in runs]
+    changed = True
+    while changed and len(merged) > 1:
+        changed = False
+        for i, (start, end, _label) in enumerate(merged):
+            if end - start >= min_words:
+                continue
+            if i > 0:
+                merged[i - 1][1] = end
+            else:
+                merged[1][0] = start
+            del merged[i]
+            changed = True
+            break
+
+    return merged
+
+
+def _coalesce_adjacent(runs: List[List]) -> List[List]:
+    """Merge neighbouring runs that ended up with the same label after merging short ones."""
+    if not runs:
+        return runs
+    out = [list(runs[0])]
+    for start, end, label in runs[1:]:
+        if label == out[-1][2]:
+            out[-1][1] = end
+        else:
+            out.append([start, end, label])
+    return out
 
 
 def _best_speaker(spans: Sequence[SpeakerSpan], start: float, end: float) -> Optional[int]:

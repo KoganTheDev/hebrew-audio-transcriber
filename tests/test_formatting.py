@@ -17,6 +17,8 @@ from speech_to_text.core.formatting import (
     LRI,
     PDI,
     RLM,
+    Sentence,
+    Turn,
     format_hhmmss,
     format_plain,
     format_range,
@@ -45,6 +47,27 @@ def payload(rendered):
 
 def doc(name, segments, failed=False):
     return TranscriptDocument(source_name=name, segments=segments, failed=failed)
+
+
+_INLINED_ASSETS = re.compile(r"<(style|script)\b.*?</\1>", re.S)
+
+
+def markup(rendered):
+    """
+    The page with its inlined <style> and <script> blocks removed.
+
+    render_html() splices the whole stylesheet and the whole script into the
+    document, so a plain rendered.count("<p>") also counts every occurrence
+    of that substring in CSS and JS *source comments*. That has now broken
+    twice, both times because someone wrote an accurate comment mentioning
+    the markup it manipulates, and both times the reflex fix was to reword
+    the comment - which makes source prose hostage to a test assertion and
+    leaves the trap armed for the next person.
+
+    Counting assertions should use this instead, so they measure the
+    document the renderer produced rather than the assets it carries.
+    """
+    return _INLINED_ASSETS.sub("", rendered)
 
 
 class _ReferenceCollector(HTMLParser):
@@ -170,6 +193,60 @@ class TestTurnMerging:
         assert turns[0].text == "אחד שתיים"
 
 
+class TestSentences:
+    """
+    Turn.sentences() - the time span behind each bubble. text is always
+    exactly split_sentences(turn.text); what these tests actually cover is
+    the span derivation and its required fallback (turns.py:sentences()).
+    """
+
+    def test_spans_are_derived_by_walking_the_word_list(self):
+        """
+        Two sentences, four words, word.text carrying its own leading space
+        the way faster-whisper actually emits it - matching is done on
+        whitespace-collapsed length, not exact concatenation, which is what
+        this fixture exercises: none of these word strings equal a slice of
+        the sentence text byte-for-byte.
+        """
+        words = [
+            Word(start=0.0, end=0.5, text="אחד", probability=0.9),
+            Word(start=0.5, end=1.0, text=" שתיים.", probability=0.9),
+            Word(start=1.5, end=2.0, text=" שלוש", probability=0.9),
+            Word(start=2.0, end=2.5, text=" ארבע.", probability=0.9),
+        ]
+        segment = seg(0.0, 2.5, "אחד שתיים. שלוש ארבע.", words=words)
+        turn = merge_turns([segment])[0]
+
+        sentences = turn.sentences()
+
+        assert [s.text for s in sentences] == ["אחד שתיים.", "שלוש ארבע."]
+        assert (sentences[0].start, sentences[0].end) == (0.0, 1.0)
+        assert (sentences[1].start, sentences[1].end) == (1.5, 2.5)
+        assert [w.text for w in sentences[0].words] == ["אחד", " שתיים."]
+
+    def test_empty_words_falls_back_to_the_turn_span_for_every_sentence(self):
+        """
+        REQUIRED FALLBACK: no word timestamps (stereo per-channel path, or a
+        model run without word_timestamps) must never raise, and must give
+        every sentence the turn's own start/end - the same degrade shape
+        split_sentences() itself already uses.
+        """
+        turn = merge_turns([seg(5.0, 10.0, "אחד. שתיים.", words=[])])[0]
+
+        sentences = turn.sentences()
+
+        assert len(sentences) == 2
+        assert all(s.start == 5.0 and s.end == 10.0 for s in sentences)
+        assert all(s.words == [] for s in sentences)
+
+    def test_empty_text_yields_no_sentences(self):
+        # merge_turns() already drops blank segments, so build the Turn
+        # directly - this exercises sentences() in isolation, not the
+        # merge path.
+        turn = Turn(seg(0.0, 1.0, ""))
+        assert turn.sentences() == []
+
+
 class TestFormatPlain:
 
     def test_empty_input(self):
@@ -241,8 +318,10 @@ class TestRenderHtml:
         assert out.count('<article class="turn"') == 2
 
     def test_sentence_heavy_turn_yields_multiple_paragraphs(self):
-        out = render_html([doc("a.wav", [seg(0, 1, "אחד. שתיים. שלוש.")])])
+        out = markup(render_html([doc("a.wav", [seg(0, 1, "אחד. שתיים. שלוש.")])]))
         assert out.count("<p>") == 3
+        # One bubble per paragraph, not three paragraphs in one bubble.
+        assert out.count('<div class="bubble"') == 3
 
     def test_timestamp_has_ltr_direction_and_isolate_characters(self):
         """
@@ -578,6 +657,124 @@ class TestEditableDocument:
     def test_toast_element_is_a_live_region(self):
         out = render_html([doc("a.wav", [seg(0, 1)])])
         assert '<div id="toast" class="toast" role="status" aria-live="polite" hidden>' in out
+
+
+class TestBubbles:
+    """
+    One sentence, one bubble - the level added inside .turn (now the
+    cluster) by the sentence-bubbles rewrite. See _render_bubble_html()'s
+    and _render_turn_html()'s docstrings in formatting/document.py.
+    """
+
+    def test_bubble_markup_shape(self):
+        out = render_html([doc("a.wav", [seg(0, 1, "אחד. שתיים.")])])
+        assert re.search(
+            r'<div class="bubble" data-line="0-0-0"'
+            r' data-start="0\.00" data-end="1\.00">'
+            r'<span class="line-no" dir="ltr" contenteditable="false">.*?1.*?</span>'
+            r'<p>אחד\.</p>'
+            r'<span class="ts" dir="ltr" contenteditable="false">.*?</span>'
+            r'</div>',
+            out,
+        ), out
+
+    def test_bubble_furniture_is_not_editable(self):
+        """
+        A bubble lives inside .body, which is contenteditable="true" so the
+        sentence can be corrected in place. That makes every other text node
+        in the subtree editable too, so the number and the timestamp have to
+        opt out explicitly - otherwise a backspace at the start of a line
+        eats them and readParagraphs() persists the damage. The plain-panel
+        prefix already opts out the same way.
+        """
+        out = render_html([doc("a.wav", [seg(0, 1, "אחד.")])])
+        bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
+        for cls in ("line-no", "ts"):
+            span = re.search(f'<span class="{cls}"[^>]*>', bubble).group(0)
+            assert 'contenteditable="false"' in span, span
+
+    def test_bubble_time_is_an_instant_not_a_range(self):
+        """
+        Sentences are routinely under a second apart, and format_range()
+        works at whole-second resolution, so a range renders real short
+        sentences as "0:00 - 0:00". The bubble shows the start instant
+        instead; data-end still carries the true end for playback. See
+        format_instant() in timecode.py.
+        """
+        words = [
+            Word(start=0.0, end=0.4, text="אחד", probability=0.9),
+            Word(start=0.4, end=0.9, text=" שתיים.", probability=0.9),
+        ]
+        out = render_html([doc("a.wav", [seg(0.0, 0.9, "אחד שתיים.", words=words)])])
+        bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
+        assert 'data-end="0.90"' in bubble
+        assert f'>{LRI}0:00{PDI}<' in bubble
+        assert "0:00 - 0:00" not in bubble
+
+    def test_bubble_carries_its_own_span_not_the_turns(self):
+        """
+        Per-bubble spans come from Turn.sentences(), not a shared copy of
+        the turn's own start/end - two sentences with real word timings
+        must show two different bubble ranges.
+        """
+        words = [
+            Word(start=0.0, end=0.4, text="אחד", probability=0.9),
+            Word(start=0.4, end=0.8, text=" שתיים.", probability=0.9),
+            Word(start=5.0, end=5.4, text=" שלוש", probability=0.9),
+            Word(start=5.4, end=5.8, text=" ארבע.", probability=0.9),
+        ]
+        segment = seg(0.0, 5.8, "אחד שתיים. שלוש ארבע.", words=words)
+        out = render_html([doc("a.wav", [segment])])
+        assert 'data-line="0-0-0" data-start="0.00" data-end="0.80"' in out
+        assert 'data-line="0-0-1" data-start="5.00" data-end="5.80"' in out
+
+    def test_bubble_omits_ts_span_when_timestamps_are_off(self):
+        out = render_html([doc("a.wav", [seg(0, 1, "אחד.")])], timestamps=False)
+        bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
+        assert 'class="ts"' not in bubble
+        # data-start/data-end stay on the bubble regardless - playback needs
+        # them even when the visible range span is hidden, matching the
+        # turn article's own always-present data-start.
+        assert 'data-start="0.00"' in bubble
+
+    def test_sentence_numbers_run_continuously_across_turns_in_one_document(self):
+        """
+        The whole point of numbering at all: a bubble's .line-no and the
+        matching plain-text row must show the SAME number for the SAME
+        sentence, and the count must not reset at a turn boundary - a
+        second turn's first sentence continues from the first turn's last
+        sentence's number, not from 1 again.
+        """
+        segments = [
+            seg(0, 1, "אחד. שתיים.", speaker=0),
+            seg(10, 11, "שלוש.", speaker=1),
+        ]
+        out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
+
+        bubble_numbers = re.findall(f'class="line-no"[^>]*>{LRI}(\\d+){PDI}', out)
+        assert bubble_numbers == ["1", "2", "3"]
+
+        plain_numbers = re.findall(f'{LRI}(\\d+){PDI} ', out)
+        # The plain-panel numbers are a subset of everything LRI/PDI-wrapped
+        # in the page (timestamps use the same isolate) - filter down to the
+        # digit-only occurrences already asserted above by taking the tail,
+        # since bubble numbers are emitted first, in document order, one per
+        # bubble, immediately followed by the plain-panel's own copy.
+        assert plain_numbers[-3:] == ["1", "2", "3"]
+
+    def test_sentence_numbers_continue_across_multiple_documents_worth_of_turns(self):
+        """
+        Per-DOCUMENT, not per-batch: a second file's numbering restarts at 1
+        rather than continuing from the first file's last sentence, because
+        each file's plain-text panel and card set is its own self-contained
+        unit a reader copies out independently.
+        """
+        out = render_html([
+            doc("a.wav", [seg(0, 1, "אחד. שתיים.")]),
+            doc("b.wav", [seg(0, 1, "שלוש.")]),
+        ])
+        bubble_numbers = re.findall(f'class="line-no"[^>]*>{LRI}(\\d+){PDI}', out)
+        assert bubble_numbers == ["1", "2", "1"]
 
 
 class TestHelpPanel:

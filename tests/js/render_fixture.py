@@ -70,9 +70,20 @@ def render_full():
     # purpose - tests/js/search.test.mjs needs several matches spread across
     # more than one turn to prove Enter/Shift+Enter actually step between
     # them rather than only ever landing on the first.
+    #
+    # The first turn's text carries two sentences (the period after "שלוש"
+    # is what split_sentences() keys on - see timecode.py) so this fixture
+    # renders two <div class="bubble"> under one <article class="turn">, not
+    # one - tests/js/bubbles.test.mjs needs a real multi-bubble turn to
+    # exercise readParagraphs()/writeParagraphs() actually walking more than
+    # a single bubble, and to exercise a paragraph-count change (an edit
+    # that drops from two paragraphs to one, or grows from two to three)
+    # against a turn that starts with more than one. The three flagged words
+    # stay inside the first sentence, so the low-confidence tests elsewhere
+    # (editing.test.mjs) are untouched by the split.
     documents = [
         doc("recording-one.wav", [
-            seg(0, 3, "שלום אחד שתיים שלוש", speaker=0, words=[
+            seg(0, 3, "שלום אחד שתיים שלוש. עוד משפט קצר", speaker=0, words=[
                 word("אחד", 0.99), word("שתיים", 0.20), word("שלוש", 0.95),
             ]),
             seg(5, 8, "שלום ארבע חמש שש", speaker=1),

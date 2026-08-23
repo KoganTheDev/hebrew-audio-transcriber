@@ -317,6 +317,22 @@ TRANSCRIPTION_OVERHEAD_SECONDS = 20
 # different compute profile.
 DIARIZATION_REALTIME_FACTOR = 0.3
 
+# sherpa-onnx's OfflineSpeakerDiarizationConfig accepts these two knobs but
+# they were never passed, so the library's own defaults applied silently.
+# Named here so the app states its diarization behaviour explicitly instead
+# of inheriting whatever sherpa-onnx happens to default to next release.
+# Kept equal to those defaults for now - this change is about visibility, not
+# behaviour; see core/diarization.py:diarize for how they are wired in.
+#
+# min_duration_on drops any speaker span shorter than this many seconds. It
+# is one source of the "no overlap at all" fallback in assign_speakers: a
+# genuine but very short utterance can fall entirely below this floor and
+# vanish from the span list before word-level attribution ever sees it.
+DIARIZATION_MIN_DURATION_ON = 0.3
+# min_duration_off is the minimum silence gap required to end a speaker span.
+# Shorter gaps are bridged rather than treated as a speaker change.
+DIARIZATION_MIN_DURATION_OFF = 0.5
+
 # ============================================================================
 # Dependency Installation Configuration
 # ============================================================================
