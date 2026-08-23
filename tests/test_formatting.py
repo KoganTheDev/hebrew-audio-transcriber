@@ -673,10 +673,28 @@ class TestBubbles:
             r' data-start="0\.00" data-end="1\.00">'
             r'<span class="line-no" dir="ltr" contenteditable="false">.*?1.*?</span>'
             r'<p>אחד\.</p>'
-            r'<span class="ts" dir="ltr" contenteditable="false">.*?</span>'
+            r'<button type="button" class="ts" dir="ltr" contenteditable="false"'
+            r' aria-label="[^"]+">.*?</button>'
             r'</div>',
             out,
         ), out
+
+    def test_bubble_timestamp_is_a_real_button(self):
+        """
+        Reachable by keyboard, not just clickable. bindAudio() binds every
+        ".ts" on the page, so a bubble's timestamp is a real click target -
+        and a <span> is inert to Tab whatever it is styled to look like,
+        which would make the hover and focus styling in 52-bubble.css a
+        promise the markup cannot keep. It also needs a label naming the
+        instant, since the visible text alone ("0:02") does not say what
+        activating it does.
+        """
+        out = markup(render_html([doc("a.wav", [seg(83, 90, "אחד.")])]))
+        bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
+        button = re.search(r"<button[^>]*class=\"ts\"[^>]*>", bubble)
+        assert button, bubble
+        assert 'type="button"' in button.group(0)
+        assert 'aria-label="Play from 0:01:23"' in button.group(0)
 
     def test_bubble_furniture_is_not_editable(self):
         """
@@ -687,11 +705,12 @@ class TestBubbles:
         eats them and readParagraphs() persists the damage. The plain-panel
         prefix already opts out the same way.
         """
-        out = render_html([doc("a.wav", [seg(0, 1, "אחד.")])])
+        out = markup(render_html([doc("a.wav", [seg(0, 1, "אחד.")])]))
         bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
-        for cls in ("line-no", "ts"):
-            span = re.search(f'<span class="{cls}"[^>]*>', bubble).group(0)
-            assert 'contenteditable="false"' in span, span
+        for tag, cls in (("span", "line-no"), ("button", "ts")):
+            element = re.search(f'<{tag}[^>]*class="{cls}"[^>]*>', bubble)
+            assert element, bubble
+            assert 'contenteditable="false"' in element.group(0), element.group(0)
 
     def test_bubble_time_is_an_instant_not_a_range(self):
         """

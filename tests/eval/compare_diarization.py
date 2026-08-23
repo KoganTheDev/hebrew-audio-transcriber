@@ -265,7 +265,7 @@ def run_span_mode(samples, sample_rate: int, num_speakers: int, reference) -> di
     return {"mode": "span", "before": before_report, "after": after_report}
 
 
-def run_e2e_mode(samples, sample_rate: int, num_speakers: int, duration: float, model: str, language: str, reference) -> dict:
+def run_e2e_mode(samples, sample_rate: int, num_speakers: int, duration: float, model: str, language: str, reference, no_vad: bool = False) -> dict:
     """
     Score labelled transcript segments - what a user actually sees - against
     the reference. See the module docstring's "Two modes" section for why
@@ -275,7 +275,18 @@ def run_e2e_mode(samples, sample_rate: int, num_speakers: int, duration: float, 
     from speech_to_text.core.transcriber import Transcriber
     from tests.eval.diarization_metrics import compute_der
 
-    print(f"\n=== end-to-end: transcribing with model={model!r} language={language!r} ===", flush=True)
+    # transcriber.transcribe() reads config.VAD_FILTER at call time, so a
+    # module-level override here reaches it without threading a new argument
+    # through production code for a dev-only measurement. Restored in the
+    # finally below so a --mode both run does not leak the override into
+    # anything measured after it.
+    from speech_to_text import config as app_config
+    previous_vad = app_config.VAD_FILTER
+    if no_vad:
+        app_config.VAD_FILTER = False
+
+    print(f"\n=== end-to-end: transcribing with model={model!r} language={language!r}"
+          f" vad_filter={app_config.VAD_FILTER} ===", flush=True)
     transcriber = Transcriber(model_size=model, language=language)
     load_start = time.time()
     if not transcriber.load_model():
@@ -283,7 +294,10 @@ def run_e2e_mode(samples, sample_rate: int, num_speakers: int, duration: float, 
     print(f"  loaded in {time.time() - load_start:.1f}s", flush=True)
 
     transcribe_start = time.time()
-    segments = transcriber.transcribe(samples, total_duration_seconds=duration)
+    try:
+        segments = transcriber.transcribe(samples, total_duration_seconds=duration)
+    finally:
+        app_config.VAD_FILTER = previous_vad
     transcribe_elapsed = time.time() - transcribe_start
     if segments is None:
         raise RuntimeError("Transcription failed")
@@ -341,6 +355,13 @@ def main(argv=None) -> int:
     parser.add_argument("--language", default=DEFAULT_E2E_LANGUAGE,
                          help=f"--mode e2e only: transcription language (default: {DEFAULT_E2E_LANGUAGE}, "
                               f"since the AMI fixture is English - see the module docstring)")
+    parser.add_argument("--no-vad", action="store_true",
+                         help="Transcribe with config.VAD_FILTER forced off for this run. "
+                              "End-to-end DER is dominated by missed speech (55.6s of 155.4s on "
+                              "AMI ES2004a, against 16.3s at span level) - speech the diarizer "
+                              "found but no transcript segment covers, which no assignment logic "
+                              "can label. This isolates how much of that gap is the VAD dropping "
+                              "audio before the decoder ever sees it.")
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
     args = parser.parse_args(argv)
 
@@ -399,7 +420,7 @@ def main(argv=None) -> int:
         try:
             results.append(run_e2e_mode(
                 samples, audio_source.SAMPLE_RATE, args.num_speakers, duration,
-                args.model, args.language, reference,
+                args.model, args.language, reference, no_vad=args.no_vad,
             ))
         except Exception as e:
             logger.exception("End-to-end mode failed")

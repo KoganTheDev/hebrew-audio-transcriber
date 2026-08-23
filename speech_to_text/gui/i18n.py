@@ -229,11 +229,13 @@ STRINGS = {
     },
     "doc_help_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
     "doc_help_playback_desc": {
-        "en": "Click a timestamp to play the recording from that turn; "
-              "playback stops again at the end of the turn it started "
-              "from.",
-        "he": "לחצו על חותמת זמן כדי להשמיע את ההקלטה מאותה פסקה; ההשמעה "
-              "נעצרת שוב בסוף הפסקה שממנה היא התחילה.",
+        "en": "Click a timestamp to play the recording from there; playback "
+              "stops again at the end of what it started from. The one on "
+              "a sentence plays just that sentence, the one at the top of a "
+              "speaker's block plays the whole block.",
+        "he": "לחצו על חותמת זמן כדי להשמיע את ההקלטה משם; ההשמעה נעצרת "
+              "שוב בסוף הקטע שממנו התחילה. חותמת שליד משפט משמיעה רק את "
+              "אותו משפט, וחותמת בראש קטע של דובר משמיעה את הקטע כולו.",
     },
     "doc_help_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
     "doc_help_editing_desc": {
@@ -304,11 +306,11 @@ STRINGS = {
     },
     "doc_tour_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
     "doc_tour_playback_body": {
-        "en": "Click a timestamp to play the recording from that turn - a "
-              "small player appears, and stops again at the end of the "
-              "turn it started from.",
-        "he": "לחיצה על חותמת זמן משמיעה את ההקלטה מאותה פסקה - נגן קטן "
-              "מופיע, ועוצר שוב בסוף הפסקה שממנה הוא התחיל.",
+        "en": "Click a timestamp to play the recording from there - a small "
+              "player appears, and stops again at the end. A sentence's own "
+              "timestamp plays just that sentence.",
+        "he": "לחיצה על חותמת זמן משמיעה את ההקלטה משם - נגן קטן מופיע, "
+              "ועוצר שוב בסוף. חותמת הזמן של משפט משמיעה רק את אותו משפט.",
     },
     "doc_tour_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
     "doc_tour_editing_body": {

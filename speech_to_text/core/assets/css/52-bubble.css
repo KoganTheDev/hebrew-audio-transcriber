@@ -23,39 +23,68 @@
   padding: 0.35rem 0.6rem;
   border-radius: var(--radius);
   background: var(--surface-hover);
+  /* --surface-hover sits only a couple of percent off --panel, which is
+     enough for a hover state on a full-width card and not nearly enough for
+     a bubble: on the rendered page the fill alone left the bubbles almost
+     invisible against the card behind them, so the shape that carries the
+     whole messaging metaphor did not read. A hairline in --rule, the token
+     every other divider on the page already uses, gives the edge without
+     introducing a colour token (and therefore without a new PAIRS row in
+     tests/test_transcript_styles.py, since --rule is a border colour and
+     not a text/background pairing). */
+  border: 1px solid var(--rule);
 }
 .bubble:first-child { margin-top: 0; }
 .bubble:last-child { margin-bottom: 0; }
 
-.bubble p {
-  margin: 0;
-}
+/* Shaped like a message, not like a row in a table. Three things make the
+   difference, and the first version of this file got all three wrong by
+   giving the paragraph flex-basis 100%, which forced the number, the text
+   and the time onto three separate lines and left every bubble full-width
+   and three rows tall - a list of boxes rather than a conversation.
 
-/* Both children are metadata about the sentence, not the sentence itself -
-   flex keeps them out of the reading line's own wrap rather than letting
-   the number or the range break mid-run inside the Hebrew text, which is
-   what happens if they are left as ordinary inline content. */
+   width: fit-content is what makes a short sentence read as a short
+   message. max-width keeps a long one from running the full column, which
+   is what actually signals "this is a message" more than any amount of
+   rounding does; the ch cap stops it stretching past a comfortable reading
+   measure on a wide window while the percentage handles narrow ones.
+
+   The bubbles sit against the inline-start edge of the cluster - the right
+   in this RTL document - because the cluster already identifies its speaker
+   once, in the header. Alternating sides per speaker is what a two-party
+   chat app does; a transcript can have eight speakers, so side carries no
+   information here and colour already does that job. */
 .bubble {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0 0.5rem;
+  gap: 0 0.45rem;
+  width: fit-content;
+  max-width: min(82%, 68ch);
 }
-.bubble p { flex: 1 1 100%; order: 2; }
-.bubble .line-no { order: 1; }
-.bubble .ts { order: 3; }
+
+/* The time trails the sentence on the same line, the way a message's own
+   timestamp does, and drops to the bubble's bottom edge when the text wraps
+   past one line. align-self is what keeps it on the last line rather than
+   the baseline of the first. */
+.bubble p { margin: 0; min-width: 0; }
+.bubble .ts { align-self: flex-end; }
+
+/* The corner nearest the cluster's speaker stripe is squared off, which is
+   the tail-less version of the shape every messaging app uses to tie a run
+   of bubbles to one side. Logical corner property, so it follows the
+   document's direction rather than assuming RTL. */
+.bubble { border-start-start-radius: 0.25rem; }
 
 /* Both the number and the range are LTR digit runs inside an RTL bubble -
    see timecode.py's module docstring and _render_bubble_html()'s own
    comment for why each needs both dir="ltr" (what the browser lays the box
    out by) and the LRI/PDI isolate baked into its text (what keeps the run
    ordered correctly once the markup is copied out as plain text, where
-   dir="ltr" does not travel). Neither is a <button> - a bubble's own
-   data-start/data-end carry the click target js/64-audio.js's per-bubble
-   playback binding reads, not this span - but .ts still IS the click target
-   (bindAudio() listens for a click on every ".ts" on the page, header
-   button or bubble span alike), so it needs the same affordance treatment
-   as the header's own .ts even though it isn't a real button.
+   dir="ltr" does not travel). .line-no is inert text; .bubble .ts is a real
+   button, the same as the cluster header's own timestamp, so that the click
+   target bindAudio() binds (it listens on every ".ts" on the page) is
+   reachable by keyboard and not only by mouse. It reads its range from the
+   wrapping .bubble's data-start/data-end rather than carrying its own.
 
    font-variant-numeric: tabular-nums on both matches every other digit
    run on this page (.ts in 48-turn.css, .file-position in 40-source.css)
@@ -70,10 +99,18 @@
   user-select: none;
 }
 
+/* Undo the UA button chrome. This is a text affordance that happens to be
+   a button for keyboard reachability, not a button-looking control, so it
+   has to inherit the surrounding type rather than drop to the UA's own
+   font - which is also why font-family/size are re-stated in the shared
+   rule above and must not be left to inherit from the <button> default. */
 .bubble .ts {
   cursor: pointer;
   border-radius: var(--radius);
   padding: 0 0.2rem;
+  border: 0;
+  background: transparent;
+  line-height: inherit;
 }
 /* Plain :focus-visible, not html[data-kbd]-gated - that gating is the
    STATED EXCEPTION in 00-tokens.css's own standing-rules comment, scoped
@@ -87,10 +124,11 @@
    existing hover rule right above it rather than leaving this one control's
    focus treatment implicit.
 
-   The span itself has no tabindex - contenteditable="false" makes it inert
-   to typing, but not focusable - so it is a mouse-only click target today,
-   same as the rest of this file. Giving it one is a markup change, which is
-   core/formatting/document.py's territory, not this stylesheet's. */
+   This rule is live rather than decorative: .bubble .ts is a <button>, so
+   it takes Tab focus natively. It was briefly a <span>, where the same
+   declaration was unreachable - a span is inert to Tab whatever it is
+   styled to look like, which makes a focus affordance on one a promise the
+   markup cannot keep. */
 .bubble .ts:hover, .bubble .ts:focus-visible { color: var(--accent-text); background: var(--accent); }
 
 /* Matches .source[data-no-audio] .ts in 48-turn.css: once the recording has

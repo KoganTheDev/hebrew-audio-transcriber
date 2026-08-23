@@ -264,6 +264,7 @@ def _render_bubble_html(
     line_id: str,
     number: int,
     timestamps: bool,
+    strings: Dict[str, str],
 ) -> str:
     """
     One <div class="bubble">: a numbered, individually-timed sentence.
@@ -299,9 +300,19 @@ def _render_bubble_html(
         f"<p>{html.escape(sentence.text)}</p>",
     ]
     if timestamps:
+        # A real <button>, like the cluster header's own timestamp, not a
+        # styled <span>. The click target has to be reachable by keyboard:
+        # a span is inert to Tab whatever it is styled to look like, so a
+        # hover and focus affordance on one is a promise the markup cannot
+        # keep. Reusing the existing play_from string means this adds no new
+        # i18n key - the label differs only in the instant it names.
+        aria = html.escape(
+            strings.get("play_from", "Play from {t}")
+            .replace("{t}", format_hhmmss(sentence.start))
+        )
         lines.append(
-            f'<span class="ts" dir="ltr" contenteditable="false">'
-            f"{format_instant(sentence.start)}</span>"
+            f'<button type="button" class="ts" dir="ltr" contenteditable="false"'
+            f' aria-label="{aria}">{format_instant(sentence.start)}</button>'
         )
     lines.append("</div>")
     return "".join(lines)
@@ -394,7 +405,9 @@ def _render_turn_html(
     ]
     for idx, sentence in enumerate(sentences):
         line_id = f"{turn_id}-{idx}"
-        lines.append(_render_bubble_html(sentence, line_id, first_number + idx, timestamps))
+        lines.append(
+            _render_bubble_html(sentence, line_id, first_number + idx, timestamps, strings)
+        )
     lines.append("</div>")
     lines.append("</article>")
     return "\n".join(lines)
