@@ -3,7 +3,10 @@
 // closeHelp() pair - a keyboard user who opened a .spk-menu or
 // .swatch-menu (which auto-focuses its first item on open, see
 // toggleMenu()) lost their place entirely once Escape (or picking an item)
-// tore the menu down, with focus falling back to <body>.
+// tore the menu down, with focus falling back to <body>. The trigger is a
+// bubble's own .bubble-spk now - there is no more cluster-header .spk to
+// open a menu from at all (see the review plan's "flat sentence cards"
+// section) - so every test here drives that control instead.
 //
 // The fix reuses that same opener-capture-and-restore shape rather than
 // inventing a second one, with one twist closeMenu() needs that the help
@@ -25,9 +28,9 @@ function keydown(el, key) {
   el.dispatchEvent(new view.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 }
 
-test('Escape after opening a speaker reassignment menu returns focus to the .spk trigger', () => {
+test('Escape after opening a speaker reassignment menu returns focus to the .bubble-spk trigger', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
-  const trigger = document.querySelector('.turn[data-turn="0-0"] .spk');
+  const trigger = document.querySelector('.bubble[data-line="0-0-0"] .bubble-spk');
 
   click(trigger);
   const menu = document.querySelector('.spk-menu');
@@ -37,7 +40,7 @@ test('Escape after opening a speaker reassignment menu returns focus to the .spk
   keydown(document, 'Escape');
 
   assert.equal(document.querySelector('.spk-menu'), null, 'the menu must close on Escape');
-  assert.equal(document.activeElement, trigger, 'focus must return to the .spk trigger that opened it');
+  assert.equal(document.activeElement, trigger, 'focus must return to the .bubble-spk trigger that opened it');
 
   window.close();
 });
@@ -58,7 +61,7 @@ test('Escape after opening a swatch colour menu returns focus to the .swatch-tri
 
 test('picking a reassignment menu item also returns focus to the trigger afterwards', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
-  const trigger = document.querySelector('.turn[data-turn="0-0"] .spk');
+  const trigger = document.querySelector('.bubble[data-line="0-0-0"] .bubble-spk');
 
   click(trigger);
   click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
@@ -71,7 +74,7 @@ test('picking a reassignment menu item also returns focus to the trigger afterwa
 
 test('a click elsewhere that closes an open menu does not steal focus back to the trigger', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
-  const trigger = document.querySelector('.turn[data-turn="0-0"] .spk');
+  const trigger = document.querySelector('.bubble[data-line="0-0-0"] .bubble-spk');
   const elsewhere = document.getElementById('search');
 
   click(trigger);

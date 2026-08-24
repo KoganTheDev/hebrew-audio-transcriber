@@ -1,38 +1,43 @@
 /* -------------------------------------------------------------- bubble --- */
 
-/* One sentence, messaging-app style. .turn (48-turn.css) is now the CLUSTER
-   - a run of same-speaker bubbles, header shown once at the top of the run -
-   and this is the level down inside it: what used to be a bare paragraph
-   per sentence in .body is now one .bubble per sentence, each with its own
-   number, its own play range, and its own vertical rhythm. Sits between
-   48-turn.css and 56-plain.css in load order (see assets.py's own docstring
-   for why the two-digit prefix IS the order) because a bubble is visually a
-   child of .turn and logically adjacent to .body's own rules there, ahead of
-   the unrelated plain-text panel.
+/* One sentence, one full-width card. .turn (48-turn.css) is now a
+   transparent grouping wrapper only - no background, no border, no padding,
+   no card shape - and .bubble is the level that actually reads as a card,
+   one per sentence, always naming its own speaker. Sits between 48-turn.css
+   and 56-plain.css in load order (see assets.py's own docstring for why the
+   two-digit prefix IS the order) because a bubble is visually a child of
+   .turn and logically adjacent to .body's own rules there, ahead of the
+   unrelated plain-text panel.
 
-   Uses --surface-hover rather than a new token for its resting fill: a
-   bubble is a lighter substructure inside an already-distinct .turn card,
-   not a second card that needs its own identity, and --surface-hover is
-   already verified against --text/--muted (see PAIRS in
-   tests/test_transcript_styles.py) since .turn:hover uses the exact same
-   token. No new colour token is introduced by this file for that reason -
-   every value below reads an existing one. */
+   Used to be a messaging-app-style bubble - fit-content width, a percentage
+   /ch max-width cap, a squared-off corner tying it to a cluster header above
+   it. All three are gone: flattening the cluster into standalone cards (see
+   the review plan's "flat sentence cards" section) means every card reads on
+   its own, so it has to be as wide as the column, the same way the old
+   cluster card was, not shaped like a chat message.
+
+   Uses --surface-hover rather than a new token for its resting fill - see
+   the tokens' own PAIRS table in tests/test_transcript_styles.py, already
+   verified against --text/--muted since .turn:hover used the exact token
+   before this card became the visible unit itself. No new colour token is
+   introduced by this file for that reason - every value below reads an
+   existing one. */
 .bubble {
   position: relative;
-  margin: 0.2rem 0;
-  padding: 0.35rem 0.6rem;
+  margin: 0 0 0.35rem;
+  padding: 0.6rem 0.9rem;
   border-radius: var(--radius);
   background: var(--surface-hover);
-  /* --surface-hover sits only a couple of percent off --panel, which is
-     enough for a hover state on a full-width card and not nearly enough for
-     a bubble: on the rendered page the fill alone left the bubbles almost
-     invisible against the card behind them, so the shape that carries the
-     whole messaging metaphor did not read. A hairline in --rule, the token
-     every other divider on the page already uses, gives the edge without
-     introducing a colour token (and therefore without a new PAIRS row in
-     tests/test_transcript_styles.py, since --rule is a border colour and
-     not a text/background pairing). */
   border: 1px solid var(--rule);
+  /* The colour stripe naming this sentence's speaker at a glance, even
+     before reading the chip - the direct replacement for the old cluster
+     .turn's own border-inline-start-color: var(--spk). Reads --spk off this
+     element's OWN data-palette (set at render time - see
+     _render_bubble_html() in core/formatting/document.py), via the shared
+     [data-palette] block in 00-tokens.css, the same way the chip below
+     does. */
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--spk);
 
   /* Layout, folded into this one .bubble rule rather than left in a second
      block of its own: _rule_block() in tests/test_transcript_styles.py
@@ -41,125 +46,68 @@
      structural test written against it. One selector, one block. */
   display: flex;
   align-items: baseline;
-  gap: 0 0.45rem;
-  width: fit-content;
-  max-width: min(82%, 68ch);
+  gap: 0 0.5rem;
 
-  /* The corner nearest the cluster's speaker stripe is squared off - the
-     tail-less version of the shape every messaging app uses to tie a run of
-     bubbles to one side. Logical corner property, so it follows the
-     document's direction rather than assuming RTL. */
-  border-start-start-radius: 0.25rem;
+  transition: background var(--fast) ease-out, transform var(--fast) ease-out;
 }
-.bubble:first-child { margin-top: 0; }
 .bubble:last-child { margin-bottom: 0; }
 
-/* Shaped like a message, not like a row in a table. Three things make the
-   difference, and the first version of this file got all three wrong by
-   giving the paragraph flex-basis 100%, which forced the number, the text
-   and the time onto three separate lines and left every bubble full-width
-   and three rows tall - a list of boxes rather than a conversation.
-
-   width: fit-content is what makes a short sentence read as a short
-   message. max-width keeps a long one from running the full column, which
-   is what actually signals "this is a message" more than any amount of
-   rounding does; the ch cap stops it stretching past a comfortable reading
-   measure on a wide window while the percentage handles narrow ones.
-
-   The bubbles sit against the inline-start edge of the cluster - the right
-   in this RTL document - because the cluster already identifies its speaker
-   once, in the header. Alternating sides per speaker is what a two-party
-   chat app does; a transcript can have eight speakers, so side carries no
-   information here and colour already does that job. */
-/* The time trails the sentence on the same line, the way a message's own
-   timestamp does, and drops to the bubble's bottom edge when the text wraps
-   past one line. align-self is what keeps it on the last line rather than
-   the baseline of the first. */
-.bubble p { margin: 0; min-width: 0; }
-.bubble .ts { align-self: flex-end; }
-
-/* The time is an LTR digit run inside an RTL bubble - see timecode.py's
-   module docstring and _render_bubble_html()'s own comment for why it needs
-   both dir="ltr" (what the browser lays the box out by) and the LRI/PDI
-   isolate baked into its text (what keeps the run ordered correctly once
-   the markup is copied out as plain text, where dir="ltr" does not travel).
-   .bubble .ts is a real button, the same as the cluster header's own
-   timestamp, so that the click target bindAudio() binds (it listens on
-   every ".ts" on the page) is reachable by keyboard and not only by mouse.
-   It reads its range from the wrapping .bubble's data-start/data-end rather
-   than carrying its own. There is no bubble-level sentence number any more
-   - see _render_bubble_html()'s docstring - so this rule styles only the
-   timestamp now.
-
-   font-variant-numeric: tabular-nums matches every other digit run on this
-   page (.ts in 48-turn.css, .file-position in 40-source.css) so a column of
-   bubbles does not visibly jitter as digits pass from single to double. */
-.bubble .ts {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  user-select: none;
+.bubble:hover, .bubble:focus-within {
+  background: var(--surface);
+  transform: translateY(-1px);
 }
 
-/* Undo the UA button chrome. This is a text affordance that happens to be
-   a button for keyboard reachability, not a button-looking control, so it
-   has to inherit the surrounding type rather than drop to the UA's own
-   font - which is also why font-family/size are re-stated in the shared
-   rule above and must not be left to inherit from the <button> default. */
-.bubble .ts {
-  cursor: pointer;
-  border-radius: var(--radius);
-  padding: 0 0.2rem;
-  border: 0;
-  background: transparent;
-  line-height: inherit;
-}
-/* Plain :focus-visible, not html[data-kbd]-gated - that gating is the
-   STATED EXCEPTION in 00-tokens.css's own standing-rules comment, scoped
-   deliberately to .body and .plain-body (contenteditable regions where
-   Chromium's :focus-visible fires on a mouse click too). .bubble .ts is
-   neither contenteditable nor text-selectable, so it has no such false
-   positive to guard against and follows the page's ordinary rule instead -
-   the same pairing .spk-menu-item and .swatch-menu-item already use.
-   Written out explicitly here even though the global :focus-visible rule
-   (08-base.css) would apply the same outline unstyled, matching the
-   existing hover rule right above it rather than leaving this one control's
-   focus treatment implicit.
+/* Raises the card holding an open .spk-menu above its own later siblings -
+   same reasoning as .turn.menu-open used to state (see its own former
+   comment, now retired): every .bubble is position: relative with no
+   z-index of its own, so later DOM order would otherwise win and a card's
+   still-open menu would paint underneath its next sibling the moment the
+   pointer leaves the card that opened it. Keyed to an explicit class
+   transcript.js's toggleMenu()/closeMenu() own (menuOpenCard in
+   js/24-speakers-menus.js), not to :hover, for exactly that reason: the
+   menu stays open after the pointer leaves. */
+.bubble.menu-open { z-index: 1; }
 
-   This rule is live rather than decorative: .bubble .ts is a <button>, so
-   it takes Tab focus natively. It was briefly a <span>, where the same
-   declaration was unreachable - a span is inert to Tab whatever it is
-   styled to look like, which makes a focus affordance on one a promise the
-   markup cannot keep. */
-.bubble .ts:hover, .bubble .ts:focus-visible { color: var(--accent-text); background: var(--accent); }
+/* The card's text. min-width: 0 lets it actually shrink inside the flex
+   row instead of forcing the row wider than the card - the standard fix
+   for a flex child whose content (a long, unbreakable word or URL) would
+   otherwise blow out its container. flex: 1 1 auto is what lets it claim
+   the row's remaining width once the chip and the trailing controls have
+   taken theirs. */
+.bubble p { margin: 0; min-width: 0; flex: 1 1 auto; }
 
-/* Matches .source[data-no-audio] .ts in 48-turn.css: once the recording has
-   failed to load there is nothing left for a bubble's timestamp to start
-   playback from either, so the same click-target affordance has to come off
-   it too. */
+/* The play control shows the sentence's own RANGE now, the same shape as
+   the old cluster header's .ts (48-turn.css) - reused wholesale, not
+   restyled, because "how a play range looks" should not differ by scope.
+   Reads its bounds from the wrapping .bubble's own data-start/data-end
+   (bindAudio(), js/64-audio.js) rather than carrying its own - see
+   _render_bubble_html()'s docstring for why a second copy here would be
+   redundant. flex: 0 0 auto keeps it from being squeezed by the sentence
+   text claiming the row's width. */
+.bubble .ts { flex: 0 0 auto; }
+
+/* Undo the UA button chrome the shared .ts rule doesn't already touch -
+   the icon-and-text pill shape itself comes from 48-turn.css's own .ts
+   rule, verbatim; this file adds nothing new here, unlike before this
+   change when a bubble's timestamp was a bare text affordance styled
+   apart from the header's own pill. */
 .source[data-no-audio] .bubble .ts {
   cursor: default;
   pointer-events: none;
 }
-.source[data-no-audio] .bubble .ts:hover { color: var(--muted); background: transparent; }
 
 /* Sentence-level focus, the finer half of 48-turn.css's dim-the-rest rule.
-   That rule (.source:hover .turn:not(:hover)) still dims whole clusters the
-   reader is not pointing at, and is left exactly as it is; this adds the
-   level below it, so that inside the cluster under the pointer the sentence
-   under the pointer is the one at full strength. Bubbles are the unit the
-   reader now acts on - each has its own play range and its own number - so
-   dimming only at cluster granularity would leave a 30-second block
-   uniformly lit while the pointer sits on one line of it.
+   That rule (.source:hover .turn:not(:hover)) still dims whole (invisible)
+   blocks the reader is not pointing at, and is left exactly as it is; this
+   adds the level below it, so that inside the block under the pointer the
+   sentence under the pointer is the one at full strength.
 
    Same 0.5 and same --fast transition as the cluster rule deliberately: two
    different dim strengths compounding (a non-hovered bubble inside a
-   non-hovered cluster) would multiply to 0.25 and drop that text far below
+   non-hovered block) would multiply to 0.25 and drop that text far below
    any readable contrast. It cannot happen here, because this rule only
-   applies inside .turn:hover, which is by definition the cluster that is
-   NOT being dimmed by the rule in 48-turn.css. Read that file's own long
+   applies inside .turn:hover, which is by definition the block that is NOT
+   being dimmed by the rule in 48-turn.css. Read that file's own long
    comment on the 4.5:1 floor before revisiting either number.
 
    :focus-within is exempted for the same reason it is there: a bubble whose
@@ -169,100 +117,76 @@
 .turn:hover .bubble:not(:hover) { opacity: 0.5; }
 .turn:hover .bubble:focus-within { opacity: 1; }
 
-/* The per-sentence reassignment control - .spk-anchor/.spk's (48-turn.css)
-   counterpart at bubble scope, for the "no feature loss" checklist's
-   "Reassign speaker" row: a cluster's own chip can only move a whole run of
-   bubbles, so a single mislabelled sentence needed a control of its own.
-   Not the SAME .spk-anchor class: that rule's -0.4rem margin-inline-start
-   exists to pull a header control flush against .ts in a toolbar row (see
-   its own comment in 48-turn.css) and has no equivalent need here, so this
-   is a sibling rule with the one property this context actually needs
-   (position: relative, so the popover js/24-speakers-menus.js inserts after
-   it anchors against THIS button, not the page) rather than the header's
-   whole margin story along for the ride.
-
-   Hidden until the bubble is worth looking at closely - hover, keyboard
-   focus, or (unconditionally) an override already in effect - the same
-   opacity-toggle shape .turn-actions uses in 48-turn.css for its own
-   per-turn copy button, so a page full of ordinary, unoverridden bubbles
-   does not read as a wall of speaker controls. */
+/* The speaker chip - the reassignment affordance AND the resting identity
+   in one control now, always shown (see _render_bubble_html()'s docstring
+   for why a blank resting state is no longer valid). A thin, non-interactive
+   positioning wrapper around .bubble-spk alone, the same reason
+   .spk-anchor (48-turn.css) wraps .spk: the reassignment menu has to open
+   under the specific chip that was clicked, and .spk-menu contains real
+   <button role="menuitem"> items, so the HTML content model forbids it from
+   nesting inside .bubble-spk itself - the popover is inserted as this
+   wrapper's child, a sibling of .bubble-spk, instead. */
 .bubble-spk-anchor {
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
-  opacity: 0;
-  transition: opacity var(--fast) ease-out;
-}
-.bubble:hover .bubble-spk-anchor,
-.bubble:focus-within .bubble-spk-anchor,
-.bubble[data-override] .bubble-spk-anchor {
-  opacity: 1;
 }
 
-/* Sized down from the cluster's own .spk (48-turn.css) - a bubble is
-   already the small, dense unit on this page, so its own control has to sit
-   inside that rhythm rather than the header's 44px touch target. Resting
-   state is unfilled (transparent, --muted icon) precisely because MOST
-   bubbles carry no override: a filled chip on every sentence would repeat
-   the cluster's own identity for no reason and drown out the one bubble
-   that actually disagrees with it. */
+/* Filled with the speaker's own accent from the first render, not
+   transparent-until-overridden the way this control used to be before the
+   cluster header (which carried the resting identity on its own .spk) went
+   away - see 48-turn.css's own .spk rule, which this now mirrors rather
+   than differs from. Sized down from that control, though: a bubble is
+   already the small, dense unit on this page, so its own chip sits inside
+   that rhythm rather than the old header's 44px touch target. */
 .bubble-spk {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 0.3rem;
-  min-height: 1.5rem;
-  padding: 0 0.35rem;
-  border: var(--control-border-width) solid var(--control-border);
+  min-height: 1.75rem;
+  padding: 0 0.5rem;
+  border: var(--control-border-width) solid transparent;
   border-radius: var(--control-radius);
-  background: transparent;
-  color: var(--muted);
+  background: var(--spk);
+  color: var(--spk-text);
+  border-color: var(--spk);
   font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
-  transition: filter var(--fast) ease-out, background var(--fast) ease-out,
-              color var(--fast) ease-out, border-color var(--fast) ease-out;
+  transition: filter var(--fast) ease-out;
 }
-.bubble-spk .icon { width: 12px; height: 12px; }
-/* Empty until an override sets it (paintBubbleOverride(), never rebuilt on
-   clear - see that function's own comment on why it only ever touches
-   dataset, not this span). display: none rather than leaving an empty
-   inline box in place: .bubble-spk's own `gap` puts space between every
-   flex child regardless of content, so an empty-but-present label would
-   leave a dangling gap after the icon on every ordinary, unoverridden
-   bubble. */
-.bubble-spk-label:empty { display: none; }
-.bubble-spk:hover, .bubble-spk[aria-expanded="true"] {
-  color: var(--accent-text);
-  background: var(--accent);
-  border-color: var(--accent);
+.bubble-spk:hover, .bubble-spk[aria-expanded="true"] { filter: brightness(0.94); }
+.bubble-spk:active { filter: brightness(0.88); }
+
+/* A per-sentence override - this bubble disagreeing with the rest of its
+   block - gets a visible ring on top of the chip's own fill, since the chip
+   alone no longer distinguishes "this is the block's own identity" from
+   "this sentence was moved here by hand" the way an empty-vs-filled chip
+   used to. Reads the SAME --spk the chip's own fill already resolved (both
+   come from the bubble's own [data-palette] - see paintBubbleOverride(),
+   js/24-speakers-menus.js), so the ring is always the identity's own
+   colour, one step more emphatic, never a colour that appears nowhere else
+   on the card. */
+.bubble[data-override] {
+  box-shadow: inset 0 0 0 1px var(--spk);
 }
 
-/* Once an override is active the bubble itself takes on the overriding
-   speaker's own accent - "visually overriding the cluster header" is the
-   whole point of the feature (see the sentence-bubbles plan's "Reassign
-   speaker" row) - and its chip fills solid, the exact --spk/--spk-text
-   pairing .spk already uses in 48-turn.css (verified in PAIRS,
-   tests/test_transcript_styles.py), resolved here from the BUBBLE's own
-   data-palette (set by paintBubbleOverride(), js/24-speakers-menus.js) via
-   the shared [data-palette] block in 00-tokens.css - not through .turn,
-   because the whole reason this bubble has a chip of its own is that it
-   disagrees with .turn's. No new colour token: both tokens already exist
-   and are already verified for this exact foreground/background pairing.
+/* Copy, moved down from the old cluster header's own .turn-actions - see
+   _render_bubble_html()'s docstring. Hover/focus-revealed, the same
+   opacity-toggle shape .turn-actions used, so a page full of ordinary
+   sentences does not read as a wall of buttons; always visible on touch and
+   narrow screens, same exemption as the old .turn-actions (see
+   css/90-responsive.css). */
+.copy-line {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  opacity: 0;
+  transition: opacity var(--fast) ease-out;
+}
+.bubble:hover .copy-line,
+.bubble:focus-within .copy-line {
+  opacity: 1;
+}
 
-   The resting icon steps aside once the chip carries a name - .spk itself
-   (48-turn.css) never pairs an icon with its label, and a name is already
-   the stronger, more specific identifier of the two once there is one to
-   show. */
-.bubble[data-override] { border-color: var(--spk); }
-.bubble[data-override] .bubble-spk {
-  background: var(--spk);
-  color: var(--spk-text);
-  border-color: var(--spk);
-}
-.bubble[data-override] .bubble-spk .icon { display: none; }
-.bubble[data-override] .bubble-spk:hover,
-.bubble[data-override] .bubble-spk[aria-expanded="true"] {
-  filter: brightness(0.94);
-}
+.copy-line.copied { color: var(--accent); border-color: var(--accent); }

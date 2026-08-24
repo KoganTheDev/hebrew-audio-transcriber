@@ -141,8 +141,18 @@ STRINGS = {
         "he": "השתמש בשמות האלה בכל הקבצים",
     },
     "doc_copy_turn": {"en": "Copy this turn", "he": "העתקת פסקה"},
+    "doc_copy_line": {"en": "Copy this sentence", "he": "העתקת המשפט"},
     "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
     "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
+    # The speaker menu's scope group, added once a bubble's own reassignment
+    # control can move either a single sentence or the whole block of
+    # sentences around it (see buildSpeakerMenu() in
+    # js/24-speakers-menus.js) - the cluster header used to be the only way
+    # to reassign a whole block, and that control is gone now that cards are
+    # flat, so this replaces it rather than losing the feature.
+    "doc_reassign_scope": {"en": "Apply to", "he": "החל על"},
+    "doc_reassign_scope_line": {"en": "This sentence", "he": "המשפט הזה"},
+    "doc_reassign_scope_block": {"en": "This whole block", "he": "כל הקטע הזה"},
     # Two keys, not one - same "the button names the action it is about to
     # take" reasoning as doc_theme_light/doc_theme_dark above. transcript.js
     # swaps between them on the audio element's own play/pause events (see
@@ -221,22 +231,21 @@ STRINGS = {
     "doc_help_speakers_title": {"en": "Speaker names and colours", "he": "שמות וצבעי דוברים"},
     "doc_help_speakers_desc": {
         "en": "Rename a speaker by typing over their name in this list, "
-              "and recolour them from the swatch beside it. To move a "
-              "single turn to a different speaker, click that speaker's "
-              "name on the turn itself.",
+              "and recolour them from the swatch beside it. Every sentence "
+              "carries its own speaker chip - click it to reassign just "
+              "that sentence, or the whole block of sentences around it, "
+              "to someone else.",
         "he": "שנו את שם הדובר על ידי הקלדה מעל השם ברשימה, והחליפו את "
-              "צבעו דרך העיגול הצבעוני שלצידו. כדי לשייך פסקה בודדת לדובר "
-              "אחר, לחצו על שם הדובר בפסקה עצמה.",
+              "צבעו דרך העיגול הצבעוני שלצידו. לכל משפט יש תגית דובר "
+              "משלו - לחצו עליה כדי לשייך רק את המשפט הזה, או את כל הקטע "
+              "שסביבו, לדובר אחר.",
     },
     "doc_help_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
     "doc_help_playback_desc": {
-        "en": "Click a timestamp to play the recording from there; playback "
-              "stops again at the end of what it started from. The one on "
-              "a sentence plays just that sentence, the one at the top of a "
-              "speaker's block plays the whole block.",
-        "he": "לחצו על חותמת זמן כדי להשמיע את ההקלטה משם; ההשמעה נעצרת "
-              "שוב בסוף הקטע שממנו התחילה. חותמת שליד משפט משמיעה רק את "
-              "אותו משפט, וחותמת בראש קטע של דובר משמיעה את הקטע כולו.",
+        "en": "Click a sentence's own timestamp to play just that "
+              "sentence; playback stops again at its end.",
+        "he": "לחצו על חותמת הזמן של משפט כדי להשמיע רק אותו; ההשמעה "
+              "נעצרת שוב בסופו.",
     },
     "doc_help_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
     "doc_help_editing_desc": {
@@ -251,11 +260,13 @@ STRINGS = {
     },
     "doc_help_plain_title": {"en": "Plain text", "he": "טקסט רגיל"},
     "doc_help_plain_desc": {
-        "en": "A copy-friendly version of the whole recording at the "
-              "bottom of the page, with its own toggles for timestamps and "
-              "speaker names - edit it there directly, or copy it out with "
-              "one click.",
-        "he": "גרסה נוחה להעתקה של ההקלטה כולה בתחתית הדף, עם מתגים משלה "
+        "en": "Every sentence has its own copy button too, for just that "
+              "one sentence. A copy-friendly version of the whole "
+              "recording sits at the bottom of the page, with its own "
+              "toggles for timestamps and speaker names - edit it there "
+              "directly, or copy it out with one click.",
+        "he": "לכל משפט יש גם כפתור העתקה משלו, רק בשבילו. גרסה נוחה "
+              "להעתקה של ההקלטה כולה נמצאת בתחתית הדף, עם מתגים משלה "
               "לחותמות זמן ולשמות דוברים - אפשר לערוך אותה שם ישירות, או "
               "להעתיק אותה בלחיצה אחת.",
     },
@@ -299,19 +310,20 @@ STRINGS = {
     "doc_tour_speakers_title": {"en": "Speaker names and colours", "he": "שמות וצבעי דוברים"},
     "doc_tour_speakers_body": {
         "en": "Rename a speaker here, or recolour them from the swatch "
-              "beside their name. Clicking a speaker's name on one turn "
-              "reassigns just that turn to someone else.",
+              "beside their name. Clicking a sentence's own speaker chip "
+              "reassigns just that sentence, or the whole block around it, "
+              "to someone else.",
         "he": "כאן אפשר לשנות את שם הדובר, או להחליף את צבעו דרך העיגול "
-              "הצבעוני שלצידו. לחיצה על שם דובר בפסקה מסוימת משייכת רק "
-              "את הפסקה הזו לדובר אחר.",
+              "הצבעוני שלצידו. לחיצה על תגית הדובר של משפט משייכת רק "
+              "אותו, או את כל הקטע שסביבו, לדובר אחר.",
     },
     "doc_tour_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
     "doc_tour_playback_body": {
-        "en": "Click a timestamp to play the recording from there - a small "
-              "player appears, and stops again at the end. A sentence's own "
-              "timestamp plays just that sentence.",
-        "he": "לחיצה על חותמת זמן משמיעה את ההקלטה משם - נגן קטן מופיע, "
-              "ועוצר שוב בסוף. חותמת הזמן של משפט משמיעה רק את אותו משפט.",
+        "en": "Click a sentence's own timestamp to play the recording from "
+              "there - a small player appears, and stops again at the "
+              "sentence's own end.",
+        "he": "לחיצה על חותמת הזמן של משפט משמיעה את ההקלטה משם - נגן קטן "
+              "מופיע, ועוצר שוב בסוף אותו משפט.",
     },
     "doc_tour_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
     "doc_tour_editing_body": {

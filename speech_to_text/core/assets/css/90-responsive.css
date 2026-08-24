@@ -4,12 +4,15 @@
    the actions are simply always visible.
 
    This block used to sit ~450 lines up, inside the turn section, because
-   that is where .turn-actions is defined. Every other width-dependent rule
+   that is where .turn-actions was defined. Every other width-dependent rule
    lives here instead, and a breakpoint hiding among unconditional rules is
    one nobody finds when they go looking for what changes at a given
-   width. */
+   width. .turn-actions itself is gone now (the cluster header it lived in
+   went away with it - see the review plan's "flat sentence cards" section);
+   .copy-line (52-bubble.css), each card's own copy button, is what needs
+   this exemption in its place. */
 @media (hover: none), (max-width: 768px) {
-  .turn-actions { opacity: 1; }
+  .copy-line { opacity: 1; }
   .source:hover .turn:not(:hover) { opacity: 1; }
 }
 /* 819px, chosen by looking at a real render rather than derived on paper:
@@ -132,6 +135,6 @@
     animation-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .turn:hover, .turn:focus-within { transform: none; }
+  .bubble:hover, .bubble:focus-within { transform: none; }
   .toast { transform: none; }
 }

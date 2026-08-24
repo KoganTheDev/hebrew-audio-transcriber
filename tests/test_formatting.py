@@ -328,10 +328,12 @@ class TestRenderHtml:
         The timestamp is a button that seeks and bounds playback, but the
         bidi contract is unchanged: dir="ltr" is what the browser lays out
         on, and the isolate characters keep copied plain text ordered
-        correctly outside the browser. Both, not either.
+        correctly outside the browser. Both, not either. Lives on the
+        bubble now - there is no more cluster-header .ts to check, see
+        _render_turn_html()'s docstring.
         """
         out = render_html([doc("a.wav", [seg(83, 90)])])
-        assert '<button class="ts" dir="ltr"' in out
+        assert '<button type="button" class="ts" dir="ltr"' in out
         assert f'{LRI}1:23 - 1:30{PDI}' in out
 
     def test_timestamp_button_carries_both_playback_bounds(self):
@@ -366,13 +368,18 @@ class TestRenderHtml:
 
     def test_speaker_button_is_wrapped_in_its_own_menu_anchor(self):
         """
-        .spk-anchor is what the reassignment menu is positioned against (see
-        its comment in transcript.css) - it has to wrap .spk directly, not
-        just appear somewhere in the card, or the menu goes back to opening
-        at the wrong place.
+        .bubble-spk-anchor is what the reassignment menu is positioned
+        against (see its comment in transcript.css) - it has to wrap
+        .bubble-spk directly, not just appear somewhere in the card, or the
+        menu goes back to opening at the wrong place. There is no more
+        cluster-header .spk/.spk-anchor pair - see _render_turn_html()'s
+        docstring for why the chip (and its menu) now live on the bubble.
         """
         out = render_html([doc("a.wav", [seg(0, 2, speaker=0)])], speaker_label="Speaker {n}")
-        assert '<span class="spk-anchor"><button type="button" class="spk"' in out
+        assert (
+            '<span class="bubble-spk-anchor" contenteditable="false">'
+            '<button type="button" class="bubble-spk"'
+        ) in out
 
     def test_no_timestamps_no_speakers_gives_bare_paragraphs(self):
         out = render_html([doc("a.wav", [seg(0, 1, "שלום עולם. מה שלומך?")])], timestamps=False)
@@ -630,24 +637,48 @@ class TestEditableDocument:
         out = render_html([doc("a.wav", [seg(0, 2, "אחד"), seg(30, 32, "שתיים")])])
         assert 'class="plain-row" data-turn="0-0"' in out
         assert 'class="plain-row" data-turn="0-1"' in out
-        assert 'class="plain-prefix" contenteditable="false"' in out
         assert 'class="plain-body" contenteditable="true"' in out
+        # No speaker_label passed to this render at all, so no heading can
+        # ever render (see _render_plain_row_html()'s docstring) - checked
+        # explicitly here since a stray heading div would otherwise sneak
+        # past every other assertion in this file.
+        assert 'class="plain-heading"' not in out
 
     def test_plain_text_row_brackets_the_timestamp_inside_the_isolate(self):
         """
         Per-sentence now, not per-turn: the plain-text panel's own range
         moved down to sit beside each sentence's number (see
-        _render_plain_row_html()'s docstring), inside the SAME isolate as
-        the number and its dot - a second isolate around just the brackets
-        would only add control characters with nothing to isolate them from
-        (see transcript.js's numberedLines() for the JS side of the same
-        rule).
+        _render_plain_row_html()'s docstring), in its OWN isolate, separate
+        from the number's - see the RTL-dot tests below for why the two are
+        no longer one isolate.
         """
         out = render_html([doc("a.wav", [seg(32, 65)])])
-        assert f"{LRI}1. [0:32 - 1:05]{PDI}" in out
+        assert f"{LRI}1{PDI}. {LRI}[0:32 - 1:05]{PDI}" in out
         # The card's pill is unaffected - format_range() is reused, not
         # changed, so the un-bracketed form still appears for it.
         assert f"{LRI}0:32 - 1:05{PDI}" in out
+
+    def test_plain_row_lead_in_is_two_isolates_with_the_dot_outside_both(self):
+        """
+        Codepoint-level check of the RTL dot fix itself (this file asserts
+        bidi at codepoint level on purpose - see the module docstring): the
+        number sits in its own isolate, then a literal ". " OUTSIDE any
+        isolate, then (with timestamps on) the range in a second isolate of
+        its own. A single isolate around the whole lead-in - the old shape -
+        put the dot to the digit's right once the paragraph resolved RTL;
+        splitting it like this is what puts the dot on the digit's LEFT
+        instead (see the review plan's "the RTL dot" section for the
+        browser-measured glyph positions this fixes).
+        """
+        with_ts = render_html([doc("a.wav", [seg(0, 2)])])
+        assert f"{LRI}1{PDI}. {LRI}[0:00 - 0:02]{PDI} " in with_ts
+
+        without_ts = render_html([doc("a.wav", [seg(0, 2)])], timestamps=False)
+        row = re.search(r'<span class="plain-body"[^>]*>(.*?)</span>', without_ts, re.S).group(1)
+        assert row.startswith(f"{LRI}1{PDI}. ")
+        # No second isolate at all with timestamps off - there is nothing
+        # for it to wrap.
+        assert LRI not in row[len(f"{LRI}1{PDI}. "):]
 
     def test_file_bar_carries_filename_and_position(self):
         out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
@@ -668,22 +699,51 @@ class TestBubbles:
     """
 
     def test_bubble_markup_shape(self):
+        """
+        No speaker_label passed here, so the chip is absent entirely (see
+        _render_bubble_html()'s docstring) - test_bubble_carries_a_chip_
+        range_and_copy below covers the with-speaker shape, chip included.
+        """
         out = render_html([doc("a.wav", [seg(0, 1, "אחד. שתיים.")])])
         assert re.search(
-            r'<div class="bubble" data-line="0-0-0"'
+            r'<div class="bubble" data-line="0-0-0" data-turn="0-0"'
             r' data-start="0\.00" data-end="1\.00">'
             r'<p>אחד\.</p>'
-            r'<span class="bubble-spk-anchor" contenteditable="false">'
-            r'<button type="button" class="bubble-spk" aria-haspopup="true"'
-            r' aria-expanded="false" aria-label="[^"]+">.*?</button></span>'
             r'<button type="button" class="ts" dir="ltr" contenteditable="false"'
             r' aria-label="[^"]+">.*?</button>'
+            r'<button class="icon-btn copy-line" aria-label="[^"]+"'
+            r' contenteditable="false">.*?</button>'
             r'</div>',
             out,
         ), out
         # No sentence number on the bubble any more - it lives only in the
         # plain-text panel now (see _render_bubble_html()'s docstring).
         assert 'class="line-no"' not in out
+
+    def test_bubble_carries_a_chip_range_and_copy(self):
+        """
+        The flat-card shape: a speaker chip (always shown, in the block's
+        own palette colour), a play control showing the sentence's RANGE,
+        and a copy button - see _render_bubble_html()'s docstring for why
+        each moved onto the card once the cluster header went away.
+        """
+        out = render_html(
+            [doc("a.wav", [seg(0, 2, "שלום עולם.", speaker=0)])],
+            speaker_label="Speaker {n}",
+        )
+        bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
+        assert 'data-line="0-0-0"' in bubble
+        assert 'data-start="0.00"' in bubble
+        assert 'data-end="2.00"' in bubble
+        assert 'data-speaker="0"' in bubble
+        assert 'data-palette="0"' in bubble
+        chip = re.search(r'<button type="button" class="bubble-spk"[^>]*>.*?</button>', bubble, re.S)
+        assert chip, bubble
+        assert 'data-speaker="0"' in chip.group(0)
+        assert '<span class="bubble-spk-label">Speaker 1</span>' in chip.group(0)
+        assert '<button type="button" class="ts" dir="ltr"' in bubble
+        assert f'{LRI}0:00 - 0:02{PDI}' in bubble
+        assert 'class="icon-btn copy-line"' in bubble
 
     def test_bubble_timestamp_is_a_real_button(self):
         """
@@ -717,13 +777,14 @@ class TestBubbles:
         assert element, bubble
         assert 'contenteditable="false"' in element.group(0), element.group(0)
 
-    def test_bubble_time_is_an_instant_not_a_range(self):
+    def test_bubble_time_shows_a_rounded_range_not_a_degenerate_instant(self):
         """
-        Sentences are routinely under a second apart, and format_range()
-        works at whole-second resolution, so a range renders real short
-        sentences as "0:00 - 0:00". The bubble shows the start instant
-        instead; data-end still carries the true end for playback. See
-        format_instant() in timecode.py.
+        The card's play control shows the sentence's RANGE, per the review
+        plan's "flat sentence cards" section - reusing _display_end_second()
+        (originally added for the plain-text panel) to avoid the degenerate
+        "0:00 - 0:00" a sub-second sentence would otherwise render at
+        whole-second resolution. data-end still carries the TRUE,
+        un-rounded end for playback - only the visible label is floored.
         """
         words = [
             Word(start=0.0, end=0.4, text="אחד", probability=0.9),
@@ -732,7 +793,7 @@ class TestBubbles:
         out = render_html([doc("a.wav", [seg(0.0, 0.9, "אחד שתיים.", words=words)])])
         bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
         assert 'data-end="0.90"' in bubble
-        assert f'>{LRI}0:00{PDI}<' in bubble
+        assert f'{LRI}0:00 - 0:01{PDI}' in bubble
         assert "0:00 - 0:00" not in bubble
 
     def test_bubble_carries_its_own_span_not_the_turns(self):
@@ -749,8 +810,8 @@ class TestBubbles:
         ]
         segment = seg(0.0, 5.8, "אחד שתיים. שלוש ארבע.", words=words)
         out = render_html([doc("a.wav", [segment])])
-        assert 'data-line="0-0-0" data-start="0.00" data-end="0.80"' in out
-        assert 'data-line="0-0-1" data-start="5.00" data-end="5.80"' in out
+        assert 'data-line="0-0-0" data-turn="0-0" data-start="0.00" data-end="0.80"' in out
+        assert 'data-line="0-0-1" data-turn="0-0" data-start="5.00" data-end="5.80"' in out
 
     def test_bubble_omits_ts_span_when_timestamps_are_off(self):
         out = render_html([doc("a.wav", [seg(0, 1, "אחד.")])], timestamps=False)
@@ -775,11 +836,11 @@ class TestBubbles:
         ]
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
 
-        # "{LRI}{n}." is the plain-row lead-in's own shape (see
+        # "{LRI}{n}{PDI}." is the plain-row lead-in's own shape (see
         # _render_plain_row_html()); nothing else on the page emits a
-        # digit run immediately followed by a literal dot inside the
-        # isolate, so this pattern picks out only the plain-panel numbers.
-        plain_numbers = re.findall(f'{LRI}(\\d+)\\.', out)
+        # digit run isolated on its own, immediately followed by a literal
+        # dot, so this pattern picks out only the plain-panel numbers.
+        plain_numbers = re.findall(f'{LRI}(\\d+){PDI}\\.', out)
         assert plain_numbers == ["1", "2", "3"]
 
     def test_sentence_numbers_continue_across_multiple_documents_worth_of_turns(self):
@@ -793,7 +854,7 @@ class TestBubbles:
             doc("a.wav", [seg(0, 1, "אחד. שתיים.")]),
             doc("b.wav", [seg(0, 1, "שלוש.")]),
         ])
-        plain_numbers = re.findall(f'{LRI}(\\d+)\\.', out)
+        plain_numbers = re.findall(f'{LRI}(\\d+){PDI}\\.', out)
         assert plain_numbers == ["1", "2", "1"]
 
 
@@ -1170,19 +1231,22 @@ class TestPopoverStackingAndAnchoring:
     tests/js/chrome.test.mjs.
     """
 
-    def test_turn_menu_open_class_exists_with_a_higher_stack_level(self):
+    def test_bubble_menu_open_class_exists_with_a_higher_stack_level(self):
         """
-        Every .turn is position: relative with no z-index of its own, so a
+        Every .bubble is position: relative with no z-index of its own, so a
         card holding an open menu needs an explicit, higher-than-zero stack
         level or its later siblings (painted after it in DOM order, at the
         same stack level 0) cover it - see the long comment on
-        .turn.menu-open in transcript.css for why this can't be :hover-keyed.
+        .bubble.menu-open in 52-bubble.css for why this can't be
+        :hover-keyed. Used to be .turn.menu-open, keyed to the cluster
+        header's own card - now that cards are flat, one sentence wide, the
+        card that needs raising is the .bubble the menu opened from.
         """
         from speech_to_text.core.formatting.assets import _asset_dir
 
         css = _asset_dir("css")
-        match = re.search(r"\.turn\.menu-open\s*\{([^}]*)\}", css)
-        assert match, ".turn.menu-open rule not found in transcript.css"
+        match = re.search(r"\.bubble\.menu-open\s*\{([^}]*)\}", css)
+        assert match, ".bubble.menu-open rule not found in transcript.css"
         assert re.search(r"z-index\s*:\s*[1-9]", match.group(1)), (
             "the open-state rule must set a positive z-index, or it ties "
             "with (rather than beats) its zero-level siblings"
@@ -1190,16 +1254,17 @@ class TestPopoverStackingAndAnchoring:
 
     def test_spk_menu_is_anchored_to_its_own_wrapper_not_the_turn(self):
         """
-        .spk-anchor - not .spk itself (which cannot hold the menu's own
-        <button> descendants - see the content-model comment in
-        transcript.css) and not .turn (the old, wrong anchor that opened the
-        menu at the card's edge) - has to be the positioned ancestor.
+        .bubble-spk-anchor - not .bubble-spk itself (which cannot hold the
+        menu's own <button> descendants - see the content-model comment in
+        transcript.css) and not .turn (which would open the menu at the
+        block's edge, not under the chip that was actually clicked) - has to
+        be the positioned ancestor.
         """
         from speech_to_text.core.formatting.assets import _asset_dir
 
         css = _asset_dir("css")
-        match = re.search(r"\.spk-anchor\s*\{([^}]*)\}", css)
-        assert match, ".spk-anchor rule not found in transcript.css"
+        match = re.search(r"\.bubble-spk-anchor\s*\{([^}]*)\}", css)
+        assert match, ".bubble-spk-anchor rule not found in transcript.css"
         assert "position: relative" in match.group(1)
 
 

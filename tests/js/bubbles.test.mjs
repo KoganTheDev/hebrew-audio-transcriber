@@ -151,14 +151,14 @@ test('editing the plain panel never bakes the line-number lead-in into the card 
   const bodyEl = row.querySelector('.plain-body');
 
   // Sanity check on the fixture itself: the row really does carry the
-  // "{LRI}{n}. [range]{PDI} " lead-in on both of its lines before anything
-  // is typed - the fixture renders with timestamps on, so each line's own
-  // range is present too, not just its number.
-  assert.equal(bodyEl.textContent.split('\n')[0], `${LRI}1. [0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
-  assert.equal(bodyEl.textContent.split('\n')[1], `${LRI}2. [0:01 - 0:03]${PDI} עוד משפט קצר`);
+  // "{LRI}{n}{PDI}. {LRI}[range]{PDI} " lead-in on both of its lines before
+  // anything is typed - the fixture renders with timestamps on, so each
+  // line's own range is present too, not just its number.
+  assert.equal(bodyEl.textContent.split('\n')[0], `${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
+  assert.equal(bodyEl.textContent.split('\n')[1], `${LRI}2${PDI}. ${LRI}[0:01 - 0:03]${PDI} עוד משפט קצר`);
 
   // Simulate typing a correction into the first line without disturbing its
-  // leading "{LRI}1. [0:00 - 0:01]{PDI} " - textContent is edited directly
+  // leading "{LRI}1{PDI}. {LRI}[0:00 - 0:01]{PDI} " - textContent is edited directly
   // (jsdom does not implement contenteditable typing) and an 'input' event
   // is fired the way a real keystroke would.
   bodyEl.textContent = bodyEl.textContent.replace('שלום אחד', 'שלום מתוקן');
@@ -193,10 +193,10 @@ test('editing a card renumbers the plain panel to match its new paragraph count'
   body.dispatchEvent(new window.Event('input', { bubbles: true }));
 
   const row00 = document.querySelector('.plain-row[data-turn="0-0"]');
-  assert.equal(row00.querySelector('.plain-body').textContent, `${LRI}1. [0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
+  assert.equal(row00.querySelector('.plain-body').textContent, `${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
 
   const row01 = document.querySelector('.plain-row[data-turn="0-1"]');
-  assert.equal(row01.querySelector('.plain-body').textContent, `${LRI}2. [0:05 - 0:08]${PDI} שלום ארבע חמש שש`);
+  assert.equal(row01.querySelector('.plain-body').textContent, `${LRI}2${PDI}. ${LRI}[0:05 - 0:08]${PDI} שלום ארבע חמש שש`);
 
   window.close();
 });
@@ -242,30 +242,10 @@ test('clicking a bubble\'s .ts sets playback bounds from that bubble, not the tu
   window.close();
 });
 
-test('the turn header\'s .ts still plays the whole turn, unaffected by per-bubble playback', () => {
-  const { window, document } = buildWindow(getFixtureHtml('full'));
-  const audio = document.getElementById('audio');
-  audio.play = () => Promise.resolve();
-
-  const header = document.querySelector('.turn[data-turn="0-0"] h2 > .ts');
-  assert.equal(header.dataset.start, '0.00');
-  assert.equal(header.dataset.end, '3.00');
-
-  click(header);
-  assert.equal(audio.currentTime, 0);
-
-  // Past the first bubble's end (1.00s), which must NOT stop turn-header
-  // playback the way it stops a bubble click.
-  Object.defineProperty(audio, 'currentTime', { value: 1.5, writable: true, configurable: true });
-  fire(audio, 'timeupdate');
-  assert.equal(audio.currentTime, 1.5, 'the turn-level bound only stops playback at 3.00, not 1.00');
-
-  Object.defineProperty(audio, 'currentTime', { value: 3.2, writable: true, configurable: true });
-  fire(audio, 'timeupdate');
-  assert.equal(audio.currentTime, 3, 'must clamp to the turn\'s own end');
-
-  window.close();
-});
+// There is no more cluster-header .ts to play a whole turn from - the
+// header that carried one is gone (see the review plan's "flat sentence
+// cards" section); every play control is a bubble's own now, covered by
+// "clicking a bubble's .ts sets playback bounds from that bubble" above.
 
 // -----------------------------------------------------------------------
 // Search must still find and step into text nested one level deeper (inside
@@ -290,22 +270,22 @@ test('search still finds and marks text inside a bubble', async () => {
 
 // -----------------------------------------------------------------------
 // Export/copy: the plain panel keeps the numbers (that is the point of the
-// feature); the per-card copy-turn button must never emit them.
+// feature); the per-card copy-line button must never emit them.
 //
-// copy-turn's own bracketed-range-and-speaker prefix (turnPlainText(turn,
-// true, true) in js/32-plain-text.js) predates the sentence-bubbles work
-// entirely and is deliberate - see bindPlain()'s own copy-turn wiring - so
+// copy-line's own bracketed-range-and-speaker prefix (bubblePlainText() in
+// js/32-plain-text.js) is the direct replacement for the old cluster-level
+// copy-turn action, which had no home left once the header went away - so
 // this test's job is narrower than "no digits at all": the plain-panel's
-// own per-sentence "{LRI}{n}. [range]{PDI} " lead-in (the thing
+// own per-sentence "{LRI}{n}{PDI}. {LRI}[range]{PDI} " lead-in (the thing
 // readParagraphs() also has to steer clear of - see js/16-edits.js) must
-// never leak into the copy, even though the turn's own timestamp
+// never leak into the copy, even though the sentence's own timestamp
 // legitimately carries digits of its own.
 // -----------------------------------------------------------------------
 
-test('copy-turn carries the turn\'s own timestamp/speaker prefix but never a bubble\'s line-number', async () => {
+test('copy-line carries the sentence\'s own timestamp/speaker prefix but never its plain-panel line-number', async () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
-  const turn = document.querySelector('.turn[data-turn="0-0"]');
-  const btn = turn.querySelector('.copy-turn');
+  const bubble = document.querySelector('.bubble[data-line="0-0-0"]');
+  const btn = bubble.querySelector('.copy-line');
 
   const writes = [];
   window.navigator.clipboard = { writeText: (text) => { writes.push(text); return Promise.resolve(); } };
@@ -314,9 +294,8 @@ test('copy-turn carries the turn\'s own timestamp/speaker prefix but never a bub
   await wait(0);
 
   assert.equal(writes.length, 1);
-  assert.equal(writes[0], `${LRI}[0:00 - 0:03]${PDI} Speaker 1: שלום אחד שתיים שלוש.\nעוד משפט קצר`);
-  assert.ok(!writes[0].includes(`${LRI}1${PDI} `), 'must not carry the first bubble\'s own "1" line-number');
-  assert.ok(!writes[0].includes(`${LRI}2${PDI} `), 'must not carry the second bubble\'s own "2" line-number');
+  assert.equal(writes[0], `${LRI}[0:00 - 0:01]${PDI} Speaker 1: שלום אחד שתיים שלוש.`);
+  assert.ok(!writes[0].includes(`${LRI}1${PDI}. `), 'must not carry the plain panel\'s own "1." line-number lead-in');
 
   window.close();
 });
@@ -333,8 +312,8 @@ test('the plain panel\'s "copy all" keeps the sentence numbers - that is the poi
   await wait(0);
 
   assert.equal(writes.length, 1);
-  assert.ok(writes[0].includes(`${LRI}1. [0:00 - 0:01]${PDI} `), 'expected the first sentence\'s number and range to survive into the copy');
-  assert.ok(writes[0].includes(`${LRI}2. [0:01 - 0:03]${PDI} `), 'expected the second sentence\'s number and range too');
+  assert.ok(writes[0].includes(`${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} `), 'expected the first sentence\'s number and range to survive into the copy');
+  assert.ok(writes[0].includes(`${LRI}2${PDI}. ${LRI}[0:01 - 0:03]${PDI} `), 'expected the second sentence\'s number and range too');
 
   window.close();
 });

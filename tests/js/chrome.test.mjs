@@ -60,18 +60,18 @@ test('the play/pause glyph and its aria-label swap together off the audio elemen
   window.close();
 });
 
-test('opening a turn\'s reassignment menu raises the card with .menu-open, closing it lowers it again', () => {
+test('opening a bubble\'s reassignment menu raises the card with .menu-open, closing it lowers it again', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
-  const turn = document.querySelector('.turn[data-turn="0-0"]');
+  const bubble = document.querySelector('.bubble[data-line="0-0-0"]');
 
-  assert.equal(turn.classList.contains('menu-open'), false);
+  assert.equal(bubble.classList.contains('menu-open'), false);
 
-  click(turn.querySelector('.spk'));
+  click(bubble.querySelector('.bubble-spk'));
   assert.ok(document.querySelector('.spk-menu'), 'expected the reassignment menu to open');
-  assert.equal(turn.classList.contains('menu-open'), true);
+  assert.equal(bubble.classList.contains('menu-open'), true);
 
   keydown(document, 'Escape');
-  assert.equal(turn.classList.contains('menu-open'), false);
+  assert.equal(bubble.classList.contains('menu-open'), false);
 
   window.close();
 });

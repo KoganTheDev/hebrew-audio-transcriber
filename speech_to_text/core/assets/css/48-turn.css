@@ -1,75 +1,24 @@
 /* ---------------------------------------------------------------- turn --- */
 
-.turn {
-  position: relative;
-  margin: 0 0 0.35rem;
-  padding: 0.6rem 0.9rem;
-  border-radius: var(--radius);
-  border-inline-start: 2px solid var(--rule);
-  background: var(--surface);
-  transition: background var(--fast) ease-out, transform var(--fast) ease-out;
-}
+/* .turn is a transparent grouping wrapper now, not a card - see the review
+   plan's "flat sentence cards" section. No background, no border, no
+   padding, no border-radius, no hover wash, no z-index-raising class: every
+   one of those moved down onto .bubble (52-bubble.css), which is the level
+   that actually reads as a card, one per sentence, since there is no
+   cluster header left to draw around a run of them. .turn keeps only its
+   identity attributes (data-turn, data-start, data-speaker/data-palette)
+   and the two rules below that still act on the wrapper itself: the dim-the-
+   rest hover rule (still meaningful - it dims a whole block of bubbles
+   together, which is a real grouping effect even though the wrapper itself
+   is invisible) and the "currently playing" accent, which still needs
+   SOMEWHERE to paint since a run of bubbles has no shared border of its own
+   any more to widen. */
 
-/* Raises the card holding an open .spk-menu above its own later siblings.
-   Every .turn is position: relative with no z-index of its own, so all of
-   them paint in one shared layer at stack level 0 and, within that level,
-   later DOM order wins - card N+1 paints over card N's popover, which is a
-   descendant of card N and therefore painted along with it, underneath
-   N+1. z-index alone on .turn wouldn't fix this (it's still 0, tying with
-   every sibling); this card needs a HIGHER stack level than its
-   zero-level siblings while its menu is open, which is what this class
-   supplies.
-
-   Keyed to an explicit class set by transcript.js's toggleMenu()/closeMenu()
-   (see menuOpenTurn there), not to :hover: a reassignment menu stays open
-   after the pointer leaves the card - clicking an item, or even just moving
-   the mouse toward the menu itself, unhovers .turn well before the menu
-   closes - so a hover-keyed z-index would drop the card (and its still-open
-   menu) back underneath the next card at exactly the moment the reader is
-   trying to use it. .turn:hover's own transform: translateY(-1px) already
-   creates a stacking context of its own, which is why this bug can look
-   fixed while testing with the mouse still over the card and only actually
-   shows up once you check the truly failing case: a menu left open on a
-   card the pointer is no longer touching. */
-.turn.menu-open { z-index: 1; }
-/* Keyed on data-palette, not data-speaker: identity (who is speaking, which
-   drives the name lookup in transcript.js's applyNames()) and colour
-   (which of the eight verified swatches paints this turn) used to be the
-   same number by definition. Recolouring and reassignment need to change
-   one without the other - reassigning a turn to speaker "2" must not also
-   force it to wear whatever colour speaker "2" happened to render with
-   first - so the two are tracked as separate attributes, both kept in sync
-   by transcript.js whenever either changes.
-
-   STATED EXCEPTION: in Latte, four of these eight (yellow 2.31:1, peach
-   2.64:1, lavender 2.81:1, green 2.96:1 against --panel) do not clear the
-   3:1 floor this file otherwise holds every visible-boundary colour to.
-   This is accepted, not an oversight to "fix" by darkening the shared
-   --spk-N tokens - doing so would also darken the speaker chip and the
-   swatch dots, which DO carry real information and DO clear their own
-   floors already (see the PAIRS table in tests/test_transcript_styles.py).
-   This bar is decorative under the rule this file states at the top:
-   colour never carries meaning on its own - the speaker's *name* (.spk,
-   filled and verified at 4.5:1) is what identifies who is speaking; the bar
-   is a redundant, low-cost reinforcement of that same identity for a reader
-   already scanning by colour, not the only place the identity is available.
-   Not contrast-gated for that reason - it is the one colour value in this
-   file deliberately left unmeasured by PAIRS.
-
-   --spk itself comes from .turn's own data-palette, via the shared
-   [data-palette]/[data-file-accent] block near the top of this file - this
-   used to be eight separate `.turn[data-palette="N"]` rules, one per
-   --spk-N, collapsed the same way as .swatch-rest/.file-bar above. */
-.turn { border-inline-start-color: var(--spk); }
-
-.turn:hover, .turn:focus-within {
-  background: var(--surface-hover);
-  transform: translateY(-1px);
-}
-
-/* The turn currently being spoken. Marked with a filled, widened accent edge
-   rather than a background wash, so it stays legible under the hover tint and
-   does not fight the low-confidence shading inside the text.
+/* The turn currently being spoken. A filled, widened accent edge along the
+   whole invisible wrapper - not a background wash, so it does not fight the
+   low-confidence shading inside the text, and not something painted on
+   every individual bubble, which would repeat the same accent once per
+   sentence in the block rather than marking the block as a whole.
 
    Previously an inset box-shadow with a hand-written :root[dir="rtl"]
    override to flip which side it painted on. box-shadow has no "start/end"
@@ -84,6 +33,11 @@
    why the two "this is current" cues stay different rather than aligned. */
 .turn[data-playing] {
   background: var(--surface-hover);
+  /* -style has to be declared here too, not just -width/-color: .turn no
+     longer has a resting border-inline-start at all (see the comment
+     above), so there is no inherited "solid" for this rule to merely
+     widen and recolour the way it used to. */
+  border-inline-start-style: solid;
   border-inline-start-width: 4px;
   border-inline-start-color: var(--accent);
 }
@@ -107,15 +61,6 @@
 .source:hover .turn { transition: opacity var(--fast) ease-out; }
 .source:hover .turn:not(:hover) { opacity: 0.5; }
 .source:hover .turn:focus-within { opacity: 1; }
-
-.turn h2 {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.2rem;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
 
 /* A real control affordance, not a bracketed label that happens to have a
    click handler: a pill with its own border and background, a play glyph,
@@ -192,89 +137,16 @@
    Mocha did not need this to pass contrast (its accents already clear
    4.5:1 as text) but gets the same treatment anyway, for symmetry: one chip
    design, not a component that quietly changes shape depending on scheme. */
-/* A thin, non-interactive positioning wrapper around .spk alone - not
-   position: relative on .spk itself, and not .turn either. The reassignment
-   menu has to open under the specific .spk button that was clicked, not at
-   the card's edge, which means its containing block (the ancestor
-   position: absolute measures against) has to be that button's own box. It
-   cannot be .spk directly: .spk-menu contains real <button role="menuitem">
-   items, and the HTML content model forbids interactive descendants inside
-   a <button> (this is also why .swatch-menu isn't nested inside
-   .swatch-trigger, its own button) - so the popover is inserted as this
-   wrapper's child instead, a sibling of .spk rather than a descendant of
-   it, which is the same DOM shape every accessible custom menu-button
-   pattern uses for exactly this reason. Sized to hug .spk exactly
-   (inline-flex, no padding of its own) so anchoring to the wrapper reads as
-   anchoring to the button - which is also why the header row's own
-   -0.4rem pull-in (visually tightening this control against .ts) lives on
-   the wrapper's margin, not .spk's own: a negative margin on .spk itself
-   would still look identical, but it shrinks a flex item's contribution to
-   its container's auto size without shrinking the item's own rendered box,
-   so .spk would render 0.4rem wider than .spk-anchor's box - and that gap
-   is exactly what a getBoundingClientRect()-based anchor cannot absorb,
-   the popover would open 0.4rem short of the button's real edge. Moving
-   the margin one level out costs nothing visually (h2 still gets the same
-   pull-in) and makes the wrapper's box equal the button's box exactly. */
-.spk-anchor { position: relative; display: inline-flex; margin-inline-start: -0.4rem; }
-
-.spk {
-  display: inline-flex;
-  align-items: center;
-  /* Width and style live here, at the base rule; only the colour itself
-     (background/color/border-color) is set below, reading --spk/--spk-text
-     from the shared [data-palette] block, so this line does not have to be
-     repeated per speaker just to change one value. */
-  border: var(--control-border-width) solid transparent;
-  padding: 0 0.5rem;
-  border-radius: var(--control-radius);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  /* Matches .ts's own 44px so the two controls that share this header line
-     - "when" and "who" - line up rather than one looking like an
-     afterthought next to the other. */
-  min-height: 44px;
-  transition: filter var(--fast) ease-out;
-}
-/* Hover and the pressed state both darken the existing fill via filter
-   rather than swapping to --surface-hover the way an outlined control
-   would - .spk has no unfilled resting state left to reveal, so "hover"
-   here means "the same chip, one step darker," the same brightness()
-   pattern .spk:active already used before this chip was filled (and that
-   .swatch-trigger:active and .ts:active still use). aria-expanded="true"
-   (the reassignment menu is open) shares the hover treatment, matching how
-   every other menu-button in this file (.swatch-trigger) marks "open" the
-   same as "hovered". */
-.spk:hover, .spk[aria-expanded="true"] { filter: brightness(0.94); }
-.spk:active { filter: brightness(0.88); }
-/* Filled with the speaker's own accent, text in its paired chip-text token
-   (verified at 4.5:1+, not against --panel but against the fill itself -
-   see the block comment above .spk for why that distinction is what makes
-   Latte's accents usable here at all) and a border in the SAME accent, not
-   --control-border: an already-filled chip's edge only needs to close the
-   shape, not add a second "this is a control" signal on top of the fill
-   that already carries one.
-
-   .spk carries its own data-palette (set in formatting.py alongside
-   data-speaker), matching the shared [data-palette]/[data-file-accent]
-   block near the top of this file directly rather than through .turn - so
-   --spk/--spk-text resolve the same whether read as inherited from the
-   surrounding .turn or as set on .spk itself; this used to be eight
-   separate `.turn[data-palette="N"] .spk` rules, one per --spk-N/
-   --spk-N-chip-text pair. */
-.spk {
-  background: var(--spk); color: var(--spk-text); border-color: var(--spk);
-}
-
 /* The reassignment menu, built on demand by transcript.js from the file's
    current speaker roster (never baked into the initial markup, so it can
    never go stale when a speaker is renamed or added after the page loads).
-   Anchored to .spk-anchor (see its own comment above) - inserted as
-   .spk-anchor's child via insertAdjacentElement('afterend', ...) against
-   the .spk button, so inset-inline-start: 0 / top: 100% land right under
-   the button that was actually clicked. It used to anchor against .turn,
-   the whole card, which is why the menu used to open flush with the
-   card's own edge instead of under the button. */
+   Anchored to .bubble-spk-anchor (52-bubble.css) - inserted as that
+   wrapper's child via insertAdjacentElement('afterend', ...) against the
+   .bubble-spk button, so inset-inline-start: 0 / top: 100% land right under
+   the chip that was actually clicked. Used to anchor against the old
+   cluster header's own .spk-anchor/.spk - same shape, moved down one level
+   now that the header is gone (see the review plan's "flat sentence cards"
+   section). */
 .spk-menu {
   position: absolute;
   z-index: 10;
@@ -313,17 +185,45 @@
 .spk-menu-item[aria-checked="true"] { font-weight: 600; }
 .spk-menu-item .swatch { width: 10px; height: 10px; }
 
-.turn-actions {
-  margin-inline-start: auto;
+/* The scope group at the top of a bubble's own .spk-menu - "This sentence"
+   / "This whole block" (see buildSpeakerMenu()'s own comment in
+   js/24-speakers-menus.js) - the flat-card replacement for the old cluster
+   header's .spk, which used to be the only way to reassign a whole block at
+   once. A row of two toggle-shaped buttons, not a second radio list styled
+   like .spk-menu-item's: this is a binary "where does the pick below apply"
+   choice, not a roster to scan, so it reads as a segmented control instead. */
+.spk-menu-scope {
   display: flex;
-  gap: 0.15rem;
-  opacity: 0;
-  transition: opacity var(--fast) ease-out;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  margin-bottom: 0.3rem;
+  border-bottom: 1px solid var(--rule);
 }
-.turn:hover .turn-actions,
-.turn:focus-within .turn-actions { opacity: 1; }
+.spk-scope-item {
+  flex: 1 1 0;
+  min-height: 36px;
+  padding: 0 0.4rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-align: center;
+}
+.spk-scope-item:hover, .spk-scope-item:focus-visible { background: var(--surface-hover); }
+/* --accent-tint, the same "this toggle is on" token #toggle-flags uses
+   (00-tokens.css) - a scope pick is exactly that: a binary state, not a
+   roster item, so it gets the "on" token rather than .spk-menu-item's own
+   plain font-weight cue. */
+.spk-scope-item[aria-checked="true"] {
+  background: var(--accent-tint);
+  color: var(--text);
+  font-weight: 600;
+}
 
-.copy-turn.copied, .copy-all.copied { color: var(--accent); border-color: var(--accent); }
+.copy-all.copied { color: var(--accent); border-color: var(--accent); }
 
 /* Keyboard-only ring - see the STATED EXCEPTION in the file's standing-rules
    comment at the top for why this is html[data-kbd] .body:focus rather than

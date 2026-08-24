@@ -394,14 +394,13 @@ def _render_help_html(strings: Dict[str, str]) -> str:
         ("plus", s("help_speakers_title", "Speaker names and colours"),
          s("help_speakers_desc",
            "Rename a speaker by typing over their name in this list, and "
-           "recolour them from the swatch beside it. To move a single turn "
-           "to a different speaker, click that speaker's name on the turn "
-           "itself - or, to fix just one mislabelled sentence, click the "
-           "small speaker control on that sentence's own bubble.")),
+           "recolour them from the swatch beside it. Every sentence carries "
+           "its own speaker chip - click it to reassign just that sentence, "
+           "or the whole block of sentences around it, to someone else.")),
         ("play", s("help_playback_title", "Play a moment"),
          s("help_playback_desc",
-           "Click a timestamp to play the recording from that turn; "
-           "playback stops again at the end of the turn it started from.")),
+           "Click a sentence's own timestamp to play just that sentence; "
+           "playback stops again at its end.")),
         ("edit", s("help_editing_title", "Editing the transcript"),
          s("help_editing_desc",
            "Click into any turn's text to correct it directly, the same "
@@ -410,9 +409,10 @@ def _render_help_html(strings: Dict[str, str]) -> str:
            "them into a file you can keep or share.")),
         ("copy", s("help_plain_title", "Plain text"),
          s("help_plain_desc",
-           "A copy-friendly version of the whole recording at the bottom "
-           "of the page, with its own toggles for timestamps and speaker "
-           "names - edit it there directly, or copy it out with one "
+           "Every sentence has its own copy button too, for just that one "
+           "sentence. A copy-friendly version of the whole recording sits "
+           "at the bottom of the page, with its own toggles for timestamps "
+           "and speaker names - edit it there directly, or copy it out with one "
            "click.")),
     ]
     items = "".join(

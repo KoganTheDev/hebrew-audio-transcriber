@@ -57,10 +57,20 @@
   border-bottom: 1px dashed var(--rule);
 }
 .plain-row:last-child { border-bottom: 0; }
-.plain-prefix {
-  color: var(--muted);
-  font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
-  font-size: 0.82rem;
+/* One heading per RUN of consecutive same-speaker rows, not one per row -
+   see _render_plain_row_html()'s docstring (core/formatting/document.py)
+   and rebuildPlain()'s own comment (js/32-plain-text.js) for how a row
+   decides whether it starts a run. A block-level line of its own above
+   .plain-body, not the inline ".plain-prefix" span this used to be: a
+   heading that can legitimately be absent from a given row needs to be a
+   whole element that is simply not there, not a text node beside the body
+   that would otherwise have to render empty and still take up an inline
+   slot in the reading flow. */
+.plain-heading {
+  margin: 0 0 0.2rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
   user-select: none;
 }
 .plain-body {

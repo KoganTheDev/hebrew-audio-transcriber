@@ -757,29 +757,40 @@ def test_hover_dim_is_phase_8_value():
     assert _property(block, "opacity") == "0.5"
 
 
-def test_bubble_sizes_to_its_content_rather_than_the_column():
+def test_bubble_is_a_full_width_flat_card_not_a_messaging_bubble():
     """
-    What makes a bubble read as a message rather than as a row.
+    What makes a bubble read as a flat, full-width card rather than a
+    messaging-app bubble - see the review plan's "flat sentence cards"
+    section for why the shape flipped.
 
-    The first version of 52-bubble.css gave .bubble p a flex-basis of 100%,
-    which forced the number, the sentence and the time onto three separate
-    lines and left every bubble full-width and three rows tall - a list of
-    boxes, not a conversation. It passed every test in the suite, because
-    nothing here described the shape. This is that description: a bubble is
-    as wide as it needs to be, and no wider than a comfortable reading
-    measure.
+    An earlier version of this file pinned the OPPOSITE of what is checked
+    here: width: fit-content plus a min(percentage, ch) max-width cap and a
+    squared-off corner, so a bubble read as a short chat message tied to a
+    cluster header above it. Cards are flat and standalone now - each one
+    names its own speaker - so none of that messaging shape belongs any
+    more: a card has to claim the full column width, not shrink to its own
+    content.
     """
     source = _css_source()
     block = _rule_block(source, ".bubble")
-    assert _property(block, "width") == "fit-content"
-    max_width = _property(block, "max-width")
-    assert max_width.startswith("min("), max_width
-    assert "ch" in max_width, (
-        "the cap needs a reading-measure component, not only a percentage - "
-        f"a percentage alone runs the full column on a wide window: {max_width}"
+    assert "width: fit-content" not in block, (
+        "fit-content sizing is the messaging-bubble shape this card no "
+        "longer wears"
     )
+    assert "max-width" not in block, (
+        "a reading-measure cap belongs to a short chat message, not a "
+        "full-width card"
+    )
+    assert "border-start-start-radius" not in block, (
+        "the squared-off corner tied a bubble to a cluster header that no "
+        "longer exists"
+    )
+    # The colour stripe that replaces the old cluster .turn's own
+    # border-inline-start-color - see 52-bubble.css's own comment.
+    assert "border-inline-start-color: var(--spk)" in block
     assert "flex: 1 1 100%" not in source, (
-        "a full-basis paragraph is what broke the shape the first time"
+        "a full-basis paragraph is what broke the messaging shape the first "
+        "time - still worth guarding even though the shape itself changed"
     )
 
 

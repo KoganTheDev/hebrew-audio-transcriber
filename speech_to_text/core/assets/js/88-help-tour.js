@@ -145,16 +145,17 @@
       titleKey: 'tour_speakers_title', titleFallback: 'Speaker names and colours',
       bodyKey: 'tour_speakers_body',
       bodyFallback: 'Rename a speaker here, or recolour them from the '
-        + "swatch beside their name. Clicking a speaker's name on one turn "
-        + 'reassigns just that turn to someone else.',
+        + "swatch beside their name. Clicking a sentence's own speaker "
+        + 'chip reassigns just that sentence, or the whole block around '
+        + 'it, to someone else.',
     },
     {
       selector: '.turn .ts',
       titleKey: 'tour_playback_title', titleFallback: 'Play a moment',
       bodyKey: 'tour_playback_body',
-      bodyFallback: 'Click a timestamp to play the recording from that '
-        + 'turn - a small player appears, and stops again at the end of '
-        + 'the turn it started from.',
+      bodyFallback: "Click a sentence's own timestamp to play the "
+        + 'recording from there - a small player appears, and stops again '
+        + "at the sentence's own end.",
     },
     {
       selector: '.turn .body[contenteditable]',

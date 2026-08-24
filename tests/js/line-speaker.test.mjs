@@ -57,16 +57,17 @@ test('choosing a different speaker on one bubble overrides only that bubble, lea
   assert.equal(first.dataset.override, 'true');
   assert.equal(first.querySelector('.bubble-spk').dataset.speaker, '1');
   assert.equal(first.querySelector('.bubble-spk-label').textContent, 'Speaker 2');
-  // The cluster's own chip - and the turn's own dataset - must be
-  // completely unaffected: this is a per-sentence override, not a
-  // reassignment of the cluster.
+  // The turn's own dataset must be completely unaffected: this is a
+  // per-sentence override, not a reassignment of the block.
   assert.equal(turn.dataset.speaker, '0');
-  assert.equal(turn.querySelector('.spk').dataset.speaker, '0');
 
-  // The untouched sibling bubble must carry no override at all.
+  // The untouched sibling bubble keeps showing the BLOCK's own identity -
+  // every bubble's chip is a resting identity now, never blank (see
+  // _render_bubble_html()'s docstring), so "untouched" means "still reads
+  // as speaker 0", not "carries no data-speaker at all".
   assert.equal(second.hasAttribute('data-override'), false);
-  assert.equal(second.querySelector('.bubble-spk').hasAttribute('data-speaker'), false);
-  assert.equal(second.querySelector('.bubble-spk-label').textContent, '');
+  assert.equal(second.querySelector('.bubble-spk').dataset.speaker, '0');
+  assert.equal(second.querySelector('.bubble-spk-label').textContent, 'Speaker 1');
 
   // The menu must close as part of picking an item, same as a cluster
   // reassignment does.
@@ -94,8 +95,11 @@ test('picking the cluster\'s own speaker on an overridden bubble clears the over
   click(clusterItem);
 
   assert.equal(bubble.hasAttribute('data-override'), false, 'the override must be cleared, not merely re-pointed at the cluster');
-  assert.equal(bubble.querySelector('.bubble-spk').hasAttribute('data-speaker'), false);
-  assert.equal(bubble.querySelector('.bubble-spk-label').textContent, '');
+  // Clearing restores the BLOCK's own identity onto the chip - it does not
+  // blank it, since every bubble's chip is a resting identity now, never an
+  // empty state (see paintBubbleOverride()'s own docstring).
+  assert.equal(bubble.querySelector('.bubble-spk').dataset.speaker, '0');
+  assert.equal(bubble.querySelector('.bubble-spk-label').textContent, 'Speaker 1');
 
   await wait(500);
   const saved = JSON.parse(window.localStorage.getItem(key));
@@ -177,27 +181,34 @@ test('an override survives a reload, replayed from localStorage by applyLineAssi
   });
 });
 
-test('the plain-panel row prefix shows the agreed name when every bubble in a single-bubble turn is overridden to the same speaker', () => {
+test('an override that makes a row agree with the row before it removes its own heading - the run merges', () => {
+  // Turn "0-1" has exactly one sentence/bubble, so overriding it to speaker
+  // 0 changes what EVERY bubble in the turn agrees on - the unambiguous
+  // case rowSpeakerName() (js/32-plain-text.js) resolves by reporting the
+  // overridden name directly, rather than falling back to the cluster's.
+  // Speaker 0 ("Speaker 1") is ALSO turn "0-0"'s own speaker, so this
+  // override makes two consecutive rows agree that did not before - proof
+  // that heading visibility is recomputed across rows, after overrides,
+  // not decided once per row in isolation (see rebuildPlain()'s own
+  // comment in js/32-plain-text.js).
   const { window, document } = buildWindow(getFixtureHtml('full'));
 
-  // Turn "0-1" has exactly one sentence/bubble, so overriding it changes
-  // what EVERY bubble in the turn agrees on - the unambiguous case
-  // rowSpeakerName() (js/32-plain-text.js) resolves by showing the
-  // overridden name directly in the row's own prefix, rather than falling
-  // back to the cluster's.
+  const row00 = document.querySelector('.plain-row[data-turn="0-0"]');
+  const row01 = document.querySelector('.plain-row[data-turn="0-1"]');
+  assert.equal(row00.querySelector('.plain-heading').textContent, 'Speaker 1', 'the first row of a document always starts a run');
+  assert.equal(row01.querySelector('.plain-heading').textContent, 'Speaker 2', 'before the override, row 0-1 starts its own run');
+
   const bubble = document.querySelector('.bubble[data-line="0-1-0"]');
   click(bubble.querySelector('.bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="0"]'));
 
-  const row = document.querySelector('.plain-row[data-turn="0-1"]');
-  const prefix = row.querySelector('.plain-prefix').textContent;
-  assert.ok(prefix.includes('Speaker 1:'), `expected the overridden name in the prefix, got: ${prefix}`);
-  assert.ok(!prefix.includes('Speaker 2'), 'the cluster\'s own (now-disagreed-with) name must not remain in the prefix');
+  assert.equal(row00.querySelector('.plain-heading').textContent, 'Speaker 1', 'unaffected - still the first row');
+  assert.equal(row01.querySelector('.plain-heading'), null, 'row 0-1 now agrees with the row before it, so its heading is gone');
 
   window.close();
 });
 
-test('the plain-panel row prefix falls back to the cluster\'s name and tags only the disagreeing line when a turn is genuinely mixed', () => {
+test('the plain-panel row falls back to the cluster\'s name and tags only the disagreeing line when a turn is genuinely mixed', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
 
   // Turn "0-0" has two bubbles. Overriding only the second one to speaker 1
@@ -207,8 +218,8 @@ test('the plain-panel row prefix falls back to the cluster\'s name and tags only
   click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
 
   const row = document.querySelector('.plain-row[data-turn="0-0"]');
-  const prefix = row.querySelector('.plain-prefix').textContent;
-  assert.ok(prefix.includes('Speaker 1:'), `expected the cluster's own name to remain the row prefix, got: ${prefix}`);
+  const heading = row.querySelector('.plain-heading').textContent;
+  assert.ok(heading.includes('Speaker 1'), `expected the cluster's own name to remain the row heading, got: ${heading}`);
 
   const body = row.querySelector('.plain-body').textContent;
   assert.ok(body.includes('[Speaker 2]'), `expected the disagreeing line to carry its own bracketed tag, got: ${body}`);

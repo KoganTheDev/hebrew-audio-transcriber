@@ -51,7 +51,7 @@
     // onto the DOM rather than into a JS-only property outerHTML would miss.
     // document.documentElement.outerHTML in exportCopy() already carries
     // every one of those verbatim, the same way it already carries a
-    // cluster's own reassigned .spk with no baking step of its own.
+    // block's own reassigned .bubble-spk with no baking step of its own.
     document.querySelectorAll('.plain input[type="checkbox"]').forEach(function (box) {
       if (box.checked) {
         box.setAttribute('checked', '');

@@ -6,34 +6,27 @@
     var strip = stripFor(fileIndex);
 
     if (section) {
-      section.querySelectorAll('.spk').forEach(function (el) {
-        var i = el.dataset.speaker;
-        // dataset.fallback carries the already-translated "Speaker N" produced
-        // by the renderer - this process has no way to build it itself.
-        el.textContent = (names[i] && names[i].trim()) || el.dataset.fallback || '';
-      });
-      // .bubble-spk[data-speaker], not .bubble-spk alone: a bubble with no
-      // override carries no data-speaker attribute at all (see
-      // paintBubbleOverride() below), so this already excludes every
-      // ordinary bubble on its own - only a bubble currently showing its own
-      // chip needs its label kept in step with a rename, exactly the way a
-      // cluster's .spk does. A separate loop from .spk's above, not folded
-      // into the same querySelectorAll/textContent pair: .bubble-spk also
-      // carries a resting icon (see _render_bubble_html() in
-      // core/formatting/document.py) that el.textContent = ... would erase
-      // right along with the old name, so only the child .bubble-spk-label
-      // span gets touched here, leaving the icon in place underneath it.
-      section.querySelectorAll('.bubble-spk[data-speaker]').forEach(function (el) {
+      // Every bubble carries a chip now - the cluster header that used to
+      // hold the only ".spk" is gone (see the review plan's "flat sentence
+      // cards" section), and every bubble's own chip is populated at render
+      // time, not just an overridden one's - so a plain ".bubble-spk" match
+      // (not ".bubble-spk[data-speaker]", which used to exclude an
+      // un-overridden bubble because it carried no data-speaker at all)
+      // reaches every card that needs repainting on a rename.
+      section.querySelectorAll('.bubble-spk').forEach(function (el) {
         var i = el.dataset.speaker;
         var label = el.querySelector('.bubble-spk-label');
+        // dataset.fallback carries the already-translated "Speaker N"
+        // produced by the renderer - this process has no way to build it
+        // itself.
         if (label) { label.textContent = (names[i] && names[i].trim()) || el.dataset.fallback || ''; }
       });
       rebuildPlain(section);
     }
 
     // The name inputs moved into the sidebar's speaker roster (.speakers)
-    // two rounds ago; .source only ever holds the read-only .spk chips
-    // above. Querying .speaker-name inside .source used to find nothing,
+    // two rounds ago; .source only ever holds the read-only .bubble-spk
+    // chips above. Querying .speaker-name inside .source used to find nothing,
     // which is why "use these names in all files" repainted the chips but
     // left every other file's sidebar input showing its old value.
     if (strip) {
@@ -84,7 +77,7 @@
   // one binding path so the two can never drift into different behaviour.
   // Recolouring itself is handled by the delegated click listener in
   // bindMenus() (the row's .swatch-trigger opens a popover, same shape as a
-  // turn's .spk), so this only has the name input left to wire up.
+  // bubble's own .bubble-spk), so this only has the name input left to wire up.
   function bindSpeakerRow(row, fileIndex) {
     var input = row.querySelector('.speaker-name');
     input.addEventListener('input', function () {
@@ -174,16 +167,15 @@
     if (section) {
       section.querySelectorAll('.turn[data-speaker="' + id + '"]').forEach(function (turn) {
         turn.dataset.palette = String(palette);
-        var spk = turn.querySelector('.spk');
-        if (spk) { spk.dataset.palette = String(palette); }
       });
-      // A bubble overriding ITS cluster to this same speaker id can live
-      // inside a turn whose own cluster is a different speaker entirely -
-      // the loop above, keyed on .turn[data-speaker], would never reach it.
-      // Walked separately here for that reason, updating both the button's
-      // own copy of the palette and the bubble's (52-bubble.css's override
-      // border reads --spk off the bubble's [data-palette], not the
-      // button's - see paintBubbleOverride()'s own comment).
+      // Every bubble showing this speaker's id - whether that is its
+      // block's own default identity or a per-sentence override pointing at
+      // it - carries data-speaker now (see _render_bubble_html()'s and
+      // paintBubbleOverride()'s own docstrings), so this single selector
+      // reaches every card that needs repainting without the turn-level
+      // loop above needing to reach into its bubbles itself. Updates both
+      // the button's own copy of the palette and the bubble's (52-bubble.css
+      // reads --spk off the bubble's own [data-palette]).
       section.querySelectorAll('.bubble-spk[data-speaker="' + id + '"]').forEach(function (btn) {
         btn.dataset.palette = String(palette);
         var bubble = btn.closest('.bubble');
@@ -196,8 +188,40 @@
   // Builds the reassignment menu fresh from the current speaker roster every
   // time it opens, rather than keeping a parallel copy in sync - a speaker
   // added or renamed after the page loaded is picked up automatically.
-  function buildSpeakerMenu(fileIndex, currentId) {
+  //
+  // scope, when passed, adds a second group above the speaker list: "This
+  // sentence" / "This whole block" - the flat-card replacement for the old
+  // cluster header's own reassignment control, which used to be the only
+  // way to move a whole block of sentences to a different speaker at once
+  // (see the review plan's "flat sentence cards" section, "preserve
+  // turn-level reassignment"). Only a BUBBLE's own trigger passes this - a
+  // menu with no scope group (scope === undefined) picks the speaker alone,
+  // which is not reachable any more from ordinary bindMenus() clicks now
+  // that the cluster header itself is gone, but keeps this function honest
+  // about what it builds rather than hard-coding the group into every menu.
+  // {current: 'line'|'block'} names which of the two is checked; the caller
+  // (bindMenus()) is what remembers this across repeated opens of the same
+  // menu instance, not this function - see its own scopeFor()/currentScope.
+  function buildSpeakerMenu(fileIndex, currentId, scope) {
     var menu = el('div', 'spk-menu', { role: 'menu', 'aria-label': t('reassign', 'Reassign to') });
+
+    if (scope) {
+      var group = el('div', 'spk-menu-scope', { role: 'group', 'aria-label': t('reassign_scope', 'Apply to') });
+      [
+        ['line', t('reassign_scope_line', 'This sentence')],
+        ['block', t('reassign_scope_block', 'This whole block')],
+      ].forEach(function (pair) {
+        var item = el('button', 'spk-scope-item', {
+          role: 'menuitemradio',
+          'aria-checked': String(pair[0] === scope.current),
+        });
+        item.type = 'button';
+        item.dataset.scope = pair[0];
+        item.textContent = pair[1];
+        group.appendChild(item);
+      });
+      menu.appendChild(group);
+    }
 
     var strip = stripFor(fileIndex);
     if (!strip) { return menu; }
@@ -258,13 +282,23 @@
   // system dismisses its sibling rather than stacking.
   var openMenuBtn = null;
 
-  // The .turn currently raised above its siblings because it holds an open
-  // .spk-menu - see .turn.menu-open in transcript.css for why this has to
-  // be an explicit class transcript.js owns, rather than a :hover rule: the
-  // menu stays open after the pointer leaves the card, so a hover-keyed
-  // z-index would drop the card back underneath its next sibling at exactly
-  // the moment the menu is being used, not before.
-  var menuOpenTurn = null;
+  // The .bubble currently raised above its siblings because it holds an
+  // open .spk-menu - see .bubble.menu-open in 52-bubble.css for why this
+  // has to be an explicit class transcript.js owns, rather than a :hover
+  // rule: the menu stays open after the pointer leaves the card, so a
+  // hover-keyed z-index would drop the card back underneath its next
+  // sibling at exactly the moment the menu is being used, not before. Used
+  // to be the whole .turn cluster - now that cards are flat, one sentence
+  // wide, the card that needs raising is the .bubble the menu actually
+  // opened from, not its (invisible) .turn wrapper.
+  var menuOpenCard = null;
+
+  // Which scope ('line' or 'block') is currently selected in the open
+  // .spk-menu's own scope group (see buildSpeakerMenu()'s own comment) -
+  // reset to 'line' every time a menu opens, and flipped in place by a
+  // click on a .spk-scope-item without closing the menu, so a reader can
+  // change their mind about scope before picking a speaker.
+  var openMenuScope = 'line';
 
   function closeMenu() {
     var menus = document.querySelectorAll('.spk-menu, .swatch-menu');
@@ -290,8 +324,9 @@
       openMenuBtn.setAttribute('aria-expanded', 'false');
       if (focusWasInMenu) { openMenuBtn.focus(); }
     }
-    if (menuOpenTurn) { menuOpenTurn.classList.remove('menu-open'); menuOpenTurn = null; }
+    if (menuOpenCard) { menuOpenCard.classList.remove('menu-open'); menuOpenCard = null; }
     openMenuBtn = null;
+    openMenuScope = 'line';
   }
 
   // Escaping .outline's overflow-y: auto is only a concern while the
@@ -409,14 +444,45 @@
     } else {
       btn.insertAdjacentElement('afterend', menu);
       if (menu.classList.contains('spk-menu')) {
-        menuOpenTurn = btn.closest('.turn');
-        if (menuOpenTurn) { menuOpenTurn.classList.add('menu-open'); }
+        // Raises the .bubble the menu opened from, not the .turn it lives
+        // in - see menuOpenCard's own comment for why a flat card is what
+        // needs the stacking help now.
+        menuOpenCard = btn.closest('.bubble');
+        if (menuOpenCard) { menuOpenCard.classList.add('menu-open'); }
       }
     }
     btn.setAttribute('aria-expanded', 'true');
     openMenuBtn = btn;
     var first = menu.querySelector('[role="menuitemradio"]');
     if (first) { first.focus(); }
+  }
+
+  // Repaints every bubble in a block that is NOT itself carrying its own
+  // per-sentence override, to the block's new speaker - the "apply to this
+  // whole block" scope of the reassignment menu (see buildSpeakerMenu()'s
+  // own comment), and the direct replacement for the old cluster header's
+  // .spk, which used to be the only control that could move a whole block
+  // at once. A bubble that already disagrees with its block (data-override)
+  // is left alone: reassigning the block is not the same action as
+  // clearing every sentence's own opinion about it, the same way the old
+  // cluster-level reassignment never touched state.assignLine either.
+  // Shared by reassignTurn() (a fresh choice) and applyAssignments()
+  // (replaying a saved one on reload) - both need every non-overridden
+  // bubble in the block to show the SAME new identity a live reassignment
+  // paints, since a bubble's chip is the resting identity now, not an
+  // override-only control (see _render_bubble_html()'s docstring).
+  function repaintBlockBubbles(turn, newId, newPalette, fallback) {
+    turn.querySelectorAll('.body .bubble').forEach(function (bubble) {
+      if (bubble.hasAttribute('data-override')) { return; }
+      bubble.dataset.speaker = newId;
+      bubble.dataset.palette = newPalette;
+      var btn = bubble.querySelector('.bubble-spk');
+      if (btn) {
+        btn.dataset.speaker = newId;
+        btn.dataset.palette = newPalette;
+        btn.dataset.fallback = fallback;
+      }
+    });
   }
 
   function reassignTurn(turn, newId, newPalette) {
@@ -428,69 +494,59 @@
 
     turn.dataset.speaker = newId;
     turn.dataset.palette = newPalette;
-    var spk = turn.querySelector('.spk');
-    if (spk) {
-      spk.dataset.speaker = newId;
-      spk.dataset.palette = newPalette;
-      spk.dataset.fallback = fallback;
-    }
+    repaintBlockBubbles(turn, newId, newPalette, fallback);
 
     state.assign[turn.dataset.turn] = Number(newId);
-    // applyNames repaints every .spk in the file from state.names/fallback,
-    // which already covers this turn now that its data-speaker points at the
-    // new identity - no separate "set this one label" path needed.
+    // applyNames repaints every .bubble-spk in the file from
+    // state.names/fallback, which already covers every card in this block
+    // now that each one's own data-speaker points at the new identity - no
+    // separate "set this one label" path needed.
     applyNames(fileIndex);
     rebuildPlain(section);
     save();
   }
 
-  // Paints (or clears) one bubble's own speaker chip - the sentence-level
-  // sibling of applyAssignments()'s cluster-level repaint, and shared by
-  // reassignLine() (a fresh choice) and applyLineAssignments() (replaying a
-  // saved one). `newId` is the override's speaker id, or null/undefined to
-  // clear the override back to "this bubble just reads as its cluster".
+  // Paints (or clears) one bubble's own speaker chip. `newId` is the
+  // override's speaker id, or null/undefined to clear the override.
+  //
+  // Clearing restores the BLOCK's own current identity onto the chip -
+  // never blanks it - because every bubble's chip is the resting speaker
+  // identity now, not an override-only affordance the way it was before
+  // the cluster header existed (see _render_bubble_html()'s docstring): a
+  // blank chip is not a valid state for a card to be in any more.
   //
   // Deliberately does not set the button's own label text itself:
-  // applyNames() already repaints every .spk-shaped label in the file from
-  // state.names/fallback (see its own comment - the .bubble-spk[data-speaker]
-  // loop there exists for exactly this), so duplicating that
+  // applyNames() already repaints every .bubble-spk label in the file from
+  // state.names/fallback (see its own comment), so duplicating that
   // name-resolution logic here would just be a second copy that could drift
   // from the first the next time a name changes. Every caller of this
-  // function calls applyNames(fileIndex) afterwards. Clearing IS handled
-  // directly here, though - blanking .bubble-spk-label rather than the
-  // whole button, so the button's own resting icon (_render_bubble_html(),
-  // core/formatting/document.py) is left in place rather than needing to be
-  // rebuilt from nothing.
+  // function calls applyNames(fileIndex) afterwards.
   function paintBubbleOverride(bubble, fileIndex, newId) {
     var btn = bubble.querySelector('.bubble-spk');
     if (!btn) { return; }
 
+    var id;
     if (newId === null || typeof newId === 'undefined') {
       bubble.removeAttribute('data-override');
-      bubble.removeAttribute('data-palette');
-      btn.removeAttribute('data-speaker');
-      btn.removeAttribute('data-palette');
-      btn.removeAttribute('data-fallback');
-      var label = btn.querySelector('.bubble-spk-label');
-      if (label) { label.textContent = ''; }
-      return;
+      var turn = bubble.closest('.turn');
+      id = turn ? turn.dataset.speaker : undefined;
+      if (typeof id === 'undefined') { return; }
+    } else {
+      id = String(newId);
+      // data-override on the bubble itself (not just on its button) is what
+      // 52-bubble.css keys the disagreement's visual accent on. data-palette
+      // rides on the bubble too, alongside the button's own copy, because
+      // that CSS reads --spk/--spk-text off the bubble's own [data-palette]
+      // (see 00-tokens.css's shared block).
+      bubble.setAttribute('data-override', 'true');
     }
 
-    var id = String(newId);
     var strip = stripFor(fileIndex);
     var row = strip && strip.querySelector('.speaker-row[data-speaker="' + id + '"]');
     var palette = row ? row.dataset.palette : id;
     var fallback = row ? row.querySelector('.speaker-name').placeholder : '';
 
-    // data-override on the bubble itself (not just on its button) is what
-    // 52-bubble.css keys the whole bubble's visual override on - the border
-    // tint that makes the disagreement readable even before the reader
-    // hovers the control. data-palette rides on the bubble too, alongside
-    // the button's own copy, because that CSS reads --spk/--spk-text off
-    // the bubble's own [data-palette] (see 00-tokens.css's shared block),
-    // the same way a cluster's --spk resolves off .turn rather than only
-    // off its inner .spk.
-    bubble.setAttribute('data-override', 'true');
+    bubble.dataset.speaker = id;
     bubble.dataset.palette = String(palette);
     btn.dataset.speaker = id;
     btn.dataset.palette = String(palette);
@@ -517,10 +573,10 @@
       paintBubbleOverride(bubble, fileIndex, newId);
     }
     // Repaints this bubble's own label (from state.names/fallback, same as
-    // any other .spk-shaped control - see applyNames()'s widened selector)
-    // and keeps the plain-text panel's prefix/per-line tags in step, since
-    // an override changes what rowSpeakerName() (js/32-plain-text.js) reads
-    // for this turn.
+    // any other .bubble-spk - see applyNames()'s own comment) and keeps the
+    // plain-text panel's headings/per-line tags in step, since an override
+    // changes what rowSpeakerName() (js/32-plain-text.js) reads for this
+    // turn.
     applyNames(fileIndex);
     save();
   }
@@ -542,31 +598,37 @@
     });
   }
 
-  // Delegated, not bound per-button: both a turn's .spk and a speaker row's
-  // .swatch-trigger, plus the popovers either one opens, are handled by this
-  // one listener - added speakers get the same behaviour as rendered ones
-  // for free, with nothing new to bind when a row is created later.
+  // Delegated, not bound per-button: a bubble's own .bubble-spk and a
+  // speaker row's .swatch-trigger, plus the popovers either one opens, are
+  // handled by this one listener - added speakers get the same behaviour as
+  // rendered ones for free, with nothing new to bind when a row is created
+  // later. There is no more cluster-level .spk to bind at all - the header
+  // that used to carry one is gone (see the review plan's "flat sentence
+  // cards" section); the "apply to this whole block" scope option on the
+  // bubble's own menu (see buildSpeakerMenu()) is what replaced it.
   function bindMenus() {
     document.addEventListener('click', function (e) {
-      var spkBtn = e.target.closest ? e.target.closest('.spk') : null;
-      if (spkBtn) {
+      // The scope group's own item - flips openMenuScope in place without
+      // closing the menu, and repaints the group's aria-checked state so a
+      // reader can see which scope is selected before picking a speaker.
+      var scopeItem = e.target.closest ? e.target.closest('.spk-scope-item') : null;
+      if (scopeItem) {
         e.stopPropagation();
-        toggleMenu(spkBtn, function () {
-          var turn = spkBtn.closest('.turn');
-          var fileIndex = turn.closest('.source').dataset.file;
-          return buildSpeakerMenu(fileIndex, turn.dataset.speaker);
-        });
+        openMenuScope = scopeItem.dataset.scope;
+        var group = scopeItem.closest('.spk-menu-scope');
+        if (group) {
+          group.querySelectorAll('.spk-scope-item').forEach(function (item) {
+            item.setAttribute('aria-checked', String(item === scopeItem));
+          });
+        }
         return;
       }
 
-      // The sentence-level trigger - same buildSpeakerMenu(), same
-      // toggleMenu()/positionDetachedMenu() machinery as a cluster's .spk
-      // just above, only the anchor and the "current" id differ. `current`
-      // prefers the button's OWN data-speaker (set by paintBubbleOverride()
-      // once this bubble already carries an override) and falls back to the
-      // cluster's, so the menu opens with the radio that is actually in
-      // effect checked - not always the cluster's, once this bubble has its
-      // own opinion.
+      // The bubble's own trigger - the only place a reassignment menu opens
+      // from now. `current` prefers the button's OWN data-speaker, which is
+      // always populated (the resting identity, not an override-only
+      // value any more - see _render_bubble_html()'s docstring), so the
+      // menu opens with whichever radio is actually in effect checked.
       var bubbleSpkBtn = e.target.closest ? e.target.closest('.bubble-spk') : null;
       if (bubbleSpkBtn) {
         e.stopPropagation();
@@ -574,7 +636,8 @@
           var turn = bubbleSpkBtn.closest('.turn');
           var fileIndex = turn.closest('.source').dataset.file;
           var current = bubbleSpkBtn.dataset.speaker || turn.dataset.speaker;
-          return buildSpeakerMenu(fileIndex, current);
+          openMenuScope = 'line';
+          return buildSpeakerMenu(fileIndex, current, { current: openMenuScope });
         });
         return;
       }
@@ -594,16 +657,16 @@
         var menu = item.closest('.spk-menu');
         var turn = menu ? menu.closest('.turn') : null;
         // openMenuBtn - the button that opened this menu - still identifies
-        // which anchor it belongs to, read before closeMenu() clears it
+        // which bubble it belongs to, read before closeMenu() clears it
         // (same "read before closeMenu()" pattern the swatch branch below
-        // already uses for its own row lookup). A bubble's own trigger
-        // carries the .bubble-spk class the cluster's .spk never does, so
-        // this is what tells a per-line pick apart from a whole-cluster one
-        // sharing the exact same menu markup.
+        // already uses for its own row lookup).
         var lineBubble = openMenuBtn && openMenuBtn.classList.contains('bubble-spk')
           ? openMenuBtn.closest('.bubble') : null;
+        var scope = openMenuScope;
         closeMenu();
-        if (lineBubble) {
+        if (lineBubble && scope === 'block' && turn) {
+          reassignTurn(turn, item.dataset.speaker, item.dataset.palette);
+        } else if (lineBubble) {
           reassignLine(lineBubble, item.dataset.speaker);
         } else if (turn) {
           reassignTurn(turn, item.dataset.speaker, item.dataset.palette);
@@ -661,7 +724,7 @@
     });
   }
 
-  // Replays turn reassignments saved in a previous session.
+  // Replays turn (block-level) reassignments saved in a previous session.
   function applyAssignments() {
     Object.keys(state.assign).forEach(function (turnId) {
       var turn = document.querySelector('.turn[data-turn="' + turnId + '"]');
@@ -671,15 +734,10 @@
       var strip = stripFor(section.dataset.file);
       var row = strip && strip.querySelector('.speaker-row[data-speaker="' + newId + '"]');
       var palette = row ? row.dataset.palette : newId;
-      var fallback = row ? row.querySelector('.speaker-name').placeholder : null;
+      var fallback = row ? row.querySelector('.speaker-name').placeholder : '';
 
       turn.dataset.speaker = newId;
       turn.dataset.palette = palette;
-      var spk = turn.querySelector('.spk');
-      if (spk) {
-        spk.dataset.speaker = newId;
-        spk.dataset.palette = palette;
-        if (fallback !== null) { spk.dataset.fallback = fallback; }
-      }
+      repaintBlockBubbles(turn, newId, palette, fallback);
     });
   }

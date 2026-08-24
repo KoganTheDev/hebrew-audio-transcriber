@@ -26,7 +26,6 @@ from .timecode import (
     LRI,
     PDI,
     format_hhmmss,
-    format_instant,
     format_range,
 )
 from .turns import Sentence, Turn, _speaker_indices
@@ -253,191 +252,10 @@ def _render_outline_html(
     return f'<aside class="outline" aria-label="{label}" id="outline">{"".join(sections)}</aside>'
 
 
-def _render_bubble_html(
-    sentence: Sentence,
-    line_id: str,
-    timestamps: bool,
-    strings: Dict[str, str],
-) -> str:
-    """
-    One <div class="bubble">: an individually-timed sentence.
-
-    The messaging-app-style unit the turn (now a cluster - see
-    _render_turn_html's own docstring) is made of. data-start/data-end live
-    on the bubble itself, unconditionally, the same way the turn article
-    already always carries data-start regardless of the timestamps toggle -
-    see this function's caller. That is what lets per-bubble playback (the
-    "no feature loss" checklist item this replaces the turn-only version of)
-    work independent of whether the visible timestamp span is shown.
-
-    No sentence number is shown here any more - numbering now lives only in
-    the plain-text panel below (see _render_plain_row_html()), where a
-    reader can pair a number with the sentence's own timestamp range. The
-    bubble keeps data-line/data-start/data-end regardless, since JS keys on
-    all three for playback, editing and per-sentence speaker overrides.
-
-    The time is an LTR run inside RTL text, so it gets the same LRI/PDI
-    isolate plus dir="ltr" the file position (_render_file_bar_html) and the
-    plain-panel lead-in (_render_plain_row_html) already use - see
-    timecode.py's module docstring for why a bare digit run still needs it
-    once it sits next to other LTR runs inside one RTL line.
-
-    It also carries contenteditable="false", because a bubble sits inside
-    .body, which is contenteditable="true" so the sentence text can be
-    corrected in place. Without the opt-out the timestamp is editable too: it
-    is an ordinary text node inside an editable subtree, so a user can type
-    over it or delete it with a backspace at the start of a line, and
-    readParagraphs() would then persist the damage. The plain-panel lead-in
-    already guards itself the same way for the same reason - see
-    _render_plain_row_html.
-
-    The .bubble-spk-anchor/.bubble-spk pair is the per-sentence counterpart
-    to the cluster header's .spk-anchor/.spk (_render_turn_html) - the "no
-    feature loss" checklist's "Reassign speaker" row explicitly asks for
-    this at bubble scope, since a mid-cluster diarization miss cannot
-    otherwise be corrected by hand at all. It carries no data-speaker of its
-    own at render time: this module has no client-side state to read (an
-    override lives only in localStorage, via state.assignLine), so the
-    button renders inert and transcript.js's paintBubbleOverride() /
-    applyLineAssignments() (js/24-speakers-menus.js) fill it in - and blank
-    it back out - entirely client-side, the same division of labour
-    applyAssignments() already has with the cluster-level .spk. Always
-    present, not injected only when an override exists, for the same reason
-    every other control on this page is server-rendered: it has to be a
-    valid click target the moment the page loads, with or without
-    JavaScript history to replay. contenteditable="false" for the same
-    reason as .ts above - it is UI chrome sitting inside .body's editable
-    region, not sentence text.
-    """
-    reassign_label = html.escape(strings.get("reassign_line", "Reassign this sentence"))
-    lines = [
-        f'<div class="bubble" data-line="{line_id}"'
-        f' data-start="{sentence.start:.2f}" data-end="{sentence.end:.2f}">',
-        f"<p>{html.escape(sentence.text)}</p>",
-        f'<span class="bubble-spk-anchor" contenteditable="false">'
-        f'<button type="button" class="bubble-spk" aria-haspopup="true"'
-        f' aria-expanded="false" aria-label="{reassign_label}">{_icon("user")}'
-        f'<span class="bubble-spk-label"></span></button>'
-        f'</span>',
-    ]
-    if timestamps:
-        # A real <button>, like the cluster header's own timestamp, not a
-        # styled <span>. The click target has to be reachable by keyboard:
-        # a span is inert to Tab whatever it is styled to look like, so a
-        # hover and focus affordance on one is a promise the markup cannot
-        # keep. Reusing the existing play_from string means this adds no new
-        # i18n key - the label differs only in the instant it names.
-        aria = html.escape(
-            strings.get("play_from", "Play from {t}")
-            .replace("{t}", format_hhmmss(sentence.start))
-        )
-        lines.append(
-            f'<button type="button" class="ts" dir="ltr" contenteditable="false"'
-            f' aria-label="{aria}">{format_instant(sentence.start)}</button>'
-        )
-    lines.append("</div>")
-    return "".join(lines)
-
-
-def _render_turn_html(
-    turn: Turn,
-    turn_id: str,
-    sentences: List[Sentence],
-    speaker_label: Optional[str],
-    timestamps: bool,
-    strings: Dict[str, str],
-) -> str:
-    """One <article class="turn">: an optional header, then one bubble per sentence.
-
-    "turn" is now the WhatsApp-style CLUSTER of same-speaker bubbles, not the
-    unit of text itself - see the sentence-bubbles plan, 1.2, for why
-    data-turn stays on this element unchanged rather than being replaced:
-    everything already keyed on it (saved edits, localStorage, low-confidence
-    flags, plain-row sync, outline, search) keeps working untouched, and only
-    the level one down (the bubble) is new.
-
-    sentences comes from the caller (_render_document_html) rather than
-    being computed here purely to avoid calling turn.sentences() twice for
-    the same turn - it also feeds that caller's low-confidence check.
-    Bubbles no longer carry a visible number, so unlike sentences this
-    function needs no per-document running count from its caller any more;
-    see _render_plain_html() for where that count still lives.
-    """
-    header_parts = []
-    if timestamps:
-        # dir="ltr" is what the browser acts on for layout; the LRI/PDI isolate
-        # characters from format_range() are kept too so copied plain text
-        # still orders correctly outside the browser. data-end rides beside
-        # data-start because playback now has to stop somewhere, not just
-        # start somewhere - see the timeupdate handler in transcript.js.
-        aria = html.escape(strings.get("play_from", "Play from {t}")
-                           .replace("{t}", format_hhmmss(turn.start)))
-        header_parts.append(
-            f'<button class="ts" dir="ltr" data-start="{turn.start:.2f}"'
-            f' data-end="{turn.end:.2f}" aria-label="{aria}">'
-            f'{_icon("play")}<span dir="ltr">{format_range(turn.start, turn.end)}</span></button>'
-        )
-
-    if speaker_label is not None and turn.speaker is not None:
-        # Speakers are 0-based internally and 1-based to a human reader. The
-        # fallback rides along so the page can restore it when a custom name
-        # is cleared or a turn is reassigned to a speaker with no custom name
-        # of its own - the page cannot rebuild a translated label itself.
-        # A <button>, not a <span>, now: this is the control that opens the
-        # reassignment menu (see bindMenus() in transcript.js), so it
-        # has to be reachable and activatable the way any control is.
-        label = html.escape(_speaker_fallback(speaker_label, turn.speaker))
-        palette = _palette_index(turn.speaker)
-        # Wrapped in .spk-anchor (position: relative, sized to hug just this
-        # button) rather than leaving .spk itself as the reassignment menu's
-        # anchor - the menu is inserted as this wrapper's child, a *sibling*
-        # of .spk, because the HTML content model forbids interactive
-        # descendants (the menu's own <button>s) inside a <button>. See
-        # .spk-anchor's comment in transcript.css for the full reasoning.
-        header_parts.append(
-            f'<span class="spk-anchor">'
-            f'<button type="button" class="spk" data-speaker="{turn.speaker}"'
-            f' data-palette="{palette}" data-fallback="{label}"'
-            f' aria-haspopup="true" aria-expanded="false">{label}</button>'
-            f'</span>'
-        )
-
-    copy_label = _t(strings, "copy_turn", "Copy this turn")
-    copy_button = _button(None, css_class="icon-btn copy-turn", icon="copy", aria_label=copy_label)
-    actions = f'<span class="turn-actions">{copy_button}</span>'
-
-    speaker_attr = (
-        f' data-speaker="{turn.speaker}" data-palette="{_palette_index(turn.speaker)}"'
-        if turn.speaker is not None else ""
-    )
-    body_label = _t(strings, "turn_text", "Turn text")
-
-    # An <h2> holding nothing but a copy button is a heading that says nothing,
-    # so with neither a timestamp nor a speaker the actions stand on their own
-    # and the turn is just its text - which is also what the plain-output path
-    # looked like before any of this existed.
-    header = f"<h2>{''.join(header_parts)}{actions}</h2>" if header_parts else actions
-
-    lines = [
-        f'<article class="turn" data-turn="{turn_id}"'
-        f' data-start="{turn.start:.2f}"{speaker_attr}>',
-        header,
-        f'<div class="body" contenteditable="true" role="textbox"'
-        f' aria-multiline="true" aria-label="{body_label}">',
-    ]
-    for idx, sentence in enumerate(sentences):
-        line_id = f"{turn_id}-{idx}"
-        lines.append(
-            _render_bubble_html(sentence, line_id, timestamps, strings)
-        )
-    lines.append("</div>")
-    lines.append("</article>")
-    return "\n".join(lines)
-
-
 def _display_end_second(sentence) -> int:
     """
-    The end second to SHOW for one sentence's range in the plain-text panel.
+    The end second to SHOW for one sentence's range - on its own card and in
+    the plain-text panel.
 
     format_range() truncates both ends via int(), so a sentence under a
     second long - routine, since sentences sit closer together than that -
@@ -455,9 +273,180 @@ def _display_end_second(sentence) -> int:
     long enough to cross a whole-second boundary keeps its true truncated
     end and stays flush with its neighbour; only a sub-second sentence is
     widened, and only to the smallest non-degenerate value. format_range()
-    itself is left alone - the turn header still uses it un-rounded.
+    itself is left alone - the true data-end used for playback is the
+    sentence's own untouched end, not this display-only value.
     """
     return max(int(sentence.end), int(sentence.start) + 1)
+
+
+def _render_bubble_html(
+    sentence: Sentence,
+    line_id: str,
+    turn_id: str,
+    timestamps: bool,
+    speaker_label: Optional[str],
+    speaker: Optional[int],
+    strings: Dict[str, str],
+) -> str:
+    """
+    One <div class="bubble">: a full-width card for one sentence.
+
+    Flat cards, not a messaging bubble inside a cluster - see the review
+    plan's "flat sentence cards" section. .turn (_render_turn_html) is now a
+    transparent grouping wrapper only; everything that used to live in its
+    header (the speaker chip, the play range, copy) renders on every card
+    instead, which is what "one card per sentence" means. data-turn rides
+    along on the bubble itself (in addition to the wrapping .turn already
+    carrying it) so the "apply to this whole block" reassignment action
+    (see the speaker menu wiring in js/24-speakers-menus.js) can find every
+    sibling card sharing this one's block with a single selector, without
+    walking back up to .turn first.
+
+    data-start/data-end live on the bubble itself, unconditionally, the same
+    way the turn article already always carries data-start regardless of the
+    timestamps toggle. That is what lets per-bubble playback work
+    independent of whether the visible timestamp span is shown.
+
+    No sentence number is shown here - numbering lives only in the
+    plain-text panel below (see _render_plain_row_html()), where a reader
+    can pair a number with the sentence's own timestamp range.
+
+    The play control shows the sentence's RANGE now, not a single instant -
+    the messaging-style instant this replaces existed only to dodge the
+    degenerate "0:00 - 0:00" a sub-second sentence produces at whole-second
+    resolution, and _display_end_second() (introduced for the plain-text
+    panel) already solves that same problem, so it is reused here rather
+    than solved twice. The button's own data-start/data-end are NOT set -
+    bindAudio() (js/64-audio.js) already reads a bubble .ts's range off the
+    wrapping .bubble via btn.closest('.bubble'), so a second copy here would
+    be redundant and could drift from the true (un-rounded) end that
+    playback actually uses.
+
+    The time is an LTR run inside RTL text, so it gets the same LRI/PDI
+    isolate plus dir="ltr" the file position (_render_file_bar_html) and the
+    plain-panel lead-in (_render_plain_row_html) already use - see
+    timecode.py's module docstring for why a bare digit run still needs it
+    once it sits next to other LTR runs inside one RTL line.
+
+    It also carries contenteditable="false", because a bubble sits inside
+    .body, which is contenteditable="true" so the sentence text can be
+    corrected in place. Without the opt-out the timestamp is editable too: it
+    is an ordinary text node inside an editable subtree, so a user can type
+    over it or delete it with a backspace at the start of a line, and
+    readParagraphs() would then persist the damage. The plain-panel lead-in
+    already guards itself the same way for the same reason.
+
+    The .bubble-spk-anchor/.bubble-spk pair is the speaker chip AND the
+    reassignment affordance in one control - the same .bubble-spk that used
+    to be a hidden-until-hovered override-only control before the cluster
+    header existed to show a resting identity. Now that there is no cluster
+    header, this chip carries the resting identity too: it is always
+    rendered filled, in the turn's own speaker colour, with the turn's own
+    (possibly per-sentence-overridden, client-side) name - never blank.
+    reassignLine()/paintBubbleOverride() (js/24-speakers-menus.js) repaint it
+    when an override is set or cleared; clearing one now restores the
+    CLUSTER's own identity onto the chip rather than blanking it, since a
+    blank chip is no longer a valid resting state. Absent entirely when
+    there is no speaker to show at all (no diarization), the same guard
+    _render_turn_html's old header chip used.
+
+    Copy moves down from the cluster's own .turn-actions to sit on every
+    card, copying just this one sentence (see bubblePlainText() in
+    js/32-plain-text.js) - the cluster-level "copy this turn" action has no
+    home left once the header is gone.
+    """
+    reassign_label = html.escape(strings.get("reassign_line", "Reassign this sentence"))
+    chip_html = ""
+    speaker_attr = ""
+    if speaker_label is not None and speaker is not None:
+        label = html.escape(_speaker_fallback(speaker_label, speaker))
+        palette = _palette_index(speaker)
+        speaker_attr = f' data-speaker="{speaker}" data-palette="{palette}"'
+        chip_html = (
+            f'<span class="bubble-spk-anchor" contenteditable="false">'
+            f'<button type="button" class="bubble-spk" data-speaker="{speaker}"'
+            f' data-palette="{palette}" data-fallback="{label}"'
+            f' aria-haspopup="true" aria-expanded="false" aria-label="{reassign_label}">'
+            f'<span class="bubble-spk-label">{label}</span></button>'
+            f'</span>'
+        )
+
+    lines = [
+        f'<div class="bubble" data-line="{line_id}" data-turn="{turn_id}"'
+        f' data-start="{sentence.start:.2f}" data-end="{sentence.end:.2f}"{speaker_attr}>',
+        chip_html,
+        f"<p>{html.escape(sentence.text)}</p>",
+    ]
+    if timestamps:
+        # A real <button>, like the cluster header's own timestamp used to
+        # be, not a styled <span> - the click target has to be reachable by
+        # keyboard. Reuses play_from: the label differs only in the instant
+        # it names.
+        aria = html.escape(
+            strings.get("play_from", "Play from {t}")
+            .replace("{t}", format_hhmmss(sentence.start))
+        )
+        display_end = _display_end_second(sentence)
+        lines.append(
+            f'<button type="button" class="ts" dir="ltr" contenteditable="false"'
+            f' aria-label="{aria}">{_icon("play")}'
+            f'<span dir="ltr">{format_range(sentence.start, display_end)}</span></button>'
+        )
+    copy_label = _t(strings, "copy_line", "Copy this sentence")
+    lines.append(
+        _button(None, css_class="icon-btn copy-line", icon="copy",
+                aria_label=copy_label, extra='contenteditable="false"')
+    )
+    lines.append("</div>")
+    return "".join(lines)
+
+
+def _render_turn_html(
+    turn: Turn,
+    turn_id: str,
+    sentences: List[Sentence],
+    speaker_label: Optional[str],
+    timestamps: bool,
+    strings: Dict[str, str],
+) -> str:
+    """One <article class="turn">: a transparent grouping wrapper, then one card per sentence.
+
+    "turn" used to render as a WhatsApp-style CLUSTER with its own header -
+    that whole header is gone (see the review plan's "flat sentence cards"
+    section) and everything it carried (the speaker chip, the play range,
+    copy) now renders on every card instead - see _render_bubble_html().
+    .turn itself keeps data-turn, data-start and data-speaker unchanged, and
+    stays in the DOM as an invisible key: saved edits, localStorage,
+    low-confidence flags, plain-row sync, the outline and search all key off
+    it already, and re-keying all of that against sentences instead would be
+    a large, risky change for no visible difference. It also stays the unit
+    a "apply to this whole block" reassignment (js/24-speakers-menus.js)
+    reassigns.
+
+    sentences comes from the caller (_render_document_html) rather than
+    being computed here purely to avoid calling turn.sentences() twice for
+    the same turn - it also feeds that caller's low-confidence check.
+    """
+    speaker_attr = (
+        f' data-speaker="{turn.speaker}" data-palette="{_palette_index(turn.speaker)}"'
+        if turn.speaker is not None else ""
+    )
+    body_label = _t(strings, "turn_text", "Turn text")
+
+    lines = [
+        f'<article class="turn" data-turn="{turn_id}"'
+        f' data-start="{turn.start:.2f}"{speaker_attr}>',
+        f'<div class="body" contenteditable="true" role="textbox"'
+        f' aria-multiline="true" aria-label="{body_label}">',
+    ]
+    for idx, sentence in enumerate(sentences):
+        line_id = f"{turn_id}-{idx}"
+        lines.append(
+            _render_bubble_html(sentence, line_id, turn_id, timestamps, speaker_label, turn.speaker, strings)
+        )
+    lines.append("</div>")
+    lines.append("</article>")
+    return "\n".join(lines)
 
 
 def _render_plain_row_html(
@@ -466,10 +455,11 @@ def _render_plain_row_html(
     first_number: int,
     speaker_label: Optional[str],
     timestamps: bool,
+    show_speaker: bool,
     strings: Dict[str, str],
 ) -> str:
     """
-    One turn's row in the copy-out panel: an inert prefix, an editable body.
+    One turn's row in the copy-out panel: an optional heading, an editable body.
 
     Rendered server-side (not built by transcript.js from nothing) so the
     plain-text panel is readable - and, per Phase 4, editable via native
@@ -484,27 +474,44 @@ def _render_plain_row_html(
     Each line of body_text gets its own number AND, when timestamps are on,
     its own timestamp range, rather than the row as a whole getting either -
     a turn can hold several sentences, and a single per-row number or range
-    could not identify any one of them. The row prefix therefore keeps only
-    the speaker name now; the range that used to live there has moved down
-    to sit beside each sentence's own number instead.
+    could not identify any one of them.
+
+    show_speaker is decided by the CALLER (_render_plain_html), which is the
+    only place that knows the previous row's speaker: a speaker heading
+    renders on its own block-level line above .plain-body only when this
+    row's speaker differs from the one before it, so a speaker whose turns
+    were split by the 2s gap or the 30s cap still gets exactly one heading
+    for the whole run, not one per turn. Not the inline ".plain-prefix" this
+    used to be - a heading that can legitimately be absent needs to be a
+    block of its own, not a text node beside the body that would otherwise
+    have to render empty.
 
     Uses turn.sentences() (Turn.sentences(), turns.py), not
     split_sentences(turn.text) as this used to: the text is the same either
     way, but only Sentence carries the per-sentence start/end each line's own
     range needs.
     """
-    prefix_parts = []
-    if speaker_label is not None and turn.speaker is not None:
-        prefix_parts.append(f"{_speaker_fallback(speaker_label, turn.speaker)}:")
-    prefix_text = f"{' '.join(prefix_parts)} " if prefix_parts else ""
+    heading_html = ""
+    if show_speaker and speaker_label is not None and turn.speaker is not None:
+        name = html.escape(_speaker_fallback(speaker_label, turn.speaker))
+        heading_html = f'<div class="plain-heading" contenteditable="false">{name}</div>'
 
-    # Each line leads with "{LRI}{number}.{PDI} " - or, with timestamps on,
-    # "{LRI}{number}. [{range}]{PDI} " - all inside ONE isolate rather than
-    # a separate one per piece: the number, the dot and the bracketed range
-    # are one continuous LTR run, so a second isolate around the range would
-    # only add control characters with nothing to isolate it from. No
-    # dir="ltr" element wraps it - unlike the file-position span, this text
-    # has to stay a single contenteditable text node (one
+    # Each line leads with "{LRI}{number}{PDI}. " - or, with timestamps on,
+    # "{LRI}{number}{PDI}. {LRI}[{range}]{PDI} " - the number and the range
+    # each sit in their OWN isolate, with the dot and the space between them
+    # OUTSIDE both. A single isolate around the whole lead-in (the shape this
+    # used to be) puts the dot inside an LTR run: in an RTL paragraph the
+    # digit sits at the run's right edge and the text flows leftward from
+    # there, so a dot that trails the digit *inside* the isolate renders to
+    # the digit's right - wrong, since a Hebrew reader's eye moves right to
+    # left and the dot has to separate the number from what comes next, on
+    # its LEFT. Splitting the lead-in into two isolates makes the dot and
+    # the space between them ordinary neutral characters in the surrounding
+    # RTL paragraph, which is what puts them on the correct side. Verified
+    # by measuring painted glyph x-positions in a real browser, not reasoned
+    # about - see the review plan's "the RTL dot" section for the numbers.
+    # No dir="ltr" element wraps any of this - unlike the file-position
+    # span, this text has to stay a single contenteditable text node (one
     # <span class="plain-body">, matching the card's single <div class="body">
     # contenteditable contract) so a wrapping element isn't available here.
     #
@@ -520,32 +527,30 @@ def _render_plain_row_html(
     sentence_lines = []
     for idx, sentence in enumerate(turn.sentences()):
         number = first_number + idx
+        lead = f"{LRI}{number}{PDI}. "
         if timestamps:
             # format_range() truncates both ends via int(), so a sentence
             # under a second long (routine - sentences are often closer
             # together than that) would render its end the same as its
             # start: "0:00 - 0:00", which reads as broken rather than as a
-            # real, very short sentence. Rounding the END second UP with
-            # math.ceil() (and leaving the start alone) is enough to avoid
-            # that degenerate range without touching format_range() itself,
-            # which the turn header above still uses un-rounded - and a
-            # rounded-up end is also the more useful choice for playback,
-            # since it is guaranteed to include the sentence's own tail
-            # rather than cutting it off.
+            # real, very short sentence. _display_end_second() imposes a
+            # floor of one second on the END only, avoiding that degenerate
+            # range without touching format_range() itself - and a
+            # rounded-up end is also the more useful choice for a reader
+            # scanning ranges, since it is guaranteed to include the
+            # sentence's own tail rather than cutting it off.
             bare = (
                 format_range(sentence.start, _display_end_second(sentence))
                 .replace(LRI, "")
                 .replace(PDI, "")
             )
-            lead = f"{LRI}{number}. [{bare}]{PDI}"
-        else:
-            lead = f"{LRI}{number}.{PDI}"
-        sentence_lines.append(f"{lead} {sentence.text}")
+            lead += f"{LRI}[{bare}]{PDI} "
+        sentence_lines.append(f"{lead}{sentence.text}")
     body_text = "\n".join(sentence_lines)
     body_label = _t(strings, "turn_text", "Turn text")
     return (
         f'<div class="plain-row" data-turn="{turn_id}">'
-        f'<span class="plain-prefix" contenteditable="false">{html.escape(prefix_text)}</span>'
+        f'{heading_html}'
         f'<span class="plain-body" contenteditable="true" role="textbox"'
         f' aria-multiline="true" aria-label="{body_label}">{html.escape(body_text)}</span>'
         "</div>"
@@ -583,16 +588,30 @@ def _render_plain_html(
     one identical sequence land on identical numbers without the two loops
     needing to share mutable state - see the sentence-bubbles plan, 1.2, for
     why the numbers must match at all.
+
+    Also tracks the previous turn's speaker, so each row can be told whether
+    to show its own speaker heading (see _render_plain_row_html()'s
+    docstring): a heading renders only when the speaker actually changes
+    from the row before it, so a speaker whose turns were split by the 2s
+    gap or the 30s cap gets exactly one heading for the whole run rather
+    than one per turn. This server-side version has no per-sentence
+    override to account for - those exist only in client-side localStorage
+    - so rebuildPlain() (js/32-plain-text.js) has to recompute the same
+    "did the EFFECTIVE speaker change" decision itself, across rows, once an
+    override can change what any one row's speaker actually is.
     """
     s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
 
     row_parts = []
     sentence_number = 1
+    previous_speaker = None
     for turn_id, turn in zip(turn_ids, turns):
+        show_speaker = turn.speaker != previous_speaker
         row_parts.append(_render_plain_row_html(
-            turn, turn_id, sentence_number, speaker_label, timestamps, strings,
+            turn, turn_id, sentence_number, speaker_label, timestamps, show_speaker, strings,
         ))
         sentence_number += len(turn.sentences())
+        previous_speaker = turn.speaker
     rows = "".join(row_parts)
     copy_all_button = _button(s('copy_all', 'Copy all'), css_class="tb-btn copy-all", icon="copy")
     return f"""<section class="plain">
