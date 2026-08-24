@@ -16,6 +16,8 @@ import os
 import random
 import re
 import tempfile
+import threading
+import time
 import uuid
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
@@ -45,6 +47,23 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-li
     from speech_to_text.core.transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
+
+
+def _log_phase(phase: str, start: float) -> None:
+    """
+    Emit one phase's wall-clock cost at DEBUG.
+
+    This module had zero timing instrumentation before this: decode,
+    transcribe, diarize, assign_speakers, Hebrew correction and HTML render
+    were indistinguishable in the log, which made "what's actually slow"
+    guesswork instead of measurement. time.perf_counter() (monotonic,
+    sub-millisecond resolution) rather than time.time() (wall clock, can
+    jump backward on an NTP correction) - deliberately not the choice
+    tests/eval/compare_models.py and core/calibration.py already make for
+    their own reasons.
+    """
+    logger.debug(f"phase timing: {phase} took {time.perf_counter() - start:.3f}s")
+
 
 # faster-whisper decodes each ~30s audio window internally, retrying at
 # progressively higher "temperatures" whenever the result looks repetitive
@@ -305,7 +324,7 @@ def run_transcription_process(
 
                 try:
                     segments = _transcribe_one(
-                        audio_file, transcriber, options, file_duration, emit_local
+                        audio_file, transcriber, options, file_duration, emit_local, progress_queue
                     )
                 except Exception as e:
                     logger.error(f"Transcription failed for {audio_file}: {e}", exc_info=True)
@@ -339,7 +358,10 @@ def run_transcription_process(
                 # gets another chance.
                 if succeeded > 0:
                     try:
-                        _atomic_write_html(output_file, render_document())
+                        render_start = time.perf_counter()
+                        checkpoint_html = render_document()
+                        _log_phase("HTML render (checkpoint)", render_start)
+                        _atomic_write_html(output_file, checkpoint_html)
                     except Exception as e:
                         logger.warning(
                             f"Checkpoint write failed after {audio_file}: {e}", exc_info=True
@@ -354,7 +376,9 @@ def run_transcription_process(
             return
 
         emit_progress(("w_formatting", {}), BATCH_FORMATTING_PERCENT)
+        render_start = time.perf_counter()
         rendered = render_document()
+        _log_phase("HTML render (final)", render_start)
 
         # Unlike the per-file checkpoints above, this write is not allowed to
         # fail silently: it's the last chance to persist the batch, so a
@@ -381,6 +405,7 @@ def _transcribe_one(
     options: "TranscriptionOptions",
     file_duration: float,
     emit_progress,
+    progress_queue: "multiprocessing.Queue",
 ) -> Optional[List["Segment"]]:
     """
     Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
@@ -388,6 +413,10 @@ def _transcribe_one(
     emit_progress here is already file-local (0-100 covering just this
     file's own work) - the caller in run_transcription_process does the
     duration-weighted rescale into the batch's overall percentage.
+    progress_queue is the raw queue underneath it, needed separately because
+    the overlapped diarization thread below reports its own progress as
+    text-only "status" messages rather than through emit_progress's percent
+    scale (see the comment at that thread's call site for why).
 
     Reassigns transcriber.progress_callback for the duration of this call.
     Transcriber.transcribe() reports its own progress on a fixed absolute
@@ -422,22 +451,64 @@ def _transcribe_one(
 
     channels, two_party = _prepare_audio(audio_file, options, file_duration, emit_progress)
 
+    # Diarization is a full second pass over the SAME audio, and - unlike
+    # every other step in this pipeline - does not depend on the transcript
+    # at all: diarize() takes only the raw samples, and only assign_speakers
+    # (below, after both are done) needs segments. Run sequentially, it costs
+    # a whole extra pass; started here, before transcribe(), it costs only
+    # whatever of it doesn't finish before transcribe() does. Both
+    # faster-whisper (ctranslate2) and sherpa-onnx (onnxruntime) release the
+    # GIL during their native compute, so a plain Python thread gets real
+    # wall-clock overlap, not just interleaving - though with 4 physical
+    # cores and beam_size=5 already asking for several of them, how much
+    # overlap actually pays off is a measurement question (see tests/eval/
+    # compare_models.py and the Stage 2 report), not something guaranteed by
+    # the threading alone.
+    #
+    # Progress during the overlap window is deliberately routed as
+    # ("status", key, params) - text only, no percentage (see
+    # _RetryStatusLogHandler above for the existing precedent, and
+    # gui/threads.py's _relay_progress_message for how the GUI treats it) -
+    # rather than through emit_progress's file-local percent scale.
+    # Diarization's own band (FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_SPEAKER_ID_END)
+    # was carved out on the assumption transcription had already reached
+    # FILE_LOCAL_TRANSCRIBE_END by the time diarization started; once the two
+    # run concurrently that assumption no longer holds - diarization can
+    # legitimately finish before transcription does on a long file - so a
+    # diarization percentage arriving mid-overlap would either lie (claim
+    # more done than the file-local scale means) or need to fight
+    # transcribe's own climbing percentage for the same numbers. Text status
+    # has no such ordering constraint. The real percentage bump for this
+    # phase still happens, in _finish_identify_speakers below, but only
+    # after both threads have actually finished - at that point there is
+    # only one writer again and the normal sequential guarantee holds.
+    mono = None
+    diarization_thread = None
+    diarization_result: dict = {}
+    if channels is not None and not two_party:
+        from speech_to_text.core import audio_source
+        mono = audio_source.to_mono(channels)
+        diarization_thread = _start_diarization(mono, options, progress_queue, diarization_result)
+
     if two_party:
         segments = _transcribe_per_channel(transcriber, channels, file_duration)
     else:
         # Hand over the decoded array when we have one so the file is not
-        # decoded twice; fall back to the path if decoding failed.
-        source = audio_file
-        if channels is not None:
-            from speech_to_text.core import audio_source
-            source = audio_source.to_mono(channels)
+        # decoded twice (also what makes reusing it for diarization above
+        # free); fall back to the path if decoding failed.
+        source = mono if mono is not None else audio_file
+        transcribe_start = time.perf_counter()
         segments = transcriber.transcribe(source, total_duration_seconds=file_duration)
+        _log_phase("transcribe", transcribe_start)
+
+    if diarization_thread is not None:
+        diarization_thread.join()
 
     if segments is None:
         return None
 
     if not two_party:
-        _identify_speakers(segments, channels, options, emit_progress)
+        _finish_identify_speakers(segments, diarization_result, emit_progress)
 
     _correct_hebrew(segments, options, emit_progress)
 
@@ -461,7 +532,9 @@ def _prepare_audio(
     emit_progress(("w_analyzing_audio", {}), FILE_LOCAL_ANALYZING_PERCENT)
     from speech_to_text.core import audio_source
 
+    decode_start = time.perf_counter()
     channels, two_party = audio_source.load(audio_file)
+    _log_phase("audio decode", decode_start)
     if two_party:
         emit_progress(("w_stereo_detected", {}), FILE_LOCAL_TRANSCRIBE_START)
     return channels, two_party
@@ -492,21 +565,95 @@ def _transcribe_per_channel(transcriber, channels, file_duration: float):
     return collected
 
 
-def _identify_speakers(segments, channels, options, emit_progress):
+def _start_diarization(
+    mono, options, progress_queue: "multiprocessing.Queue", result: dict
+) -> Optional["threading.Thread"]:
     """
-    Run diarization and attach speakers, in place.
+    Kick off diarization on a background thread, overlapping it with
+    transcription (see the comment above this function's call site in
+    _transcribe_one). Runs everything that does NOT need the transcript -
+    downloading models on first use, then diarize() itself - and leaves the
+    outcome (spans, or a caught exception) in `result` for the main thread to
+    read after transcribe() returns and both are actually done (see
+    _finish_identify_speakers).
 
-    Deliberately non-fatal in every failure mode. Diarization is an
-    enhancement; a missing model, an absent dependency or a machine that is
-    offline on first run must cost speaker labels and nothing else. Losing a
-    completed transcript because the nice-to-have failed would be indefensible
-    given how long transcription takes.
+    Progress here goes straight to progress_queue as ("status", key, params)
+    - text only, no percentage - not through the file-local emit_progress
+    used everywhere else in this module. See the call site's comment for why:
+    in short, this phase's percentage band was carved out on the assumption
+    transcription had already finished by the time it started, which the
+    whole point of overlapping breaks.
+
+    Returns None without starting a thread when diarization isn't wanted or
+    there's no audio to diarize - callers only need to check the return value
+    for whether there's something to join later, not for whether it "worked":
+    that's the non-fatal contract _finish_identify_speakers still owns,
+    exactly as the old sequential _identify_speakers did.
+
+    Catches every exception here rather than letting one escape into a
+    background thread where nothing would ever see it - diarization staying
+    a non-fatal enhancement has to hold in a thread too, not just on the main
+    one.
     """
-    if not options.identify_speakers or channels is None or not segments:
+    if not options.identify_speakers or mono is None:
+        return None
+
+    def run() -> None:
+        try:
+            from speech_to_text.core import audio_source, diarization
+
+            progress_queue.put(("status", "w_identifying_speakers", {}))
+
+            if not diarization.models_present():
+                progress_queue.put(("status", "w_downloading_diarization", {}))
+                diarization.ensure_models()
+
+            diarize_start = time.perf_counter()
+            spans = diarization.diarize(
+                mono,
+                sample_rate=audio_source.SAMPLE_RATE,
+                num_speakers=options.num_speakers,
+                # No per-chunk percentage callback here (the old sequential
+                # code had one) - a percentage with nowhere honest to go on
+                # the file-local scale while transcription is still running
+                # concurrently is worse than no percentage at all. The
+                # "w_identifying_speakers" status message above already told
+                # the user this phase is under way.
+                progress=None,
+            )
+            _log_phase("diarize", diarize_start)
+            result["spans"] = spans
+        except Exception as e:
+            result["error"] = e
+
+    thread = threading.Thread(target=run, name="diarization", daemon=True)
+    thread.start()
+    return thread
+
+
+def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
+    """
+    Attach speakers once both transcription and the overlapped diarization
+    thread (see _start_diarization) have finished. assign_speakers is the one
+    piece of speaker identification that genuinely needs the transcript, so
+    it can never start any earlier than this, overlap or not.
+
+    Same non-fatal contract as the old sequential _identify_speakers: a
+    missing model, an absent dependency, or any other failure costs speaker
+    labels and nothing else - the transcript this function receives is
+    already complete.
+    """
+    if "error" in result:
+        logger.warning(f"Speaker identification skipped: {result['error']}", exc_info=result["error"])
+        emit_progress(("w_speakers_unavailable", {}), FILE_LOCAL_SPEAKER_ID_END)
+        return
+
+    spans = result.get("spans")
+    if not spans or not segments:
         return
 
     try:
-        from speech_to_text.core import audio_source, diarization
+        from speech_to_text.core import diarization
 
         emit_progress(("w_identifying_speakers", {}), FILE_LOCAL_TRANSCRIBE_END)
 
@@ -536,7 +683,9 @@ def _identify_speakers(segments, channels, options, emit_progress):
         # `segments` name) keeps this change contained to this function: the
         # caller in _transcribe_one still holds and returns the same list
         # object, now with any splits reflected in its contents.
+        assign_start = time.perf_counter()
         segments[:] = diarization.assign_speakers(segments, spans)
+        _log_phase("assign_speakers", assign_start)
 
     except Exception as e:
         logger.warning(f"Speaker identification skipped: {e}", exc_info=True)
@@ -564,7 +713,9 @@ def _correct_hebrew(segments, options, emit_progress):
             return
 
         emit_progress(("w_correcting_terms", {}), FILE_LOCAL_CORRECTING_PERCENT)
+        correct_start = time.perf_counter()
         changes = hebrew_correct.correct(segments, terms)
+        _log_phase("Hebrew correction", correct_start)
         if changes:
             logger.info(f"Applied {len(changes)} Hebrew term correction(s)")
 

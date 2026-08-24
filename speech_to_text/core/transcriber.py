@@ -33,13 +33,29 @@ class Transcriber:
         model_size: str = config.DEFAULT_MODEL,
         device: str = "cpu",
         language: str = config.LANGUAGE,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        compute_type: Optional[str] = None,
+        beam_size: Optional[int] = None,
+        cpu_threads: Optional[int] = None,
+        num_workers: Optional[int] = None,
     ):
         self.model_size = model_size
         self.device = device
         self.language = language
         self.progress_callback = progress_callback or self._default_callback
         self.model = None
+        # All four default to None so production behaviour (worker.py's call
+        # site, which never passes them) is unchanged from before these
+        # existed: compute_type resolves from config.compute_type_for_device
+        # at load time (device-conditional - see that function's docstring),
+        # beam_size from config.BEAM_SIZE, and cpu_threads/num_workers stay
+        # unset (ctranslate2 picks its own thread count). Explicit values
+        # exist so tests/eval/compare_models.py can sweep them without a
+        # parallel construction path.
+        self.compute_type = compute_type
+        self.beam_size = beam_size
+        self.cpu_threads = cpu_threads
+        self.num_workers = num_workers
         logger.debug(f"Transcriber initialized: model={model_size}, device={device}, lang={language}")
 
     @property
@@ -62,12 +78,28 @@ class Transcriber:
         pass
         
     def load_model(self) -> bool:
-        """Load the Whisper model."""
+        """
+        Load the Whisper model.
+
+        device="cuda" is reachable once gui/main_window.py wires up
+        get_device_recommendation() (see hardware_detection.py) - but a CUDA
+        recommendation is a guess from nvidia-smi output, not proof the
+        ctranslate2/CUDA runtime actually initialises: a driver/CUDA-version
+        mismatch, a half-installed driver, or too little free VRAM all
+        surface only here, as an exception from WhisperModel() itself. NONE
+        of that path has been exercised on real hardware - this development
+        machine has no NVIDIA GPU at all (Intel Iris Xe only), so the retry
+        below is reasoned about, not measured. If cuda load throws, retry
+        once on cpu with a cpu-appropriate compute_type rather than
+        surfacing a failure the user can do nothing useful with; a machine
+        that would work fine on CPU should not fail just because its GPU
+        path had a problem.
+        """
         try:
             if not WhisperModel:
                 logger.error("faster-whisper package not installed")
                 return False
-            
+
             logger.info(f"Loading {self.model_size} model on {self.device}...")
             # Loading-model phase occupies 5-15% of the overall progress bar
             # (see run_transcription_process in core/worker.py for the full
@@ -79,12 +111,7 @@ class Transcriber:
                 ("w_loading_model", {"model": self.model_size}), TRANSCRIBER_LOAD_START_PERCENT
             )
 
-            self.model = WhisperModel(
-                self.model_repo,
-                device=self.device,
-                compute_type=config.COMPUTE_TYPE,
-                download_root="./whisper_models"
-            )
+            self._load_on(self.device)
 
             logger.info(f"✓ Model loaded successfully: {self.model_size} ({self.device})")
             self.progress_callback(
@@ -93,9 +120,55 @@ class Transcriber:
             return True
 
         except Exception as e:
+            if self.device == "cuda":
+                logger.warning(
+                    f"CUDA model load failed ({e}); falling back to CPU. "
+                    "This fallback is untested on real GPU hardware - see "
+                    "load_model()'s docstring.",
+                    exc_info=True,
+                )
+                try:
+                    self.device = "cpu"
+                    self._load_on(self.device)
+                    logger.info(f"✓ Model loaded successfully: {self.model_size} (cpu, after CUDA fallback)")
+                    self.progress_callback(
+                        ("w_model_loaded", {"model": self.model_size}), TRANSCRIBER_MODEL_LOADED_PERCENT
+                    )
+                    return True
+                except Exception as fallback_error:
+                    e = fallback_error
+
             logger.error(f"Failed to load {self.model_size} model: {e}", exc_info=True)
             self.progress_callback(("w_error_loading", {"detail": str(e)}), 0)
             return False
+
+    def _load_on(self, device: str) -> None:
+        """
+        Construct WhisperModel for the given device, resolving every knob
+        that is None to its production default. Split out of load_model() so
+        the CUDA-fails-fall-back-to-CPU retry (see load_model's docstring)
+        can call it a second time with device swapped, without duplicating
+        the argument-resolution logic.
+
+        cpu_threads/num_workers are left unset unless explicitly given -
+        ctranslate2 picks its own thread count in that case. Phase B's
+        measurement (see tests/eval/compare_models.py and the Stage 2
+        report) found no repeatable win from pinning either on this 4-core
+        machine, so production leaves them alone; the knobs exist so the
+        eval harness can still sweep them.
+        """
+        compute_type = self.compute_type or config.compute_type_for_device(device)
+        kwargs = dict(
+            device=device,
+            compute_type=compute_type,
+            download_root="./whisper_models",
+        )
+        if self.cpu_threads is not None:
+            kwargs["cpu_threads"] = self.cpu_threads
+        if self.num_workers is not None:
+            kwargs["num_workers"] = self.num_workers
+
+        self.model = WhisperModel(self.model_repo, **kwargs)
     
     def transcribe(
         self, audio_file, total_duration_seconds: float = 0
@@ -135,12 +208,13 @@ class Transcriber:
             segments, info = self.model.transcribe(
                 audio_file,
                 language=self.language,
-                beam_size=config.BEAM_SIZE,
+                beam_size=self.beam_size if self.beam_size is not None else config.BEAM_SIZE,
                 # Per-word timings and confidences. Needed twice over: word
                 # boundaries are what let diarization attribute a speaker
                 # change that happens mid-segment, and word probabilities are
                 # what let the Hebrew correction pass touch only the words the
-                # model was unsure about.
+                # model was unsure about. Load-bearing - do not turn off to
+                # save time (see core/worker.py's module docstring).
                 word_timestamps=True,
                 vad_filter=config.VAD_FILTER,
                 vad_parameters=dict(min_silence_duration_ms=500)

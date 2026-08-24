@@ -88,13 +88,94 @@ class TestTranscriber:
         """Test successful model loading."""
         mock_model = MagicMock()
         mock_whisper_model_class.return_value = mock_model
-        
+
         transcriber = Transcriber()
         result = transcriber.load_model()
-        
+
         assert result is True
         assert transcriber.model is not None
         mock_whisper_model_class.assert_called_once()
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_load_model_defaults_to_cpu_compute_type_unset(self, mock_whisper_model_class):
+        """
+        No cpu_threads/num_workers override given -> neither kwarg reaches
+        WhisperModel at all, so ctranslate2 picks its own thread count
+        exactly as it always did (see _load_on's docstring for why
+        production leaves these alone).
+        """
+        Transcriber(device="cpu").load_model()
+
+        kwargs = mock_whisper_model_class.call_args.kwargs
+        assert kwargs["compute_type"] == "int8"
+        assert "cpu_threads" not in kwargs
+        assert "num_workers" not in kwargs
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_load_model_forwards_explicit_axes_to_whispermodel(self, mock_whisper_model_class):
+        """
+        The knobs tests/eval/compare_models.py sweeps (Phase B) must actually
+        reach WhisperModel, not just live on the Transcriber instance.
+        """
+        Transcriber(
+            compute_type="float32", beam_size=1, cpu_threads=4, num_workers=2,
+        ).load_model()
+
+        kwargs = mock_whisper_model_class.call_args.kwargs
+        assert kwargs["compute_type"] == "float32"
+        assert kwargs["cpu_threads"] == 4
+        assert kwargs["num_workers"] == 2
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_load_model_uses_cuda_compute_type_on_cuda(self, mock_whisper_model_class):
+        """
+        config.compute_type_for_device is device-conditional (float16 on
+        CUDA, int8 on CPU) - a single global COMPUTE_TYPE used to apply
+        regardless of device. Untested on real GPU hardware; see
+        load_model()'s docstring.
+        """
+        Transcriber(device="cuda").load_model()
+
+        assert mock_whisper_model_class.call_args.kwargs["compute_type"] == "float16"
+        assert mock_whisper_model_class.call_args.kwargs["device"] == "cuda"
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_load_model_falls_back_to_cpu_when_cuda_init_fails(self, mock_whisper_model_class):
+        """
+        A CUDA device_recommendation is only a guess from nvidia-smi output -
+        it does not prove the ctranslate2/CUDA runtime actually initialises.
+        A driver/CUDA-version mismatch is a real, live failure mode (see
+        load_model()'s docstring) and must not fail the whole transcription
+        when CPU would have worked fine. Simulated here since this
+        development machine has no NVIDIA GPU to fail on for real.
+        """
+        mock_model = MagicMock()
+        mock_whisper_model_class.side_effect = [RuntimeError("simulated CUDA init failure"), mock_model]
+
+        transcriber = Transcriber(device="cuda")
+        result = transcriber.load_model()
+
+        assert result is True
+        assert transcriber.device == "cpu"
+        assert transcriber.model is mock_model
+        assert mock_whisper_model_class.call_count == 2
+        first_call, second_call = mock_whisper_model_class.call_args_list
+        assert first_call.kwargs["device"] == "cuda"
+        assert second_call.kwargs["device"] == "cpu"
+        assert second_call.kwargs["compute_type"] == "int8"
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_load_model_reports_failure_when_both_cuda_and_the_cpu_fallback_fail(
+        self, mock_whisper_model_class
+    ):
+        """A machine with no working backend at all must still fail cleanly."""
+        mock_whisper_model_class.side_effect = RuntimeError("nothing works")
+
+        transcriber = Transcriber(device="cuda")
+        result = transcriber.load_model()
+
+        assert result is False
+        assert transcriber.model is None
     
     def test_load_model_whisper_not_installed(self):
         """Test model loading when WhisperModel is not available."""
@@ -139,6 +220,31 @@ class TestTranscriber:
         text = plain_text(result)
         assert "Hello" in text
         assert "World" in text
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_transcribe_uses_config_beam_size_by_default(self, mock_whisper_model_class):
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = ([fake_segment("Hello")], MagicMock())
+        mock_whisper_model_class.return_value = mock_model
+
+        transcriber = Transcriber()
+        transcriber.load_model()
+        transcriber.transcribe("dummy_audio.mp3")
+
+        assert mock_model.transcribe.call_args.kwargs["beam_size"] == 5
+
+    @patch('speech_to_text.core.transcriber.WhisperModel')
+    def test_transcribe_forwards_explicit_beam_size(self, mock_whisper_model_class):
+        """The Phase B sweep axis - must actually reach model.transcribe()."""
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = ([fake_segment("Hello")], MagicMock())
+        mock_whisper_model_class.return_value = mock_model
+
+        transcriber = Transcriber(beam_size=1)
+        transcriber.load_model()
+        transcriber.transcribe("dummy_audio.mp3")
+
+        assert mock_model.transcribe.call_args.kwargs["beam_size"] == 1
 
     @patch('speech_to_text.core.transcriber.WhisperModel')
     def test_transcribe_requests_word_timestamps(self, mock_whisper_model_class):

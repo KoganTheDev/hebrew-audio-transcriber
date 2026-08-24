@@ -11,11 +11,12 @@ transcriber module itself so that late import picks it up.
 import os
 import re
 
+import numpy as np
 import pytest
 
 from speech_to_text.core import worker
 from speech_to_text.core.options import TranscriptionOptions
-from speech_to_text.core.segments import Segment
+from speech_to_text.core.segments import Segment, Word
 
 
 class FakeQueue:
@@ -46,9 +47,13 @@ class FakeTranscriber:
         return True
 
     def transcribe(self, source, total_duration_seconds=0):
-        if source == "broken.wav":
+        # isinstance guard, not a bare `source == "broken.wav"`: source can
+        # now be a numpy mono array (see core/worker.py's to_mono dedupe),
+        # and `ndarray == str` is an elementwise comparison that raises on
+        # truth-testing rather than just being False.
+        if isinstance(source, str) and source == "broken.wav":
             raise RuntimeError("simulated decode failure")
-        if source == "fatal.wav":
+        if isinstance(source, str) and source == "fatal.wav":
             # A BaseException, not an Exception - simulates the process
             # actually dying (kill -9, a forced reboot, power loss) rather
             # than a caught-and-logged per-file failure. Nothing in
@@ -360,3 +365,164 @@ class TestCheckpointing:
             html_out = f.read()
         assert "hello from a.wav" in html_out
         assert os.listdir(tmp_path) == ["out.html"]
+
+
+class TestDiarizationOverlap:
+    """
+    Stage 2, Phase C: diarization now runs on a background thread started
+    before transcribe(), instead of after it - see _start_diarization/
+    _finish_identify_speakers in core/worker.py. These tests cover what's
+    testable without real audio or the sherpa-onnx models: that diarization
+    still gets applied, that the audio is only downmixed to mono once (the
+    to_mono duplicate this same change was asked to remove), and that a
+    diarization failure stays non-fatal exactly like the old sequential code.
+    """
+
+    def _stub_audio_and_diarization(
+        self, monkeypatch, spans=None, diarize_error=None, mono_call_counter=None
+    ):
+        """
+        Wires fake audio_source.load/to_mono and diarization.* so a test can
+        run run_transcription_process with identify_speakers=True without
+        touching a real file, PyAV or sherpa-onnx.
+        """
+        from speech_to_text.core import audio_source, diarization
+
+        channels = [np.zeros(1600, dtype=np.float32)]
+
+        monkeypatch.setattr(audio_source, "load", lambda path: (channels, False))
+
+        real_to_mono = audio_source.to_mono
+
+        def counting_to_mono(chans):
+            if mono_call_counter is not None:
+                mono_call_counter["n"] += 1
+            return real_to_mono(chans)
+
+        monkeypatch.setattr(audio_source, "to_mono", counting_to_mono)
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+
+        def fake_diarize(samples, sample_rate=16000, num_speakers=2, progress=None):
+            if diarize_error is not None:
+                raise diarize_error
+            return spans or []
+
+        monkeypatch.setattr(diarization, "diarize", fake_diarize)
+
+    def test_diarization_result_is_still_applied_after_the_switch_to_overlap(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        The whole point of overlapping is to change WHEN diarization runs,
+        not WHETHER its result reaches the transcript. assign_speakers is
+        real (not stubbed) here, so a segment whose word falls inside the
+        one fake span must come back attributed to that span's speaker.
+        """
+        from speech_to_text.core.diarization import SpeakerSpan
+
+        span = SpeakerSpan(start=0.0, end=1.0, speaker=1)
+        self._stub_audio_and_diarization(monkeypatch, spans=[span])
+
+        # FakeTranscriber.transcribe() ignores its `source` for the returned
+        # Segment's word timings, so attach a word ourselves after the call
+        # to give assign_speakers something inside the fake span to match.
+        import speech_to_text.core.transcriber as transcriber_module
+
+        class WordyFakeTranscriber(transcriber_module.Transcriber):
+            def transcribe(self, source, total_duration_seconds=0):
+                segments = super().transcribe(source, total_duration_seconds)
+                for segment in segments:
+                    segment.words = [Word(start=0.1, end=0.5, text="hi", probability=0.9)]
+                return segments
+
+        monkeypatch.setattr(transcriber_module, "Transcriber", WordyFakeTranscriber)
+
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+
+    def test_to_mono_runs_once_per_file_not_twice(self, tmp_path, monkeypatch):
+        """
+        Before this change, to_mono(channels) was called once to build the
+        transcribe source and again inside diarization - worker.py:434 and
+        :517 in the pre-Stage-2 code. Both now share the same array.
+        """
+        counter = {"n": 0}
+        self._stub_audio_and_diarization(monkeypatch, spans=[], mono_call_counter=counter)
+
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert counter["n"] == 1
+
+    def test_diarization_failure_is_non_fatal_and_still_reported_as_status(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        Same non-fatal contract as the old sequential _identify_speakers:
+        a diarization exception (missing model, corrupt audio, whatever)
+        must cost speaker labels only, never the transcript - and it must
+        not deadlock or crash the batch now that it happens on a thread.
+        """
+        self._stub_audio_and_diarization(
+            monkeypatch, diarize_error=RuntimeError("simulated diarization failure")
+        )
+
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert any(
+            item[0] == "progress" and item[1] == "w_speakers_unavailable"
+            for item in progress_queue.items
+        )
+
+    def test_diarization_progress_during_overlap_is_status_only_not_a_percent(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        See the comment above _start_diarization's call site in
+        core/worker.py: a real percentage from diarization while
+        transcription is still running concurrently would either lie about
+        how much of the file-local scale is actually done, or race
+        transcribe's own climbing percentage for the same numbers. It must
+        arrive as a ("status", key, params) item - text only - never as
+        ("progress", "w_identifying_speakers", ..., some_percent).
+        """
+        self._stub_audio_and_diarization(monkeypatch, spans=[])
+
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert ("status", "w_identifying_speakers", {}) in progress_queue.items
+        assert not any(
+            item[0] == "progress" and item[1] == "w_identifying_speakers"
+            for item in progress_queue.items
+        )

@@ -357,10 +357,22 @@ class MainWindow(QMainWindow):
 
         logger.info(f"Starting transcription: {file_summary} with {self.selected_model} model")
 
+        # get_device_recommendation() was long dead code (hardware_detection.py
+        # can return "cuda", but nothing called it - this literal "cpu" was
+        # the only device value ever used). Wiring it in is UNTESTED on real
+        # GPU hardware: this development machine has no NVIDIA GPU at all
+        # (Intel Iris Xe only), so the "cuda" branch has never actually run
+        # here. Safety net if it's wrong: Transcriber.load_model() catches a
+        # CUDA init failure and retries on CPU (see its docstring) rather
+        # than failing the transcription outright - a live failure mode on
+        # any machine with a driver/CUDA-version mismatch.
+        device, device_reason = self.hardware.get_device_recommendation()
+        logger.info(f"Device: {device} ({device_reason})")
+
         self.transcription_thread = TranscriptionThread(
             self.selected_files,
             self.selected_model,
-            "cpu",  # Auto-detect would go here
+            device,
             self.file_step.durations,  # real PyAV-measured durations, for accurate progress
             options=TranscriptionOptions(
                 identify_speakers=self.model_step.identify_speakers,
