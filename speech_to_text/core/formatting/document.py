@@ -11,6 +11,7 @@ why that module is their home.
 """
 
 import html
+import math
 from typing import Dict, List, Optional
 
 from .chrome import (
@@ -27,7 +28,6 @@ from .timecode import (
     format_hhmmss,
     format_instant,
     format_range,
-    split_sentences,
 )
 from .turns import Sentence, Turn, _speaker_indices
 from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
@@ -105,25 +105,19 @@ def _render_document_html(
 
     turn_ids = [f"{index}-{position}" for position in range(len(turns))]
 
-    # A running count of sentences seen so far in THIS document, 1-based -
-    # not per turn. It is what lets a bubble's .line-no and its matching row
-    # in the plain-text panel below show the same number for the same
-    # sentence, which is the entire point of numbering them at all (see the
-    # sentence-bubbles plan, 1.2). _render_plain_html walks the same turns in
-    # the same order below and keeps its own identical counter rather than
-    # sharing this one - two independent counts over one identical sequence
-    # land on the same numbers without the two render passes needing to talk
-    # to each other.
-    sentence_number = 1
+    # Bubbles carry no visible number any more - only the plain-text panel
+    # below numbers sentences now (see _render_plain_html()'s own running
+    # counter) - so this loop no longer needs to track a running sentence
+    # count of its own the way it did when _render_bubble_html() still took
+    # one.
     for turn_id, turn in zip(turn_ids, turns):
         flagged = turn.low_confidence(CONFIDENCE_THRESHOLD)
         if flagged:
             payload["low"][turn_id] = flagged
         sentences = turn.sentences()
         lines.append(_render_turn_html(
-            turn, turn_id, sentences, sentence_number, speaker_label, timestamps, strings,
+            turn, turn_id, sentences, speaker_label, timestamps, strings,
         ))
-        sentence_number += len(sentences)
 
     lines.append(_render_plain_html(turns, turn_ids, speaker_label, timestamps, strings))
     lines.append("</section>")
@@ -262,12 +256,11 @@ def _render_outline_html(
 def _render_bubble_html(
     sentence: Sentence,
     line_id: str,
-    number: int,
     timestamps: bool,
     strings: Dict[str, str],
 ) -> str:
     """
-    One <div class="bubble">: a numbered, individually-timed sentence.
+    One <div class="bubble">: an individually-timed sentence.
 
     The messaging-app-style unit the turn (now a cluster - see
     _render_turn_html's own docstring) is made of. data-start/data-end live
@@ -277,21 +270,26 @@ def _render_bubble_html(
     "no feature loss" checklist item this replaces the turn-only version of)
     work independent of whether the visible timestamp span is shown.
 
-    The number and the time are both LTR runs inside RTL text, so both get
-    the same LRI/PDI isolate plus dir="ltr" the file position
-    (_render_file_bar_html) and the plain-panel prefix
-    (_render_plain_row_html) already use - see timecode.py's module
-    docstring for why a bare digit run still needs it once it sits next to
-    other LTR runs inside one RTL line.
+    No sentence number is shown here any more - numbering now lives only in
+    the plain-text panel below (see _render_plain_row_html()), where a
+    reader can pair a number with the sentence's own timestamp range. The
+    bubble keeps data-line/data-start/data-end regardless, since JS keys on
+    all three for playback, editing and per-sentence speaker overrides.
 
-    Both also carry contenteditable="false", because a bubble sits inside
+    The time is an LTR run inside RTL text, so it gets the same LRI/PDI
+    isolate plus dir="ltr" the file position (_render_file_bar_html) and the
+    plain-panel lead-in (_render_plain_row_html) already use - see
+    timecode.py's module docstring for why a bare digit run still needs it
+    once it sits next to other LTR runs inside one RTL line.
+
+    It also carries contenteditable="false", because a bubble sits inside
     .body, which is contenteditable="true" so the sentence text can be
-    corrected in place. Without the opt-out the number and the timestamp are
-    editable too: they are ordinary text nodes inside an editable subtree, so
-    a user can type over them or delete them with a backspace at the start of
-    a line, and readParagraphs() would then persist the damage. The
-    plain-panel prefix already guards itself the same way for the same
-    reason - see _render_plain_row_html.
+    corrected in place. Without the opt-out the timestamp is editable too: it
+    is an ordinary text node inside an editable subtree, so a user can type
+    over it or delete it with a backspace at the start of a line, and
+    readParagraphs() would then persist the damage. The plain-panel lead-in
+    already guards itself the same way for the same reason - see
+    _render_plain_row_html.
 
     The .bubble-spk-anchor/.bubble-spk pair is the per-sentence counterpart
     to the cluster header's .spk-anchor/.spk (_render_turn_html) - the "no
@@ -308,14 +306,13 @@ def _render_bubble_html(
     every other control on this page is server-rendered: it has to be a
     valid click target the moment the page loads, with or without
     JavaScript history to replay. contenteditable="false" for the same
-    reason as .line-no/.ts above - it is UI chrome sitting inside .body's
-    editable region, not sentence text.
+    reason as .ts above - it is UI chrome sitting inside .body's editable
+    region, not sentence text.
     """
     reassign_label = html.escape(strings.get("reassign_line", "Reassign this sentence"))
     lines = [
         f'<div class="bubble" data-line="{line_id}"'
         f' data-start="{sentence.start:.2f}" data-end="{sentence.end:.2f}">',
-        f'<span class="line-no" dir="ltr" contenteditable="false">{LRI}{number}{PDI}</span>',
         f"<p>{html.escape(sentence.text)}</p>",
         f'<span class="bubble-spk-anchor" contenteditable="false">'
         f'<button type="button" class="bubble-spk" aria-haspopup="true"'
@@ -346,7 +343,6 @@ def _render_turn_html(
     turn: Turn,
     turn_id: str,
     sentences: List[Sentence],
-    first_number: int,
     speaker_label: Optional[str],
     timestamps: bool,
     strings: Dict[str, str],
@@ -360,10 +356,12 @@ def _render_turn_html(
     flags, plain-row sync, outline, search) keeps working untouched, and only
     the level one down (the bubble) is new.
 
-    sentences and first_number come from the caller (_render_document_html)
-    rather than being computed here, because the running sentence number is a
-    PER-DOCUMENT count across every turn, not something this function - which
-    only ever sees one turn - has enough context to produce on its own.
+    sentences comes from the caller (_render_document_html) rather than
+    being computed here purely to avoid calling turn.sentences() twice for
+    the same turn - it also feeds that caller's low-confidence check.
+    Bubbles no longer carry a visible number, so unlike sentences this
+    function needs no per-document running count from its caller any more;
+    see _render_plain_html() for where that count still lives.
     """
     header_parts = []
     if timestamps:
@@ -430,11 +428,36 @@ def _render_turn_html(
     for idx, sentence in enumerate(sentences):
         line_id = f"{turn_id}-{idx}"
         lines.append(
-            _render_bubble_html(sentence, line_id, first_number + idx, timestamps, strings)
+            _render_bubble_html(sentence, line_id, timestamps, strings)
         )
     lines.append("</div>")
     lines.append("</article>")
     return "\n".join(lines)
+
+
+def _display_end_second(sentence) -> int:
+    """
+    The end second to SHOW for one sentence's range in the plain-text panel.
+
+    format_range() truncates both ends via int(), so a sentence under a
+    second long - routine, since sentences sit closer together than that -
+    renders its end equal to its start: "0:00 - 0:00", which reads as broken
+    rather than as a real, very short sentence.
+
+    Rounding the end up unconditionally fixes that and buys a worse problem.
+    The NEXT sentence's start is still truncated, so consecutive ranges
+    overlap: "1. [0:00 - 0:02]" followed by "2. [0:01 - 0:04]", and two
+    sentences both claiming to begin at 0:20. Overlapping ranges read as a
+    bug, and they undermine the one thing these ranges exist for - finding
+    and playing one specific sentence.
+
+    So truncate normally and only impose a floor of one second. A sentence
+    long enough to cross a whole-second boundary keeps its true truncated
+    end and stays flush with its neighbour; only a sub-second sentence is
+    widened, and only to the smallest non-degenerate value. format_range()
+    itself is left alone - the turn header still uses it un-rounded.
+    """
+    return max(int(sentence.end), int(sentence.start) + 1)
 
 
 def _render_plain_row_html(
@@ -458,48 +481,66 @@ def _render_plain_row_html(
 
     first_number is this turn's first sentence's number in the per-document
     running count _render_plain_html keeps - see that function's docstring.
-    Each line of body_text gets its own number rather than the row as a
-    whole getting one, because the point of numbering at all is that a
-    number here and the same number on a bubble (_render_bubble_html)
-    identify the same sentence; a single per-row number could not do that
-    for a multi-sentence turn.
+    Each line of body_text gets its own number AND, when timestamps are on,
+    its own timestamp range, rather than the row as a whole getting either -
+    a turn can hold several sentences, and a single per-row number or range
+    could not identify any one of them. The row prefix therefore keeps only
+    the speaker name now; the range that used to live there has moved down
+    to sit beside each sentence's own number instead.
+
+    Uses turn.sentences() (Turn.sentences(), turns.py), not
+    split_sentences(turn.text) as this used to: the text is the same either
+    way, but only Sentence carries the per-sentence start/end each line's own
+    range needs.
     """
     prefix_parts = []
-    if timestamps:
-        # Same bracket-inside-the-isolate shape as transcript.js's
-        # bracketedRange() - see that function's comment, and timecode.py's
-        # module docstring's LRI/PDI explanation, for why the brackets have
-        # to sit inside the isolate rather than around it.
-        bare = format_range(turn.start, turn.end).replace(LRI, "").replace(PDI, "")
-        prefix_parts.append(f"{LRI}[{bare}]{PDI}")
     if speaker_label is not None and turn.speaker is not None:
         prefix_parts.append(f"{_speaker_fallback(speaker_label, turn.speaker)}:")
     prefix_text = f"{' '.join(prefix_parts)} " if prefix_parts else ""
 
-    # Each line gets its own "{LRI}{number}{PDI} " lead-in, the same isolate
-    # shape the timestamp bracket above uses and for the same reason: a bare
-    # digit run sitting next to the sentence's Hebrew text is still an LTR
-    # run inside an RTL line, even with no neutral character of its own to
-    # misresolve. No dir="ltr" element wraps it - unlike the file-position
-    # span, this text has to stay a single contenteditable text node (one
+    # Each line leads with "{LRI}{number}.{PDI} " - or, with timestamps on,
+    # "{LRI}{number}. [{range}]{PDI} " - all inside ONE isolate rather than
+    # a separate one per piece: the number, the dot and the bracketed range
+    # are one continuous LTR run, so a second isolate around the range would
+    # only add control characters with nothing to isolate it from. No
+    # dir="ltr" element wraps it - unlike the file-position span, this text
+    # has to stay a single contenteditable text node (one
     # <span class="plain-body">, matching the card's single <div class="body">
-    # contenteditable contract) so a wrapping element isn't available here;
-    # the plain-prefix span just above takes the same plain-text-isolate
-    # approach for its own bracketed range.
+    # contenteditable contract) so a wrapping element isn't available here.
     #
     # NOTE for the JS pass that follows this one: js/32-plain-text.js's input
     # handler currently does `bodyEl.textContent.split('\n')` to rebuild the
     # paragraph array it writes back into the card via writeParagraphs(). That
-    # will now capture this "{LRI}{n}{PDI} " lead-in as part of the paragraph
-    # text unless it is stripped first - the number has to come back out
-    # before a plain-panel edit is written back to the card, or every future
-    # edit through this panel bakes a stale number into the transcript text
-    # itself. Not fixed here: this module is Python-only and does not touch
-    # transcript.js.
-    sentence_lines = [
-        f"{LRI}{first_number + idx}{PDI} {sentence}"
-        for idx, sentence in enumerate(split_sentences(turn.text))
-    ]
+    # will now capture this lead-in as part of the paragraph text unless it
+    # is stripped first - the lead-in has to come back out before a
+    # plain-panel edit is written back to the card, or every future edit
+    # through this panel bakes a stale number and a stale timestamp into the
+    # transcript text itself. Not fixed here: this module is Python-only and
+    # does not touch transcript.js.
+    sentence_lines = []
+    for idx, sentence in enumerate(turn.sentences()):
+        number = first_number + idx
+        if timestamps:
+            # format_range() truncates both ends via int(), so a sentence
+            # under a second long (routine - sentences are often closer
+            # together than that) would render its end the same as its
+            # start: "0:00 - 0:00", which reads as broken rather than as a
+            # real, very short sentence. Rounding the END second UP with
+            # math.ceil() (and leaving the start alone) is enough to avoid
+            # that degenerate range without touching format_range() itself,
+            # which the turn header above still uses un-rounded - and a
+            # rounded-up end is also the more useful choice for playback,
+            # since it is guaranteed to include the sentence's own tail
+            # rather than cutting it off.
+            bare = (
+                format_range(sentence.start, _display_end_second(sentence))
+                .replace(LRI, "")
+                .replace(PDI, "")
+            )
+            lead = f"{LRI}{number}. [{bare}]{PDI}"
+        else:
+            lead = f"{LRI}{number}.{PDI}"
+        sentence_lines.append(f"{lead} {sentence.text}")
     body_text = "\n".join(sentence_lines)
     body_label = _t(strings, "turn_text", "Turn text")
     return (

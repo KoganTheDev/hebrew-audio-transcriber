@@ -6,14 +6,14 @@
   // rich text - the plain-text panel is the whole point of the document.
   //
   // A card's body is no longer one bare <p> per paragraph - each sentence is
-  // now wrapped in a <div class="bubble"> that also carries a .line-no and a
-  // .ts, both contenteditable="false" (see _render_bubble_html() in
+  // now wrapped in a <div class="bubble"> that also carries a .ts,
+  // contenteditable="false" (see _render_bubble_html() in
   // core/formatting/document.py). Reading body.children directly, the way
   // this used to, would pick up those .bubble wrappers as the "paragraphs"
-  // and bake the number and the timestamp into the saved text. Reading every
-  // <p> in the body instead - not just direct children, since a stray edit
-  // could in principle leave a <p> outside a .bubble - skips the two
-  // contenteditable="false" siblings entirely, because neither is a <p>.
+  // and bake the timestamp into the saved text. Reading every <p> in the
+  // body instead - not just direct children, since a stray edit could in
+  // principle leave a <p> outside a .bubble - skips that
+  // contenteditable="false" sibling entirely, because it is not a <p>.
   function readParagraphs(body) {
     var paras = Array.prototype.slice.call(body.querySelectorAll('p'));
     if (!paras.length) { return [body.textContent]; }
@@ -22,7 +22,7 @@
 
   // Writes paragraph text back into the existing bubbles rather than
   // rebuilding the body from bare <p> elements - a bubble's wrapper,
-  // data-line, data-start/data-end, .line-no and .ts are exactly what makes
+  // data-line, data-start/data-end and .ts are exactly what makes
   // per-bubble playback and the numbered plain-text panel work, and none of
   // that survives a "throw the body away and re-create it" write. Only the
   // sentence text inside each bubble's <p> changes.

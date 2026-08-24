@@ -635,15 +635,16 @@ class TestEditableDocument:
 
     def test_plain_text_row_brackets_the_timestamp_inside_the_isolate(self):
         """
-        The card's own pill stays bare ("0:32 - 1:05"); the plain-text
-        panel - copied out into apps with no bidi engine - gets the
-        stronger "[0:32 - 1:05]" cue, with the brackets inside the same
-        LRI/PDI isolate as the range itself (see the module docstring and
-        transcript.js's bracketedRange() for why outside the isolate would
-        let them reorder the same way the range's own hyphen could).
+        Per-sentence now, not per-turn: the plain-text panel's own range
+        moved down to sit beside each sentence's number (see
+        _render_plain_row_html()'s docstring), inside the SAME isolate as
+        the number and its dot - a second isolate around just the brackets
+        would only add control characters with nothing to isolate them from
+        (see transcript.js's numberedLines() for the JS side of the same
+        rule).
         """
         out = render_html([doc("a.wav", [seg(32, 65)])])
-        assert f"{LRI}[0:32 - 1:05]{PDI}" in out
+        assert f"{LRI}1. [0:32 - 1:05]{PDI}" in out
         # The card's pill is unaffected - format_range() is reused, not
         # changed, so the un-bracketed form still appears for it.
         assert f"{LRI}0:32 - 1:05{PDI}" in out
@@ -671,7 +672,6 @@ class TestBubbles:
         assert re.search(
             r'<div class="bubble" data-line="0-0-0"'
             r' data-start="0\.00" data-end="1\.00">'
-            r'<span class="line-no" dir="ltr" contenteditable="false">.*?1.*?</span>'
             r'<p>אחד\.</p>'
             r'<span class="bubble-spk-anchor" contenteditable="false">'
             r'<button type="button" class="bubble-spk" aria-haspopup="true"'
@@ -681,6 +681,9 @@ class TestBubbles:
             r'</div>',
             out,
         ), out
+        # No sentence number on the bubble any more - it lives only in the
+        # plain-text panel now (see _render_bubble_html()'s docstring).
+        assert 'class="line-no"' not in out
 
     def test_bubble_timestamp_is_a_real_button(self):
         """
@@ -703,17 +706,16 @@ class TestBubbles:
         """
         A bubble lives inside .body, which is contenteditable="true" so the
         sentence can be corrected in place. That makes every other text node
-        in the subtree editable too, so the number and the timestamp have to
-        opt out explicitly - otherwise a backspace at the start of a line
-        eats them and readParagraphs() persists the damage. The plain-panel
-        prefix already opts out the same way.
+        in the subtree editable too, so the timestamp has to opt out
+        explicitly - otherwise a backspace at the start of a line eats it and
+        readParagraphs() persists the damage. The plain-panel lead-in already
+        opts out the same way.
         """
         out = markup(render_html([doc("a.wav", [seg(0, 1, "אחד.")])]))
         bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
-        for tag, cls in (("span", "line-no"), ("button", "ts")):
-            element = re.search(f'<{tag}[^>]*class="{cls}"[^>]*>', bubble)
-            assert element, bubble
-            assert 'contenteditable="false"' in element.group(0), element.group(0)
+        element = re.search(r'<button[^>]*class="ts"[^>]*>', bubble)
+        assert element, bubble
+        assert 'contenteditable="false"' in element.group(0), element.group(0)
 
     def test_bubble_time_is_an_instant_not_a_range(self):
         """
@@ -761,11 +763,11 @@ class TestBubbles:
 
     def test_sentence_numbers_run_continuously_across_turns_in_one_document(self):
         """
-        The whole point of numbering at all: a bubble's .line-no and the
-        matching plain-text row must show the SAME number for the SAME
-        sentence, and the count must not reset at a turn boundary - a
-        second turn's first sentence continues from the first turn's last
-        sentence's number, not from 1 again.
+        Numbering lives only in the plain-text panel now - bubbles carry no
+        number of their own any more (see _render_bubble_html()'s
+        docstring) - and the panel's count must not reset at a turn
+        boundary: a second turn's first sentence continues from the first
+        turn's last sentence's number, not from 1 again.
         """
         segments = [
             seg(0, 1, "אחד. שתיים.", speaker=0),
@@ -773,16 +775,12 @@ class TestBubbles:
         ]
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
 
-        bubble_numbers = re.findall(f'class="line-no"[^>]*>{LRI}(\\d+){PDI}', out)
-        assert bubble_numbers == ["1", "2", "3"]
-
-        plain_numbers = re.findall(f'{LRI}(\\d+){PDI} ', out)
-        # The plain-panel numbers are a subset of everything LRI/PDI-wrapped
-        # in the page (timestamps use the same isolate) - filter down to the
-        # digit-only occurrences already asserted above by taking the tail,
-        # since bubble numbers are emitted first, in document order, one per
-        # bubble, immediately followed by the plain-panel's own copy.
-        assert plain_numbers[-3:] == ["1", "2", "3"]
+        # "{LRI}{n}." is the plain-row lead-in's own shape (see
+        # _render_plain_row_html()); nothing else on the page emits a
+        # digit run immediately followed by a literal dot inside the
+        # isolate, so this pattern picks out only the plain-panel numbers.
+        plain_numbers = re.findall(f'{LRI}(\\d+)\\.', out)
+        assert plain_numbers == ["1", "2", "3"]
 
     def test_sentence_numbers_continue_across_multiple_documents_worth_of_turns(self):
         """
@@ -795,8 +793,8 @@ class TestBubbles:
             doc("a.wav", [seg(0, 1, "אחד. שתיים.")]),
             doc("b.wav", [seg(0, 1, "שלוש.")]),
         ])
-        bubble_numbers = re.findall(f'class="line-no"[^>]*>{LRI}(\\d+){PDI}', out)
-        assert bubble_numbers == ["1", "2", "1"]
+        plain_numbers = re.findall(f'{LRI}(\\d+)\\.', out)
+        assert plain_numbers == ["1", "2", "1"]
 
 
 class TestHelpPanel:

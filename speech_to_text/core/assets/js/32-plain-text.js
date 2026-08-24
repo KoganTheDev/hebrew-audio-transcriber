@@ -15,21 +15,76 @@
     // ts.textContent already carries format_range()'s own LRI/PDI pair
     // (rendered by formatting.py); stripped here and reapplied around the
     // bracketed form rather than nested, so the plain-text panel still has
-    // exactly one isolate pair per range, per the module docstring.
+    // exactly one isolate pair per range, per the module docstring. Used
+    // only for copy-turn's own turn-level prefix (turnPlainText() below) -
+    // that control predates the sentence-bubbles work and keeps its own
+    // range-from-the-rendered-.ts-text shape unchanged. The per-line range
+    // rebuildPlain() now builds for each sentence is a different thing
+    // (sentenceLead() below): it has no rendered .ts range text to read,
+    // since a bubble's own .ts shows only a start instant.
     var bare = ts.textContent.trim().replace(/[⁦⁩]/g, '');
     return PLAIN_LRI + '[' + bare + ']' + PLAIN_PDI;
   }
 
+  // Whole-second m:ss / h:mm:ss formatting, mirroring format_mmss()/
+  // format_hhmmss() in core/formatting/timecode.py closely enough that
+  // formatSentenceRange() below produces byte-identical text to
+  // _render_plain_row_html()'s server render. Kept as two small functions
+  // rather than one with a branch inside, the same shape the Python side
+  // uses (format_mmss/format_hhmmss chosen by format_range()'s own
+  // `promote` flag).
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function formatMmss(seconds) {
+    var total = Math.max(Math.floor(seconds), 0);
+    var m = Math.floor(total / 60);
+    var s = total % 60;
+    return m + ':' + pad2(s);
+  }
+
+  function formatHhmmss(seconds) {
+    var total = Math.max(Math.floor(seconds), 0);
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    return h + ':' + pad2(m) + ':' + pad2(s);
+  }
+
+  // A sentence's own "M:SS - M:SS" range, un-isolated (numberedLines()
+  // below wraps it, together with the number and the dot, in one LRI/PDI
+  // pair - see the module docstring on why one isolate, not two). Mirrors
+  // format_range() in timecode.py, including its hour-promotion rule (both
+  // ends promote together once either passes an hour), except that the end
+  // second carries a floor of one second above the start. This MUST stay
+  // identical to _display_end_second() in core/formatting/document.py: the
+  // server renders these lines and rebuildPlain() regenerates them, so any
+  // divergence makes the panel visibly change the first time the reader
+  // toggles a checkbox. Read that function's docstring for the reasoning -
+  // in short, truncation alone gives "0:00 - 0:00" on a sub-second
+  // sentence, and rounding up unconditionally makes consecutive ranges
+  // overlap, which reads as a bug and defeats the point of showing a range
+  // at all.
+  function formatSentenceRange(start, end) {
+    var endSecond = Math.max(Math.floor(end), Math.floor(start) + 1);
+    var promote = Math.floor(start) >= 3600 || endSecond >= 3600;
+    var fmt = promote ? formatHhmmss : formatMmss;
+    return fmt(start) + ' - ' + fmt(endSecond);
+  }
+
   // _render_plain_row_html() (core/formatting/document.py) leads every line
-  // of a row's .plain-body with "{LRI}{n}{PDI} " - the same sentence number
-  // shown on the matching bubble's .line-no, so a reader can cross-reference
-  // one against the other. rebuildPlain() below has to reproduce that same
-  // lead-in when it regenerates a row from a card's own text (see
-  // numberedLines()), and the panel's own input handler has to strip it
-  // back off before that text is ever written back into a bubble's <p> -
-  // otherwise the number stops being a display artifact and becomes part of
-  // the sentence, permanently, the next time this row is edited.
-  var LINE_NUMBER_RE = new RegExp('^' + PLAIN_LRI + '\\d+' + PLAIN_PDI + ' ?');
+  // of a row's .plain-body with "{LRI}{n}.{PDI} " - or, with timestamps on,
+  // "{LRI}{n}. [{range}]{PDI} " - all inside ONE isolate, since the number,
+  // the dot and the bracketed range are one continuous LTR run. rebuildPlain()
+  // below has to reproduce that same lead-in when it regenerates a row from
+  // a card's own text (see numberedLines()), and the panel's own input
+  // handler has to strip it back off before that text is ever written back
+  // into a bubble's <p> - otherwise the lead-in stops being a display
+  // artifact and becomes part of the sentence, permanently, the next time
+  // this row is edited. The middle of the isolate (the dot, and the
+  // optional " [range]") is matched with a "not PDI" class rather than
+  // spelled out literally, so this one regex strips the lead-in whether or
+  // not a range is present.
+  var LINE_NUMBER_RE = new RegExp('^' + PLAIN_LRI + '\\d+\\.[^' + PLAIN_PDI + ']*' + PLAIN_PDI + ' ?');
 
   function stripLineNumber(line) {
     return line.replace(LINE_NUMBER_RE, '');
@@ -105,17 +160,29 @@
   }
 
   // The inverse of stripLineNumber()/stripLineOverrideTag(): lays the same
-  // "{LRI}{n}{PDI} " lead-in formatting.py's _render_plain_row_html() uses
-  // over one turn's paragraph array, numbered from `first`, with an
-  // optional bracketed name tag (see bracketedName()) right after the
-  // number and before the sentence text - so a row rebuilt client-side (a
-  // reader typed into the card, or an override was just set) shows the same
-  // numbers a fresh server render would, plus whichever per-line tags
-  // rowSpeakerName()'s decision calls for. `tags[idx]` is a name string to
-  // tag that line with, or falsy for an ordinary, untagged line.
-  function numberedLines(paragraphs, first, tags) {
+  // "{LRI}{n}.{PDI} " (or, with withTs, "{LRI}{n}. [{range}]{PDI} ") lead-in
+  // _render_plain_row_html() (core/formatting/document.py) uses over one
+  // turn's paragraph array, numbered from `first`, with an optional
+  // bracketed name tag (see bracketedName()) right after the lead-in and
+  // before the sentence text - so a row rebuilt client-side (a reader typed
+  // into the card, or an override was just set, or the .opt-ts toggle
+  // changed) shows the same text a fresh server render would, plus
+  // whichever per-line tags rowSpeakerName()'s decision calls for.
+  // `tags[idx]` is a name string to tag that line with, or falsy for an
+  // ordinary, untagged line. `times[idx]` is that line's own
+  // {start, end} - required whenever withTs is true, since the range is
+  // per-sentence, not per-row (see formatSentenceRange() above).
+  function numberedLines(paragraphs, first, tags, times, withTs) {
     return paragraphs.map(function (text, idx) {
-      var lead = PLAIN_LRI + (first + idx) + PLAIN_PDI + ' ';
+      var number = first + idx;
+      var lead;
+      if (withTs && times && times[idx]) {
+        lead = PLAIN_LRI + number + '. [' +
+          formatSentenceRange(times[idx].start, times[idx].end) + ']' + PLAIN_PDI;
+      } else {
+        lead = PLAIN_LRI + number + '.' + PLAIN_PDI;
+      }
+      lead += ' ';
       var tag = tags && tags[idx];
       if (tag) { lead += bracketedName(tag) + ' '; }
       return lead + text;
@@ -197,7 +264,7 @@
       // to read one off - for the one case writeParagraphs() itself already
       // documents: a body with no .bubble wrapper at all.
       var bubbleEls = Array.prototype.slice.call(cardBody.querySelectorAll('.bubble'));
-      var paragraphs, tags;
+      var paragraphs, tags, times;
       if (bubbleEls.length) {
         paragraphs = bubbleEls.map(function (b) {
           var p = b.querySelector('p');
@@ -207,9 +274,24 @@
           var name = bubbleSpeakerName(b, clusterName);
           return name !== rowName ? name : null;
         });
+        times = bubbleEls.map(function (b) {
+          return { start: parseFloat(b.dataset.start), end: parseFloat(b.dataset.end) };
+        });
       } else {
+        // No .bubble wrapper at all (see writeParagraphs()'s own comment on
+        // this case) - there is no per-sentence span to read a range from,
+        // so every line falls back to the turn's own start/end, the same
+        // fallback Turn.sentences() (turns.py) uses server-side when a turn
+        // carries no word timings.
         paragraphs = readParagraphs(cardBody);
         tags = paragraphs.map(function () { return null; });
+        var fallbackStart = parseFloat(turn.dataset.start) || 0;
+        var headerTs = turn.querySelector('.ts');
+        var fallbackEnd = headerTs && headerTs.dataset.end
+          ? parseFloat(headerTs.dataset.end) : fallbackStart;
+        times = paragraphs.map(function () {
+          return { start: fallbackStart, end: fallbackEnd };
+        });
       }
 
       var trimmed = paragraphs.join('\n').replace(/^\s+|\s+$/g, '');
@@ -220,7 +302,7 @@
         sentenceNumber += paragraphs.length;
         return;
       }
-      var text = numberedLines(paragraphs, sentenceNumber, tags);
+      var text = numberedLines(paragraphs, sentenceNumber, tags, times, withTs);
       sentenceNumber += paragraphs.length;
       seen[turnId] = true;
 
@@ -242,11 +324,14 @@
         container.appendChild(row);
       }
 
+      // The prefix carries only the speaker name now - the timestamp range
+      // used to live here too, but a turn can hold several sentences and one
+      // range could not identify any single one of them, so it moved down
+      // to sit beside each sentence's own number instead (see
+      // numberedLines()/formatSentenceRange() above). rowName, not
+      // clusterSpk.textContent directly - see rowSpeakerName() for the full
+      // "what does a mixed-speaker row's prefix say" decision.
       var prefix = [];
-      var ts = turn.querySelector('.ts');
-      if (withTs && ts) { prefix.push(bracketedRange(ts)); }
-      // rowName, not clusterSpk.textContent directly - see rowSpeakerName()
-      // for the full "what does a mixed-speaker row's prefix say" decision.
       if (withSpk && clusterSpk) { prefix.push(rowName + ':'); }
       var prefixText = prefix.length ? prefix.join(' ') + ' ' : '';
 

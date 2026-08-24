@@ -46,7 +46,6 @@ test('typing into a bubble\'s <p> leaves the wrapper, its attributes and its sib
     dataLine: bubble.dataset.line,
     dataStart: bubble.dataset.start,
     dataEnd: bubble.dataset.end,
-    lineNo: bubble.querySelector('.line-no').textContent,
     ts: bubble.querySelector('.ts').textContent,
   };
 
@@ -58,7 +57,6 @@ test('typing into a bubble\'s <p> leaves the wrapper, its attributes and its sib
   assert.equal(after.dataset.line, before.dataLine);
   assert.equal(after.dataset.start, before.dataStart);
   assert.equal(after.dataset.end, before.dataEnd);
-  assert.equal(after.querySelector('.line-no').textContent, before.lineNo);
   assert.equal(after.querySelector('.ts').textContent, before.ts);
   assert.equal(after.querySelector('p').textContent, 'שלום מתוקן');
   assert.ok(after.classList.contains('bubble'), 'the wrapper must still be a .bubble');
@@ -153,14 +151,16 @@ test('editing the plain panel never bakes the line-number lead-in into the card 
   const bodyEl = row.querySelector('.plain-body');
 
   // Sanity check on the fixture itself: the row really does carry the
-  // "{LRI}{n}{PDI} " lead-in on both of its lines before anything is typed.
-  assert.ok(bodyEl.textContent.startsWith(`${LRI}1${PDI} `), 'expected the first line\'s number lead-in');
-  assert.ok(bodyEl.textContent.includes(`\n${LRI}2${PDI} `), 'expected the second line\'s number lead-in');
+  // "{LRI}{n}. [range]{PDI} " lead-in on both of its lines before anything
+  // is typed - the fixture renders with timestamps on, so each line's own
+  // range is present too, not just its number.
+  assert.equal(bodyEl.textContent.split('\n')[0], `${LRI}1. [0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
+  assert.equal(bodyEl.textContent.split('\n')[1], `${LRI}2. [0:01 - 0:03]${PDI} עוד משפט קצר`);
 
   // Simulate typing a correction into the first line without disturbing its
-  // leading "{LRI}1{PDI} " - textContent is edited directly (jsdom does not
-  // implement contenteditable typing) and an 'input' event is fired the way
-  // a real keystroke would.
+  // leading "{LRI}1. [0:00 - 0:01]{PDI} " - textContent is edited directly
+  // (jsdom does not implement contenteditable typing) and an 'input' event
+  // is fired the way a real keystroke would.
   bodyEl.textContent = bodyEl.textContent.replace('שלום אחד', 'שלום מתוקן');
   bodyEl.dispatchEvent(new window.Event('input', { bubbles: true }));
 
@@ -193,10 +193,10 @@ test('editing a card renumbers the plain panel to match its new paragraph count'
   body.dispatchEvent(new window.Event('input', { bubbles: true }));
 
   const row00 = document.querySelector('.plain-row[data-turn="0-0"]');
-  assert.equal(row00.querySelector('.plain-body').textContent, `${LRI}1${PDI} שלום אחד שתיים שלוש.`);
+  assert.equal(row00.querySelector('.plain-body').textContent, `${LRI}1. [0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
 
   const row01 = document.querySelector('.plain-row[data-turn="0-1"]');
-  assert.equal(row01.querySelector('.plain-body').textContent, `${LRI}2${PDI} שלום ארבע חמש שש`);
+  assert.equal(row01.querySelector('.plain-body').textContent, `${LRI}2. [0:05 - 0:08]${PDI} שלום ארבע חמש שש`);
 
   window.close();
 });
@@ -295,11 +295,11 @@ test('search still finds and marks text inside a bubble', async () => {
 // copy-turn's own bracketed-range-and-speaker prefix (turnPlainText(turn,
 // true, true) in js/32-plain-text.js) predates the sentence-bubbles work
 // entirely and is deliberate - see bindPlain()'s own copy-turn wiring - so
-// this test's job is narrower than "no digits at all": the bubble's own
-// per-sentence "{LRI}{n}{PDI} " line-number lead-in (new in this branch,
-// and the thing readParagraphs() also has to steer clear of - see
-// js/16-edits.js) must never leak into the copy, even though the turn's
-// timestamp legitimately carries digits of its own.
+// this test's job is narrower than "no digits at all": the plain-panel's
+// own per-sentence "{LRI}{n}. [range]{PDI} " lead-in (the thing
+// readParagraphs() also has to steer clear of - see js/16-edits.js) must
+// never leak into the copy, even though the turn's own timestamp
+// legitimately carries digits of its own.
 // -----------------------------------------------------------------------
 
 test('copy-turn carries the turn\'s own timestamp/speaker prefix but never a bubble\'s line-number', async () => {
@@ -333,8 +333,8 @@ test('the plain panel\'s "copy all" keeps the sentence numbers - that is the poi
   await wait(0);
 
   assert.equal(writes.length, 1);
-  assert.ok(writes[0].includes(`${LRI}1${PDI} `), 'expected the first sentence\'s number to survive into the copy');
-  assert.ok(writes[0].includes(`${LRI}2${PDI} `), 'expected the second sentence\'s number too');
+  assert.ok(writes[0].includes(`${LRI}1. [0:00 - 0:01]${PDI} `), 'expected the first sentence\'s number and range to survive into the copy');
+  assert.ok(writes[0].includes(`${LRI}2. [0:01 - 0:03]${PDI} `), 'expected the second sentence\'s number and range too');
 
   window.close();
 });

@@ -212,9 +212,13 @@ test('the plain-panel row prefix falls back to the cluster\'s name and tags only
 
   const body = row.querySelector('.plain-body').textContent;
   assert.ok(body.includes('[Speaker 2]'), `expected the disagreeing line to carry its own bracketed tag, got: ${body}`);
-  // The FIRST line (still agreeing with the cluster) must carry no tag.
+  // The FIRST line (still agreeing with the cluster) must carry no override
+  // tag - it may still legitimately carry its own "[start - end]" range
+  // (the fixture renders with timestamps on), so the check is for the
+  // override-tag's own bracketed-name shape specifically, not for the
+  // absence of every bracket on the line.
   const firstLine = body.split('\n')[0];
-  assert.ok(!firstLine.includes('['), `the untouched first line must carry no override tag, got: ${firstLine}`);
+  assert.ok(!/\[Speaker/.test(firstLine), `the untouched first line must carry no override tag, got: ${firstLine}`);
 
   window.close();
 });

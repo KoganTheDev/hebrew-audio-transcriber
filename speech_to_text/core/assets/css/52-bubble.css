@@ -78,22 +78,23 @@
 .bubble p { margin: 0; min-width: 0; }
 .bubble .ts { align-self: flex-end; }
 
-/* Both the number and the range are LTR digit runs inside an RTL bubble -
-   see timecode.py's module docstring and _render_bubble_html()'s own
-   comment for why each needs both dir="ltr" (what the browser lays the box
-   out by) and the LRI/PDI isolate baked into its text (what keeps the run
-   ordered correctly once the markup is copied out as plain text, where
-   dir="ltr" does not travel). .line-no is inert text; .bubble .ts is a real
-   button, the same as the cluster header's own timestamp, so that the click
-   target bindAudio() binds (it listens on every ".ts" on the page) is
-   reachable by keyboard and not only by mouse. It reads its range from the
-   wrapping .bubble's data-start/data-end rather than carrying its own.
+/* The time is an LTR digit run inside an RTL bubble - see timecode.py's
+   module docstring and _render_bubble_html()'s own comment for why it needs
+   both dir="ltr" (what the browser lays the box out by) and the LRI/PDI
+   isolate baked into its text (what keeps the run ordered correctly once
+   the markup is copied out as plain text, where dir="ltr" does not travel).
+   .bubble .ts is a real button, the same as the cluster header's own
+   timestamp, so that the click target bindAudio() binds (it listens on
+   every ".ts" on the page) is reachable by keyboard and not only by mouse.
+   It reads its range from the wrapping .bubble's data-start/data-end rather
+   than carrying its own. There is no bubble-level sentence number any more
+   - see _render_bubble_html()'s docstring - so this rule styles only the
+   timestamp now.
 
-   font-variant-numeric: tabular-nums on both matches every other digit
-   run on this page (.ts in 48-turn.css, .file-position in 40-source.css)
-   so a column of bubbles does not visibly jitter as sentence numbers pass
-   from single to double digits. */
-.line-no, .bubble .ts {
+   font-variant-numeric: tabular-nums matches every other digit run on this
+   page (.ts in 48-turn.css, .file-position in 40-source.css) so a column of
+   bubbles does not visibly jitter as digits pass from single to double. */
+.bubble .ts {
   flex: 0 0 auto;
   color: var(--muted);
   font-family: Consolas, "SF Mono", "Liberation Mono", monospace;
