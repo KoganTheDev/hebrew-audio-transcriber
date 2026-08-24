@@ -25,6 +25,13 @@ Usage:
     py -3.11 -m tests.eval.compare_models mp4a_test/test.m4a --models medium ivrit-turbo
     py -3.11 -m tests.eval.compare_models mp4a_test/test.m4a --seconds 300
     py -3.11 -m tests.eval.compare_models mp4a_test/test.m4a --reference ref.txt
+
+    # Timing sweep (Phase B). --language MUST match the audio - see
+    # run_config()'s docstring for why a mismatch corrupts the TIMING, not
+    # just the text, and cost a whole discarded sweep before this flag
+    # existed:
+    py -3.11 -m tests.eval.compare_models fixture.wav --language en \
+        --cpu-threads 1 4 --repeats 5 --warmup
 """
 
 import argparse
@@ -37,6 +44,8 @@ import sys
 import time
 from typing import Dict, List, Optional
 
+from speech_to_text import config
+
 logger = logging.getLogger(__name__)
 
 LOW_CONFIDENCE = 0.55  # matches core.hebrew_correct's gate
@@ -44,14 +53,24 @@ DEFAULT_MODELS = ["medium", "ivrit-turbo"]
 OUTPUT_DIR = "eval_output"
 
 
-def transcribe_once(model_size: str, samples, duration: float) -> Dict:
-    """Run one model over the audio and collect metrics alongside the text."""
+def transcribe_once(model_size: str, samples, duration: float, language: Optional[str] = None) -> Dict:
+    """
+    Run one model over the audio and collect metrics alongside the text.
+
+    language defaults to None here, which Transcriber resolves to
+    config.LANGUAGE ("he") - the app's own default, so a bare invocation
+    still benchmarks what the app actually does. Pass --language explicitly
+    for audio that isn't Hebrew (see main()'s --language flag): decoding
+    English audio as Hebrew doesn't just mistranscribe it, it changes the
+    TIMING - see run_config()'s docstring for the mechanism and the 5.3x
+    measured cost. This bit a real benchmark run before the flag existed.
+    """
     from speech_to_text.core.segments import plain_text
     from speech_to_text.core.transcriber import Transcriber
 
     print(f"\n=== {model_size} ===", flush=True)
-    transcriber = Transcriber(model_size=model_size)
-    print(f"  repo: {transcriber.model_repo}", flush=True)
+    transcriber = Transcriber(model_size=model_size, language=language or config.LANGUAGE)
+    print(f"  repo: {transcriber.model_repo}, language: {transcriber.language}", flush=True)
 
     load_start = time.time()
     if not transcriber.load_model():
@@ -234,13 +253,88 @@ def _config_label(cfg: Dict) -> str:
     return "/".join(parts)
 
 
-def run_config(cfg: Dict, samples, duration: float, warmup: bool, repeats: int) -> Dict:
+# A config's own run-to-run noise, expressed as coefficient of variation
+# (stdev / median) - unitless, so it's comparable across configs whose
+# absolute times differ wildly (a 5s beam_size=1 run and a 100s float32 run
+# can both legitimately have a 2s stdev; only the ratio says which one that
+# actually threatens). Above this, print a loud warning rather than a
+# quietly-wrong number: this threshold was set empirically on a CONTENDED
+# machine (another process running the full pytest + jsdom suite
+# concurrently) where two back-to-back runs of the identical config came
+# back at 114.75s and 78.38s - a 46% spread on nothing but scheduler noise,
+# an order of magnitude above what any of these axes could plausibly move
+# the needle by. 0.15 is deliberately strict: it is meant to catch exactly
+# that kind of contention, not to tolerate it.
+NOISE_CV_THRESHOLD = 0.15
+
+# Below this many timed repeats, spread/median are barely more than a guess -
+# two samples can't distinguish real variance from a single unlucky run.
+# _sweep_requested()'s caller prints a warning (not a hard error - a quick
+# repeats=1 smoke test to check a config doesn't crash is still legitimate)
+# when this isn't met.
+MIN_TRUSTWORTHY_REPEATS = 5
+
+# A realtime factor above this is not "a slow config", it's a sign something
+# is actually wrong - the worst legitimate case measured on this machine
+# (float32 on the CPU) is a fraction of this. The concrete failure mode this
+# exists to catch: language mismatch (see run_config's docstring) measured
+# at 5.3x slower AND noisier than the correct language on identical audio -
+# a whole Phase B sweep was run and discarded because of it before this
+# constant and --language existed. 1.0 is a loose tripwire on purpose - it
+# only needs to catch "wildly worse than expected", not flag every merely
+# slow config.
+REALTIME_SANITY_FACTOR = 1.0
+
+
+def _noise_hint(cv: float, realtime_factor: Optional[float]) -> Optional[str]:
+    """
+    One extra sentence for the NOISE WARNING machinery: a high cv or an
+    unexpectedly bad realtime factor both have the same likely explanation
+    on this harness's history (see run_config's docstring for the language-
+    mismatch story), so name it explicitly rather than making a future
+    reader rediscover it via a killed 2-hour run.
+    """
+    if cv > NOISE_CV_THRESHOLD or (realtime_factor is not None and realtime_factor > REALTIME_SANITY_FACTOR):
+        return (
+            "If this doesn't clear up with more repeats on a quiet machine, "
+            "check --language: transcribing audio in the wrong language is a "
+            "known cause of both bad speed AND noise (the temperature "
+            "fallback ladder re-decodes with sampling), not just bad text."
+        )
+    return None
+
+
+def run_config(
+    cfg: Dict, samples, duration: float, warmup: bool, repeats: int,
+    language: Optional[str] = None,
+) -> Dict:
     """
     Load once, optionally warm up once (untimed, discarded), then time
     `repeats` transcribe() calls of the SAME loaded model over the SAME
-    samples. Returns median_seconds/spread_seconds alongside every individual
+    samples. Returns median_seconds/spread_seconds (min-max) and, once there
+    are enough samples to make it meaningful, iqr_seconds (a spread measure
+    robust to a single outlier run, which min-max is not) and cv (coefficient
+    of variation - see NOISE_CV_THRESHOLD above) alongside every individual
     run's time in "runs", so a caller can see the raw numbers behind the
     summary rather than trusting it blindly.
+
+    language defaults to None, resolved to config.LANGUAGE ("he") exactly
+    like transcribe_once() - see that function's docstring. This matters a
+    LOT more here than it does there: a language mismatch doesn't just
+    mistranscribe, it changes the TIMING being measured. faster-whisper's
+    compression-ratio and logprob thresholds reject garbage output and
+    trigger the temperature fallback ladder (0.0, 0.2, 0.4, 0.6, 0.8, 1.0 -
+    see core/worker.py:49-57, which already names this "the stretch users
+    see as a frozen progress bar"), which re-decodes with SAMPLING. That's
+    stochastic, so it shows up as run-to-run VARIANCE - exactly what this
+    function's cv/spread reporting is supposed to catch - and it makes cost
+    superlinear in clip length, since a longer clip has more windows that
+    can fail. Measured on this machine: transcribing the (English) AMI
+    fixture as language="he" cost 5.3x the wall-clock of language="en" on
+    the identical audio, model and settings, and was more than twice as
+    noisy (cv 9% vs 4%, 3 repeats). A whole Phase B sweep was run and
+    discarded because of exactly this - don't remove this parameter's
+    default-to-explicit plumbing without knowing that history.
     """
     from speech_to_text.core.transcriber import Transcriber
 
@@ -250,6 +344,7 @@ def run_config(cfg: Dict, samples, duration: float, warmup: bool, repeats: int) 
     transcriber = Transcriber(
         model_size=cfg["model"],
         device=cfg["device"],
+        language=language or config.LANGUAGE,
         compute_type=cfg["compute_type"],
         beam_size=cfg["beam_size"],
         cpu_threads=cfg["cpu_threads"],
@@ -279,6 +374,18 @@ def run_config(cfg: Dict, samples, duration: float, warmup: bool, repeats: int) 
 
     median_seconds = statistics.median(runs)
     spread_seconds = (max(runs) - min(runs)) if len(runs) > 1 else 0.0
+    stdev_seconds = statistics.stdev(runs) if len(runs) > 1 else 0.0
+    cv = (stdev_seconds / median_seconds) if median_seconds else 0.0
+    # quantiles() needs at least 2 points and is only a meaningful "middle
+    # 50%" with several - restricted to len>=4 rather than reusing the
+    # min-max threshold above so a 2-3 repeat run doesn't get a fake IQR
+    # that's actually just min-max again wearing a different name.
+    iqr_seconds = None
+    if len(runs) >= 4:
+        q1, _, q3 = statistics.quantiles(runs, n=4)
+        iqr_seconds = q3 - q1
+
+    median_realtime_factor = round(median_seconds / duration, 3) if duration else None
     result = {
         **cfg,
         "label": label,
@@ -286,12 +393,26 @@ def run_config(cfg: Dict, samples, duration: float, warmup: bool, repeats: int) 
         "runs": [round(r, 2) for r in runs],
         "median_seconds": round(median_seconds, 2),
         "spread_seconds": round(spread_seconds, 2),
-        "median_realtime_factor": round(median_seconds / duration, 3) if duration else None,
+        "iqr_seconds": round(iqr_seconds, 2) if iqr_seconds is not None else None,
+        "cv": round(cv, 3),
+        "median_realtime_factor": median_realtime_factor,
     }
     print(
-        f"  median {median_seconds:.1f}s (spread {spread_seconds:.1f}s over {len(runs)} runs)",
+        f"  median {median_seconds:.1f}s (spread {spread_seconds:.1f}s, "
+        f"cv {cv:.0%} over {len(runs)} runs)",
         flush=True,
     )
+    if cv > NOISE_CV_THRESHOLD:
+        print(
+            f"  NOISE WARNING: cv={cv:.0%} exceeds {NOISE_CV_THRESHOLD:.0%} - this "
+            f"config's own run-to-run spread is too large to trust as a result. "
+            f"Re-run on a quiet machine or with more repeats before comparing it "
+            f"to anything.",
+            flush=True,
+        )
+    hint = _noise_hint(cv, median_realtime_factor)
+    if hint:
+        print(f"  {hint}", flush=True)
     return result
 
 
@@ -305,6 +426,8 @@ def print_sweep_table(results: List[Dict]) -> None:
         ("label", "config", ""),
         ("median_seconds", "median s", ""),
         ("spread_seconds", "spread s", ""),
+        ("iqr_seconds", "IQR s", ""),
+        ("cv", "cv", ""),
         ("median_realtime_factor", "xRT", ""),
         ("load_seconds", "load s", ""),
     ]
@@ -314,6 +437,25 @@ def print_sweep_table(results: List[Dict]) -> None:
     for row in rows:
         print("  ".join(f"{str(row.get(key, '')) + unit:>16}" for key, _, unit in columns))
 
+    noisy = [r["label"] for r in rows if r.get("cv", 0) > NOISE_CV_THRESHOLD]
+    if noisy:
+        print(
+            f"\nNOISE WARNING: {len(noisy)} config(s) exceeded a {NOISE_CV_THRESHOLD:.0%} "
+            f"coefficient of variation - their own run-to-run spread is too large to "
+            f"treat as a result: {', '.join(noisy)}"
+        )
+
+    any_hint = any(
+        _noise_hint(r.get("cv", 0), r.get("median_realtime_factor")) for r in rows
+    )
+    if any_hint:
+        print(
+            "If this doesn't clear up with more repeats on a quiet machine, check "
+            "--language: transcribing audio in the wrong language is a known cause "
+            "of both bad speed AND noise, not just bad text (see run_config's "
+            "docstring - it cost a whole discarded sweep before this flag existed)."
+        )
+
     print("\nA difference smaller than either config's own spread is noise, not")
     print("a result - re-run before trusting it.")
 
@@ -321,10 +463,13 @@ def print_sweep_table(results: List[Dict]) -> None:
 def _sweep_requested(args) -> bool:
     """Any Phase B flag given at all -> take the sweep path instead of the
     original transcribe_once path. Keeps the pre-Stage-2 CLI producing
-    exactly its old output when none of these are passed."""
+    exactly its old output when none of these are passed. args.repeats is
+    None (not 1) when the user never passed --repeats - see main()'s
+    argparse setup - specifically so a bare `--repeats` default cannot, on
+    its own, flip an old-style invocation onto the sweep path."""
     return bool(
         args.compute_types or args.beam_sizes or args.cpu_threads
-        or args.num_workers or args.devices or args.repeats != 1 or args.warmup
+        or args.num_workers or args.devices or args.repeats is not None or args.warmup
     )
 
 
@@ -337,6 +482,18 @@ def main(argv=None) -> int:
                         help="Only transcribe the first N seconds (0 = whole file)")
     parser.add_argument("--reference", help="Hand-corrected transcript, enables true WER/CER")
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
+    # Defaults to None -> config.LANGUAGE ("he"), the app's own default, so a
+    # bare invocation still benchmarks what the app actually does. MUST be
+    # passed explicitly for non-Hebrew audio (e.g. --language en for the AMI
+    # fixture): decoding audio in the wrong language doesn't just produce bad
+    # text, it changes the TIMING being measured - see run_config()'s
+    # docstring for the mechanism and the 5.3x measured cost. A whole Phase B
+    # sweep was run and discarded because of exactly this before this flag
+    # existed - do not remove it or let it silently default to the wrong
+    # language for a non-Hebrew fixture.
+    parser.add_argument("--language", default=None,
+                        help="faster-whisper language code (default: config.LANGUAGE, i.e. 'he'). "
+                             "Wrong language = wrong TIMING, not just wrong text - see run_config().")
     # --- Phase B: compute-settings sweep. Any of these being passed switches
     # main() from the original one-run-per-model path to run_config()'s
     # warm-up + N-repeats + median/spread path - see _sweep_requested(). Left
@@ -353,8 +510,10 @@ def main(argv=None) -> int:
                         help="e.g. 1 2 (default: ctranslate2's own choice)")
     parser.add_argument("--devices", nargs="+", default=None,
                         help="e.g. cpu cuda (default: cpu)")
-    parser.add_argument("--repeats", type=int, default=1,
-                        help="Timed runs per config; median+spread reported when > 1 (default: 1)")
+    parser.add_argument("--repeats", type=int, default=None,
+                        help=f"Timed runs per config (default: {MIN_TRUSTWORTHY_REPEATS} once the sweep "
+                             f"path is taken at all - see MIN_TRUSTWORTHY_REPEATS). Fewer than "
+                             f"{MIN_TRUSTWORTHY_REPEATS}, spread/cv are barely more than a guess.")
     parser.add_argument("--warmup", action="store_true",
                         help="Run one untimed transcribe before timing, to exclude first-call effects")
     args = parser.parse_args(argv)
@@ -377,6 +536,21 @@ def main(argv=None) -> int:
           f"one-speaker-per-channel: {two_party}", flush=True)
 
     if _sweep_requested(args):
+        # Default to MIN_TRUSTWORTHY_REPEATS once the sweep path is taken at
+        # all, rather than argparse's own default=None - a bare `--warmup`
+        # or `--cpu-threads 4` with no explicit --repeats should still get a
+        # trustworthy number of samples, not a single untimed-adjacent run.
+        # An explicit --repeats below that is still honoured (a quick "does
+        # this config even run" smoke test is legitimate) but warned about.
+        repeats = args.repeats if args.repeats is not None else MIN_TRUSTWORTHY_REPEATS
+        if repeats < MIN_TRUSTWORTHY_REPEATS:
+            print(
+                f"\nWARNING: --repeats {repeats} is below the "
+                f"{MIN_TRUSTWORTHY_REPEATS} this harness considers trustworthy - "
+                f"fine for a quick smoke test, but don't compare configs on the "
+                f"result. Use --repeats {MIN_TRUSTWORTHY_REPEATS} or more.",
+                flush=True,
+            )
         configs = build_configs(
             models=args.models,
             compute_types=args.compute_types or [None],
@@ -388,7 +562,7 @@ def main(argv=None) -> int:
         results = []
         for cfg in configs:
             try:
-                results.append(run_config(cfg, samples, duration, args.warmup, args.repeats))
+                results.append(run_config(cfg, samples, duration, args.warmup, repeats, args.language))
             except Exception:
                 logger.exception("Config %s failed", _config_label(cfg))
                 results.append({**cfg, "label": _config_label(cfg), "error": "raised an exception"})
@@ -411,7 +585,7 @@ def main(argv=None) -> int:
     results = []
     for model in args.models:
         try:
-            result = transcribe_once(model, samples, duration)
+            result = transcribe_once(model, samples, duration, args.language)
         except Exception as e:
             logger.exception("Model %s failed", model)
             result = {"model": model, "error": str(e)}

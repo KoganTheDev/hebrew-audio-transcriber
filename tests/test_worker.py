@@ -10,6 +10,8 @@ transcriber module itself so that late import picks it up.
 
 import os
 import re
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -448,6 +450,45 @@ class TestDiarizationOverlap:
 
         assert result_queue.items[-1][0] == "finished"
 
+    def test_successful_diarization_still_reports_a_real_progress_percent(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        The old sequential _identify_speakers always pushed a real
+        ("progress", ...) percentage for "w_identifying_speakers" once
+        diarization succeeded (see progress_scale.py's FILE_LOCAL_SPEAKER_ID_END
+        boundary) - the overlap version's status-only messages during the
+        race (see _start_diarization) were deliberately NOT a percent, but
+        that was only supposed to apply DURING the overlap window. Once both
+        threads have joined in _finish_identify_speakers, there is only one
+        writer again and nothing stops a real percent bump - if it never
+        happens, the progress bar silently sits at whatever transcribe()
+        left it at (its own FILE_LOCAL_TRANSCRIBE_END) through all of
+        diarization and assign_speakers, then jumps straight to completion.
+        Not a monotonicity violation, but a real loss of feedback for a
+        phase that, per the estimate baked into hardware_detection.py, can
+        take a third of the audio's own length.
+        """
+        from speech_to_text.core.diarization import SpeakerSpan
+
+        span = SpeakerSpan(start=0.0, end=1.0, speaker=1)
+        self._stub_audio_and_diarization(monkeypatch, spans=[span])
+
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert any(
+            item[0] == "progress" and item[1] == "w_identifying_speakers"
+            for item in progress_queue.items
+        ), "expected a real percentage update once diarization succeeded, not just the status message"
+
     def test_to_mono_runs_once_per_file_not_twice(self, tmp_path, monkeypatch):
         """
         Before this change, to_mono(channels) was called once to build the
@@ -468,6 +509,36 @@ class TestDiarizationOverlap:
 
         assert result_queue.items[-1][0] == "finished"
         assert counter["n"] == 1
+
+    def test_diarization_finding_no_spans_still_reports_progress_not_just_success(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        An empty spans list is not an error (diarize() can legitimately find
+        no distinguishable speakers) - assign_speakers already treats it as
+        a no-op (returns the segments unchanged, see its own `if not spans`
+        guard in core/diarization.py), so this is NOT the "error" branch in
+        _finish_identify_speakers. The old sequential code still pushed
+        progress through diarize()'s on_progress regardless of whether
+        spans ended up empty; the overlap version must not silently skip
+        that just because there was nothing to attribute.
+        """
+        self._stub_audio_and_diarization(monkeypatch, spans=[])
+
+        output_path = str(tmp_path / "out.html")
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], output_path, options, progress_queue, result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert any(
+            item[0] == "progress" and item[1] == "w_identifying_speakers"
+            for item in progress_queue.items
+        ), "expected a real percentage update even though no spans were found"
 
     def test_diarization_failure_is_non_fatal_and_still_reported_as_status(
         self, tmp_path, monkeypatch
@@ -505,9 +576,15 @@ class TestDiarizationOverlap:
         core/worker.py: a real percentage from diarization while
         transcription is still running concurrently would either lie about
         how much of the file-local scale is actually done, or race
-        transcribe's own climbing percentage for the same numbers. It must
-        arrive as a ("status", key, params) item - text only - never as
-        ("progress", "w_identifying_speakers", ..., some_percent).
+        transcribe's own climbing percentage for the same numbers. During
+        the thread itself (_start_diarization) it must arrive as a
+        ("status", key, params) item - text only. That is NOT the same
+        claim as "never a percent at all" - once both threads have joined,
+        _finish_identify_speakers is single-threaded again and does push one
+        real ("progress", "w_identifying_speakers", ..., percent) update
+        (see test_diarization_finding_no_spans_still_reports_progress_not_
+        just_success) - this test only pins that the status message exists
+        and isn't itself a percent.
         """
         self._stub_audio_and_diarization(monkeypatch, spans=[])
 
@@ -522,7 +599,58 @@ class TestDiarizationOverlap:
 
         assert result_queue.items[-1][0] == "finished"
         assert ("status", "w_identifying_speakers", {}) in progress_queue.items
-        assert not any(
-            item[0] == "progress" and item[1] == "w_identifying_speakers"
-            for item in progress_queue.items
+
+    def test_a_transcribe_exception_still_joins_the_diarization_thread(self, monkeypatch):
+        """
+        If transcriber.transcribe() raises, _transcribe_one must not leave
+        the diarization background thread orphaned. daemon=True (see
+        _start_diarization) keeps it from blocking process exit, but while
+        THIS worker process is still alive - processing the rest of a
+        multi-file batch, or rendering/writing the final HTML - an orphaned
+        thread keeps burning CPU concurrently with that work for a result
+        (diarization_result) nothing will ever read, since the local
+        variable holding it goes out of scope with the exception. join()ing
+        it before the exception propagates is the fix.
+        """
+        from speech_to_text.core import audio_source, diarization
+
+        channels = [np.zeros(1600, dtype=np.float32)]
+        monkeypatch.setattr(audio_source, "load", lambda path: (channels, False))
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+
+        diarize_finished = threading.Event()
+
+        def slow_diarize(samples, sample_rate=16000, num_speakers=2, progress=None):
+            time.sleep(0.05)
+            diarize_finished.set()
+            return []
+
+        monkeypatch.setattr(diarization, "diarize", slow_diarize)
+
+        class ExplodingTranscriber:
+            def __init__(self):
+                self.progress_callback = lambda *a, **k: None
+
+            def transcribe(self, source, total_duration_seconds=0):
+                raise RuntimeError("simulated transcribe failure")
+
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+
+        with pytest.raises(RuntimeError):
+            worker._transcribe_one(
+                "a.wav", ExplodingTranscriber(), options, 10.0,
+                lambda *a, **k: None, FakeQueue(),
+            )
+
+        # Checked with NO extra wait: ExplodingTranscriber.transcribe()
+        # raises essentially instantly, while slow_diarize() sleeps 0.05s
+        # before setting the flag. If _transcribe_one actually joined the
+        # diarization thread before letting the exception propagate, the
+        # flag is necessarily already set by the time pytest.raises exits -
+        # a generous timeout here would hide exactly the bug this test
+        # exists to catch (an orphaned thread that happens to finish soon
+        # after anyway, on its own schedule, having never been joined).
+        assert diarize_finished.is_set(), (
+            "diarization thread was not joined before the exception propagated "
+            "out of _transcribe_one - it was left running orphaned instead"
         )

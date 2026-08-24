@@ -490,19 +490,28 @@ def _transcribe_one(
         mono = audio_source.to_mono(channels)
         diarization_thread = _start_diarization(mono, options, progress_queue, diarization_result)
 
-    if two_party:
-        segments = _transcribe_per_channel(transcriber, channels, file_duration)
-    else:
-        # Hand over the decoded array when we have one so the file is not
-        # decoded twice (also what makes reusing it for diarization above
-        # free); fall back to the path if decoding failed.
-        source = mono if mono is not None else audio_file
-        transcribe_start = time.perf_counter()
-        segments = transcriber.transcribe(source, total_duration_seconds=file_duration)
-        _log_phase("transcribe", transcribe_start)
-
-    if diarization_thread is not None:
-        diarization_thread.join()
+    # try/finally, not a bare call followed by a join: transcriber.transcribe()
+    # can raise (a bad file, a decode failure faster-whisper only discovers
+    # partway through), and letting that propagate straight out - skipping
+    # the join below - would leave the diarization thread orphaned. daemon=True
+    # (see _start_diarization) only guarantees it won't block process exit;
+    # while THIS process is still alive (more files left in the batch, or
+    # about to render/write the final HTML) an unjoined thread keeps burning
+    # CPU concurrently with that work for a result nothing will ever read.
+    try:
+        if two_party:
+            segments = _transcribe_per_channel(transcriber, channels, file_duration)
+        else:
+            # Hand over the decoded array when we have one so the file is not
+            # decoded twice (also what makes reusing it for diarization above
+            # free); fall back to the path if decoding failed.
+            source = mono if mono is not None else audio_file
+            transcribe_start = time.perf_counter()
+            segments = transcriber.transcribe(source, total_duration_seconds=file_duration)
+            _log_phase("transcribe", transcribe_start)
+    finally:
+        if diarization_thread is not None:
+            diarization_thread.join()
 
     if segments is None:
         return None
@@ -648,44 +657,49 @@ def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
         emit_progress(("w_speakers_unavailable", {}), FILE_LOCAL_SPEAKER_ID_END)
         return
 
-    spans = result.get("spans")
-    if not spans or not segments:
+    if not segments:
         return
+
+    # spans can legitimately be an empty list - diarize() finding no
+    # distinguishable speakers is not an error - and that must NOT take the
+    # same early-return path as "spans" being absent because the thread
+    # never ran (options.identify_speakers off, or no mono audio at all,
+    # see _start_diarization). assign_speakers already treats an empty
+    # spans list as a safe no-op (returns segments unchanged - see its own
+    # `if not spans` guard in core/diarization.py), so it's called
+    # unconditionally below rather than special-cased here, matching what
+    # the old sequential _identify_speakers did (it never checked spans
+    # before calling assign_speakers either) - including still reporting
+    # real progress in that case, which a bare `if not spans: return` would
+    # have silently skipped.
+    spans = result.get("spans", [])
 
     try:
         from speech_to_text.core import diarization
 
-        emit_progress(("w_identifying_speakers", {}), FILE_LOCAL_TRANSCRIBE_END)
-
-        if not diarization.models_present():
-            emit_progress(("w_downloading_diarization", {}), FILE_LOCAL_TRANSCRIBE_END)
-            diarization.ensure_models()
-
-        mono = audio_source.to_mono(channels)
-
-        def on_progress(processed: int, total: int) -> None:
-            if total > 0:
-                emit_progress(
-                    ("w_identifying_speakers", {}),
-                    FILE_LOCAL_TRANSCRIBE_END + int(min(processed / total, 1.0) * FILE_LOCAL_SPEAKER_ID_SPAN),
-                )
-
-        spans = diarization.diarize(
-            mono,
-            sample_rate=audio_source.SAMPLE_RATE,
-            num_speakers=options.num_speakers,
-            progress=on_progress,
-        )
-        # assign_speakers now returns a new list - a segment whose words cross
-        # a speaker boundary is split into consecutive sub-segments instead of
-        # being labelled by majority vote (core/diarization.py). Assigning
-        # into the caller's list in place (rather than rebinding the local
-        # `segments` name) keeps this change contained to this function: the
-        # caller in _transcribe_one still holds and returns the same list
-        # object, now with any splits reflected in its contents.
+        # assign_speakers now returns a new list - a segment whose words
+        # cross a speaker boundary is split into consecutive sub-segments
+        # instead of being labelled by majority vote (see its docstring in
+        # core/diarization.py). Assigning into the caller's list in place
+        # (segments[:] = ..., not rebinding the local `segments` name) keeps
+        # this change contained to this function: the caller in
+        # _transcribe_one still holds and returns the same list object, now
+        # with any splits reflected in its contents.
         assign_start = time.perf_counter()
         segments[:] = diarization.assign_speakers(segments, spans)
         _log_phase("assign_speakers", assign_start)
+
+        # A real percentage, not just the status message _start_diarization
+        # sent during the overlap window (see its comment for why that one
+        # had to be status-only). By the time we're here both threads have
+        # already joined, so there is only one writer again and nothing
+        # stops a normal percent bump - without this the file-local
+        # percentage would silently sit at wherever transcribe() left it
+        # through all of diarization and assign_speakers, then jump straight
+        # to completion, which is not a monotonicity bug but is a real loss
+        # of feedback for a phase that can take a third of the audio's
+        # length (see hardware_detection.py's DIARIZATION_REALTIME_FACTOR).
+        emit_progress(("w_identifying_speakers", {}), FILE_LOCAL_SPEAKER_ID_END)
 
     except Exception as e:
         logger.warning(f"Speaker identification skipped: {e}", exc_info=True)
