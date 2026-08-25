@@ -294,7 +294,12 @@ test('copy-line carries the sentence\'s own timestamp/speaker prefix but never i
   await wait(0);
 
   assert.equal(writes.length, 1);
-  assert.equal(writes[0], `${LRI}[0:00 - 0:01]${PDI} Speaker 1: שלום אחד שתיים שלוש.`);
+  // Leads with U+200F RLM: this text opens with a bracketed timestamp, an
+  // LTR run, and apps that guess paragraph direction from the first strong
+  // character would left-align the Hebrew behind it. See anchorRtl() in
+  // js/32-plain-text.js, and tests/js/copy-rtl.test.mjs which covers the
+  // anchoring itself.
+  assert.equal(writes[0], `‏${LRI}[0:00 - 0:01]${PDI} Speaker 1: שלום אחד שתיים שלוש.`);
   assert.ok(!writes[0].includes(`${LRI}1${PDI}. `), 'must not carry the plain panel\'s own "1." line-number lead-in');
 
   window.close();

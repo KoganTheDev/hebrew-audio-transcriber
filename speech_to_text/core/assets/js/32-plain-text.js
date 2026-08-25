@@ -396,6 +396,31 @@
   // the rows and joining explicitly is also what keeps this in step with
   // whatever the reader has actually typed into a .plain-body, since it
   // reads the live element, not a cached string.
+  // U+200F RIGHT-TO-LEFT MARK. An invisible strong-RTL character, used only
+  // when text LEAVES the page. gui/i18n.py keeps one for the same purpose,
+  // on GUI lines that open with a Latin filename.
+  var PLAIN_RLM = '‏';
+
+  // Anchors one copied line so a receiving app lays it out right-to-left.
+  //
+  // Inside the browser this is unnecessary: the document is dir="rtl" and
+  // the paragraph direction is settled. Once copied out it is not. Apps that
+  // guess a paragraph's direction use its FIRST STRONG character, and every
+  // line now opens with the sentence number - an LTR run inside an isolate -
+  // so Word, Notepad and most chat apps saw a left-to-right line and
+  // left-aligned the whole thing, Hebrew and all. An RLM makes the first
+  // strong character right-to-left, which is what the reader means, and
+  // displays nothing.
+  //
+  // Applied at the copy boundary rather than baked into the rendered text on
+  // purpose: .plain-body is contenteditable, and anything that lives in it
+  // has to be stripped back off before an edit reaches a card (see
+  // stripLineNumber). A character that exists only in the clipboard cannot
+  // be typed over, half-deleted, or persisted into someone's transcript.
+  function anchorRtl(line) {
+    return line ? PLAIN_RLM + line : line;
+  }
+
   function plainPanelText(panel) {
     var blocks = [];
     panel.querySelectorAll('.plain-row').forEach(function (row) {
@@ -404,7 +429,8 @@
       var body = bodyEl ? bodyEl.textContent.replace(/^\s+|\s+$/g, '') : '';
       if (!body) { return; }
       var heading = headingEl ? headingEl.textContent.replace(/^\s+|\s+$/g, '') : '';
-      blocks.push(heading ? heading + '\n' + body : body);
+      var lines = (heading ? heading + '\n' + body : body).split('\n');
+      blocks.push(lines.map(anchorRtl).join('\n'));
     });
     return blocks.join('\n\n');
   }
@@ -484,7 +510,10 @@
     document.querySelectorAll('.copy-line').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var bubble = btn.closest('.bubble');
-        copy(bubblePlainText(bubble, true, true), btn);
+        // Anchored the same way the panel's copy is: this text opens with a
+        // bracketed timestamp, an LTR run, so an app guessing direction from
+        // the first strong character would left-align the Hebrew after it.
+        copy(anchorRtl(bubblePlainText(bubble, true, true)), btn);
       });
     });
   }

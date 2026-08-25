@@ -50,7 +50,13 @@
 
   transition: background var(--fast) ease-out, transform var(--fast) ease-out;
 }
-.bubble:last-child { margin-bottom: 0; }
+/* No :last-child exception. That rule made sense when .turn was a visible
+   card with its own padding - the last bubble inside it should not have
+   pushed against the cluster's bottom edge. .turn is now an invisible
+   grouping wrapper with no box of its own, so zeroing the last card's
+   margin just made the final card of one speaker's run touch the first
+   card of the next, which is why some cards appeared stuck together and
+   others did not. Every card is spaced identically. */
 
 .bubble:hover, .bubble:focus-within {
   background: var(--surface);
@@ -85,6 +91,21 @@
    redundant. flex: 0 0 auto keeps it from being squeezed by the sentence
    text claiming the row's width. */
 .bubble .ts { flex: 0 0 auto; }
+
+/* Every control on a card lives inside .body, which is
+   contenteditable="true" so the sentence can be corrected in place.
+   contenteditable="false" stops them being TYPED into, but it does not stop
+   the browser starting a text selection across them: pressing and holding
+   one selected it and, in an editable subtree, offered to drag it, which
+   reads as a button with a broken press. They are controls, not text, so
+   nothing about them should be selectable or draggable. */
+.bubble .ts,
+.bubble-spk,
+.bubble .copy-line {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
 
 /* Undo the UA button chrome the shared .ts rule doesn't already touch -
    the icon-and-text pill shape itself comes from 48-turn.css's own .ts
@@ -169,8 +190,16 @@
    js/24-speakers-menus.js), so the ring is always the identity's own
    colour, one step more emphatic, never a colour that appears nowhere else
    on the card. */
+/* An override thickens the speaker stripe. It used to draw
+   `box-shadow: inset 0 0 0 1px var(--spk)`, a ring around the ENTIRE card,
+   which read as the whole card lighting up on a speaker change when the
+   only thing that changed is which speaker it belongs to. The stripe is
+   already the element that names the speaker - paintBubbleOverride() sets
+   this element's own data-palette, so --spk has already moved - and
+   widening it says "this one differs from its neighbours" using the same
+   channel, instead of introducing a second one. */
 .bubble[data-override] {
-  box-shadow: inset 0 0 0 1px var(--spk);
+  border-inline-start-width: 6px;
 }
 
 /* Copy, moved down from the old cluster header's own .turn-actions - see
