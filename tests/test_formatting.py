@@ -1320,3 +1320,39 @@ class TestTourStrings:
         assert strings.get("tour_next") == "Next"
         assert strings.get("tour_step_position") == "{i} / {n}"
         assert "tour_file_title" in strings
+
+
+class TestPlainPanelCheckboxesMatchTheRender:
+    """
+    The panel's two checkboxes have to start in the state the server
+    actually rendered.
+
+    Both were hardcoded `checked`. A bubble carries data-start/data-end
+    unconditionally - playback needs them even when no range is shown - and
+    99-init.js calls rebuildPlain() on load, so a checked opt-ts on a
+    timestamps=False document made the page fabricate bracketed ranges the
+    renderer had deliberately omitted. The reader switched timestamps off
+    and watched them appear by themselves.
+    """
+
+    def test_timestamp_checkbox_is_unchecked_when_the_document_has_no_timestamps(self):
+        out = markup(render_html([doc("a.wav", [seg(0, 1, "אחד.")])], timestamps=False))
+        box = re.search(r'<input[^>]*class="opt-ts"[^>]*>', out).group(0)
+        assert "checked" not in box, box
+        # And the server really did leave the ranges out, which is the thing
+        # the checkbox would otherwise contradict.
+        assert not re.search(r"\[\d+:\d+ - \d+:\d+\]", out)
+
+    def test_timestamp_checkbox_is_checked_when_the_document_has_timestamps(self):
+        out = markup(render_html([doc("a.wav", [seg(0, 1, "אחד.")])], timestamps=True))
+        assert "checked" in re.search(r'<input[^>]*class="opt-ts"[^>]*>', out).group(0)
+
+    def test_speaker_checkbox_follows_whether_a_speaker_label_was_given(self):
+        without = markup(render_html([doc("a.wav", [seg(0, 1, "אחד.", speaker=0)])]))
+        assert "checked" not in re.search(
+            r'<input[^>]*class="opt-spk"[^>]*>', without).group(0)
+
+        with_label = markup(render_html(
+            [doc("a.wav", [seg(0, 1, "אחד.", speaker=0)])], speaker_label="Speaker {n}"))
+        assert "checked" in re.search(
+            r'<input[^>]*class="opt-spk"[^>]*>', with_label).group(0)

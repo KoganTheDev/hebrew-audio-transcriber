@@ -613,13 +613,26 @@ def _render_plain_html(
         sentence_number += len(turn.sentences())
         previous_speaker = turn.speaker
     rows = "".join(row_parts)
+
+    # Each checkbox starts in the state the server actually rendered, not
+    # always checked. They were both hardcoded `checked`, which contradicted
+    # the document whenever it was rendered without one of them: a bubble
+    # carries data-start/data-end unconditionally (playback needs them even
+    # when no range is displayed), and 99-init.js calls rebuildPlain() on
+    # load, so a checked opt-ts on a timestamps=False document made the page
+    # fabricate bracketed ranges the renderer had deliberately left out. The
+    # reader saw timestamps they had switched off, appearing by themselves.
+    # Same shape for opt-spk when no speaker_label was passed at all.
+    ts_checked = " checked" if timestamps else ""
+    spk_checked = " checked" if speaker_label is not None else ""
+
     copy_all_button = _button(s('copy_all', 'Copy all'), css_class="tb-btn copy-all", icon="copy")
     return f"""<section class="plain">
 <h2 class="plain-title"><span>{s('plain_text', 'Plain text')}</span>
 <span class="summary-hint">{s('plain_hint', 'to paste into another app')}</span></h2>
 <div class="plain-controls">
-<label><input type="checkbox" class="opt-ts" checked> {s('opt_timestamps', 'Timestamps')}</label>
-<label><input type="checkbox" class="opt-spk" checked> {s('opt_speakers', 'Speaker names')}</label>
+<label><input type="checkbox" class="opt-ts"{ts_checked}> {s('opt_timestamps', 'Timestamps')}</label>
+<label><input type="checkbox" class="opt-spk"{spk_checked}> {s('opt_speakers', 'Speaker names')}</label>
 {copy_all_button}
 </div>
 <div class="plain-text" tabindex="-1">{rows}</div>

@@ -135,10 +135,11 @@
 /* Filled with the speaker's own accent from the first render, not
    transparent-until-overridden the way this control used to be before the
    cluster header (which carried the resting identity on its own .spk) went
-   away - see 48-turn.css's own .spk rule, which this now mirrors rather
-   than differs from. Sized down from that control, though: a bubble is
-   already the small, dense unit on this page, so its own chip sits inside
-   that rhythm rather than the old header's 44px touch target. */
+   away - the old header's .spk rule is gone now (see 48-turn.css's own
+   comment on why), and this fill is what replaced it. Sized down from that
+   retired control, though: a bubble is already the small, dense unit on
+   this page, so its own chip sits inside that rhythm rather than the old
+   header's 44px touch target. */
 .bubble-spk {
   display: inline-flex;
   align-items: center;
