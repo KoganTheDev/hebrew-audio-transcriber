@@ -105,22 +105,62 @@ test('deleting a whole sentence drops the paragraph count and removes the traili
   window.close();
 });
 
-test('an extra line typed into the plain panel folds into the card\'s last bubble, not a new one', () => {
-  // Drives writeParagraphs() through its real caller - the plain panel's
-  // own input handler (js/32-plain-text.js) - rather than calling it by
-  // hand, so this proves the fold behaviour end to end: three lines synced
-  // from a row whose card only has two bubbles' worth of real timing.
+test('a line break typed inside one plain-line stays inside that one sentence, not a new bubble', () => {
+  // The plain panel is one .plain-line per BUBBLE now (see
+  // core/formatting/document.py's _render_plain_html() and rebuildPlain()
+  // in js/32-plain-text.js) - a 1:1 mapping, not the old one-.plain-row-
+  // per-TURN shape where several sentences shared one editable body and an
+  // extra typed line had nowhere of its own to go. writeParagraphs()'s own
+  // "fold overflow into the last bubble" behaviour (still exercised below,
+  // via a genuine multi-paragraph card edit) is therefore no longer
+  // reachable through the plain panel at all: an embedded line break typed
+  // into a single .plain-line's .plain-body just becomes part of that one
+  // sentence's own text.
   const { window, document } = buildWindow(getFixtureHtml('full'));
   const turn = document.querySelector('.turn[data-turn="0-0"]');
   const body = turn.querySelector('.body');
   assert.equal(body.querySelectorAll('.bubble').length, 2, 'starts with two bubbles');
 
-  const row = document.querySelector('.plain-row[data-turn="0-0"]');
-  const bodyEl = row.querySelector('.plain-body');
-  // A third line has nowhere with real timing to go - a reader pressing
-  // Enter mid-row is exactly how this would arise from actual typing.
+  const line = document.querySelector('.plain-line[data-line="0-0-1"]');
+  const bodyEl = line.querySelector('.plain-body');
   bodyEl.textContent += '\nעוד שורה בלי תזמון';
   bodyEl.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+  const bubbles = body.querySelectorAll('.bubble');
+  assert.equal(bubbles.length, 2, 'no new bubble may be invented for an embedded line break');
+  assert.equal(bubbles[0].querySelector('p').textContent, 'שלום אחד שתיים שלוש.');
+  assert.equal(
+    bubbles[1].querySelector('p').textContent,
+    'עוד משפט קצר\nעוד שורה בלי תזמון',
+    'the line break must stay inside this one sentence\'s own text'
+  );
+  // This bubble's own timing must be untouched - editing its text through
+  // the panel does not touch data-start/data-end.
+  assert.equal(bubbles[1].dataset.start, '1.00');
+  assert.equal(bubbles[1].dataset.end, '3.00');
+
+  window.close();
+});
+
+test('writeParagraphs() still folds overflow text into the last bubble when a saved edit replays more paragraphs than bubbles', () => {
+  // The fold behaviour itself (js/16-edits.js's writeParagraphs()) is still
+  // real - applyEdits() (99-init.js, run on every page load) can replay a
+  // saved paragraph array longer than the card's current bubble count (e.g.
+  // after a previous session trimmed the card down) - it is simply no
+  // longer something the PLAIN PANEL's own input handler can trigger, per
+  // the test above. Driven here by seeding localStorage with exactly that
+  // saved array and letting the page's own top-to-bottom load() +
+  // applyEdits() sequence replay it, the same "seed, then build the window"
+  // pattern line-speaker.test.mjs uses for a reload.
+  const html = getFixtureHtml('full');
+  const key = 'hebrew-transcript:js-fixture-full';
+  const seed = {
+    turns: { '0-0': ['שלום אחד שתיים שלוש.', 'עוד משפט קצר', 'עוד שורה בלי תזמון'] },
+    names: {}, flags: false, theme: null, opts: {}, speakers: {}, assign: {}, assignLine: {},
+  };
+  const { window, document } = buildWindow(html, { [key]: JSON.stringify(seed) });
+  const turn = document.querySelector('.turn[data-turn="0-0"]');
+  const body = turn.querySelector('.body');
 
   const bubbles = body.querySelectorAll('.bubble');
   assert.equal(bubbles.length, 2, 'no third bubble may be invented for text with no timing');
@@ -128,11 +168,8 @@ test('an extra line typed into the plain panel folds into the card\'s last bubbl
   assert.equal(
     bubbles[1].querySelector('p').textContent,
     'עוד משפט קצר עוד שורה בלי תזמון',
-    'the overflow line must be folded into the last bubble\'s text, space-joined'
+    'the overflow paragraph must be folded into the last bubble\'s text, space-joined'
   );
-  // The folded-into bubble's own timing must be untouched - it still owns
-  // whatever span the renderer gave it, not something invented for the
-  // extra text.
   assert.equal(bubbles[1].dataset.start, '1.00');
   assert.equal(bubbles[1].dataset.end, '3.00');
 
@@ -147,20 +184,21 @@ test('an extra line typed into the plain panel folds into the card\'s last bubbl
 test('editing the plain panel never bakes the line-number lead-in into the card text', async () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
   const key = `hebrew-transcript:${document.documentElement.dataset.docId}`;
-  const row = document.querySelector('.plain-row[data-turn="0-0"]');
-  const bodyEl = row.querySelector('.plain-body');
+  const firstLine = document.querySelector('.plain-line[data-line="0-0-0"] .plain-body');
+  const secondLine = document.querySelector('.plain-line[data-line="0-0-1"] .plain-body');
 
-  // Sanity check on the fixture itself: the row really does carry the
-  // "{LRI}{n}{PDI}. {LRI}[range]{PDI} " lead-in on both of its lines before
-  // anything is typed - the fixture renders with timestamps on, so each
-  // line's own range is present too, not just its number.
-  assert.equal(bodyEl.textContent.split('\n')[0], `${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
-  assert.equal(bodyEl.textContent.split('\n')[1], `${LRI}2${PDI}. ${LRI}[0:01 - 0:03]${PDI} עוד משפט קצר`);
+  // Sanity check on the fixture itself: each line really does carry the
+  // "{LRI}{n}{PDI}. {LRI}[range]{PDI} " lead-in before anything is typed -
+  // the fixture renders with timestamps on, so each line's own range is
+  // present too, not just its number.
+  assert.equal(firstLine.textContent, `${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
+  assert.equal(secondLine.textContent, `${LRI}2${PDI}. ${LRI}[0:01 - 0:03]${PDI} עוד משפט קצר`);
 
   // Simulate typing a correction into the first line without disturbing its
   // leading "{LRI}1{PDI}. {LRI}[0:00 - 0:01]{PDI} " - textContent is edited directly
   // (jsdom does not implement contenteditable typing) and an 'input' event
   // is fired the way a real keystroke would.
+  const bodyEl = firstLine;
   bodyEl.textContent = bodyEl.textContent.replace('שלום אחד', 'שלום מתוקן');
   bodyEl.dispatchEvent(new window.Event('input', { bubbles: true }));
 
@@ -187,16 +225,20 @@ test('editing a card renumbers the plain panel to match its new paragraph count'
   const body = turn.querySelector('.body');
 
   // Delete the second sentence in the card - turn 0-0 drops from two
-  // paragraphs to one, so every sentence number downstream of it (turn
-  // 0-1's row, numbered 3 by the server render) has to shift down by one.
+  // sentences to one, so every sentence number downstream of it (turn
+  // 0-1's own line, numbered 3 by the server render) has to shift down by
+  // one, and the deleted sentence's own .plain-line must disappear too.
   turn.querySelector('.bubble[data-line="0-0-1"]').remove();
   body.dispatchEvent(new window.Event('input', { bubbles: true }));
 
-  const row00 = document.querySelector('.plain-row[data-turn="0-0"]');
-  assert.equal(row00.querySelector('.plain-body').textContent, `${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
+  assert.equal(document.querySelector('.plain-line[data-line="0-0-1"]'), null,
+    'the removed sentence\'s own line must be gone, not just skipped');
 
-  const row01 = document.querySelector('.plain-row[data-turn="0-1"]');
-  assert.equal(row01.querySelector('.plain-body').textContent, `${LRI}2${PDI}. ${LRI}[0:05 - 0:08]${PDI} שלום ארבע חמש שש`);
+  const line000 = document.querySelector('.plain-line[data-line="0-0-0"] .plain-body');
+  assert.equal(line000.textContent, `${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} שלום אחד שתיים שלוש.`);
+
+  const line010 = document.querySelector('.plain-line[data-line="0-1-0"] .plain-body');
+  assert.equal(line010.textContent, `${LRI}2${PDI}. ${LRI}[0:05 - 0:08]${PDI} שלום ארבע חמש שש`);
 
   window.close();
 });

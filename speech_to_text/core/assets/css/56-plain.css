@@ -33,13 +33,16 @@
 }
 .plain-controls label { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 44px; }
 
-/* No longer a single <pre> of static text - one .plain-row per turn, each
-   holding an inert prefix and an editable body tied to its card by
-   data-turn (see _render_plain_html()'s docstring in formatting.py and
-   rebuildPlain() in transcript.js for the two-way sync this shape exists
-   for). white-space: pre-wrap moves down onto .plain-body specifically,
-   since it's the element whose text can now contain real newlines (one per
-   card paragraph) that have to render as line breaks rather than collapse. */
+/* No longer a single <pre> of static text - one .plain-line per SENTENCE
+   now (not one .plain-row per turn, the shape this used to be), each
+   holding an inert lead-in and an editable body tied to its bubble by
+   data-line (see _render_plain_html()'s docstring in document.py and
+   rebuildPlain() in js/32-plain-text.js for the two-way sync this shape
+   exists for, and for why per-sentence is what lets a heading land in the
+   middle of a turn once a sentence is reassigned to a different speaker).
+   white-space: pre-wrap stays on .plain-body: a line is normally one
+   sentence's worth of unbroken text, but a reader can still type a literal
+   line break into it, which has to render rather than collapse. */
 .plain-text {
   margin: 0;
   padding: 0.25rem 1rem;
@@ -52,27 +55,26 @@
   font-size: 0.9rem;
   line-height: 1.7;
 }
-.plain-row {
-  padding: 0.6rem 0;
-  border-bottom: 1px dashed var(--rule);
-}
-.plain-row:last-child { border-bottom: 0; }
-/* One heading per RUN of consecutive same-speaker rows, not one per row -
-   see _render_plain_row_html()'s docstring (core/formatting/document.py)
-   and rebuildPlain()'s own comment (js/32-plain-text.js) for how a row
-   decides whether it starts a run. A block-level line of its own above
-   .plain-body, not the inline ".plain-prefix" span this used to be: a
-   heading that can legitimately be absent from a given row needs to be a
-   whole element that is simply not there, not a text node beside the body
-   that would otherwise have to render empty and still take up an inline
-   slot in the reading flow. */
+.plain-line { padding: 0.15rem 0; }
+/* One heading per RUN of consecutive same-effective-speaker lines, not one
+   per line - see _render_plain_html()'s docstring (core/formatting/
+   document.py) and rebuildPlain()'s own comment (js/32-plain-text.js) for
+   how a line decides whether it starts a run. A block-level element of its
+   own above the lines it heads, not an inline prefix on the first one: a
+   heading that can legitimately be absent needs to be a whole element that
+   is simply not there, not a text node that would otherwise have to render
+   empty. The top margin (not the bottom one, which used to sit on the
+   heading before it) is what separates one run's lines from the next
+   heading down, now that a run is several sibling .plain-line elements
+   rather than one .plain-row that owned its own border. */
 .plain-heading {
-  margin: 0 0 0.2rem;
+  margin: 0.6rem 0 0.2rem;
   color: var(--text);
   font-size: 0.85rem;
   font-weight: 600;
   user-select: none;
 }
+.plain-heading:first-child { margin-top: 0; }
 .plain-body {
   white-space: pre-wrap;
   word-break: break-word;

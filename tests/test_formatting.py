@@ -625,21 +625,25 @@ class TestEditableDocument:
         assert "<details" not in out
         assert "<summary" not in out
 
-    def test_plain_text_rows_are_rendered_server_side_with_matching_turn_ids(self):
+    def test_plain_text_lines_are_rendered_server_side_with_matching_line_ids(self):
         """
         Two-way editing (Phase 4) is a relocation the other direction too:
         the plain-text panel used to be pure JavaScript output with nothing
-        for a script-disabled reader to see. Each row is now rendered up
-        front, keyed by the same data-turn id as its card, so
-        transcript.js's rebuildPlain() only ever has to sync an existing
-        element rather than build the panel from nothing.
+        for a script-disabled reader to see. Each line is now rendered up
+        front, keyed by the same data-line id as its bubble (see
+        _render_bubble_html()), so transcript.js's rebuildPlain() only ever
+        has to sync an existing element rather than build the panel from
+        nothing - and, per the sentence-bubbles-groups-by-effective-speaker
+        design, a heading can land in the middle of what was one turn (see
+        _render_plain_html()'s docstring), which only a 1:1 line-to-bubble
+        mapping can express.
         """
         out = render_html([doc("a.wav", [seg(0, 2, "אחד"), seg(30, 32, "שתיים")])])
-        assert 'class="plain-row" data-turn="0-0"' in out
-        assert 'class="plain-row" data-turn="0-1"' in out
+        assert 'class="plain-line" data-line="0-0-0"' in out
+        assert 'class="plain-line" data-line="0-1-0"' in out
         assert 'class="plain-body" contenteditable="true"' in out
         # No speaker_label passed to this render at all, so no heading can
-        # ever render (see _render_plain_row_html()'s docstring) - checked
+        # ever render (see _render_plain_html()'s docstring) - checked
         # explicitly here since a stray heading div would otherwise sneak
         # past every other assertion in this file.
         assert 'class="plain-heading"' not in out

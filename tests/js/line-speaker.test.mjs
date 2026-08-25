@@ -6,14 +6,20 @@
 //
 // state.assignLine[lineId] (js/00-preamble.js), reassignLine()/
 // paintBubbleOverride()/applyLineAssignments() (js/24-speakers-menus.js) and
-// the mixed-speaker plain-row prefix (js/32-plain-text.js's rowSpeakerName())
-// are exercised here against the real rendered page, the same way every
-// other *.test.mjs in this directory drives real markup rather than a
+// rebuildPlain()'s per-sentence heading grouping (js/32-plain-text.js) are
+// exercised here against the real rendered page, the same way every other
+// *.test.mjs in this directory drives real markup rather than a
 // hand-written stand-in - see harness.mjs's own module docstring.
 //
 // Fixture recap (render_fixture.py's "full" build): turn "0-0" is speaker 0
 // ("Speaker 1") with two sentences - bubbles "0-0-0" and "0-0-1"; turn "0-1"
-// is speaker 1 ("Speaker 2") with one sentence - bubble "0-1-0".
+// is speaker 1 ("Speaker 2") with one sentence - bubble "0-1-0". The
+// mid-turn split/resume/merge tests below use the "triple" fixture instead
+// - turn "0-0" is speaker 0 ("Speaker 1") with THREE sentences ("0-0-0",
+// "0-0-1", "0-0-2"), and turn "0-1" is speaker 1 ("Speaker 2") with one
+// sentence ("0-1-0") - the extra middle sentence is what lets a test
+// override one sentence and still see a real, unoverridden sentence of the
+// original speaker follow it.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -181,78 +187,118 @@ test('an override survives a reload, replayed from localStorage by applyLineAssi
   });
 });
 
-test('an override that makes a row agree with the row before it removes its own heading - the run merges', () => {
+// A .plain-heading is a standalone sibling of the .plain-line it heads (see
+// rebuildPlain() in js/32-plain-text.js) rather than living inside it, so
+// these tests read it off the line's own previousElementSibling.
+function headingBefore(lineEl) {
+  var sib = lineEl.previousElementSibling;
+  return sib && sib.classList.contains('plain-heading') ? sib : null;
+}
+
+test('an override that makes a sentence agree with the sentence before it removes its own heading - the run merges', () => {
   // Turn "0-1" has exactly one sentence/bubble, so overriding it to speaker
-  // 0 changes what EVERY bubble in the turn agrees on - the unambiguous
-  // case rowSpeakerName() (js/32-plain-text.js) resolves by reporting the
-  // overridden name directly, rather than falling back to the cluster's.
-  // Speaker 0 ("Speaker 1") is ALSO turn "0-0"'s own speaker, so this
-  // override makes two consecutive rows agree that did not before - proof
-  // that heading visibility is recomputed across rows, after overrides,
-  // not decided once per row in isolation (see rebuildPlain()'s own
+  // 0 changes what its ONE line reports as its effective speaker outright -
+  // no other sentence in the turn to disagree with it. Speaker 0
+  // ("Speaker 1") is ALSO turn "0-0"'s own speaker, so this override makes
+  // two consecutive lines agree that did not before - proof that heading
+  // visibility is recomputed across the whole document after an override,
+  // not decided once per line in isolation (see rebuildPlain()'s own
   // comment in js/32-plain-text.js).
   const { window, document } = buildWindow(getFixtureHtml('full'));
 
-  const row00 = document.querySelector('.plain-row[data-turn="0-0"]');
-  const row01 = document.querySelector('.plain-row[data-turn="0-1"]');
-  assert.equal(row00.querySelector('.plain-heading').textContent, 'Speaker 1', 'the first row of a document always starts a run');
-  assert.equal(row01.querySelector('.plain-heading').textContent, 'Speaker 2', 'before the override, row 0-1 starts its own run');
+  const line000 = document.querySelector('.plain-line[data-line="0-0-0"]');
+  const line010 = document.querySelector('.plain-line[data-line="0-1-0"]');
+  assert.equal(headingBefore(line000).textContent, 'Speaker 1', 'the first line of a document always starts a run');
+  assert.equal(headingBefore(line010).textContent, 'Speaker 2', 'before the override, line 0-1-0 starts its own run');
 
   const bubble = document.querySelector('.bubble[data-line="0-1-0"]');
   click(bubble.querySelector('.bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="0"]'));
 
-  assert.equal(row00.querySelector('.plain-heading').textContent, 'Speaker 1', 'unaffected - still the first row');
-  assert.equal(row01.querySelector('.plain-heading'), null, 'row 0-1 now agrees with the row before it, so its heading is gone');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1', 'unaffected - still the first line');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')), null, 'line 0-1-0 now agrees with the line before it, so its heading is gone');
 
   window.close();
 });
 
-test('the plain-panel row falls back to the cluster\'s name and tags only the disagreeing line when a turn is genuinely mixed', () => {
-  const { window, document } = buildWindow(getFixtureHtml('full'));
+test('overriding a MIDDLE sentence splits its turn into two heading sections, and the original speaker resumes right after it', () => {
+  // Uses the "triple" fixture (see render_fixture.py and this file's own
+  // header comment): turn "0-0" has THREE sentences under one speaker, so
+  // overriding only the middle one ("0-0-1") leaves a real, untouched
+  // sentence of the ORIGINAL speaker ("0-0-2") right after it - proof that
+  // a heading can land in the middle of a turn at all, which the old
+  // one-.plain-row-per-turn shape could never express (see
+  // _render_plain_html()'s docstring, core/formatting/document.py).
+  const { window, document } = buildWindow(getFixtureHtml('triple'));
 
-  // Turn "0-0" has two bubbles. Overriding only the second one to speaker 1
-  // leaves the turn's two bubbles disagreeing with each other.
-  const bubble = document.querySelector('.bubble[data-line="0-0-1"]');
-  click(bubble.querySelector('.bubble-spk'));
-  click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
-
-  const row = document.querySelector('.plain-row[data-turn="0-0"]');
-  const heading = row.querySelector('.plain-heading').textContent;
-  assert.ok(heading.includes('Speaker 1'), `expected the cluster's own name to remain the row heading, got: ${heading}`);
-
-  const body = row.querySelector('.plain-body').textContent;
-  assert.ok(body.includes('[Speaker 2]'), `expected the disagreeing line to carry its own bracketed tag, got: ${body}`);
-  // The FIRST line (still agreeing with the cluster) must carry no override
-  // tag - it may still legitimately carry its own "[start - end]" range
-  // (the fixture renders with timestamps on), so the check is for the
-  // override-tag's own bracketed-name shape specifically, not for the
-  // absence of every bracket on the line.
-  const firstLine = body.split('\n')[0];
-  assert.ok(!/\[Speaker/.test(firstLine), `the untouched first line must carry no override tag, got: ${firstLine}`);
-
-  window.close();
-});
-
-test('editing the plain panel of a mixed row never bakes the bracketed override tag into the card text', () => {
-  const { window, document } = buildWindow(getFixtureHtml('full'));
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')), null, 'still one run before the override');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')), null, 'still one run before the override');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2');
 
   const bubble = document.querySelector('.bubble[data-line="0-0-1"]');
   click(bubble.querySelector('.bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
 
-  const row = document.querySelector('.plain-row[data-turn="0-0"]');
-  const bodyEl = row.querySelector('.plain-body');
-  // Simulate a correction typed into the (still-tagged) second line,
-  // leaving its lead-in (number + bracketed name) untouched, the way a real
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1', 'unaffected');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')).textContent, 'Speaker 2', 'the overridden sentence opens its own section');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')).textContent, 'Speaker 1', 'the untouched third sentence resumes the original speaker');
+  // Turn "0-1"'s own line is STILL Speaker 2, but the sentence right before
+  // it ("0-0-2") just resumed Speaker 1 - so this is a fresh run of its own
+  // again, not a merge, and it keeps its own heading (unchanged from before
+  // the override, since nothing about ITS run boundary actually moved).
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2', 'unaffected - its own run, same as before the override');
+
+  // Overriding back to the cluster's own speaker merges the two sections
+  // in turn "0-0" back into one.
+  click(document.querySelector('.bubble[data-line="0-0-1"] .bubble-spk'));
+  click(document.querySelector('.spk-menu-item[data-speaker="0"]'));
+
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')), null, 'merged back into the first section');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')), null, 'merged back into the first section');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2', 'its own section is back too');
+
+  window.close();
+});
+
+test('overriding a sentence to a speaker ADJACENT to an existing run merges into it instead of creating a duplicate heading', () => {
+  // Overrides turn "0-0"'s LAST sentence ("0-0-2") to speaker 1 - the same
+  // speaker turn "0-1"'s own sentence ("0-1-0") already is, and which
+  // already immediately follows it in document order. The result must be
+  // one "Speaker 2" section spanning both sentences, not two adjacent
+  // "Speaker 2" headings.
+  const { window, document } = buildWindow(getFixtureHtml('triple'));
+
+  const bubble = document.querySelector('.bubble[data-line="0-0-2"]');
+  click(bubble.querySelector('.bubble-spk'));
+  click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
+
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')).textContent, 'Speaker 2');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')), null, 'merges into the section the override just opened');
+  assert.equal(document.querySelectorAll('.plain-heading').length, 2, 'no duplicate "Speaker 2" heading');
+
+  window.close();
+});
+
+test('editing a reassigned sentence\'s own plain line never bakes anything but its text into the card', () => {
+  const { window, document } = buildWindow(getFixtureHtml('full'));
+
+  const bubble = document.querySelector('.bubble[data-line="0-0-1"]');
+  click(bubble.querySelector('.bubble-spk'));
+  click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
+
+  const bodyEl = document.querySelector('.plain-line[data-line="0-0-1"] .plain-body');
+  // Simulate a correction typed into the line, leaving its leading
+  // "{LRI}{n}{PDI}. {LRI}[range]{PDI} " lead-in untouched, the way a real
   // keystroke would.
   bodyEl.textContent = bodyEl.textContent.replace('עוד משפט קצר', 'עוד משפט מתוקן');
   bodyEl.dispatchEvent(new window.Event('input', { bubbles: true }));
 
   const card = document.querySelector('.bubble[data-line="0-0-1"] p');
   assert.equal(card.textContent, 'עוד משפט מתוקן');
-  assert.ok(!card.textContent.includes('['), 'the card text must carry no bracket from the stripped override tag');
-  assert.ok(!card.textContent.includes(']'), 'the card text must carry no bracket from the stripped override tag');
+  assert.ok(!card.textContent.includes('['), 'the card text must carry no bracket from the stripped lead-in');
+  assert.ok(!card.textContent.includes(']'), 'the card text must carry no bracket from the stripped lead-in');
 
   window.close();
 });

@@ -1,18 +1,19 @@
 // Behavioural coverage for the plain-text panel's own timestamp/speaker
 // toggles (rebuildPlain()/bindPlain() in transcript.js): checking .opt-spk
-// changes whether a speaker heading renders above a row, and checking
-// .opt-ts changes whether each SENTENCE LINE carries its own bracketed
-// range - the range sits beside each sentence's own number (see
-// _render_plain_row_html()'s docstring in core/formatting/document.py, and
-// numberedLines() in js/32-plain-text.js), because a turn can hold several
-// sentences and one range on the row could not identify any single one of
-// them. Both boxes render `checked` by default (see
-// core/formatting/document.py's _render_plain_html()), so "default state"
-// here means both the heading and every line's range are present, not
-// absent. Turn "0-0" is the fixture's FIRST turn, so its heading always
-// renders regardless of the run logic (see _render_plain_row_html()'s
-// docstring for why the first row of a document always starts a run) -
-// heading-per-run itself is covered by line-speaker.test.mjs instead.
+// changes whether a speaker heading renders above a run of .plain-line
+// elements, and checking .opt-ts changes whether each SENTENCE LINE carries
+// its own bracketed range - the range sits beside each sentence's own
+// number (see _render_plain_html()'s docstring in core/formatting/
+// document.py, and rebuildPlain()'s lineLeadIn() in js/32-plain-text.js),
+// because a turn can hold several sentences and one range on a shared row
+// could not identify any single one of them. Both boxes render `checked` by
+// default (see core/formatting/document.py's _render_plain_html()), so
+// "default state" here means both the heading and every line's range are
+// present, not absent. Turn "0-0"'s first sentence ("0-0-0") is the
+// fixture's FIRST sentence, so its heading always renders regardless of the
+// run logic (see _render_plain_html()'s docstring for why the first line of
+// a document always starts a run) - heading-per-run itself is covered by
+// line-speaker.test.mjs instead.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,17 +31,22 @@ function panelForFile0(document) {
 test('both toggles render checked by default: the heading shows the speaker name and every line carries its own range', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
   const panel = panelForFile0(document);
-  const row = panel.querySelector('.plain-row[data-turn="0-0"]');
 
   assert.equal(panel.querySelector('.opt-ts').checked, true);
   assert.equal(panel.querySelector('.opt-spk').checked, true);
-  const heading = row.querySelector('.plain-heading');
-  assert.ok(heading, 'expected a heading on the first row of the document');
-  assert.equal(heading.textContent, 'Speaker 1');
 
-  const body = row.querySelector('.plain-body').textContent;
-  const lines = body.split('\n');
-  assert.ok(lines.every((line) => line.includes('[')), 'expected every line to carry its own bracketed range');
+  const heading = panel.querySelector('.plain-heading');
+  assert.ok(heading, 'expected a heading on the first line of the document');
+  assert.equal(heading.textContent, 'Speaker 1');
+  // The heading must precede the first line of its run in the DOM.
+  const firstLine = panel.querySelector('.plain-line[data-line="0-0-0"]');
+  assert.equal(heading.nextElementSibling, firstLine);
+
+  const lines = panel.querySelectorAll('.plain-line .plain-body');
+  assert.ok(lines.length > 0, 'expected at least one line');
+  lines.forEach((line) => {
+    assert.ok(line.textContent.includes('['), `expected every line to carry its own bracketed range, got: ${line.textContent}`);
+  });
 
   window.close();
 });
@@ -51,27 +57,30 @@ test('unchecking the timestamp toggle drops every line\'s bracketed range but ke
 
   change(panel.querySelector('.opt-ts'), false);
 
-  const row = panel.querySelector('.plain-row[data-turn="0-0"]');
-  assert.equal(row.querySelector('.plain-heading').textContent, 'Speaker 1', 'the speaker toggle was not touched, so its half must remain');
+  assert.equal(panel.querySelector('.plain-heading').textContent, 'Speaker 1', 'the speaker toggle was not touched, so its half must remain');
 
-  const body = row.querySelector('.plain-body').textContent;
-  const lines = body.split('\n');
-  assert.ok(lines.every((line) => !line.includes('[')), 'expected the bracketed range to be gone from every line');
+  const lines = panel.querySelectorAll('.plain-line .plain-body');
+  assert.ok(lines.length > 0);
+  lines.forEach((line) => {
+    assert.ok(!line.textContent.includes('['), `expected the bracketed range to be gone, got: ${line.textContent}`);
+  });
 
   window.close();
 });
 
-test('unchecking both toggles leaves the row with no heading at all, and every line with no range', () => {
+test('unchecking both toggles leaves the panel with no heading at all, and every line with no range', () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
   const panel = panelForFile0(document);
 
   change(panel.querySelector('.opt-ts'), false);
   change(panel.querySelector('.opt-spk'), false);
 
-  const row = panel.querySelector('.plain-row[data-turn="0-0"]');
-  assert.equal(row.querySelector('.plain-heading'), null);
-  const body = row.querySelector('.plain-body').textContent;
-  assert.ok(body.split('\n').every((line) => !line.includes('[')));
+  assert.equal(panel.querySelector('.plain-heading'), null);
+  const lines = panel.querySelectorAll('.plain-line .plain-body');
+  assert.ok(lines.length > 0);
+  lines.forEach((line) => {
+    assert.ok(!line.textContent.includes('['));
+  });
 
   window.close();
 });
@@ -82,12 +91,12 @@ test('re-checking a toggle restores its half of the line lead-in', () => {
   const tsBox = panel.querySelector('.opt-ts');
 
   change(tsBox, false);
-  let row = panel.querySelector('.plain-row[data-turn="0-0"]');
-  assert.ok(!row.querySelector('.plain-body').textContent.includes('['));
+  let line = panel.querySelector('.plain-line[data-line="0-0-0"] .plain-body');
+  assert.ok(!line.textContent.includes('['));
 
   change(tsBox, true);
-  row = panel.querySelector('.plain-row[data-turn="0-0"]');
-  assert.ok(row.querySelector('.plain-body').textContent.includes('['));
+  line = panel.querySelector('.plain-line[data-line="0-0-0"] .plain-body');
+  assert.ok(line.textContent.includes('['));
 
   window.close();
 });

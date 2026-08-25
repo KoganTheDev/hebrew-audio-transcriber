@@ -58,9 +58,23 @@
    card of the next, which is why some cards appeared stuck together and
    others did not. Every card is spaced identically. */
 
-.bubble:hover, .bubble:focus-within {
+/* The lift is a POINTER affordance only. It used to fire on :focus-within
+   too, which meant clicking any control on a card - the play button, the
+   speaker chip, copy - moved focus into the card, lifted it by a pixel, and
+   left it lifted until focus went somewhere else. Pressing a button and
+   watching the whole card rise and stay risen reads as a stuck button, not
+   as feedback.
+   Focus still needs a visible home for keyboard users, so :focus-within
+   keeps the background change. A background is a stable indicator; a
+   transform is motion, and motion is the wrong channel for "something in
+   here has focus". */
+.bubble:hover {
   background: var(--surface);
   transform: translateY(-1px);
+}
+
+.bubble:focus-within {
+  background: var(--surface);
 }
 
 /* Raises the card holding an open .spk-menu above its own later siblings -

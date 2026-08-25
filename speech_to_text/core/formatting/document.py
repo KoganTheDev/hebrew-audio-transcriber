@@ -449,110 +449,81 @@ def _render_turn_html(
     return "\n".join(lines)
 
 
-def _render_plain_row_html(
-    turn: Turn,
-    turn_id: str,
-    first_number: int,
-    speaker_label: Optional[str],
+def _render_plain_line_html(
+    sentence: Sentence,
+    line_id: str,
+    number: int,
     timestamps: bool,
-    show_speaker: bool,
     strings: Dict[str, str],
 ) -> str:
     """
-    One turn's row in the copy-out panel: an optional heading, an editable body.
+    One sentence's own line in the copy-out panel.
 
     Rendered server-side (not built by transcript.js from nothing) so the
-    plain-text panel is readable - and, per Phase 4, editable via native
-    contenteditable even with JavaScript disabled reaching it, exactly the
-    way a turn's own <div class="body"> already is. transcript.js's
-    rebuildPlain() finds this same element by its data-turn id afterwards
-    and only ever updates its text, never recreates it from scratch, unless
-    a speaker was added client-side with no server-rendered turn to match.
+    plain-text panel is readable - and editable via native contenteditable -
+    even with JavaScript disabled, exactly the way a bubble's own <p> already
+    is. transcript.js's rebuildPlain() finds this same element by its
+    data-line id afterwards (the SAME id the matching .bubble carries - see
+    _render_bubble_html()) and only ever updates its text or moves it,
+    never recreates it from scratch unless a card grew or lost a bubble.
 
-    first_number is this turn's first sentence's number in the per-document
-    running count _render_plain_html keeps - see that function's docstring.
-    Each line of body_text gets its own number AND, when timestamps are on,
-    its own timestamp range, rather than the row as a whole getting either -
-    a turn can hold several sentences, and a single per-row number or range
-    could not identify any one of them.
+    Keying on data-line rather than data-turn (the old per-turn ".plain-row"
+    shape) is the whole reason this can be one line per sentence instead of
+    one row per turn: a reassigned sentence's EFFECTIVE speaker can differ
+    from its neighbours' inside a single turn, and only a 1:1 card-to-panel
+    mapping lets a heading land in the middle of a turn to show that. See the
+    module docstring's design note and _render_plain_html()'s own docstring
+    for the heading placement itself, which this function has no say in -
+    the caller decides whether a heading precedes this line.
 
-    show_speaker is decided by the CALLER (_render_plain_html), which is the
-    only place that knows the previous row's speaker: a speaker heading
-    renders on its own block-level line above .plain-body only when this
-    row's speaker differs from the one before it, so a speaker whose turns
-    were split by the 2s gap or the 30s cap still gets exactly one heading
-    for the whole run, not one per turn. Not the inline ".plain-prefix" this
-    used to be - a heading that can legitimately be absent needs to be a
-    block of its own, not a text node beside the body that would otherwise
-    have to render empty.
+    Each line leads with "{LRI}{number}{PDI}. " - or, with timestamps on,
+    "{LRI}{number}{PDI}. {LRI}[{range}]{PDI} " - the number and the range
+    each sit in their OWN isolate, with the dot and the space between them
+    OUTSIDE both. A single isolate around the whole lead-in puts the dot
+    inside an LTR run: in an RTL paragraph the digit sits at the run's right
+    edge and the text flows leftward from there, so a dot that trails the
+    digit *inside* the isolate renders to the digit's right - wrong, since a
+    Hebrew reader's eye moves right to left and the dot has to separate the
+    number from what comes next, on its LEFT. Splitting the lead-in into two
+    isolates makes the dot and the space between them ordinary neutral
+    characters in the surrounding RTL paragraph, which is what puts them on
+    the correct side. Verified by measuring painted glyph x-positions in a
+    real browser, not reasoned about - see the review plan's "the RTL dot"
+    section for the numbers.
 
-    Uses turn.sentences() (Turn.sentences(), turns.py), not
-    split_sentences(turn.text) as this used to: the text is the same either
-    way, but only Sentence carries the per-sentence start/end each line's own
-    range needs.
+    No dir="ltr" element wraps any of this - unlike the file-position span,
+    this text has to stay a single contenteditable text node (one
+    <span class="plain-body">, matching the card's single <p> contenteditable
+    contract) so a wrapping element isn't available here.
+
+    js/32-plain-text.js's input handler strips this lead-in
+    (stripLineNumber()) before the edited text ever reaches the matching
+    bubble's <p> - otherwise a future edit through this panel would bake a
+    stale number and a stale timestamp into the transcript text itself.
     """
-    heading_html = ""
-    if show_speaker and speaker_label is not None and turn.speaker is not None:
-        name = html.escape(_speaker_fallback(speaker_label, turn.speaker))
-        heading_html = f'<div class="plain-heading" contenteditable="false">{name}</div>'
-
-    # Each line leads with "{LRI}{number}{PDI}. " - or, with timestamps on,
-    # "{LRI}{number}{PDI}. {LRI}[{range}]{PDI} " - the number and the range
-    # each sit in their OWN isolate, with the dot and the space between them
-    # OUTSIDE both. A single isolate around the whole lead-in (the shape this
-    # used to be) puts the dot inside an LTR run: in an RTL paragraph the
-    # digit sits at the run's right edge and the text flows leftward from
-    # there, so a dot that trails the digit *inside* the isolate renders to
-    # the digit's right - wrong, since a Hebrew reader's eye moves right to
-    # left and the dot has to separate the number from what comes next, on
-    # its LEFT. Splitting the lead-in into two isolates makes the dot and
-    # the space between them ordinary neutral characters in the surrounding
-    # RTL paragraph, which is what puts them on the correct side. Verified
-    # by measuring painted glyph x-positions in a real browser, not reasoned
-    # about - see the review plan's "the RTL dot" section for the numbers.
-    # No dir="ltr" element wraps any of this - unlike the file-position
-    # span, this text has to stay a single contenteditable text node (one
-    # <span class="plain-body">, matching the card's single <div class="body">
-    # contenteditable contract) so a wrapping element isn't available here.
-    #
-    # NOTE for the JS pass that follows this one: js/32-plain-text.js's input
-    # handler currently does `bodyEl.textContent.split('\n')` to rebuild the
-    # paragraph array it writes back into the card via writeParagraphs(). That
-    # will now capture this lead-in as part of the paragraph text unless it
-    # is stripped first - the lead-in has to come back out before a
-    # plain-panel edit is written back to the card, or every future edit
-    # through this panel bakes a stale number and a stale timestamp into the
-    # transcript text itself. Not fixed here: this module is Python-only and
-    # does not touch transcript.js.
-    sentence_lines = []
-    for idx, sentence in enumerate(turn.sentences()):
-        number = first_number + idx
-        lead = f"{LRI}{number}{PDI}. "
-        if timestamps:
-            # format_range() truncates both ends via int(), so a sentence
-            # under a second long (routine - sentences are often closer
-            # together than that) would render its end the same as its
-            # start: "0:00 - 0:00", which reads as broken rather than as a
-            # real, very short sentence. _display_end_second() imposes a
-            # floor of one second on the END only, avoiding that degenerate
-            # range without touching format_range() itself - and a
-            # rounded-up end is also the more useful choice for a reader
-            # scanning ranges, since it is guaranteed to include the
-            # sentence's own tail rather than cutting it off.
-            bare = (
-                format_range(sentence.start, _display_end_second(sentence))
-                .replace(LRI, "")
-                .replace(PDI, "")
-            )
-            lead += f"{LRI}[{bare}]{PDI} "
-        sentence_lines.append(f"{lead}{sentence.text}")
-    body_text = "\n".join(sentence_lines)
+    lead = f"{LRI}{number}{PDI}. "
+    if timestamps:
+        # format_range() truncates both ends via int(), so a sentence under a
+        # second long (routine - sentences are often closer together than
+        # that) would render its end the same as its start: "0:00 - 0:00",
+        # which reads as broken rather than as a real, very short sentence.
+        # _display_end_second() imposes a floor of one second on the END
+        # only, avoiding that degenerate range without touching
+        # format_range() itself - and a rounded-up end is also the more
+        # useful choice for a reader scanning ranges, since it is guaranteed
+        # to include the sentence's own tail rather than cutting it off.
+        bare = (
+            format_range(sentence.start, _display_end_second(sentence))
+            .replace(LRI, "")
+            .replace(PDI, "")
+        )
+        lead += f"{LRI}[{bare}]{PDI} "
+    body_text = f"{lead}{sentence.text}"
     body_label = _t(strings, "turn_text", "Turn text")
     return (
-        f'<div class="plain-row" data-turn="{turn_id}">'
-        f'{heading_html}'
+        f'<div class="plain-line" data-line="{line_id}">'
         f'<span class="plain-body" contenteditable="true" role="textbox"'
-        f' aria-multiline="true" aria-label="{body_label}">{html.escape(body_text)}</span>'
+        f' aria-label="{body_label}">{html.escape(body_text)}</span>'
         "</div>"
     )
 
@@ -572,14 +543,27 @@ def _render_plain_html(
     and burying the most-used feature one click below a "Plain text" summary
     line was the wrong trade.
 
-    One <div class="plain-row" data-turn="..."> per turn (see
-    _render_plain_row_html()), rendered up front rather than built from
-    nothing by transcript.js - the same "readable and editable without
-    JavaScript" property every turn card already has. transcript.js's
-    rebuildPlain() then keeps each row's text in step with its card (and the
-    reverse) by data-turn id: no parsing either direction, so editing either
-    the row or the card cannot desync it from the other, it just writes the
-    same paragraph array readParagraphs() already produces from a card.
+    PER-SENTENCE lines now, not per-turn rows: one <div class="plain-line"
+    data-line="..."> per sentence (see _render_plain_line_html()), each keyed
+    to its matching .bubble by the SAME data-line id, with a standalone
+    <div class="plain-heading"> inserted wherever the speaker changes from
+    the sentence before it. This exists to let a client-side per-sentence
+    reassignment (state.assignLine, js/24-speakers-menus.js) break a
+    sentence out into its own heading section - the plain panel is meant to
+    group by each sentence's EFFECTIVE speaker, not by which turn it happens
+    to sit in, and a heading landing in the MIDDLE of a turn is only
+    expressible with a 1:1 line-to-bubble mapping. This server render has no
+    override to apply (overrides live only in client-side localStorage), so
+    it groups purely by each turn's own speaker - correct for a fresh page -
+    and rebuildPlain() (js/32-plain-text.js) is what recomputes the same
+    "did the EFFECTIVE speaker change" run boundary client-side, walking
+    bubbles instead of turns, once an override can move a sentence to a
+    different run than its turn's own.
+
+    Rendered up front rather than built from nothing by transcript.js - the
+    same "readable and editable without JavaScript" property every turn card
+    already has. rebuildPlain() then keeps each line's text in step with its
+    bubble (and the reverse) by data-line id.
 
     Keeps its own per-document sentence counter, starting at 1, rather than
     receiving one from _render_document_html's turn-rendering loop: both
@@ -589,30 +573,30 @@ def _render_plain_html(
     needing to share mutable state - see the sentence-bubbles plan, 1.2, for
     why the numbers must match at all.
 
-    Also tracks the previous turn's speaker, so each row can be told whether
-    to show its own speaker heading (see _render_plain_row_html()'s
-    docstring): a heading renders only when the speaker actually changes
-    from the row before it, so a speaker whose turns were split by the 2s
-    gap or the 30s cap gets exactly one heading for the whole run rather
-    than one per turn. This server-side version has no per-sentence
-    override to account for - those exist only in client-side localStorage
-    - so rebuildPlain() (js/32-plain-text.js) has to recompute the same
-    "did the EFFECTIVE speaker change" decision itself, across rows, once an
-    override can change what any one row's speaker actually is.
+    previous_speaker tracks the last TURN's speaker (not a per-sentence
+    value) since every sentence in one turn shares that turn's speaker here
+    - a heading can only start at a turn boundary in a server render, never
+    mid-turn, which is exactly what has no client-side override to say
+    otherwise yet.
     """
     s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
 
-    row_parts = []
+    line_parts = []
     sentence_number = 1
     previous_speaker = None
     for turn_id, turn in zip(turn_ids, turns):
-        show_speaker = turn.speaker != previous_speaker
-        row_parts.append(_render_plain_row_html(
-            turn, turn_id, sentence_number, speaker_label, timestamps, show_speaker, strings,
-        ))
-        sentence_number += len(turn.sentences())
+        starts_run = turn.speaker != previous_speaker
+        for idx, sentence in enumerate(turn.sentences()):
+            if idx == 0 and starts_run and speaker_label is not None and turn.speaker is not None:
+                name = html.escape(_speaker_fallback(speaker_label, turn.speaker))
+                line_parts.append(f'<div class="plain-heading" contenteditable="false">{name}</div>')
+            line_id = f"{turn_id}-{idx}"
+            line_parts.append(_render_plain_line_html(
+                sentence, line_id, sentence_number, timestamps, strings,
+            ))
+            sentence_number += 1
         previous_speaker = turn.speaker
-    rows = "".join(row_parts)
+    rows = "".join(line_parts)
 
     # Each checkbox starts in the state the server actually rendered, not
     # always checked. They were both hardcoded `checked`, which contradicted

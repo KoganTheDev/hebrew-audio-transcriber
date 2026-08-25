@@ -28,6 +28,16 @@ Two fixtures, selected by the one CLI argument:
               resolveTourSteps() adapts to what a render actually contains
               rather than assuming the full eight every time.
 
+  triple      One file, one turn with THREE sentences under one speaker,
+              followed by a second turn under a different speaker - the
+              "full" fixture's turns only ever hold one or two sentences,
+              which is enough to prove a run merges/splits at a TURN
+              boundary but not enough to show a per-sentence override
+              opening a run boundary in the MIDDLE of a turn and the
+              original speaker resuming right after it (tests/js/
+              line-speaker.test.mjs's mid-turn split/resume/merge coverage).
+
+
 doc_id is pinned per fixture (not left to render_html()'s own random uuid4)
 so the two fixtures' localStorage autosave keys ("hebrew-transcript:" +
 doc_id) are stable across runs - useful for a test that wants to seed
@@ -116,7 +126,33 @@ def render_degenerate():
     )
 
 
-_FIXTURES = {"full": render_full, "degenerate": render_degenerate}
+def render_triple():
+    # Turn "0-0": one speaker, three sentences (two periods split
+    # "אחד. שתיים. שלוש." into three) - enough sentences for a MIDDLE one to
+    # be overridden while a real sentence still follows it, so a test can
+    # show the original speaker resuming after a mid-turn split rather than
+    # just observing the split itself.
+    # Turn "0-1": a different speaker, one sentence - gives the last
+    # sentence of turn "0-0" a real, differently-named neighbour to merge
+    # into when it is reassigned.
+    documents = [
+        doc("recording-one.wav", [
+            seg(0, 3, "אחד. שתיים. שלוש.", speaker=0),
+            seg(5, 6, "ארבע", speaker=1),
+        ]),
+    ]
+    return render_html(
+        documents,
+        speaker_label="Speaker {n}",
+        timestamps=True,
+        title="fixture-triple",
+        ui_strings=UI_STRINGS,
+        doc_id="js-fixture-triple",
+        vista="vista-03.webp",
+    )
+
+
+_FIXTURES = {"full": render_full, "degenerate": render_degenerate, "triple": render_triple}
 
 
 def main():

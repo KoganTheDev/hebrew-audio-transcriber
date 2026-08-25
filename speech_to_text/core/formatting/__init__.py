@@ -70,7 +70,6 @@ from .document import (
     _render_file_bar_html,
     _render_outline_html,
     _render_plain_html,
-    _render_plain_row_html,
     _render_speakers_html,
     _render_turn_html,
 )

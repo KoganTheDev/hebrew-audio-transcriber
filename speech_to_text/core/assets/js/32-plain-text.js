@@ -18,9 +18,10 @@
     // exactly one isolate pair per range, per the module docstring. Used by
     // bubblePlainText() below, reading a bubble's own rendered .ts range
     // text directly - a different thing from the per-line range
-    // rebuildPlain() builds for each sentence (see numberedLines() below),
-    // which has no rendered .ts to read from when a card is being rebuilt
-    // from a fresh paragraph array rather than copied from an existing one.
+    // rebuildPlain() builds for each sentence (see lineLeadIn() below),
+    // which has no rendered .ts to read from when a line is being rebuilt
+    // from a bubble's own data-start/data-end rather than copied from an
+    // existing element.
     var bare = ts.textContent.trim().replace(/[⁦⁩]/g, '');
     return PLAIN_LRI + '[' + bare + ']' + PLAIN_PDI;
   }
@@ -28,7 +29,7 @@
   // Whole-second m:ss / h:mm:ss formatting, mirroring format_mmss()/
   // format_hhmmss() in core/formatting/timecode.py closely enough that
   // formatSentenceRange() below produces byte-identical text to
-  // _render_plain_row_html()'s server render. Kept as two small functions
+  // _render_plain_line_html()'s server render. Kept as two small functions
   // rather than one with a branch inside, the same shape the Python side
   // uses (format_mmss/format_hhmmss chosen by format_range()'s own
   // `promote` flag).
@@ -49,9 +50,9 @@
     return h + ':' + pad2(m) + ':' + pad2(s);
   }
 
-  // A sentence's own "M:SS - M:SS" range, un-isolated (numberedLines()
-  // below wraps it, together with the number and the dot, in one LRI/PDI
-  // pair - see the module docstring on why one isolate, not two). Mirrors
+  // A sentence's own "M:SS - M:SS" range, un-isolated (lineLeadIn() below
+  // wraps it, together with the number and the dot, in one LRI/PDI pair -
+  // see the module docstring on why one isolate, not two). Mirrors
   // format_range() in timecode.py, including its hour-promotion rule (both
   // ends promote together once either passes an hour), except that the end
   // second carries a floor of one second above the start. This MUST stay
@@ -70,23 +71,20 @@
     return fmt(start) + ' - ' + fmt(endSecond);
   }
 
-  // _render_plain_row_html() (core/formatting/document.py) leads every line
-  // of a row's .plain-body with "{LRI}{n}{PDI}. " - or, with timestamps on,
+  // _render_plain_line_html() (core/formatting/document.py) leads every
+  // .plain-body with "{LRI}{n}{PDI}. " - or, with timestamps on,
   // "{LRI}{n}{PDI}. {LRI}[{range}]{PDI} " - the number and the range each
   // sit in their OWN isolate, with the dot and the space between them
-  // OUTSIDE both. See the docstring on _render_plain_row_html() (Python
+  // OUTSIDE both. See the docstring on _render_plain_line_html() (Python
   // side) for why: a single isolate around the whole lead-in put the dot to
   // the right of the digit in RTL text - the wrong side, since the dot has
   // to separate the number from what follows it, which reads to the
-  // number's LEFT in Hebrew. rebuildPlain() below has to reproduce this
-  // same two-isolate lead-in when it regenerates a row from a card's own
-  // text (see numberedLines()), and the panel's own input handler has to
-  // strip it back off before that text is ever written back into a
-  // bubble's <p> - otherwise the lead-in stops being a display artifact and
-  // becomes part of the sentence, permanently, the next time this row is
-  // edited. The range's own isolate is matched as an OPTIONAL group (it is
-  // simply absent with timestamps off), so this one regex strips the
-  // lead-in whether or not a range is present.
+  // number's LEFT in Hebrew. lineLeadIn() below has to reproduce this same
+  // two-isolate lead-in when rebuildPlain() regenerates a line from a
+  // bubble's own text, and the panel's own input handler has to strip it
+  // back off before that text is ever written back into a bubble's <p> -
+  // otherwise the lead-in stops being a display artifact and becomes part
+  // of the sentence, permanently, the next time this line is edited.
   var LINE_NUMBER_RE = new RegExp(
     '^' + PLAIN_LRI + '\\d+' + PLAIN_PDI + '\\. '
     + '(?:' + PLAIN_LRI + '\\[[^' + PLAIN_PDI + ']*\\]' + PLAIN_PDI + ' )?'
@@ -94,29 +92,6 @@
 
   function stripLineNumber(line) {
     return line.replace(LINE_NUMBER_RE, '');
-  }
-
-  // A per-line speaker tag - "{LRI}[Name]{PDI} " - marking the one sentence
-  // in a turn that disagrees with the row's own prefix (see
-  // rowSpeakerName()'s docstring for why a row can only ever show ONE name
-  // in its prefix, and what "disagrees" means there). Bracketed inside the
-  // same LRI/PDI isolate bracketedRange() already uses for the timestamp,
-  // for the same reason: a bare "[" is a mirrored character that can
-  // reorder inside RTL text once it leaves the browser's own bidi engine
-  // (see the module docstring above and timecode.py's own).
-  function bracketedName(name) {
-    return PLAIN_LRI + '[' + name + ']' + PLAIN_PDI;
-  }
-
-  // The inverse half of bracketedName(): strips a leading tag back off
-  // before a plain-panel edit is written back into a bubble's <p>, the same
-  // "display artifact, not real text" treatment stripLineNumber() already
-  // gives the line number it always precedes (see numberedLines() below for
-  // why the tag always comes right after the number, never before it).
-  var LINE_TAG_RE = new RegExp('^' + PLAIN_LRI + '\\[[^\\]]*\\]' + PLAIN_PDI + ' ?');
-
-  function stripLineOverrideTag(line) {
-    return line.replace(LINE_TAG_RE, '');
   }
 
   // A bubble's own effective speaker name: its override's, if it has one
@@ -132,67 +107,19 @@
     return name || clusterName;
   }
 
-  // What name a TURN's plain-text row shows in its own "{Name}:" prefix,
-  // now that a bubble can carry a per-sentence override (the "no feature
-  // loss" checklist's "Reassign speaker" row - see reassignLine() in
-  // js/24-speakers-menus.js). A row is per-turn, not per-line, and its
-  // prefix has exactly one slot for "who" - it was never rebuilt to hold a
-  // set of names - so this is the one place that decision gets made:
-  //
-  //   - If every bubble in the turn currently agrees on a name (the
-  //     ordinary case with no override at all, AND the less-ordinary case
-  //     where every sentence has been overridden to the SAME other
-  //     speaker), that agreed name is simply correct and is shown here.
-  //   - If they genuinely disagree, the prefix falls back to the cluster's
-  //     own name - the row's default, unsurprising meaning - and each
-  //     disagreeing sentence is tagged individually instead (see
-  //     bracketedName() above and its callers below), the same way the
-  //     card itself shows the cluster's chip once at the top and only a
-  //     disagreeing bubble grows a chip of its own.
-  //
-  // This is why a bubble is only ever tagged when its own name differs from
-  // whatever rowSpeakerName() decided, rather than whenever it merely
-  // carries an override: an override that everyone in the turn shares is
-  // not a disagreement, so the row's own prefix already says all of it.
-  function rowSpeakerName(turn, clusterName) {
-    var names = [];
-    turn.querySelectorAll('.body .bubble').forEach(function (bubble) {
-      names.push(bubbleSpeakerName(bubble, clusterName));
-    });
-    for (var i = 1; i < names.length; i++) {
-      if (names[i] !== names[0]) { return clusterName; }
+  // The inverse of stripLineNumber(): lays the same "{LRI}{n}{PDI}. " (or,
+  // with withTs, "{LRI}{n}{PDI}. {LRI}[{range}]{PDI} ") lead-in
+  // _render_plain_line_html() (core/formatting/document.py) uses ahead of
+  // one sentence's own text, so a line rebuilt client-side (a reader typed
+  // into the card, an override just moved it into a different run, or the
+  // .opt-ts toggle changed) shows the same text a fresh server render
+  // would.
+  function lineLeadIn(number, start, end, withTs) {
+    var lead = PLAIN_LRI + number + PLAIN_PDI + '. ';
+    if (withTs) {
+      lead += PLAIN_LRI + '[' + formatSentenceRange(start, end) + ']' + PLAIN_PDI + ' ';
     }
-    return names.length ? names[0] : clusterName;
-  }
-
-  // The inverse of stripLineNumber()/stripLineOverrideTag(): lays the same
-  // "{LRI}{n}.{PDI} " (or, with withTs, "{LRI}{n}. [{range}]{PDI} ") lead-in
-  // _render_plain_row_html() (core/formatting/document.py) uses over one
-  // turn's paragraph array, numbered from `first`, with an optional
-  // bracketed name tag (see bracketedName()) right after the lead-in and
-  // before the sentence text - so a row rebuilt client-side (a reader typed
-  // into the card, or an override was just set, or the .opt-ts toggle
-  // changed) shows the same text a fresh server render would, plus
-  // whichever per-line tags rowSpeakerName()'s decision calls for.
-  // `tags[idx]` is a name string to tag that line with, or falsy for an
-  // ordinary, untagged line. `times[idx]` is that line's own
-  // {start, end} - required whenever withTs is true, since the range is
-  // per-sentence, not per-row (see formatSentenceRange() above).
-  function numberedLines(paragraphs, first, tags, times, withTs) {
-    return paragraphs.map(function (text, idx) {
-      var number = first + idx;
-      // Two isolates, dot outside both - see LINE_NUMBER_RE's own comment
-      // above for why. Must stay byte-identical to _render_plain_row_html()
-      // (core/formatting/document.py).
-      var lead = PLAIN_LRI + number + PLAIN_PDI + '. ';
-      if (withTs && times && times[idx]) {
-        lead += PLAIN_LRI + '[' +
-          formatSentenceRange(times[idx].start, times[idx].end) + ']' + PLAIN_PDI + ' ';
-      }
-      var tag = tags && tags[idx];
-      if (tag) { lead += bracketedName(tag) + ' '; }
-      return lead + text;
-    }).join('\n');
+    return lead;
   }
 
   // A turn's cluster-level speaker name, resolved the same way
@@ -218,7 +145,8 @@
   // cluster header (and its .turn-actions) went away. Reads the bubble's
   // OWN chip for its name, which is always populated now (see
   // _render_bubble_html()'s docstring) rather than needing a cluster
-  // fallback the way bubbleSpeakerName() does for the plain-panel's tags.
+  // fallback the way bubbleSpeakerName() does for the plain-panel's
+  // headings.
   function bubblePlainText(bubble, withTs, withSpk) {
     var p = bubble.querySelector('p');
     var text = p ? p.textContent.trim() : '';
@@ -236,15 +164,33 @@
     return head ? head + ' ' + text : text;
   }
 
-  // Builds or updates one .plain-row per turn - never a full teardown and
-  // rebuild of the panel's innerHTML, which is what the single-<pre>
-  // version used to do and exactly what would fight a reader mid-edit: a
-  // fresh row replaces the live one under their caret every time any turn
-  // anywhere in the file changes. Two guards instead: skip a row whose
-  // .plain-body currently has focus (the same "never rewrite what the caret
-  // is in" rule runSearch() already follows for the card), and only touch a
-  // node's text when it would actually change, so an unrelated row's
-  // scroll position and selection are left alone too.
+  // Rebuilds the panel's headings and .plain-line elements from the
+  // section's bubbles, in document order, one .plain-line per sentence -
+  // never a full teardown and rebuild of the panel's innerHTML, which would
+  // fight a reader mid-edit by replacing the live line under their caret
+  // every time any bubble anywhere in the file changes.
+  //
+  // The panel is grouped by each sentence's EFFECTIVE speaker, not by which
+  // turn it sits in (see the module docstring in document.py's
+  // _render_plain_html() for why): a heading is emitted wherever a
+  // sentence's effective speaker differs from the sentence before it, which
+  // - once a per-sentence override exists (state.assignLine) - can happen
+  // in the MIDDLE of a turn, splitting it into two runs, or make a
+  // reassigned sentence merge into an adjacent run of its new speaker. A
+  // per-turn ".plain-row" (the old shape) could never express a heading
+  // appearing mid-turn; a 1:1 .plain-line-to-.bubble mapping, keyed on the
+  // same data-line id, can.
+  //
+  // Headings are cheap to recreate outright every rebuild - they carry no
+  // editable state (contenteditable="false") and no id worth reusing.
+  // .plain-line elements ARE reused, keyed by data-line, both so an
+  // in-progress edit's caret survives a rebuild triggered by something else
+  // on the page, and so a line currently focused is never overwritten (the
+  // same "never rewrite what the caret is in" rule runSearch() already
+  // follows for the card). Reusing an already-attached element via
+  // container.appendChild() moves it to its new position without losing
+  // focus or listeners, which is what lets one forward pass over every
+  // sentence, in order, produce the whole panel's final DOM order.
   function rebuildPlain(section) {
     if (!section) { return; }
     var panel = section.querySelector('.plain');
@@ -257,145 +203,144 @@
     var withTs = tsBox ? tsBox.checked : false;
     var withSpk = spkBox ? spkBox.checked : false;
 
+    // Headings carry no identity worth preserving - drop every one up
+    // front and let the walk below recreate exactly the set (and order)
+    // that belongs.
+    Array.prototype.slice.call(container.querySelectorAll('.plain-heading')).forEach(function (h) {
+      h.remove();
+    });
+
+    // Existing .plain-line elements, keyed by data-line, so a line that
+    // still exists after this rebuild is MOVED (via appendChild) and
+    // updated in place rather than thrown away and recreated - the thing
+    // that preserves a reader's caret if they are mid-edit somewhere else
+    // in the panel.
+    var existingLines = {};
+    Array.prototype.slice.call(container.querySelectorAll('.plain-line')).forEach(function (lineEl) {
+      existingLines[lineEl.dataset.line] = lineEl;
+    });
+
+    var seen = {};
     // A per-document running count, 1-based, exactly like render_html's own
     // sentence_number in core/formatting/document.py - it has to walk every
-    // turn in the same document order that renderer does, incrementing by
-    // each turn's own paragraph count regardless of whether that turn ends
-    // up with a visible row, or a card's bubble numbers and this panel's
-    // row numbers would drift apart the first time a turn's text is edited
-    // down to nothing.
-    var seen = {};
+    // sentence in the same document order that renderer does, incrementing
+    // for every sentence regardless of whether it ends up with visible
+    // text, or a card's bubble numbers and this panel's numbers would drift
+    // apart the first time a sentence's text is edited down to nothing.
     var sentenceNumber = 1;
-    // The previous row's own effective speaker name (rowName, below) -
-    // override-aware, the same value _render_plain_html()'s previous_speaker
-    // tracks server-side, except this has to be recomputed on every
-    // rebuild rather than fixed at render time: a per-card override
-    // (state.assignLine) can change a row's effective speaker client-side,
-    // which can open or close a run boundary that did not exist at the
-    // initial server render. See _render_plain_row_html()'s docstring.
-    var previousRowName = null;
+    // The previous line's own effective speaker name - override-aware,
+    // recomputed on every rebuild rather than fixed at render time: a
+    // per-bubble override (state.assignLine) can change a sentence's
+    // effective speaker client-side, which can open or close a run
+    // boundary that did not exist at the initial server render. Tracked as
+    // '' (never null) when the current line has no speaker at all, so a
+    // no-speaker line and a first-ever line are never mistaken for
+    // matching some earlier named run.
+    var previousName = '';
+
     section.querySelectorAll('.turn').forEach(function (turn) {
-      var turnId = turn.dataset.turn;
-      // Own name (cardBody), deliberately not `bodyEl` - a .plain-row's own
-      // .plain-body span is built or looked up further down this same loop
-      // body under that exact name, and reusing it here for the CARD's
-      // .body would be one identifier meaning two different elements across
-      // one iteration.
       var cardBody = turn.querySelector('.body');
       var hasSpeaker = typeof turn.dataset.speaker !== 'undefined';
       var clusterName = hasSpeaker ? clusterSpeakerName(turn) : '';
-      var rowName = hasSpeaker ? rowSpeakerName(turn, clusterName) : clusterName;
 
       // Walked from the bubbles themselves, not readParagraphs(), so each
-      // paragraph's own per-line tag (see numberedLines()/rowSpeakerName())
-      // can be read off the SAME element the text came from. Falls back to
-      // readParagraphs()'s flatter shape - no tags, since there is nothing
-      // to read one off - for the one case writeParagraphs() itself already
-      // documents: a body with no .bubble wrapper at all.
+      // sentence's own effective name can be read off the SAME element the
+      // text and timing come from. Falls back to readParagraphs()'s flatter
+      // shape - no per-sentence name or real timing, since there is no
+      // .bubble to read either off - for the one case writeParagraphs()
+      // itself already documents: a body with no .bubble wrapper at all.
       var bubbleEls = Array.prototype.slice.call(cardBody.querySelectorAll('.bubble'));
-      var paragraphs, tags, times;
+      var entries;
       if (bubbleEls.length) {
-        paragraphs = bubbleEls.map(function (b) {
+        entries = bubbleEls.map(function (b) {
           var p = b.querySelector('p');
-          return p ? p.textContent : '';
-        });
-        tags = bubbleEls.map(function (b) {
-          var name = bubbleSpeakerName(b, clusterName);
-          return name !== rowName ? name : null;
-        });
-        times = bubbleEls.map(function (b) {
-          return { start: parseFloat(b.dataset.start), end: parseFloat(b.dataset.end) };
+          return {
+            lineId: b.dataset.line,
+            text: p ? p.textContent : '',
+            start: parseFloat(b.dataset.start),
+            end: parseFloat(b.dataset.end),
+            name: hasSpeaker ? bubbleSpeakerName(b, clusterName) : '',
+          };
         });
       } else {
-        // No .bubble wrapper at all (see writeParagraphs()'s own comment on
-        // this case) - there is no per-sentence span to read a range from
-        // at all any more (there is no cluster-header .ts either, now that
-        // the header is gone - see _render_turn_html()'s docstring), so
-        // every line falls back to the turn's own start, the same fallback
-        // Turn.sentences() (turns.py) uses server-side when a turn carries
-        // no word timings. formatSentenceRange() imposes its own one-second
-        // floor on the end, so this still renders a valid, if approximate,
-        // range rather than a degenerate one.
-        paragraphs = readParagraphs(cardBody);
-        tags = paragraphs.map(function () { return null; });
+        // No timing to read per sentence - falls back to the turn's own
+        // start, the same fallback Turn.sentences() (turns.py) uses
+        // server-side when a turn carries no word timings.
+        // formatSentenceRange() imposes its own one-second floor on the
+        // end, so this still renders a valid, if approximate, range.
         var fallbackStart = parseFloat(turn.dataset.start) || 0;
-        times = paragraphs.map(function () {
-          return { start: fallbackStart, end: fallbackStart };
+        entries = readParagraphs(cardBody).map(function (text, idx) {
+          return {
+            lineId: turn.dataset.turn + '-' + idx,
+            text: text,
+            start: fallbackStart,
+            end: fallbackStart,
+            name: hasSpeaker ? clusterName : '',
+          };
         });
       }
 
-      // Computed unconditionally, every turn, regardless of withSpk - the
-      // run boundary itself does not depend on whether the checkbox happens
-      // to be checked right now, only the DISPLAY of the heading does (see
-      // below). Tracking it unconditionally is what lets re-checking the
-      // box later reproduce the same run boundaries a fresh server render
-      // would have shown.
-      var showHeading = hasSpeaker && rowName !== previousRowName;
-      previousRowName = rowName;
+      entries.forEach(function (entry) {
+        var number = sentenceNumber++;
+        // Computed unconditionally, every sentence, regardless of withSpk -
+        // the run boundary itself does not depend on whether the checkbox
+        // happens to be checked right now, only the DISPLAY of the heading
+        // does (see below). Tracking it unconditionally is what lets
+        // re-checking the box later reproduce the same run boundaries a
+        // fresh server render would have shown.
+        var showHeading = hasSpeaker && entry.name !== previousName;
+        previousName = entry.name;
 
-      var trimmed = paragraphs.join('\n').replace(/^\s+|\s+$/g, '');
-      var row = container.querySelector('.plain-row[data-turn="' + turnId + '"]');
-
-      if (!trimmed) {
-        if (row) { row.remove(); }
-        sentenceNumber += paragraphs.length;
-        return;
-      }
-      var text = numberedLines(paragraphs, sentenceNumber, tags, times, withTs);
-      sentenceNumber += paragraphs.length;
-      seen[turnId] = true;
-
-      if (!row) {
-        row = el('div', 'plain-row');
-        row.dataset.turn = turnId;
-
-        var bodyEl = el('span', 'plain-body', {
-          contenteditable: 'true',
-          role: 'textbox',
-          'aria-multiline': 'true',
-          'aria-label': t('turn_text', 'Turn text'),
-        });
-        row.appendChild(bodyEl);
-
-        container.appendChild(row);
-      }
-
-      // The heading is its own block-level line above .plain-body, not an
-      // inline prefix - see _render_plain_row_html()'s docstring for why -
-      // present only when this row starts a new run (showHeading) AND the
-      // reader has the speaker-names toggle on.
-      var headingEl = row.querySelector('.plain-heading');
-      if (showHeading && withSpk) {
-        if (!headingEl) {
-          headingEl = el('div', 'plain-heading', { contenteditable: 'false' });
-          row.insertBefore(headingEl, row.firstChild);
+        var trimmed = entry.text.replace(/^\s+|\s+$/g, '');
+        if (!trimmed) {
+          // The sentence's own text was edited down to nothing without its
+          // bubble disappearing outright - its line has to go too, not
+          // just skip being refreshed. Left out of `seen`, so the cleanup
+          // pass below removes it if it still exists from a previous
+          // rebuild.
+          return;
         }
-        if (headingEl.textContent !== rowName) { headingEl.textContent = rowName; }
-      } else if (headingEl) {
-        headingEl.remove();
-      }
+        seen[entry.lineId] = true;
 
-      var bodyEl = row.querySelector('.plain-body');
-      if (document.activeElement !== bodyEl && bodyEl.textContent !== text) {
-        bodyEl.textContent = text;
-      }
+        if (showHeading && withSpk) {
+          var heading = el('div', 'plain-heading', { contenteditable: 'false' });
+          heading.textContent = entry.name;
+          container.appendChild(heading);
+        }
+
+        var lineEl = existingLines[entry.lineId];
+        if (!lineEl) {
+          lineEl = el('div', 'plain-line');
+          lineEl.dataset.line = entry.lineId;
+          var bodyEl = el('span', 'plain-body', {
+            contenteditable: 'true',
+            role: 'textbox',
+            'aria-label': t('turn_text', 'Turn text'),
+          });
+          lineEl.appendChild(bodyEl);
+          existingLines[entry.lineId] = lineEl;
+        }
+        container.appendChild(lineEl);
+
+        var bodyEl2 = lineEl.querySelector('.plain-body');
+        var text = lineLeadIn(number, entry.start, entry.end, withTs) + entry.text;
+        if (document.activeElement !== bodyEl2 && bodyEl2.textContent !== text) {
+          bodyEl2.textContent = text;
+        }
+      });
     });
 
-    // A turn's body can go empty (every sentence deleted) without the turn
-    // itself disappearing - its row has to go too, not just skip being
-    // refreshed above.
-    container.querySelectorAll('.plain-row').forEach(function (row) {
-      if (!seen[row.dataset.turn]) { row.remove(); }
+    Object.keys(existingLines).forEach(function (lineId) {
+      if (!seen[lineId]) { existingLines[lineId].remove(); }
     });
   }
 
-  // "Copy all" reassembles from the rows themselves rather than reading
-  // container.textContent: the DOM has no separator between one row and the
-  // next (each is just a sibling <div>), so a raw textContent scrape would
-  // run every turn's text together with no blank line between them. Walking
-  // the rows and joining explicitly is also what keeps this in step with
-  // whatever the reader has actually typed into a .plain-body, since it
-  // reads the live element, not a cached string.
+  // "Copy all" reassembles from the headings and lines themselves rather
+  // than reading container.textContent, which would run every sentence's
+  // text together with no separator at all. Walking the panel's own
+  // children and joining explicitly also keeps this in step with whatever
+  // the reader has actually typed into a .plain-body, since it reads the
+  // live elements, not a cached string.
   // U+200F RIGHT-TO-LEFT MARK. An invisible strong-RTL character, used only
   // when text LEAVES the page. gui/i18n.py keeps one for the same purpose,
   // on GUI lines that open with a Latin filename.
@@ -421,17 +366,33 @@
     return line ? PLAIN_RLM + line : line;
   }
 
+  // Walks the panel's own children (a flat sequence of .plain-heading and
+  // .plain-line elements - see rebuildPlain()) in document order, grouping
+  // each heading together with the lines that follow it into one copied
+  // block, separated by a blank line from the next. With .opt-spk off there
+  // are no headings at all, so every line joins one continuous block - there
+  // is no other cue left in the DOM for where a reader would expect a break.
   function plainPanelText(panel) {
     var blocks = [];
-    panel.querySelectorAll('.plain-row').forEach(function (row) {
-      var headingEl = row.querySelector('.plain-heading');
-      var bodyEl = row.querySelector('.plain-body');
+    var current = [];
+    function flush() {
+      if (current.length) { blocks.push(current.join('\n')); }
+      current = [];
+    }
+    Array.prototype.forEach.call(panel.querySelectorAll('.plain-heading, .plain-line'), function (node) {
+      if (node.classList.contains('plain-heading')) {
+        var heading = node.textContent.replace(/^\s+|\s+$/g, '');
+        if (!heading) { return; }
+        flush();
+        current.push(anchorRtl(heading));
+        return;
+      }
+      var bodyEl = node.querySelector('.plain-body');
       var body = bodyEl ? bodyEl.textContent.replace(/^\s+|\s+$/g, '') : '';
       if (!body) { return; }
-      var heading = headingEl ? headingEl.textContent.replace(/^\s+|\s+$/g, '') : '';
-      var lines = (heading ? heading + '\n' + body : body).split('\n');
-      blocks.push(lines.map(anchorRtl).join('\n'));
+      current.push(anchorRtl(body));
     });
+    flush();
     return blocks.join('\n\n');
   }
 
@@ -456,39 +417,41 @@
         copy(plainPanelText(panel), e.currentTarget);
       });
 
-      // Delegated (rows are created and destroyed by rebuildPlain(), not
-      // fixed at render time) - editing a row writes straight back into the
-      // card's own .body via writeParagraphs(), the same paragraph-array
-      // shape readParagraphs() produces from a card, so nothing here ever
-      // has to parse the plain-text panel's own markup back apart. Because
-      // this handler never calls rebuildPlain() for the row it just wrote,
-      // and rebuildPlain() skips whichever row currently has focus (see
-      // above), an edit here cannot circle back and overwrite its own
-      // caret - the other half of the loop that guard exists to break.
+      // Delegated (lines are created and destroyed by rebuildPlain(), not
+      // fixed at render time) - editing a line writes straight back into
+      // its matching bubble's <p> by data-line, then re-derives that
+      // bubble's whole turn's saved paragraph array from every <p> still in
+      // the card (readParagraphs()), since state.turns is keyed per turn,
+      // not per sentence. Because this handler never calls rebuildPlain()
+      // for the line it just wrote, and rebuildPlain() skips whichever line
+      // currently has focus (see above), an edit here cannot circle back
+      // and overwrite its own caret - the other half of the loop that guard
+      // exists to break.
       var container = panel.querySelector('.plain-text');
       container.addEventListener('input', function (e) {
         var bodyEl = e.target.closest ? e.target.closest('.plain-body') : null;
         if (!bodyEl) { return; }
-        var row = bodyEl.closest('.plain-row');
-        var turn = document.querySelector('.turn[data-turn="' + row.dataset.turn + '"]');
+        var lineEl = bodyEl.closest('.plain-line');
+        var lineId = lineEl.dataset.line;
+        var bubble = document.querySelector('.bubble[data-line="' + lineId + '"]');
+        if (!bubble) { return; }
+        var turn = bubble.closest('.turn');
         if (!turn) { return; }
 
-        // Every line of a row's .plain-body starts with the same
-        // "{LRI}{n}{PDI} " lead-in _render_plain_row_html() renders (see
-        // the comment on stripLineNumber() above) - splitting on '\n' alone
-        // would capture that number as part of the sentence and
-        // writeParagraphs() would bake it into the card permanently. A
-        // disagreeing line can carry a second, optional "{LRI}[Name]{PDI} "
-        // tag right after the number (see numberedLines()/bracketedName())
-        // that needs stripping for exactly the same reason - otherwise
-        // reassigning a sentence and then merely editing its text through
-        // THIS panel would bake "[Name] " into the sentence permanently.
-        var paragraphs = bodyEl.textContent.split('\n')
-          .map(stripLineNumber).map(stripLineOverrideTag);
-        state.turns[row.dataset.turn] = paragraphs;
+        // Every .plain-body starts with the same "{LRI}{n}{PDI} " lead-in
+        // _render_plain_line_html() renders (see the comment on
+        // stripLineNumber() above) - writing the raw textContent back would
+        // capture that number (and, with timestamps on, the bracketed
+        // range) as part of the sentence, and it would be baked into the
+        // card permanently the moment writeParagraphs() ran.
+        var text = stripLineNumber(bodyEl.textContent);
+        var p = bubble.querySelector('p');
+        if (p) { p.textContent = text; }
+
+        var cardBody = turn.querySelector('.body');
+        state.turns[turn.dataset.turn] = readParagraphs(cardBody);
         turn.dataset.edited = 'true';
         unflagTurn(turn);
-        writeParagraphs(turn.querySelector('.body'), paragraphs);
         save();
       });
 

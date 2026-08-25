@@ -61,14 +61,12 @@ def _speaker_fallback(speaker_label: str, speaker: int) -> str:
     """
     A speaker's human-facing label: 0-based internally, 1-based to a reader.
 
-    Returns unescaped text on purpose. Most call sites html.escape() this
-    themselves, right where it lands in an attribute or a text node. The
-    plain-text panel (_render_plain_row_html) is the one exception: it folds
-    this straight into a whole prefix string that gets escaped once, as a
-    unit, together with the rest of that string - escaping it again here
-    would double-escape it there. That's not an inconsistency to fix, it's
-    two callers escaping at different points in the pipeline for the same
-    single-escape guarantee.
+    Returns unescaped text on purpose. Every call site html.escape()s this
+    itself, right where it lands in an attribute or a text node - including
+    the plain-text panel's heading (_render_plain_html), which used to be the
+    one exception (it folded an unescaped name into a whole prefix string
+    escaped once as a unit) back when a row's heading was inline text rather
+    than its own element.
     """
     return speaker_label.format(n=speaker + 1)
 

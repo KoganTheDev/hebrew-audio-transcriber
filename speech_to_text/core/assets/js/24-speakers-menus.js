@@ -574,9 +574,10 @@
     }
     // Repaints this bubble's own label (from state.names/fallback, same as
     // any other .bubble-spk - see applyNames()'s own comment) and keeps the
-    // plain-text panel's headings/per-line tags in step, since an override
-    // changes what rowSpeakerName() (js/32-plain-text.js) reads for this
-    // turn.
+    // plain-text panel's headings in step, since an override changes this
+    // bubble's EFFECTIVE speaker - the value rebuildPlain() (js/32-plain-
+    // text.js) groups the panel by - and can move its line into a
+    // different run, or split/merge one, as a result.
     applyNames(fileIndex);
     save();
   }
