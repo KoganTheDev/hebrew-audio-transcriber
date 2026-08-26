@@ -588,8 +588,17 @@ def _render_plain_html(
         starts_run = turn.speaker != previous_speaker
         for idx, sentence in enumerate(turn.sentences()):
             if idx == 0 and starts_run and speaker_label is not None and turn.speaker is not None:
+                # Trailing colon, matching rebuildPlain()'s heading in
+                # js/32-plain-text.js - the two MUST produce identical text
+                # or the panel visibly rewrites itself the first time a
+                # checkbox is toggled. It reads as a label rather than as a
+                # stray one-word line, which matters most where this panel
+                # is actually used: pasted into an app that keeps none of
+                # the bold styling the heading has on screen.
                 name = html.escape(_speaker_fallback(speaker_label, turn.speaker))
-                line_parts.append(f'<div class="plain-heading" contenteditable="false">{name}</div>')
+                line_parts.append(
+                    f'<div class="plain-heading" contenteditable="false">{name}:</div>'
+                )
             line_id = f"{turn_id}-{idx}"
             line_parts.append(_render_plain_line_html(
                 sentence, line_id, sentence_number, timestamps, strings,

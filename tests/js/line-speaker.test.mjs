@@ -208,14 +208,14 @@ test('an override that makes a sentence agree with the sentence before it remove
 
   const line000 = document.querySelector('.plain-line[data-line="0-0-0"]');
   const line010 = document.querySelector('.plain-line[data-line="0-1-0"]');
-  assert.equal(headingBefore(line000).textContent, 'Speaker 1', 'the first line of a document always starts a run');
-  assert.equal(headingBefore(line010).textContent, 'Speaker 2', 'before the override, line 0-1-0 starts its own run');
+  assert.equal(headingBefore(line000).textContent, 'Speaker 1:', 'the first line of a document always starts a run');
+  assert.equal(headingBefore(line010).textContent, 'Speaker 2:', 'before the override, line 0-1-0 starts its own run');
 
   const bubble = document.querySelector('.bubble[data-line="0-1-0"]');
   click(bubble.querySelector('.bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="0"]'));
 
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1', 'unaffected - still the first line');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1:', 'unaffected - still the first line');
   assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')), null, 'line 0-1-0 now agrees with the line before it, so its heading is gone');
 
   window.close();
@@ -231,33 +231,33 @@ test('overriding a MIDDLE sentence splits its turn into two heading sections, an
   // _render_plain_html()'s docstring, core/formatting/document.py).
   const { window, document } = buildWindow(getFixtureHtml('triple'));
 
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1:');
   assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')), null, 'still one run before the override');
   assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')), null, 'still one run before the override');
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2:');
 
   const bubble = document.querySelector('.bubble[data-line="0-0-1"]');
   click(bubble.querySelector('.bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
 
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1', 'unaffected');
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')).textContent, 'Speaker 2', 'the overridden sentence opens its own section');
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')).textContent, 'Speaker 1', 'the untouched third sentence resumes the original speaker');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1:', 'unaffected');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')).textContent, 'Speaker 2:', 'the overridden sentence opens its own section');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')).textContent, 'Speaker 1:', 'the untouched third sentence resumes the original speaker');
   // Turn "0-1"'s own line is STILL Speaker 2, but the sentence right before
   // it ("0-0-2") just resumed Speaker 1 - so this is a fresh run of its own
   // again, not a merge, and it keeps its own heading (unchanged from before
   // the override, since nothing about ITS run boundary actually moved).
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2', 'unaffected - its own run, same as before the override');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2:', 'unaffected - its own run, same as before the override');
 
   // Overriding back to the cluster's own speaker merges the two sections
   // in turn "0-0" back into one.
   click(document.querySelector('.bubble[data-line="0-0-1"] .bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="0"]'));
 
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-0"]')).textContent, 'Speaker 1:');
   assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-1"]')), null, 'merged back into the first section');
   assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')), null, 'merged back into the first section');
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2', 'its own section is back too');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')).textContent, 'Speaker 2:', 'its own section is back too');
 
   window.close();
 });
@@ -274,7 +274,7 @@ test('overriding a sentence to a speaker ADJACENT to an existing run merges into
   click(bubble.querySelector('.bubble-spk'));
   click(document.querySelector('.spk-menu-item[data-speaker="1"]'));
 
-  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')).textContent, 'Speaker 2');
+  assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-0-2"]')).textContent, 'Speaker 2:');
   assert.equal(headingBefore(document.querySelector('.plain-line[data-line="0-1-0"]')), null, 'merges into the section the override just opened');
   assert.equal(document.querySelectorAll('.plain-heading').length, 2, 'no duplicate "Speaker 2" heading');
 

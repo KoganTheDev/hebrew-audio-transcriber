@@ -304,7 +304,12 @@
 
         if (showHeading && withSpk) {
           var heading = el('div', 'plain-heading', { contenteditable: 'false' });
-          heading.textContent = entry.name;
+          // Trailing colon, matching _render_plain_html() in
+          // core/formatting/document.py. These two MUST agree exactly: the
+          // server renders the panel and this rebuilds it, so any
+          // difference shows up as the panel rewriting itself the first
+          // time the reader toggles a checkbox.
+          heading.textContent = entry.name + ':';
           container.appendChild(heading);
         }
 

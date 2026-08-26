@@ -37,7 +37,7 @@ test('both toggles render checked by default: the heading shows the speaker name
 
   const heading = panel.querySelector('.plain-heading');
   assert.ok(heading, 'expected a heading on the first line of the document');
-  assert.equal(heading.textContent, 'Speaker 1');
+  assert.equal(heading.textContent, 'Speaker 1:');
   // The heading must precede the first line of its run in the DOM.
   const firstLine = panel.querySelector('.plain-line[data-line="0-0-0"]');
   assert.equal(heading.nextElementSibling, firstLine);
@@ -57,7 +57,7 @@ test('unchecking the timestamp toggle drops every line\'s bracketed range but ke
 
   change(panel.querySelector('.opt-ts'), false);
 
-  assert.equal(panel.querySelector('.plain-heading').textContent, 'Speaker 1', 'the speaker toggle was not touched, so its half must remain');
+  assert.equal(panel.querySelector('.plain-heading').textContent, 'Speaker 1:', 'the speaker toggle was not touched, so its half must remain');
 
   const lines = panel.querySelectorAll('.plain-line .plain-body');
   assert.ok(lines.length > 0);
