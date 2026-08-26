@@ -301,7 +301,7 @@ class TestCheckpointing:
     def _vista(self, html_out: str) -> str:
         # The backdrop's image now lives in a per-document <style> element
         # (a plain style="" attribute can only ever set one rule, and the
-        # portrait art-direction swap needs a media query - see formatting.py
+        # portrait art-direction swap needs a media query - see core/formatting
         # render_html()'s .backdrop <style> comment), not an inline style
         # attribute on the element itself - match the landscape rule's url().
         match = re.search(r'\.backdrop\{background-image:url\(([^)]+)\)\}', html_out)

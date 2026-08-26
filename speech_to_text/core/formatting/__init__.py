@@ -9,7 +9,7 @@ none of which have anything to do with running a Whisper model.
 This used to be one ~1300-line module. It is a package now because
 render_html() had grown into four unrelated jobs - page chrome, per-document
 content, backdrop photo lookup, and time/bidi formatting - each with its own
-docstrings and test surface, and "formatting.py" stopped meaning any one
+docstrings and test surface, and "core/formatting" stopped meaning any one
 thing. The split is purely structural: every name below is either defined
 here or re-exported, unchanged, from wherever it moved to, so nothing outside
 this package - callers, tests, worker.py - has to change how it imports.
@@ -28,7 +28,7 @@ this package - callers, tests, worker.py - has to change how it imports.
 This module (the package's own __init__.py) is what remains uniquely its
 own: render_html() itself, broken into the assembly steps below, plus the
 JSON data-island helper and the re-exports that keep the public surface (and
-tests/test_formatting.py's imports, and worker.py's) unchanged.
+tests/test_core/formatting's imports, and worker.py's) unchanged.
 """
 
 import html
@@ -180,7 +180,7 @@ def _render_head_html(doc_id: str, title: Optional[str]) -> List[str]:
 
 def _render_script_html() -> str:
     """
-    Job 3.5: transcript.js's inline <script>.
+    Job 3.5: The page script's inline <script>.
 
     The concatenated fragments under core/assets/js/ (see _asset_dir()'s own
     docstring) are bare statement bodies, not a standalone script - they were
@@ -217,7 +217,7 @@ def _render_backdrop_html(vista: Optional[str]) -> List[str]:
     # PORTRAIT_W's comment in tools/build_vistas.py for why one crop
     # cannot serve both desktop and phone), and a media query can only
     # live inside a <style> block, not an attribute. The rule is still
-    # per-document, not part of the shared transcript.css - like the old
+    # per-document, not part of the shared the stylesheet (core/assets/css/) - like the old
     # inline style, it changes with which photo this render picked, while
     # the stylesheet does not.
     #
@@ -246,7 +246,7 @@ def _render_backdrop_html(vista: Optional[str]) -> List[str]:
         # Right after the sprite - the sprite paints nothing itself (zero
         # size, position:absolute), so the backdrop is still effectively the
         # first thing on the page to paint, ahead of any real content. See
-        # the .backdrop / isolation:isolate comments in transcript.css for
+        # the .backdrop / isolation:isolate comments in the stylesheet (core/assets/css/) for
         # why paint order here matters. No alt text and aria-hidden: it is
         # decoration, and a screen reader announcing "image" before every
         # transcript would be pure noise.
@@ -356,7 +356,7 @@ def render_html(
         # .layout is the grid that puts <aside> on the visual left of the
         # RTL document by pure source order (grid-template-columns's first
         # track maps to the inline-start edge, which is the right in RTL) -
-        # see the .layout comment in transcript.css. <main> stays first so a
+        # see the .layout comment in the stylesheet (core/assets/css/). <main> stays first so a
         # screen reader or a JS-disabled reader hits the actual transcript
         # before the navigation/speaker-management aside, matching normal
         # reading order regardless of which side either lands on visually.

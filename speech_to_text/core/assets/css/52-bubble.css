@@ -83,7 +83,7 @@
    z-index of its own, so later DOM order would otherwise win and a card's
    still-open menu would paint underneath its next sibling the moment the
    pointer leaves the card that opened it. Keyed to an explicit class
-   transcript.js's toggleMenu()/closeMenu() own (menuOpenCard in
+   js/24-speakers-menus.js's toggleMenu()/closeMenu() own (menuOpenCard in
    js/24-speakers-menus.js), not to :hover, for exactly that reason: the
    menu stays open after the pointer leaves. */
 .bubble.menu-open { z-index: 1; }

@@ -1,7 +1,7 @@
 """
 Bidi control characters and time formatting.
 
-Split out first because it is the part of the old formatting.py with no
+Split out first because it is the part of the old core/formatting with no
 dependency on segments, turns or HTML at all - just characters and pure
 string formatting, shared by both the plain-text and HTML renderers (see
 split_sentences() below) and by the live-progress UI (format_mmss(), used

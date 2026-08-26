@@ -42,7 +42,7 @@ body {
    No background-image of its own: the photo (and, on narrow viewports, a
    second art-directed portrait crop of the same photo behind an
    @media (max-aspect-ratio: 3/4) rule) is supplied per render as a small
-   inline <style> element (see formatting.py._vista_data_uris and its
+   inline <style> element (see formatting/assets.py's _vista_data_uris and its
    render_html() call site), because it changes per document while this
    stylesheet does not. It used to be a background-image set through a plain
    style="" attribute on this element directly, but an attribute can only

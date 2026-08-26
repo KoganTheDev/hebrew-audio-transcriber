@@ -16,7 +16,7 @@ this script is shaped to avoid. The portrait crop has its own, much smaller
 target and is checked against it separately.
 
 This is a dev tool, not runtime code. It is the only place in the whole
-project allowed to import Pillow - core/formatting.py, which embeds the
+project allowed to import Pillow - core/formatting, which embeds the
 finished .webp bytes at render time, stays stdlib-only (see the "no PyQt5,
 no Pillow at runtime" note in that file). Run it by hand whenever
 vistas_source/ changes:
@@ -80,8 +80,8 @@ TARGET_W, TARGET_H = 2560, 1440
 # in the task history for measured numbers. Desktop and phone viewports differ
 # by more than 2x in aspect ratio, so no single crop serves both; this is a
 # second, portrait-oriented crop of the SAME photo, picked at render time by
-# a CSS media query (see .backdrop's comment in transcript.css and
-# core/formatting.py's <style> emission) rather than a resize of the landscape
+# a CSS media query (see .backdrop's comment in the stylesheet (core/assets/css/) and
+# core/formatting's <style> emission) rather than a resize of the landscape
 # one, so the subject is recomposed for a tall frame instead of just narrowed.
 #
 # 1280x1920 (2:3), not the same pixel budget as the landscape crop: a portrait

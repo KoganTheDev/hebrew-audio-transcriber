@@ -4,7 +4,7 @@
   // own shape as the label. The plain-text panel gets copied out of the
   // browser into apps with no bidi engine of their own, so it needs the
   // stronger visual cue of brackets - and, per the LRI/PDI comment block in
-  // core/formatting.py, the brackets have to sit *inside* the isolate along
+  // core/formatting, the brackets have to sit *inside* the isolate along
   // with the range, not outside it: they are mirrored characters exactly
   // like the hyphen is a neutral, so a bracket pasted outside the isolate
   // could reorder the same way the old un-isolated timestamps did.
@@ -13,7 +13,7 @@
 
   function bracketedRange(ts) {
     // ts.textContent already carries format_range()'s own LRI/PDI pair
-    // (rendered by formatting.py); stripped here and reapplied around the
+    // (rendered by core/formatting); stripped here and reapplied around the
     // bracketed form rather than nested, so the plain-text panel still has
     // exactly one isolate pair per range, per the module docstring. Used by
     // bubblePlainText() below, reading a bubble's own rendered .ts range

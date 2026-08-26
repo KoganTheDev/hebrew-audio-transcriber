@@ -1,7 +1,7 @@
 {
   "name": "hebrew-audio-transcriber-transcript-js-tests",
   "private": true,
-  "description": "Dev-only harness for behaviourally testing the generated transcript page's inlined script (speech_to_text/core/assets/transcript.js) with node:test + jsdom. Not a published package - see tests/js/harness.mjs and tests/test_js_behaviour.py.",
+  "description": "Dev-only harness for behaviourally testing the generated transcript page's inlined script (speech_to_text/core/assets/js/) with node:test + jsdom. Not a published package - see tests/js/harness.mjs and tests/test_js_behaviour.py.",
   "scripts": {
     "test": "node --test tests/js/**/*.test.mjs"
   },

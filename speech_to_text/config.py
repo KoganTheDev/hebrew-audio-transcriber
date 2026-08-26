@@ -226,7 +226,7 @@ def compute_type_for_device(device: str) -> str:
 
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
 
-# HTML replaced .txt as the output format entirely (see core/formatting.py's
+# HTML replaced .txt as the output format entirely (see core/formatting's
 # module docstring for why: only a declared, not guessed, paragraph
 # direction gets Hebrew to align correctly). One input file is named after
 # itself; a batch is named after the folder it came from, since there is no

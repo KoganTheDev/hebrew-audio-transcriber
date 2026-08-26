@@ -3,7 +3,7 @@
   // The theme actually in effect right now: an explicit data-theme wins
   // (either restored from a previous session or set by this page's own
   // toggle); with none set, the page is following the system/browser
-  // preference via the @media(prefers-color-scheme) block in transcript.css,
+  // preference via the @media(prefers-color-scheme) block in the stylesheet (core/assets/css/),
   // which this reads back from matchMedia rather than assuming light - the
   // button's label has to name the *next* state correctly even when nobody
   // has touched the toggle yet.
@@ -18,7 +18,7 @@
   // light, "מצב בהיר" while dark - see the doc_theme_light/doc_theme_dark
   // keys in gui/i18n.py), so its label has to flip every time the effective
   // theme changes: on click, and once on init in case the system preference
-  // was already dark and formatting.py's server-rendered "dark mode" label
+  // was already dark and core/formatting's server-rendered "dark mode" label
   // guessed wrong.
   function syncThemeLabel() {
     var btn = document.getElementById('toggle-theme');

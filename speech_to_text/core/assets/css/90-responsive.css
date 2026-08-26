@@ -115,7 +115,7 @@
   .toolbar { gap: 0.4rem; }
   .tb-btn span { display: none; }
   .tb-btn.primary span { display: inline; }
-  /* .add-speaker is a .tb-btn too (see formatting.py's _render_speakers_html),
+  /* .add-speaker is a .tb-btn too (see formatting/document.py's _render_speakers_html),
      so the rule above strips its label along with every toolbar button's -
      fine for the toolbar, where a button is still recognisable by its icon
      alone, but wrong here: this button now lives in a sidebar that is

@@ -1,13 +1,13 @@
 /* --------------------------------------------------------------- toast --- */
 
-/* role="status" + aria-live="polite" (set in formatting.py) means this is
+/* role="status" + aria-live="polite" (set in core/formatting) means this is
    announced without moving focus - unlike the .copied flash on the button
    that triggered it, which tells you *which* control acted, this tells you
    *what* happened, for the times the button itself is out of view (copying
    from the plain-text panel while a card is scrolled off, for instance).
 
    [hidden] gates presence (screen readers, tab order); the fade is a
-   separate .show class transcript.js toggles a frame later, so the
+   separate .show class the page script (core/assets/js/) toggles a frame later, so the
    transition actually has something to animate from rather than jumping
    from [hidden] straight to fully visible. */
 .toast {

@@ -1,7 +1,7 @@
   // ---------------------------------------------------------------- layout
 
   // The sticky file bar sits below the toolbar (see .file-bar in
-  // transcript.css), which wraps onto a second line under ~480px - a fixed
+  // The stylesheet (core/assets/css/)), which wraps onto a second line under ~480px - a fixed
   // number here would drift out of sync with that the first time the
   // toolbar's own height changed, so it's measured instead and republished
   // as a custom property the CSS reads.
@@ -13,7 +13,7 @@
 
   // Tracks input modality on <html> as data-kbd, for the .body/.plain-body
   // focus ring (see the STATED EXCEPTION comment at the top of
-  // transcript.css). :focus-visible alone cannot do this: Chromium matches
+  // The stylesheet (core/assets/css/)). :focus-visible alone cannot do this: Chromium matches
   // it on a contenteditable element for a mouse click too, which is the
   // exact bug being fixed (the ring lighting up when a reader merely clicks
   // in to select text). Tab is the one key that can move focus without

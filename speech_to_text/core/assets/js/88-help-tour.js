@@ -35,7 +35,7 @@
   }
 
   // The help panel: markup and content are entirely server-rendered (see
-  // _render_help_html() in core/formatting.py) - this only ever toggles
+  // _render_help_html() in core/formatting) - this only ever toggles
   // [hidden] and aria-expanded, and manages focus. Never reaches into
   // `state` or calls save(): the panel is pure reference material, and
   // opening or closing it must be invisible to hasLocalChanges().
@@ -131,7 +131,7 @@
       // Every file in the batch renders its own .speakers strip, but only
       // one is visible at a time once .outline.js-ready is present (see
       // bindOutline() and the .outline.js-ready .speakers:not(.active) rule
-      // in transcript.css) - a plain document.querySelector('.speakers')
+      // in the stylesheet (core/assets/css/)) - a plain document.querySelector('.speakers')
       // would always land on file 0's strip regardless of which file the
       // reader is actually looking at, including mid-tour if a reader
       // scrolled before opening help. .active is preferred; falling back to
@@ -225,7 +225,7 @@
     var count = el('p', 'tour-count');
     // Same bidi shape as .file-position and format_range()'s
     // "M:SS - M:SS" (see the LRI/PDI comment block in
-    // core/formatting.py): a neutral "/" sitting between two LTR
+    // core/formatting): a neutral "/" sitting between two LTR
     // digit runs inside an RTL paragraph. Without the isolate
     // renderTourStep() wraps this in, step one of eight rendered as
     // "8 / 1" - the slash resolved RTL and swapped which number read

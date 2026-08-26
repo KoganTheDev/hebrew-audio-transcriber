@@ -1,13 +1,13 @@
 /* ===========================================================================
    Transcript document styling.
 
-   Inlined into the generated HTML by core/formatting.py - it is never linked,
+   Inlined into the generated HTML by core/formatting - it is never linked,
    because the output has to stay a single self-contained file that works with
    no network at all. Kept as real .css files rather than a Python string so
    it stays lintable and readable - and, since this split, as a directory of
    numerically-prefixed fragments (this one first) rather than one ~2270-line
    file, concatenated back into one stylesheet by
-   formatting.assets._asset_dir(). Unlike transcript.js's fragments, these are
+   formatting.assets._asset_dir(). Unlike the page script's fragments, these are
    ordinary top-level CSS rules with no shared wrapper and no @import/
    @supports anywhere in the file, so concatenation in sorted-filename order
    is safe on its own terms - the one real ordering rule left is this file's
@@ -33,7 +33,7 @@
        Chromium matches :focus-visible on a contenteditable element for mouse
        clicks too - merely clicking into a card to select text lit a full-box
        ring on .body and a per-line-fragment stepped ring on .plain-body's
-       multi-line inline span. transcript.js sets data-kbd on Tab keydown and
+       multi-line inline span. The page script (core/assets/js/) sets data-kbd on Tab keydown and
        clears it on pointerdown, so the ring survives for a keyboard reader
        (who still needs to see which block they are about to type into) and
        disappears for a mouse click. Every other focused control on this page
@@ -107,7 +107,7 @@
      "the one primary action" would make "this is the export button" and
      "this is speaker 1" the same colour, which is exactly the kind of
      coincidence this palette's closed, verified design exists to rule out
-     everywhere else (see SPEAKER_PALETTE_SIZE in formatting.py). */
+     everywhere else (see SPEAKER_PALETTE_SIZE in core/formatting). */
   --accent: #8839ef;
   --accent-text: #ffffff;
   /* Tier 1 (see .tb-btn.primary) needs its own hover value, distinct from
@@ -474,7 +474,7 @@
 
    Safe because custom properties inherit AND a direct declaration always
    beats an inherited one, regardless of selector specificity - two things
-   confirmed by reading transcript.js, not assumed:
+   confirmed by reading the page script (core/assets/js/), not assumed:
 
    1. A .turn or .speaker-row carrying data-palette="N" sets --spk for its
       whole subtree, so e.g. .turn's own border-inline-start-color and the
@@ -484,7 +484,7 @@
    2. Anything needing its OWN colour regardless of ancestor sets --spk
       directly, by carrying its own data-palette (this rule matches ANY such
       element, not just .turn/.speaker-row). Every dot buildSwatchMenu()/
-      buildSpeakerMenu() creates in transcript.js does this: .swatch-menu is
+      buildSpeakerMenu() creates in the page script (core/assets/js/) does this: .swatch-menu is
       appended to <body> when open, so its dots are not descendants of the
       .speaker-row they opened from at all, and .spk-menu-item's dot has to
       show every OTHER speaker's colour while sitting inside the CURRENT

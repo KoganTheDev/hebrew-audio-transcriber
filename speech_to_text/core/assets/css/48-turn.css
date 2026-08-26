@@ -98,7 +98,7 @@
    anchors, but nothing about them should still look or act like a live
    control: no pointer cursor, no hover colour change, no click target.
    pointer-events removes the click itself; the disabled/aria-disabled pair
-   set by transcript.js removes it from keyboard tab order and the
+   set by the page script (core/assets/js/) removes it from keyboard tab order and the
    accessibility tree too, so the "this button does nothing" fact isn't
    something only sighted mouse users find out by trying it.
 
@@ -137,7 +137,7 @@
    Mocha did not need this to pass contrast (its accents already clear
    4.5:1 as text) but gets the same treatment anyway, for symmetry: one chip
    design, not a component that quietly changes shape depending on scheme. */
-/* The reassignment menu, built on demand by transcript.js from the file's
+/* The reassignment menu, built on demand by the page script (core/assets/js/) from the file's
    current speaker roster (never baked into the initial markup, so it can
    never go stale when a speaker is renamed or added after the page loads).
    Anchored to .bubble-spk-anchor (52-bubble.css) - inserted as that
@@ -230,7 +230,7 @@
    plain .body:focus-visible: :focus-visible alone matches on a
    contenteditable element for a mouse click, which is exactly what the user
    reported (the ring lighting up while they were only trying to select
-   text). html[data-kbd] is transcript.js's own tracked modality flag (set on
+   text). html[data-kbd] is the page script's own tracked modality flag (set on
    Tab keydown, cleared on pointerdown), not the browser's heuristic. */
 .body { outline: none; }
 html[data-kbd] .body:focus { outline: 2px solid var(--focus); outline-offset: 4px; }

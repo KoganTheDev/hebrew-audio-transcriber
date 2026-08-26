@@ -46,7 +46,7 @@ def _asset_dir(name: str) -> str:
     Read every fragment in an assets subdirectory and concatenate them, in
     sorted filename order.
 
-    transcript.js and transcript.css each grew to roughly 2200 lines in one
+    The page script (core/assets/js/) and the stylesheet (core/assets/css/) each grew to roughly 2200 lines in one
     file before this existed - long enough that finding "the audio section"
     or "the dark palette" meant scrolling past a dozen unrelated concerns
     first. Both are now a directory of numerically-prefixed fragments
@@ -59,7 +59,7 @@ def _asset_dir(name: str) -> str:
     in one order while they actually concatenate in another: sorting the
     directory listing is exactly what a human editor sees in a file browser
     too. This matters more for the JS side than the CSS side - see the
-    module docstring transcript.js's own 00-preamble.js fragment carries for
+    module docstring the page script's own 00-preamble.js fragment carries for
     why the JS split has hard ordering constraints (a `return` that has to
     stay literally first, an init epilogue that has to stay literally last)
     that plain CSS concatenation does not.

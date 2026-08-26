@@ -31,7 +31,7 @@ NIKUD = re.compile(r"[֑-ׇ]")
 # Stackable one-letter prefixes: and/in/like/to/from/that/the.
 CLITICS = "ובכלמשה"
 
-# Bidi control characters. Layout, not content - core/formatting.py adds some
+# Bidi control characters. Layout, not content - core/formatting adds some
 # of these deliberately when rendering timestamps into RTL text.
 BIDI_CONTROLS = re.compile(r"[‎‏⁦-⁩‪-‮]")
 

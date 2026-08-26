@@ -3,7 +3,7 @@ Rendering one document's worth of transcript: the file bar, every turn, the
 outline sidebar's per-file content, and the plain-text copy-out panel.
 
 Where chrome.py is "the same on every page", this module is "differs per
-document, per turn, per speaker" - the part of the old formatting.py that
+document, per turn, per speaker" - the part of the old core/formatting that
 actually reads a TranscriptDocument's segments. It draws its small generic
 widgets (_t, _button, _icon, _palette_index, _speaker_fallback) from
 chrome.py rather than duplicating them - see chrome.py's module docstring for
@@ -137,17 +137,17 @@ def _render_speakers_html(
     file with only the in-view file's panel shown - the .speaker-row shape
     and data-file attribute are unchanged from when this rendered inline in
     the reading column, which is what keeps applyNames(fileIndex),
-    recolourSpeaker, addSpeaker and bakeFormState() in transcript.js working
+    recolourSpeaker, addSpeaker and bakeFormState() in the page script (core/assets/js/) working
     against the same selectors without a rewrite.
 
     Per file rather than global: speaker 1 in one recording is rarely the same
     person as speaker 1 in another, so names stay local and an explicit action
     copies them across when it really is the same meeting.
 
-    active=True marks the panel transcript.js should show by default before
+    active=True marks the panel the page script (core/assets/js/) should show by default before
     its own IntersectionObserver has decided which file is in view (the first
     file, same as which file's turns are on screen at load) - see
-    .outline.js-ready .speakers:not(.active) in transcript.css. Without
+    .outline.js-ready .speakers:not(.active) in the stylesheet (core/assets/css/). Without
     JavaScript every panel stays visible (no CSS rule hides a non-.active one
     unless .js-ready is present), so speaker names are still readable for
     every file, not just the first, on a script-disabled open.
@@ -308,7 +308,7 @@ def _render_bubble_html(
     independent of whether the visible timestamp span is shown.
 
     No sentence number is shown here - numbering lives only in the
-    plain-text panel below (see _render_plain_row_html()), where a reader
+    plain-text panel below (see _render_plain_line_html()), where a reader
     can pair a number with the sentence's own timestamp range.
 
     The play control shows the sentence's RANGE now, not a single instant -
@@ -324,7 +324,7 @@ def _render_bubble_html(
 
     The time is an LTR run inside RTL text, so it gets the same LRI/PDI
     isolate plus dir="ltr" the file position (_render_file_bar_html) and the
-    plain-panel lead-in (_render_plain_row_html) already use - see
+    plain-panel lead-in (_render_plain_line_html) already use - see
     timecode.py's module docstring for why a bare digit run still needs it
     once it sits next to other LTR runs inside one RTL line.
 
@@ -459,10 +459,10 @@ def _render_plain_line_html(
     """
     One sentence's own line in the copy-out panel.
 
-    Rendered server-side (not built by transcript.js from nothing) so the
+    Rendered server-side (not built by the page script (core/assets/js/) from nothing) so the
     plain-text panel is readable - and editable via native contenteditable -
     even with JavaScript disabled, exactly the way a bubble's own <p> already
-    is. transcript.js's rebuildPlain() finds this same element by its
+    is. js/32-plain-text.js's rebuildPlain() finds this same element by its
     data-line id afterwards (the SAME id the matching .bubble carries - see
     _render_bubble_html()) and only ever updates its text or moves it,
     never recreates it from scratch unless a card grew or lost a bubble.
@@ -560,7 +560,7 @@ def _render_plain_html(
     bubbles instead of turns, once an override can move a sentence to a
     different run than its turn's own.
 
-    Rendered up front rather than built from nothing by transcript.js - the
+    Rendered up front rather than built from nothing by the page script (core/assets/js/) - the
     same "readable and editable without JavaScript" property every turn card
     already has. rebuildPlain() then keeps each line's text in step with its
     bubble (and the reverse) by data-line id.

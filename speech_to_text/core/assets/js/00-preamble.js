@@ -69,7 +69,7 @@
   function stripFor(i) { return document.querySelector('.speakers[data-file="' + i + '"]'); }
   function sectionFor(i) { return document.querySelector('.source[data-file="' + i + '"]'); }
 
-  // U+2066/U+2069 - see the LRI/PDI comment block in core/formatting.py.
+  // U+2066/U+2069 - see the LRI/PDI comment block in core/formatting.
   // Shared here, not left local to the plain-text section that originally
   // defined them, because the guided tour's step counter (see
   // renderTourStep() in the help & tour section) needs the exact same

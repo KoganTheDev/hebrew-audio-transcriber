@@ -25,7 +25,7 @@
 .player-file { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Native <input type="range">, not a custom div-based track - see the
-   comment on the markup in formatting.py's _render_player_html() for why:
+   comment on the markup in formatting/chrome.py's _render_player_html() for why:
    free keyboard operation and screen-reader announcement, which a styled
    div would have to reimplement (and would inevitably reimplement worse).
    The 44px height is hit-area padding around a slim visible track, not the
@@ -51,7 +51,7 @@
      than relying on the input's own value/max (browsers disagree on whether
      a range's native fill direction follows `direction` at all), is what
      makes the track advance left to right regardless of the page direction -
-     see bindAudio()'s throttled timeupdate handler in transcript.js, the
+     see bindAudio()'s throttled timeupdate handler in the page script (core/assets/js/), the
      single place --seek-fill is written. */
   direction: ltr;
 }

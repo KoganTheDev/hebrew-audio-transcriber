@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------- tour --- */
 
 /* The guided tour: three elements, built and torn down entirely by
-   transcript.js's startTour()/endTour() (there is no server-rendered
+   js/88-help-tour.js's startTour()/endTour() (there is no server-rendered
    markup for any of this, unlike .help-panel above - see startTour()'s own
    comment on why: it is inherently script-only, since which steps even
    exist depends on which selectors this particular document's render
@@ -36,7 +36,7 @@
    inverse mask or a four-rectangle cutout. pointer-events: none because the
    ring is purely visual; .tour-scrim underneath (same stacking context,
    lower z-index) is what actually catches the click - see the comment
-   above. Sized and positioned in transcript.js from the target's own
+   above. Sized and positioned in the page script (core/assets/js/) from the target's own
    getBoundingClientRect() (physical top/left/width/height, not a logical
    property - see positionDetachedMenu()'s comment on why a rect is
    physical by nature), with a few pixels of padding so the ring reads as
@@ -55,7 +55,7 @@
    .spk-menu above), not the translucent one .source/.outline use - a
    step-by-step overlay reads as MORE raised than the page it is walking
    through, the same reasoning those rules give for staying opaque.
-   Positioned by positionDetachedMenu() (transcript.js), the same function
+   Positioned by positionDetachedMenu() (the page script (core/assets/js/)), the same function
    .swatch-menu already used - generalised to accept any target element,
    not only a <button>, plus a horizontal clamp neither original caller
    ever needed (a tour target can be as wide as .file-bar or as tall and
@@ -72,7 +72,7 @@
   color: var(--text);
   box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
 }
-/* card.focus() (transcript.js's renderTourStep(), on every step change) is
+/* card.focus() (js/88-help-tour.js's renderTourStep(), on every step change) is
    what re-announces the new step to a screen reader, not a visible cue for
    a sighted reader - the card's own border already reads as "this is the
    active surface" the way .help-sheet's does, so a second focus ring drawn

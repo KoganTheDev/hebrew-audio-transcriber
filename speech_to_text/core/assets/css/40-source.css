@@ -18,7 +18,7 @@
 }
 
 /* Sticks below the toolbar, not at its own top:0 - --toolbar-height is
-   measured and written by transcript.js (the toolbar wraps onto a second
+   measured and written by the page script (core/assets/js/) (the toolbar wraps onto a second
    line at narrow widths, so a hardcoded number here would drift out of sync
    with it rather than the two ever being kept equal by hand.
 
@@ -158,7 +158,7 @@
    colour, .swatch shows a MENU ITEM's colour" a property of the markup
    itself rather than an accident of which rule happens to win, and undoing
    it was explicitly out of scope for this pass - see _swatch_trigger_html()
-   in formatting.py, which still relies on the two classes never colliding. */
+   in core/formatting, which still relies on the two classes never colliding. */
 .swatch, .swatch-rest { width: 9px; height: 9px; border-radius: 50%; background: var(--spk, var(--muted)); flex: none; }
 
 /* Squircle here too - a name field is as much "a control in the sidebar" as
@@ -197,7 +197,7 @@
    docstring for why that first version had to go: with even two speakers it
    put sixteen full-size circles above the transcript, taller than the
    content itself. Clicking it opens .swatch-menu, built on demand by
-   transcript.js's buildSwatchMenu() - the trigger carries no colour options
+   js/24-speakers-menus.js's buildSwatchMenu() - the trigger carries no colour options
    of its own, only the current one. */
 /* Radius stays 50% - circular, not --control-radius - the one deliberate
    shape exception the Phase 0 mockup called out: a colour indicator reads
@@ -229,7 +229,7 @@
 .swatch-trigger:active { background: var(--surface-hover); border-color: var(--accent); filter: brightness(0.92); }
 
 /* The popover itself - same general shape as .spk-menu (built and torn down
-   by transcript.js rather than living in the initial markup; a grid rather
+   by the page script (core/assets/js/) rather than living in the initial markup; a grid rather
    than the menu's vertical list, because eight colours read better as a
    small swatch grid than as eight stacked rows of text) - but NOT anchored
    the same way. .speaker-row lives inside .outline, which is
@@ -247,13 +247,13 @@
    every rule that currently targets .outline's own box (padding, sticky
    top, max-height, the panel styling) for a fix that is really
    about one popover, where (b) is a change scoped entirely to
-   transcript.js's toggleMenu()/positionDetachedMenu() plus this rule
+   js/24-speakers-menus.js's toggleMenu()/positionDetachedMenu() plus this rule
    dropping its inset-inline-start/top anchoring (now set inline, in
    physical px, once per open - see positionDetachedMenu()'s own comment on
    why physical coordinates are correct there despite this file using
    logical properties everywhere else). The trade-off: a detached popover
    does not follow the trigger if the sidebar is scrolled while it is open,
-   so transcript.js closes it on scroll instead of letting it drift away
+   so the page script (core/assets/js/) closes it on scroll instead of letting it drift away
    from the button that opened it. */
 .swatch-menu {
   position: absolute;

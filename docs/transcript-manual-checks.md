@@ -49,30 +49,33 @@ only origin that matters here, and it is the one with the restrictions.
 
 ## 1. Editing and autosave
 
-- [ ] Click into a turn and type. The status pill goes to "שומר…" then **"נשמר בדפדפן"**.
+- [ ] Click into a sentence card and type. The status pill goes to "שומר…" then **"נשמר בדפדפן"**.
 - [ ] **Reload the page. Your text is still there.** If this fails, nothing else matters -
       localStorage is unavailable on `file://` in this browser and the whole autosave design needs
       revisiting rather than patching.
 - [ ] Close the tab entirely, reopen the file. Text still there.
-- [ ] Paste formatted text (from Word, or a web page) into a turn. It arrives as plain text - no
+- [ ] Type into a card, then look at its number and timestamp. Neither can be typed over or
+      backspaced away - they are `contenteditable="false"` inside an editable card, and an edit
+      that ate them would be persisted.
+- [ ] Paste formatted text (from Word, or a web page) into a sentence card. It arrives as plain text - no
       fonts, colours or markup follow it in.
-- [ ] Edit a turn, then try to close the tab. The browser warns about leaving.
+- [ ] Edit a card, then try to close the tab. The browser warns about leaving.
 
 ## 2. Speaker names, colours and reassignment
 
-Speaker management lives in the outline sidebar now, not inline above each recording's turns - see
+Speaker management lives in the outline sidebar now, not inline above each recording's cards - see
 section 10 below for the sidebar itself.
 
-- [ ] Type a name in a speaker row in the sidebar. Every turn by that speaker updates as you type.
+- [ ] Type a name in a speaker row in the sidebar. Every card by that speaker updates as you type.
 - [ ] Clear the name. It falls back to "דובר 1", not to blank.
 - [ ] With two or more files: rename in one, confirm the others are untouched.
 - [ ] Press "use these names in all files". Other files' sidebar **name inputs** show the name (not
-      just each turn's `.spk` chip) - but a two-speaker recording does not gain a third name from a
+      just each card's own chip) - but a two-speaker recording does not gain a third name from a
       three-speaker one.
 - [ ] Press "+ הוספת דובר" (add speaker). A new row appears with its own name field and colour
       picker, defaulting to a fallback like "דובר 3" that no other speaker in the file is using.
 - [ ] Click a swatch on any speaker's colour picker (an existing or a newly added one). That
-      speaker's name, every one of their turns' accent border, and the swatch's own selected ring
+      speaker's name, every one of their cards' accent stripe, and the swatch's own selected ring
       all update together.
 - [ ] **The swatch bug fix**: open a speaker's colour menu, pick the *last* colour in the grid.
       Reopen any colour menu (that speaker's or another's) - it must still show all eight swatches
@@ -82,11 +85,17 @@ section 10 below for the sidebar itself.
       The swatch grid must be fully visible, not clipped by the sidebar's own scrollbar. The sidebar
       is a scroll container, so a menu opened mid-panel proves nothing about clipping - only one
       opened at the edge does.
-- [ ] Click a turn's speaker label. A menu of every speaker in that file opens, each with its
-      current colour and name.
-- [ ] Choose a different speaker from that menu. The turn's accent border and label change to the
-      target speaker immediately, **and the plain-text panel below updates to match** without being
-      reopened.
+- [ ] Click a card's speaker chip. A menu of every speaker in that file opens, each with its
+      current colour and name, plus a choice of scope: this sentence, or the whole block.
+- [ ] Choose a different speaker for **one sentence**. That card's stripe and chip change
+      immediately; its neighbours do not move. **The plain-text panel regroups**: the reassigned
+      line breaks out under its own speaker heading, and the original speaker resumes after it.
+- [ ] Choose **the whole block** instead. Every card sharing that block moves together, and
+      nothing outside it changes.
+- [ ] Reassign a sentence back to the speaker it started as. The override clears and the
+      plain-text sections merge back into one heading, rather than leaving two identical headings.
+- [ ] Reassign the **last** sentence of a run to the speaker of the run below it. The two must
+      **merge** into one section, not produce two consecutive identical headings.
 - [ ] Open a reassignment menu on a card that has another card below it, then **move the pointer
       away from the card entirely** before checking - do not leave it hovered. The menu must still
       paint above the card underneath it. This is the critical detail: a fix keyed to `.turn:hover`
@@ -94,14 +103,14 @@ section 10 below for the sidebar itself.
       context) but fails in real use, because the menu stays open well after the pointer leaves it.
 - [ ] A speaker row in the sidebar is just a colour swatch and a name input now - no locate button
       and no turn count next to it (both were removed as clutter, not relocated elsewhere).
-- [ ] **Reload the page.** Added speakers, their colours, and any reassigned turns are all still
+- [ ] **Reload the page.** Added speakers, their colours, and any reassigned sentences are all still
       there, exactly as left - not just the text edits.
 
 ## 3. Uncertain words
 
 - [ ] Toggle "מילים לא ודאיות". Low-confidence words gain a tint **and** a dotted underline.
 - [ ] Hover one: the tooltip shows the confidence.
-- [ ] **Edit a shaded turn. Its shading disappears** and does not come back on re-toggle - the
+- [ ] **Edit a shaded card. Its shading disappears** and does not come back on re-toggle - the
       confidence described the model's output, not what you just typed.
 - [ ] Toggle off. No leftover markup, no stray spacing.
 
@@ -109,14 +118,20 @@ section 10 below for the sidebar itself.
 
 Requires the transcript to be sitting next to its real audio file.
 
-- [ ] Click a timestamp. The player appears and playback starts from that point.
+- [ ] Click a card's timestamp. The player appears and playback starts from that point, and the
+      range it plays is **that one sentence** - not the whole speaker block.
+- [ ] Two adjacent cards play different ranges. If they play the same audio, the per-sentence
+      spans derived from word timings have collapsed and nothing else in this section is meaningful.
+- [ ] Press any control on a card (play, speaker chip, copy) and then move the pointer away. The
+      card must **not** stay visually raised. The lift is a hover affordance; a card left lifted
+      because something inside it holds focus reads as a stuck button.
 - [ ] **Playback stops at the end of the range**, close to the moment it names (bounded by the
       browser's own `timeupdate` cadence, roughly a quarter second) - it does not run on into the
-      next turn.
+      next sentence.
 - [ ] Press the player's own play/pause toggle while a ranged playback is stopped, or while one is
-      still running. Playback resumes and keeps going past the turn's end - the range only bounds
+      still running. Playback resumes and keeps going past the sentence's end - the range only bounds
       the click that started it, not the transport controls.
-- [ ] The turn being spoken is highlighted, and the highlight moves as playback continues.
+- [ ] The card being spoken is highlighted, and the highlight moves as playback continues.
 - [ ] Pause. The highlight clears.
 - [ ] **Move the HTML away from its audio and reload.** Click a timestamp: the player does not
       appear, and that section's timestamps become plain grey labels, not-focusable by Tab.
@@ -132,18 +147,18 @@ Requires the transcript to be sitting next to its real audio file.
       (player pauses there, per the check above), then drag the seek bar to a point *past* that
       original range end. Playback must **not** snap back - a deliberate seek clears the range
       bound the same way pressing the play/pause toggle already does.
-- [ ] Click a timestamp. The readout updates to that turn's start time immediately, before playback
+- [ ] Click a timestamp. The readout updates to that sentence's start time immediately, before playback
       has produced a single `timeupdate` event.
 - [ ] The player's toggle button shows a **pause** glyph while audio is playing and a **play**
       glyph while it is not - including when playback stops on its own (the range-bound stop at a
-      turn's end, per the check above), not only after clicking the toggle itself. Inspect the
+      sentence's end, per the check above), not only after clicking the toggle itself. Inspect the
       button's accessible name (e.g. via the browser's accessibility tree) alongside the glyph: it
       must say "pause" while playing and "play" while paused, not the same text throughout.
 
 ## 5. Search
 
 - [ ] Press `/`. Focus moves to the search box.
-- [ ] Press `/` while the caret is inside a turn. A literal "/" is typed - search is not hijacked.
+- [ ] Press `/` while the caret is inside a sentence card. A literal "/" is typed - search is not hijacked.
 - [ ] Type a word. Matches highlight, the counter reads "n / total".
 - [ ] Enter and Shift+Enter step forward and back, scrolling each match into view.
 - [ ] Search a word written with nikud, or one ending in a final letter form (ם / ן / ץ). It still
@@ -152,31 +167,51 @@ Requires the transcript to be sitting next to its real audio file.
 
 ## 6. Plain text panel
 
+The panel is one line per **sentence** now, keyed to the card above it, with a speaker heading
+inserted wherever the effective speaker changes. It is not one row per speaker block any more -
+that older shape could not put a heading in the middle of a block, which is exactly what a
+mid-block reassignment produces.
+
 - [ ] It is visible on page load, with no click needed to reveal it - not collapsed behind a
       summary line.
 - [ ] The text matches the cards above, including your edits, speaker names and reassignments.
-- [ ] Uncheck "חותמות זמן" and "שמות דוברים" - the text updates immediately.
-- [ ] "העתקת הכול" copies. Paste into another app: the Hebrew reads correctly and timestamps are
-      not reversed, and each timestamp is bracketed - "[0:32 - 1:05]" - unlike the bare pill on the
-      card above it.
-- [ ] A toast appears near the bottom of the screen confirming the copy, and disappears on its own
-      after a few seconds. A per-turn copy button does the same, alongside its own brief flash.
+- [ ] Each line reads `1. [0:00 - 0:02] ...` - a number, **a dot**, then a bracketed range.
+- [ ] **The dot sits to the LEFT of its number**, between the number and the Hebrew. This is RTL:
+      the number is at the right edge and the text runs leftward, so a dot painted to the number's
+      right is on the wrong side. Zoom in if unsure - it is one character and easy to skim past.
+- [ ] Numbering runs continuously across speaker changes, and restarts at 1 for the next file.
+- [ ] Consecutive ranges never overlap, and none reads `0:00 - 0:00`.
+- [ ] A speaker heading appears once per run of consecutive sentences by that speaker - not once
+      per block, so a speaker whose block was split by a pause still gets a single heading.
+- [ ] Uncheck "חותמות זמן" - the ranges disappear and the numbering stays. Uncheck
+      "שמות דוברים" - the headings disappear. Both update immediately and survive a reload.
+- [ ] Render a transcript with timestamps **off** and open it. The "חותמות זמן" checkbox must
+      start **unchecked**. If it starts checked, the page rebuilds itself on load and invents
+      ranges the renderer deliberately omitted.
+- [ ] "העתקת הכול" copies. Paste into another app: the Hebrew reads correctly, timestamps are not
+      reversed, each range is bracketed, and **the whole paragraph is right-aligned**. Left
+      alignment means the invisible RTL mark that anchors each copied line is missing - apps guess
+      paragraph direction from the first strong character, and every line now opens with a number.
+- [ ] A toast appears near the bottom confirming the copy, and disappears on its own after a few
+      seconds. A per-card copy button does the same, alongside its own brief flash.
+- [ ] A per-card copy gives the sentence with its timestamp and speaker, and **no line number** -
+      the number belongs to the panel, not to the sentence.
 - [ ] Edit a card with the panel open. The panel updates without any action on your part, **and the
-      caret in whatever else you were typing (a different turn, the search box) is undisturbed.**
-- [ ] **Two-way editing.** Click directly into a row in the plain-text panel itself and type. The
-      matching card above updates as you type - reload the page and the edit is still there, same
-      as editing the card directly.
-- [ ] Type in a plain-text row and don't stop: the caret must stay put mid-word. This is the
-      re-entrancy guard - editing here must not trigger a rebuild that yanks the caret out from
-      under you.
-- [ ] Paste formatted text (from Word, or a web page) into a plain-text row. It arrives as plain
-      text only, same as pasting into a card.
+      caret in whatever else you were typing (another card, the search box) is undisturbed.**
+- [ ] **Two-way editing.** Click directly into a line in the panel and type. The matching card
+      above updates as you type - reload and the edit is still there.
+- [ ] Edit a panel line, then look at the card. The `1. [0:00 - 0:02]` lead-in must **not** have
+      been written into the card's text. If it has, every future edit through the panel bakes a
+      stale number and a stale timestamp into the transcript permanently.
+- [ ] Type in a panel line and don't stop: the caret must stay put mid-word. This is the
+      re-entrancy guard - editing here must not trigger a rebuild that yanks the caret away.
+- [ ] Paste formatted text into a panel line. It arrives as plain text only, same as a card.
 
 ## 7. Export
 
 - [ ] Press "שמירת עותק" (or `Ctrl+S`). A file downloads and the status changes to "נשמר".
 - [ ] **Open the downloaded copy.** It contains your edits, speaker names, any added speakers and
-      their colours, and any reassigned turns; the speaker name boxes are filled in (not empty),
+      their colours, and any reassigned sentences; the speaker name boxes are filled in (not empty),
       search is not mid-query, and no player is stuck on screen.
 - [ ] Edit the downloaded copy and reload it. Its own edits persist - it is a working editor, not a
       snapshot.
@@ -214,13 +249,13 @@ Requires the transcript to be sitting next to its real audio file.
       glance without straining.
 - [ ] Set the OS to "prefers contrast: more". The backdrop photo disappears entirely (a reader who
       asked for maximum contrast should not have a photo behind their text at all).
-- [ ] Scroll a file with several turns. Its filename bar stays pinned just below the toolbar the
+- [ ] Scroll a file with several cards. Its filename bar stays pinned just below the toolbar the
       whole way through that file, with its own accent colour, and hands off to the next file's bar
       at the section boundary rather than overlapping it.
-- [ ] Tab through the whole page, including a turn's speaker label and its reassignment menu, and
+- [ ] Tab through the whole page, including a card's speaker chip and its reassignment menu, and
       the colour swatches in the speakers strip. Focus is always visible, and the tab order follows
       the reading order.
-- [ ] **Focus ring, keyboard-only (Phase 7).** Click directly into a turn's body text, and separately
+- [ ] **Focus ring, keyboard-only (Phase 7).** Click directly into a card's sentence text, and separately
       into a row in the plain-text panel, to place the caret and select some text. **No ring appears
       on either**, even though the caret and any selection are visible. Then press Tab until focus
       reaches a card and, separately, a plain-text row: **a ring appears** on each - one clean box on
@@ -231,7 +266,7 @@ Requires the transcript to be sitting next to its real audio file.
 - [ ] Turn on "reduce motion" at the OS level. Cards no longer lift on hover, the colour-swatch hover
       scale is gone, the toast still appears/disappears but without sliding, and search does not
       smooth-scroll.
-- [ ] Narrow the window to ~375px. No horizontal scrolling, and the per-turn copy buttons are
+- [ ] Narrow the window to ~375px. No horizontal scrolling, and the per-card copy buttons are
       permanently visible rather than hover-only.
 - [ ] **The reading column stays centred as the window narrows.** At 1900px, 1400px, 1100px and
       900px, `<main>`'s centre matches the viewport centre, and the toolbar's first control shares
@@ -262,7 +297,7 @@ Best tested with a multi-file batch (three recordings is enough) so there is som
 - [ ] With the overlay open, press Escape. It closes, and focus returns to the toolbar button.
 - [ ] With the overlay open, press Tab repeatedly past its last focusable element. Focus leaves the
       overlay and continues into the rest of the page - it must not be trapped inside.
-- [ ] With JavaScript disabled (or before it has finished loading): the transcript's own turns are
+- [ ] With JavaScript disabled (or before it has finished loading): the transcript's own cards are
       still fully readable regardless of window width - only the sidebar's file-jump and
       speaker-management conveniences are affected.
 
@@ -320,7 +355,7 @@ the tour's own overlay (`.tour-scrim`/`.tour-ring`/`.tour-card`) - the whole fea
       "התחלת סיור מודרך". The help panel closes, and the tour's first step (the sticky file bar)
       opens immediately - no second click needed.
 - [ ] **Step through with Next.** Each step spotlights a different real control (file bar → sidebar →
-      search → speaker roster → a timestamp → a turn's text → "הצגת מילים לא ודאיות" → "שמירת
+      search → speaker roster → a timestamp → a card's text → "הצגת מילים לא ודאיות" → "שמירת
       עותק"), scrolling it into view and dimming everything else. The counter reads "n / total" and
       the total matches however many of those controls this particular document actually has - not a
       hardcoded 8.
@@ -342,12 +377,12 @@ the tour's own overlay (`.tour-scrim`/`.tour-ring`/`.tour-card`) - the whole fea
 - [ ] **The non-destructive check, the one that matters most.** Open a freshly generated document
       (reload from disk, not a tab you have already edited in), confirm the status pill reads
       "נשמר", then run the entire tour start to finish - every step, Next all the way through,
-      including the two steps that spotlight a timestamp and a turn's editable text. Afterwards:
+      including the two steps that spotlight a timestamp and a card's editable text. Afterwards:
       - [ ] The status pill still reads **"נשמר"**, not "שומר בדפדפן" - nothing was saved.
       - [ ] No player appeared and no audio played, even though one step points directly at a
             timestamp button.
       - [ ] No text changed anywhere on the page, even though one step points directly at an
-            editable turn.
+            editable card.
       - [ ] No speaker menu or colour popover is left open, and no speaker was renamed or
             recoloured.
       - [ ] "הצגת מילים לא ודאיות" is still off (`aria-pressed="false"`) even though a step
@@ -357,7 +392,7 @@ the tour's own overlay (`.tour-scrim`/`.tour-ring`/`.tour-card`) - the whole fea
       card's own Skip/Back/Next buttons (Back excluded when hidden), never escaping to the dimmed
       page behind the scrim.
 - [ ] **Click something on the dimmed page** during a step - including a click squarely on the very
-      control the current step is pointing at (a timestamp, a turn's text, the flags toggle). Nothing
+      control the current step is pointing at (a timestamp, a card's text, the flags toggle). Nothing
       happens: the scrim absorbs the click before it reaches the page.
 - [ ] **RTL.** The caption card sits sensibly beside or below its target with the whole layout still
       right-to-left - button order (Skip / Back / Next) and text alignment read naturally, not
@@ -383,5 +418,8 @@ the tour's own overlay (`.tour-scrim`/`.tour-ring`/`.tour-card`) - the whole fea
   not carry them.
 - Re-running transcription overwrites the file and produces a new document identity, so the
   previous document's saved edits no longer apply. Export first if they matter.
-- Turn structure is fixed: text and speaker names are editable, but turns cannot be merged, split
-  or re-timed.
+- Sentence structure is fixed once rendered: text and speaker attribution are editable, but
+  sentences cannot be merged, split or re-timed in the page. Splitting happens server-side, where a
+  segment whose words cross a speaker boundary is cut at that boundary before the page is built
+  (see `assign_speakers` in `core/diarization.py`); the page can only move a sentence to a
+  different speaker, not change where one sentence ends and the next begins.

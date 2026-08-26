@@ -22,7 +22,7 @@
     if (!outline) { return; }
 
     // Gates the CSS rule that hides every non-current speakers panel (see
-    // .outline.js-ready in transcript.css) - added only once script is
+    // .outline.js-ready in the stylesheet (core/assets/css/)) - added only once script is
     // actually running, so a JavaScript-disabled open keeps every panel
     // visible instead of losing all but the first to a rule with nothing
     // left to un-hide them.

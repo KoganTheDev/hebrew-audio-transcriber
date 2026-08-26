@@ -652,7 +652,7 @@ class TestEditableDocument:
         """
         Per-sentence now, not per-turn: the plain-text panel's own range
         moved down to sit beside each sentence's number (see
-        _render_plain_row_html()'s docstring), in its OWN isolate, separate
+        _render_plain_line_html()'s docstring), in its OWN isolate, separate
         from the number's - see the RTL-dot tests below for why the two are
         no longer one isolate.
         """
@@ -841,7 +841,7 @@ class TestBubbles:
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
 
         # "{LRI}{n}{PDI}." is the plain-row lead-in's own shape (see
-        # _render_plain_row_html()); nothing else on the page emits a
+        # _render_plain_line_html()); nothing else on the page emits a
         # digit run isolated on its own, immediately followed by a literal
         # dot, so this pattern picks out only the plain-panel numbers.
         plain_numbers = re.findall(f'{LRI}(\\d+){PDI}\\.', out)
@@ -867,7 +867,7 @@ class TestHelpPanel:
     The help panel: a server-rendered, initially-hidden overlay explaining
     every toolbar control and reading-column affordance, plus #tour-start -
     the hook a separate guided-tour feature binds to. See
-    _render_help_html()'s docstring in formatting.py.
+    _render_help_html()'s docstring in core/formatting.
     """
 
     def test_help_button_renders_with_label_and_aria_controls(self):
@@ -928,7 +928,7 @@ class TestHelpPanel:
 
 class TestDocStringsHaveBothLanguages:
     """
-    formatting.py never imports gui.i18n (see the module docstring) - it can
+    core/formatting never imports gui.i18n (see the module docstring) - it can
     only ever render whatever a caller hands it through ui_strings, with an
     English fallback baked into the f-string itself (the `s()` helper). The
     actual translations still have to exist somewhere, though, and this is

@@ -133,7 +133,7 @@ def _button(
 # disabled, since <use> is a static content reference, not a script-built
 # element (the constraint that also rules out <template> cloning for this).
 #
-# Presentation lives on .icon in transcript.css (fill: none; stroke:
+# Presentation lives on .icon in the stylesheet (core/assets/css/) (fill: none; stroke:
 # currentColor; ...), not as attributes on the <symbol> or its paths - SVG's
 # inheritable presentation properties cross the <use> shadow boundary the
 # same way "color" crosses into a <slot>, so one CSS rule styles every
@@ -149,7 +149,7 @@ _ICON_DEFS: Dict[str, str] = {
     "play": '<path d="M7 4l12 8-12 8z"/>',
     # Two vertical bars, stroked like every other glyph here (fill: none
     # comes from .icon in CSS - a filled pair of rectangles would be the odd
-    # one out in this sprite). transcript.js's bindAudio() swaps the
+    # one out in this sprite). js/64-audio.js's bindAudio() swaps the
     # player-toggle button between #i-play and #i-pause on the audio
     # element's own play/pause events, not on the click handler directly, so
     # a programmatic pause (the range-bound stop in the timeupdate handler)
@@ -226,7 +226,7 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         f'<header class="toolbar" role="toolbar"'
         f' aria-label="{s("toolbar", "Transcript tools")}">',
         # The toolbar's controls sit inside their own grid-column: 1 / -1
-        # wrapper (see .tb-row in transcript.css, which spans both tracks
+        # wrapper (see .tb-row in the stylesheet (core/assets/css/), which spans both tracks
         # rather than sitting in a single one) rather than being grid items
         # of .toolbar directly - .tb-group is a flex row (a search box, a
         # cluster of action buttons), and a bare display: flex on the grid
@@ -247,7 +247,7 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         _button(s("show_uncertain", "Show uncertain words"), id_attr="toggle-flags",
                 icon="flag", extra='aria-pressed="false"'),
         # Server-rendered assuming the light scheme, since that is this
-        # element's state before any script runs; transcript.js corrects the
+        # element's state before any script runs; the page script (core/assets/js/) corrects the
         # label on init if the system/browser is actually already in dark
         # mode (see bindChrome()'s theme handling), and swaps it again on
         # every click. The label names the action ("switch to dark"), not
@@ -270,7 +270,7 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         # rather than as the first thing a reader's eye lands on. Plain
         # .tb-btn, not .primary: help is not the action this session builds
         # toward the way #export is (see the "Tier 1" comment on
-        # .tb-btn.primary in transcript.css for what IS in that tier and
+        # .tb-btn.primary in the stylesheet (core/assets/css/) for what IS in that tier and
         # why #help isn't one of them).
         _button(s("help", "Help"), id_attr="help", icon="help",
                 extra='aria-expanded="false" aria-controls="help-panel"'),
@@ -291,7 +291,7 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     """
     # Server-rendered assuming the button is showing a play glyph, since
     # audio has not started when the page loads (the player starts hidden
-    # too - see below). transcript.js's bindAudio() swaps both this label
+    # too - see below). js/64-audio.js's bindAudio() swaps both this label
     # and the glyph between "play"/"pause" on the audio element's own
     # play/pause events, the same "swap on load and on every change" pattern
     # syncThemeLabel() already follows for the theme toggle.
@@ -303,7 +303,7 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     # reimplementing that on a div was rejected because it means
     # reimplementing it *correctly*, not just visually. max starts at 0 and
     # is set once loadedmetadata reports the real duration (see bindAudio()
-    # in transcript.js); before that, there is nothing to scrub to yet.
+    # in the page script (core/assets/js/)); before that, there is nothing to scrub to yet.
     # "current / total" sits in its own dir="ltr" span, with the usual
     # LRI/PDI isolate around the whole thing - same bidi shape as
     # format_range()'s "M:SS - M:SS", a neutral "/" between two LTR digit
@@ -323,7 +323,7 @@ def _render_player_html(strings: Dict[str, str]) -> str:
 def _render_toast_html() -> str:
     """
     A transient status announcement (currently just "copied"), driven by
-    transcript.js hooking into copy()'s one shared success path.
+    the page script (core/assets/js/) hooking into copy()'s one shared success path.
 
     Empty and hidden at render time: its text is set per event from the
     already-translated strings in the data payload, the same rule that
@@ -340,7 +340,7 @@ def _render_help_html(strings: Dict[str, str]) -> str:
     What every toolbar control and reading-column affordance actually does,
     plus the one hook (#tour-start) a separate guided-tour feature binds to.
 
-    Server-rendered and hidden, never built by transcript.js from nothing -
+    Server-rendered and hidden, never built by the page script (core/assets/js/) from nothing -
     the same "readable with JavaScript disabled" contract the sprite has
     (see the comment above _ICON_DEFS): the panel's own content has to exist
     in the markup whether or not the script that reveals it ever runs.
@@ -351,7 +351,7 @@ def _render_help_html(strings: Dict[str, str]) -> str:
 
     #tour-start renders unconditionally even though nothing in this module
     wires it up - a guided-tour feature elsewhere binds its click handler in
-    transcript.js. This module cannot depend on that: speech_to_text/core/
+    the page script (core/assets/js/). This module cannot depend on that: speech_to_text/core/
     never imports anything the GUI or the page's own script owns (see the
     package docstring in __init__.py), so the only contract between the two
     is this button's id existing in the markup.
@@ -448,11 +448,11 @@ def _swatch_trigger_html(strings: Dict[str, str]) -> str:
     taller than the content the strip exists to introduce. A trigger showing
     only the *current* colour, that opens a menu of the other seven on
     demand, keeps the resting strip about one row tall regardless of how many
-    speakers a file has - the menu itself is built by transcript.js's
+    speakers a file has - the menu itself is built by the page script (core/assets/js/)'s
     buildSwatchMenu(), the same on-demand-popover shape as the turn's
     reassignment menu (buildSpeakerMenu()), not a second pattern invented for
     this. The swatch's own colour comes from the shared --spk custom
-    property transcript.css sets once per data-palette index and inherits
+    property the stylesheet (core/assets/css/) sets once per data-palette index and inherits
     from .speaker-row down to this dot - this button carries no colour of
     its own to fall out of sync.
     """

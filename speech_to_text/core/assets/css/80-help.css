@@ -14,8 +14,8 @@
    scroll, it only decides paint order between the two when they'd
    otherwise overlap.
 
-   Server-rendered hidden, not built by transcript.js from nothing - see
-   _render_help_html()'s own docstring in formatting.py. [hidden] governs
+   Server-rendered hidden, not built by the page script (core/assets/js/) from nothing - see
+   _render_help_html()'s own docstring in core/formatting. [hidden] governs
    what this looks like once script clears it; it says nothing about
    whether the markup exists without script, which it always does. */
 .help-panel {
@@ -30,7 +30,7 @@
 }
 .help-panel[hidden] { display: none; }
 
-/* .help-sheet and .tour-card (built by transcript.js, see css/86-tour.css)
+/* .help-sheet and .tour-card (built by the page script (core/assets/js/), see css/86-tour.css)
    are the same kind of surface: a floating overlay's own content card,
    flat --panel (not the translucent rgba(var(--panel-rgb), ...) .source/
    .outline use - see that split's own comment on .swatch-menu in

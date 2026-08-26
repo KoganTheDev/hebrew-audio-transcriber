@@ -31,7 +31,7 @@
     return m + ':' + (r < 10 ? '0' : '') + r;
   }
 
-  // Drives the track's left-to-right fill (see .seek in transcript.css:
+  // Drives the track's left-to-right fill (see .seek in the stylesheet (core/assets/css/):
   // the gradient is painted from --seek-fill, not from the input's own
   // value/max, because browsers disagree on whether a range's native fill
   // respects a forced `direction: ltr`). A percentage string, not a bare
@@ -44,7 +44,7 @@
   }
 
   // Isolated LTR digits, same shape as format_range()'s "M:SS - M:SS" in
-  // core/formatting.py - a neutral "/" between two LTR runs, inside an RTL
+  // core/formatting - a neutral "/" between two LTR runs, inside an RTL
   // document, needs the same LRI/PDI guard or it can reorder the same way
   // an un-isolated timestamp used to.
   function updatePlayerReadout(audio, timeEl) {

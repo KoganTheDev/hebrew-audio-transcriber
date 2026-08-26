@@ -72,7 +72,7 @@
     });
   }
 
-  // Shared by every .speaker-row, whether it was rendered by formatting.py or
+  // Shared by every .speaker-row, whether it was rendered by core/formatting or
   // created on the fly by addSpeaker() / replayed by applySpeakerState() -
   // one binding path so the two can never drift into different behaviour.
   // Recolouring itself is handled by the delegated click listener in
@@ -97,7 +97,7 @@
     });
     btn.type = 'button';
     // Own class, not .swatch - see the CSS comment on .swatch-rest and the
-    // matching one in formatting.py's _swatch_trigger_html() for why this
+    // matching one in formatting/chrome.py's _swatch_trigger_html() for why this
     // has to stay a different class from the popover's per-colour dots
     // rather than merely a differently-scoped selector.
     var dot = el('span', 'swatch-rest', { 'aria-hidden': 'true' });
@@ -284,7 +284,7 @@
 
   // The .bubble currently raised above its siblings because it holds an
   // open .spk-menu - see .bubble.menu-open in 52-bubble.css for why this
-  // has to be an explicit class transcript.js owns, rather than a :hover
+  // has to be an explicit class the page script (core/assets/js/) owns, rather than a :hover
   // rule: the menu stays open after the pointer leaves the card, so a
   // hover-keyed z-index would drop the card back underneath its next
   // sibling at exactly the moment the menu is being used, not before. Used
@@ -331,7 +331,7 @@
 
   // Escaping .outline's overflow-y: auto is only a concern while the
   // popover is actually detached from it - see positionDetachedMenu() and
-  // the .swatch-menu comment in transcript.css for why a fixed-position
+  // the .swatch-menu comment in the stylesheet (core/assets/css/) for why a fixed-position
   // popover has to close on scroll instead of trying to follow the trigger:
   // it has no DOM relationship to the scrolled container to follow it with.
   document.addEventListener('scroll', function (e) {
@@ -434,7 +434,7 @@
 
     var menu = buildFn();
     if (menu.classList.contains('swatch-menu')) {
-      // See the .swatch-menu comment in transcript.css: .speaker-row lives
+      // See the .swatch-menu comment in the stylesheet (core/assets/css/): .speaker-row lives
       // inside .outline's overflow-y: auto, which would otherwise clip this
       // popover at the sidebar's edge. Appending to <body> removes it from
       // that clipped subtree entirely instead of trying to out-z-index or
@@ -679,7 +679,7 @@
       if (swatchItem) {
         // Not swatchItem.closest('.swatch-menu').closest('.speaker-row'):
         // the menu is detached to <body> while open (see toggleMenu() and
-        // the .swatch-menu comment in transcript.css), so it is no longer a
+        // the .swatch-menu comment in the stylesheet (core/assets/css/)), so it is no longer a
         // DOM descendant of the row that opened it. openMenuBtn - the
         // .swatch-trigger itself - never moves, so it is the one thing
         // still reliably inside .speaker-row to recover it from. Read
@@ -716,7 +716,7 @@
           row = createSpeakerRow(strip, Number(id), entry.fallback || '', entry.palette || 0);
         }
         // The dot's colour is driven entirely by the row's own data-palette
-        // (see .speaker-row[data-palette] in transcript.css) - nothing else
+        // (see .speaker-row[data-palette] in the stylesheet (core/assets/css/)) - nothing else
         // on the row needs updating to reflect a recolour.
         if (row && typeof entry.palette === 'number') {
           row.dataset.palette = String(entry.palette);

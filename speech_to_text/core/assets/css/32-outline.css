@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------- outline --- */
 
 /* The sidebar: file list plus per-file speaker management (Phase 3) - see
-   _render_outline_html()'s docstring in formatting.py for what it replaced.
+   _render_outline_html()'s docstring in core/formatting for what it replaced.
    Sticks below the toolbar with the same --toolbar-height custom property
    the file-bar already uses, so the two stay in sync with the toolbar's
    real height (which changes when it wraps to a second line) rather than a
@@ -66,7 +66,7 @@
               border-color var(--fast) ease-out;
 }
 .outline-files a:hover { background: var(--surface-hover); color: var(--text); border-color: var(--text); }
-/* The file currently in view, kept in sync by transcript.js's
+/* The file currently in view, kept in sync by the page script (core/assets/js/)'s
    IntersectionObserver over the .source sections - the accent border and
    the thicker inline-start edge together are what escalate the resting
    control border into "this one is current", the same reasoning
@@ -97,7 +97,7 @@
    the one state that could still show it. Purely visual - nothing reads this
    border. */
 .outline-speakers .speakers { margin: 0 0 1.5rem; }
-/* Hidden only once transcript.js has actually taken over (.js-ready on the
+/* Hidden only once the page script (core/assets/js/) has actually taken over (.js-ready on the
    aside): with JavaScript disabled every file's panel stays visible, so
    speaker names for every recording in a batch are still readable, just not
    filtered down to "the file currently on screen" - a script-free reader

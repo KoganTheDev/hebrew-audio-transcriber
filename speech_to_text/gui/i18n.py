@@ -111,7 +111,7 @@ STRINGS = {
     # and it is rendered in the worker process, which cannot translate. These
     # are collected by TranscriptionThread and passed down as data, exactly
     # like speaker_label and file_failed_notice. Keys must match the ones
-    # core/assets/transcript.js and core/formatting.py look up.
+    # core/assets/the page script (core/assets/js/) and core/formatting look up.
     "doc_toolbar": {"en": "Transcript tools", "he": "כלי תמלול"},
     "doc_search": {"en": "Search transcript", "he": "חיפוש בתמלול"},
     "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
@@ -119,7 +119,7 @@ STRINGS = {
     "doc_no_results": {"en": "No results", "he": "אין תוצאות"},
     "doc_show_uncertain": {"en": "Show uncertain words", "he": "הצג מילים לא ודאיות"},
     # Two keys, not one - the button names the action it is about to take, and
-    # that action is the opposite of the current state. transcript.js swaps
+    # that action is the opposite of the current state. The page script (core/assets/js/) swaps
     # between them on click, alongside the existing aria-pressed/data-theme
     # handling - "Theme" told the reader nothing about what clicking it did.
     "doc_theme_light": {"en": "Light mode", "he": "מצב בהיר"},
@@ -154,7 +154,7 @@ STRINGS = {
     "doc_reassign_scope_line": {"en": "This sentence", "he": "המשפט הזה"},
     "doc_reassign_scope_block": {"en": "This whole block", "he": "כל הקטע הזה"},
     # Two keys, not one - same "the button names the action it is about to
-    # take" reasoning as doc_theme_light/doc_theme_dark above. transcript.js
+    # take" reasoning as doc_theme_light/doc_theme_dark above. The page script (core/assets/js/)
     # swaps between them on the audio element's own play/pause events (see
     # bindAudio()), alongside the #i-play/#i-pause glyph swap, so a
     # programmatic pause (the range-bound stop in the timeupdate handler)
@@ -181,7 +181,7 @@ STRINGS = {
 
     # --- Help panel -----------------------------------------------------
     # The toolbar button and the panel it opens - see _render_help_html() in
-    # core/formatting.py, which builds the panel server-side from these same
+    # core/formatting, which builds the panel server-side from these same
     # keys (via document_strings(), same as every other doc_ key above).
     "doc_help": {"en": "Help", "he": "עזרה"},
     "doc_help_title": {"en": "Help", "he": "עזרה"},
@@ -272,7 +272,7 @@ STRINGS = {
     },
 
     # --- Guided tour ------------------------------------------------------
-    # Bound entirely in transcript.js (bindTour()) - #tour-start above is the
+    # Bound entirely in the page script (core/assets/js/) (bindTour()) - #tour-start above is the
     # only server-rendered hook; every spotlight step, its caption card, and
     # this copy are built by script. Steps are worded as direct address
     # ("this sidebar", "click a timestamp") rather than the help panel's
@@ -629,7 +629,7 @@ def document_strings() -> dict:
     Every string the generated transcript page needs, in the current language.
 
     Returned with the "doc_" prefix stripped, because the keys the renderer
-    and transcript.js look up are the bare names - the prefix only exists to
+    and the page script (core/assets/js/) look up are the bare names - the prefix only exists to
     keep this group identifiable in STRINGS.
 
     Placeholders are left unsubstituted on purpose: "Play from {t}" is filled
