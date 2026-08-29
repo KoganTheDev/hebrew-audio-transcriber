@@ -263,17 +263,39 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         ),
         _button(s("save_copy", "Save a copy"), id_attr="export", css_class="tb-btn primary",
                 icon="save"),
-        f'<span id="status" class="status" role="status"'
-        f' aria-live="polite">{s("status_saved", "Saved")}</span>',
-        # Last in the group, not first - it opens a panel that explains every
-        # OTHER control in this row, so it reads as "more about the above"
-        # rather than as the first thing a reader's eye lands on. Plain
+        # Last BUTTON in the group, not first - it opens a panel that explains
+        # every OTHER control in this row, so it reads as "more about the
+        # above" rather than as the first thing a reader's eye lands on. Plain
         # .tb-btn, not .primary: help is not the action this session builds
         # toward the way #export is (see the "Tier 1" comment on
         # .tb-btn.primary in the stylesheet (core/assets/css/) for what IS in that tier and
-        # why #help isn't one of them).
+        # why #help isn't one of them). Only #status comes after it, and that
+        # is a label rather than a control competing for the same attention.
         _button(s("help", "Help"), id_attr="help", icon="help",
                 extra='aria-expanded="false" aria-controls="help-panel"'),
+        # Last in the group, so in this dir="rtl" document it renders at the
+        # physical LEFT end of the whole toolbar row - out of the run of
+        # buttons rather than wedged between two of them.
+        #
+        # All four state labels are rendered up front and the stylesheet
+        # (core/assets/css/) shows exactly one of them, keyed off data-kind;
+        # the page script (core/assets/js/) only ever flips that attribute and
+        # never writes text here. That is what fixes the width: stacked in one
+        # grid cell, the box measures the WIDEST of the four and stops
+        # resizing as the state changes. Measured before this: the span went
+        # 33px -> 78px across the four states and dragged .tb-actions from
+        # 424px to 469px, so every button in the row slid sideways on every
+        # debounced save (see .status in the stylesheet for why a tuned
+        # min-inline-size was not the fix). data-kind is seeded to "saved"
+        # here because that is the state a freshly written file is in;
+        # bindChrome()'s init corrects it if this browser holds local edits.
+        f'<span id="status" class="status" role="status" aria-live="polite"'
+        f' data-kind="saved"><span class="status-labels">'
+        f'<span data-for="saved">{s("status_saved", "Saved")}</span>'
+        f'<span data-for="saving">{s("status_saving", "Saving…")}</span>'
+        f'<span data-for="local">{s("status_local", "Saved in browser")}</span>'
+        f'<span data-for="error">{s("status_error", "Could not save")}</span>'
+        f'</span></span>',
         "</div>",
         "</div>",
         "</header>",

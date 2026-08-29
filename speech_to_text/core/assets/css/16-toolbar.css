@@ -324,10 +324,61 @@
 }
 .link-btn:hover { color: var(--text); }
 
+/* Last item in .tb-actions and therefore, in this dir="rtl" document, the
+   physical LEFT end of the toolbar row - see the renderer (core/formatting/
+   chrome.py) for why it moved out from between #export and #help.
+
+   flex: none, matching .tb-btn/.icon-btn above: this span was the only item
+   left in .tb-actions with the default flex-shrink: 1, and .tb-actions itself
+   is flex: none, so the span's own resizing was free to push the group's
+   width around. Combined with .tb-row's justify-content: center that moved
+   every button in the row, not just this label - measured at 424px -> 469px
+   of group width across the four states, i.e. a 45px lurch on every debounced
+   save, with the search input clipping to absorb it. */
 .status {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  /* Breathing room on both sides so the reserved box reads as a label with
+     room around it rather than a cramped slot jammed against #help. Costs
+     ~19px, and since .tb-actions is flex: none that comes out of the search
+     box at narrow widths - which is where the squeeze is meant to land
+     anyway (see .tb-search's flex: 0 1 auto). */
+  padding-inline: 0.6rem;
   font-size: 0.8rem;
   color: var(--muted);
+}
+/* The width reserve. All four state labels are in the DOM (the renderer emits
+   them) and share ONE grid cell, so the box is intrinsically as wide as the
+   widest of them and never changes width when the state does. Measured flat
+   at 78px in English and 72px in Hebrew across all four states, against the
+   33-78px it used to swing through.
+
+   Deliberately NOT a min-inline-size in ch, which was the obvious one-line
+   fix and was tried first: ch is the width of the "0" glyph, not of a real
+   string, so a value tuned to the widest English label still let the box jump
+   8px on "Saved in browser" - and missed by a different 2px on Hebrew's
+   "השמירה נכשלה". Getting that approach right needs a hardcoded px value
+   re-measured per language and per string change; this needs nothing. */
+.status-labels { display: grid; }
+.status-labels > span {
+  grid-area: 1 / 1;
+  /* visibility: hidden, not display: none - the box has to keep measuring all
+     four labels for any of this to work, and a display: none label
+     contributes no width. visibility also keeps the inactive labels out of
+     the accessibility tree, so the aria-live region announces the one state
+     that is actually showing rather than all four run together. */
+  visibility: hidden;
+  /* Slack falls at the outer page edge, so the label stays anchored beside
+     #help instead of drifting as the state changes. */
+  text-align: start;
   white-space: nowrap;
+}
+.status[data-kind="saved"] .status-labels > [data-for="saved"],
+.status[data-kind="saving"] .status-labels > [data-for="saving"],
+.status[data-kind="local"] .status-labels > [data-for="local"],
+.status[data-kind="error"] .status-labels > [data-for="error"] {
+  visibility: visible;
 }
 .status::before {
   content: "";
@@ -336,7 +387,9 @@
   margin-inline-end: 0.35rem;
   border-radius: 50%;
   background: var(--accent);
-  vertical-align: middle;
+  /* No vertical-align: .status is inline-flex now, so this ::before is a flex
+     item and the container's align-items: center is what centres it. */
+  flex: none;
 }
 .status[data-kind="saving"]::before { background: var(--warn-line); }
 .status[data-kind="error"]::before  { background: var(--error-line); }
