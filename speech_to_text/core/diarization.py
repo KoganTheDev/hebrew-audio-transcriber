@@ -27,7 +27,7 @@ from typing import Callable, List, Optional, Sequence
 import numpy as np
 
 from speech_to_text import config
-from speech_to_text.core.segments import Segment
+from speech_to_text.core.segments import Segment, Word
 
 logger = logging.getLogger(__name__)
 
@@ -148,9 +148,29 @@ def diarize(
         num_speakers: Exact speaker count if known, or -1 to infer it.
         progress: Called with (processed_chunks, total_chunks).
 
-    Returns speaker-labelled time spans, sorted by start time.
+    Returns speaker-labelled time spans, sorted by start time. Spans of
+    different speakers may overlap - that is simultaneous speech, not an
+    error, and both callers (assign_speakers and the DER metric) handle it.
+
     Raises DiarizationUnavailable if the engine or models are missing.
+
+    Which pipeline runs is config.DIARIZATION_ENGINE; see that constant for
+    the measurements behind having two. This function keeps the same contract
+    either way, so nothing downstream needs to know which one ran.
     """
+    if config.DIARIZATION_ENGINE == "powerset":
+        # Imported lazily so the sherpa path does not pay for onnxruntime
+        # session setup, and so a broken powerset module cannot stop the
+        # default engine from working.
+        from speech_to_text.core.diarization_powerset import diarize_powerset
+
+        return diarize_powerset(
+            samples,
+            sample_rate=sample_rate,
+            num_speakers=num_speakers,
+            progress=progress,
+        )
+
     try:
         import sherpa_onnx
     except ImportError as e:
@@ -172,8 +192,19 @@ def diarize(
             pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
                 model=_SEGMENTATION_MODEL
             ),
+            # num_threads/provider were never passed here either, so both
+            # models ran on onnxruntime's defaults. See the constants in
+            # config.py for why the thread count is a small capped number
+            # rather than os.cpu_count() - more threads measured SLOWER for
+            # this model's one-window-at-a-time inference.
+            num_threads=config.DIARIZATION_NUM_THREADS,
+            provider=config.DIARIZATION_PROVIDER,
         ),
-        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=_EMBEDDING_MODEL),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=_EMBEDDING_MODEL,
+            num_threads=config.DIARIZATION_NUM_THREADS,
+            provider=config.DIARIZATION_PROVIDER,
+        ),
         clustering=sherpa_onnx.FastClusteringConfig(
             # num_clusters wins when set; threshold is only consulted when the
             # count is unknown (-1).
@@ -229,15 +260,18 @@ class SpeakerSpan:
         return f"SpeakerSpan({self.start:.2f}-{self.end:.2f}, speaker={self.speaker})"
 
 
-# A run of words attributed to one speaker has to be at least this long
-# before assign_speakers will cut the segment there. A single stray word
-# voting for the other speaker is far more likely to be a boundary-rounding
-# error in the diarizer than a genuine one-word interjection, so a run this
-# short is folded back into its neighbour instead of fracturing the segment.
-MIN_SPEAKER_RUN_WORDS = 2
+# Re-exported from config so the tuning value lives with the other
+# diarization knobs, while this module-level name (which callers and tests
+# already use) keeps working. The two must not drift - tests assert they are
+# the same object.
+MIN_SPEAKER_RUN_WORDS = config.DIARIZATION_MIN_SPEAKER_RUN_WORDS
 
 
-def assign_speakers(segments: Sequence[Segment], spans: Sequence[SpeakerSpan]) -> List[Segment]:
+def assign_speakers(
+    segments: Sequence[Segment],
+    spans: Sequence[SpeakerSpan],
+    min_run_words: int = MIN_SPEAKER_RUN_WORDS,
+) -> List[Segment]:
     """
     Attach a speaker to each transcript segment, splitting where the speaker
     changes mid-segment.
@@ -276,11 +310,15 @@ def assign_speakers(segments: Sequence[Segment], spans: Sequence[SpeakerSpan]) -
 
     result: List[Segment] = []
     for segment in segments:
-        result.extend(_split_segment(segment, spans))
+        result.extend(_split_segment(segment, spans, min_run_words))
     return result
 
 
-def _split_segment(segment: Segment, spans: Sequence[SpeakerSpan]) -> List[Segment]:
+def _split_segment(
+    segment: Segment,
+    spans: Sequence[SpeakerSpan],
+    min_run_words: int = MIN_SPEAKER_RUN_WORDS,
+) -> List[Segment]:
     """Attribute one segment, splitting it if a real speaker change is found."""
     if not segment.words:
         # No word timings at all - the per-channel stereo path never carries
@@ -302,8 +340,10 @@ def _split_segment(segment: Segment, spans: Sequence[SpeakerSpan]) -> List[Segme
     # or a span dropped by min_duration_on) does not get to start a run or a
     # None-labelled sub-segment - it is filled in from its neighbours, the
     # same way it would have simply not voted under the old majority scheme.
-    filled = _fill_unmatched(labels)
-    runs = _coalesce_adjacent(_merge_short_runs(_runs(filled), MIN_SPEAKER_RUN_WORDS))
+    filled = _fill_unmatched(labels, segment.words)
+    runs = _coalesce_adjacent(
+        _merge_short_runs(_runs(filled), min_run_words, segment.words, spans)
+    )
 
     if len(runs) == 1:
         segment.speaker = runs[0][2]
@@ -333,30 +373,78 @@ def _split_segment(segment: Segment, spans: Sequence[SpeakerSpan]) -> List[Segme
     return pieces
 
 
-def _fill_unmatched(labels: Sequence[Optional[int]]) -> List[Optional[int]]:
-    """
-    Carry the nearest real label over words with no span overlap of their own.
+def _label_coverage(
+    spans: Sequence[SpeakerSpan], label: Optional[int], start: float, end: float
+) -> float:
+    """How much of [start, end) the given speaker's spans cover, in seconds."""
+    if label is None:
+        return 0.0
+    return sum(span.overlap(start, end) for span in spans if span.speaker == label)
 
-    Forward-fill first (a gap word takes on the speaker who was just
-    talking), then back-fill any still-None prefix from the first real label
-    found. This only runs after the all-None case has already been handled,
-    so a real label always exists to fill from.
+
+def _fill_unmatched(
+    labels: Sequence[Optional[int]], words: Sequence[Word]
+) -> List[Optional[int]]:
+    """
+    Carry a real label over words that overlap no span, from whichever
+    labelled neighbour is nearer IN TIME - and only across a short gap.
+
+    This used to forward-fill: a gap word simply took the label of whoever
+    spoke last, and a leading run of gap words took the first real label
+    found. Both are the same bias, and it is the one that makes a transcript
+    read as though one speaker is doing all the talking. A word sitting in
+    silence 40ms after speaker A stopped and 900ms before speaker B starts
+    belongs with A; the same word 900ms after A and 40ms before B belongs
+    with B, and forward-fill got that case backwards every time.
+
+    Neighbours are read from the ORIGINAL labels, never from labels this
+    function has already filled in, so one borrowed label cannot chain across
+    a whole run of gap words - each is decided on its own distance to real
+    evidence.
+
+    Beyond config.DIARIZATION_MAX_FILL_GAP_SECONDS the word keeps no label at
+    all. Inventing an attribution across a two-second silence is guessing, and
+    an unattributed word renders without a speaker rather than under the wrong
+    one - see assign_speakers' docstring on why that is the honest failure.
     """
     filled: List[Optional[int]] = list(labels)
-    last: Optional[int] = None
-    for i, label in enumerate(filled):
-        if label is None:
-            filled[i] = last
-        else:
-            last = label
 
-    if filled[0] is None:
-        first_real = next(label for label in filled if label is not None)
-        for i, label in enumerate(filled):
-            if label is None:
-                filled[i] = first_real
-            else:
-                break
+    # Nearest real label to each side, indices into the ORIGINAL labels.
+    n = len(labels)
+    left_of: List[Optional[int]] = [None] * n
+    right_of: List[Optional[int]] = [None] * n
+    seen: Optional[int] = None
+    for i in range(n):
+        left_of[i] = seen
+        if labels[i] is not None:
+            seen = i
+    seen = None
+    for i in range(n - 1, -1, -1):
+        right_of[i] = seen
+        if labels[i] is not None:
+            seen = i
+
+    for i, label in enumerate(labels):
+        if label is not None:
+            continue
+        li, ri = left_of[i], right_of[i]
+        # A word can sit before every labelled word or after all of them, in
+        # which case only one side is a candidate. float("inf") lets the same
+        # comparison handle that without a special case - and if the only
+        # candidate is too far away, the ceiling below still rejects it.
+        gap_left = words[i].start - words[li].end if li is not None else float("inf")
+        gap_right = words[ri].start - words[i].end if ri is not None else float("inf")
+        # Negative gaps mean the word timings themselves overlap; clamp so
+        # "touching" and "overlapping" both read as zero distance.
+        gap_left = max(0.0, gap_left)
+        gap_right = max(0.0, gap_right)
+
+        if min(gap_left, gap_right) > config.DIARIZATION_MAX_FILL_GAP_SECONDS:
+            continue
+        # <= so an exact tie prefers the left, which is what this function
+        # did unconditionally before - the change is which cases reach the
+        # tie, not how a genuine tie breaks.
+        filled[i] = labels[li] if gap_left <= gap_right else labels[ri]
 
     return filled
 
@@ -372,34 +460,125 @@ def _runs(labels: Sequence[Optional[int]]) -> List[List]:
     return runs
 
 
-def _merge_short_runs(runs: List[List], min_words: int) -> List[List]:
+def _is_real_interjection(
+    run: Sequence, words: Sequence[Word], spans: Sequence[SpeakerSpan]
+) -> bool:
+    """
+    Whether a too-short run is a genuine short turn rather than a boundary slip.
+
+    The run-length floor exists because one stray word usually means the
+    diarizer clipped a span boundary by a few tens of milliseconds. But a real
+    conversation is full of one-word turns - "כן", "לא", "נכון" - and folding
+    every one of them into the previous speaker is the single most visible way
+    this app got attribution wrong: the interjecting speaker simply disappears.
+
+    A run earns its own place when the diarizer is positively asserting a
+    different speaker across essentially the whole word, not merely clipping
+    its edge: the word is long enough to carry a real utterance, and that
+    speaker's spans cover nearly all of it.
+    """
+    start_idx, end_idx, label = run[0], run[1], run[2]
+    if label is None:
+        return False
+    run_words = words[start_idx:end_idx]
+    if not run_words:
+        return False
+    start, end = run_words[0].start, run_words[-1].end
+    duration = end - start
+    if duration < config.DIARIZATION_INTERJECTION_MIN_SECONDS:
+        return False
+    covered = _label_coverage(spans, label, start, end)
+    return covered >= config.DIARIZATION_INTERJECTION_MIN_COVERAGE * duration
+
+
+def _merge_short_runs(
+    runs: List[List],
+    min_words: int,
+    words: Sequence[Word] = (),
+    spans: Sequence[SpeakerSpan] = (),
+) -> List[List]:
     """
     Fold any run shorter than min_words into a neighbour so it cannot, on its
-    own, split the segment (see MIN_SPEAKER_RUN_WORDS).
+    own, split the segment (see MIN_SPEAKER_RUN_WORDS) - unless it is a real
+    interjection, which keeps its own run.
 
-    Restarts the scan after each merge rather than trying to merge in one
-    pass, because folding a short run into its neighbour can make that
-    neighbour's other side newly eligible to merge too. The number of runs in
-    one Whisper segment is small (a handful of words at most), so the
-    restart's extra cost is negligible.
+    Two things here used to bias every decision toward the earlier speaker:
+
+    - A short run was always folded LEFT (`merged[i-1][1] = end`), regardless
+      of which neighbour the audio actually supported. Now the run's own words
+      are re-scored against each neighbour's label by real span overlap, and
+      the better-supported side wins. A tie goes to the longer neighbour,
+      then to the left.
+    - The scan restarted from the left after every merge, so which run got
+      absorbed depended on position in the segment. Now the SHORTEST eligible
+      run is resolved first, so the order is driven by how weak the evidence
+      is rather than by where it happens to sit.
+
+    None-labelled runs are left alone in both directions: they are words
+    _fill_unmatched deliberately declined to attribute (see its docstring),
+    and quietly merging them into a labelled neighbour would reinstate exactly
+    the guess it refused to make.
+
+    words/spans default to empty so a caller with neither (and older tests
+    that call this with two arguments) still gets the length-based behaviour;
+    without them no run can qualify as an interjection and overlap scoring
+    falls back to the neighbour-length tie-break.
     """
     if len(runs) <= 1:
         return runs
 
     merged = [list(run) for run in runs]
-    changed = True
-    while changed and len(merged) > 1:
-        changed = False
-        for i, (start, end, _label) in enumerate(merged):
-            if end - start >= min_words:
-                continue
-            if i > 0:
-                merged[i - 1][1] = end
-            else:
-                merged[1][0] = start
-            del merged[i]
-            changed = True
+
+    def score(run, label) -> float:
+        """How much the run's own words support this label, in seconds."""
+        if label is None or not words:
+            return 0.0
+        run_words = words[run[0]:run[1]]
+        if not run_words:
+            return 0.0
+        return _label_coverage(spans, label, run_words[0].start, run_words[-1].end)
+
+    while len(merged) > 1:
+        candidates = [
+            i
+            for i, run in enumerate(merged)
+            if run[1] - run[0] < min_words
+            and run[2] is not None
+            and not _is_real_interjection(run, words, spans)
+        ]
+        if not candidates:
             break
+        # Shortest first; ties by position so the pass stays deterministic.
+        i = min(candidates, key=lambda k: (merged[k][1] - merged[k][0], k))
+
+        left = merged[i - 1] if i > 0 else None
+        right = merged[i + 1] if i + 1 < len(merged) else None
+        if left is not None and left[2] is None:
+            left = None
+        if right is not None and right[2] is None:
+            right = None
+        if left is None and right is None:
+            # Nothing legitimate to fold into - leave it rather than forcing
+            # it onto a None run.
+            break
+
+        if left is None:
+            take_left = False
+        elif right is None:
+            take_left = True
+        else:
+            left_score, right_score = score(merged[i], left[2]), score(merged[i], right[2])
+            if left_score != right_score:
+                take_left = left_score > right_score
+            else:
+                left_len, right_len = left[1] - left[0], right[1] - right[0]
+                take_left = left_len >= right_len
+
+        if take_left:
+            merged[i - 1][1] = merged[i][1]
+        else:
+            merged[i + 1][0] = merged[i][0]
+        del merged[i]
 
     return merged
 
