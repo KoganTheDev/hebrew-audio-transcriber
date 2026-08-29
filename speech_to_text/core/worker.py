@@ -21,6 +21,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from speech_to_text.core import power
 from speech_to_text.core.progress_scale import (
     BATCH_FORMATTING_PERCENT,
     BATCH_INIT_PERCENT,
@@ -207,6 +208,11 @@ def run_transcription_process(
     end) - the GUI's completion path does not need to know intermediate
     writes happened at all.
     """
+    # Held for the whole batch, not per file: the gap between two files is
+    # still this process working, and letting the machine stand by in that
+    # window would reintroduce exactly the problem this prevents. See
+    # core/power.py for what was actually going wrong.
+    awake = power.acquire("transcription batch")
     try:
         progress_queue.put(("progress", "w_initializing", {}, BATCH_INIT_PERCENT))
 
@@ -397,6 +403,11 @@ def run_transcription_process(
     except Exception as e:
         logger.error(f"Transcription worker process error: {e}", exc_info=True)
         result_queue.put(("error", "err_generic", {"detail": str(e)}))
+    finally:
+        # Also covers the early `return` when every file failed - leaving
+        # sleep suppressed after the work is done would be a worse bug than
+        # the one this fixes.
+        power.release("transcription batch", awake)
 
 
 def _transcribe_one(
