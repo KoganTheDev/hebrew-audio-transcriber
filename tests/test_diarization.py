@@ -84,23 +84,80 @@ class TestBestSpeaker:
 
 class TestAssignSpeakers:
 
-    def test_stray_word_does_not_split_and_takes_the_majority_label(self):
+    def test_boundary_slip_word_does_not_split_and_takes_the_majority_label(self):
         """
-        By overall span this segment overlaps speaker 1 more, but four of its
-        five words were spoken by speaker 0 and the fifth is a single stray
-        word - too short a run (< MIN_SPEAKER_RUN_WORDS) to split on, so it
-        folds back into the majority run instead of fracturing the segment.
+        A stray word that is only CLIPPED by the next span - the diarizer put
+        its boundary a fraction early - is not a turn. The run is shorter than
+        MIN_SPEAKER_RUN_WORDS and speaker 1 covers only a sliver of the word,
+        so it folds back into the majority run instead of fracturing the
+        segment.
+
+        Contrast test_fully_covered_long_word_survives_as_an_interjection
+        below, which is the case this guard must NOT swallow.
         """
         segment = Segment(
             start=0, end=10, text="a b c d e",
-            words=[word(0, 1), word(1, 2), word(2, 3), word(3, 4), word(9, 10)],
+            words=[word(0, 1), word(1, 2), word(2, 3), word(3, 4), word(4, 5)],
         )
-        spans = [SpeakerSpan(0, 4.5, 0), SpeakerSpan(4.5, 10, 1)]
+        # Speaker 1 starts 0.1s before the last word ends, clipping it only.
+        spans = [SpeakerSpan(0, 4.9, 0), SpeakerSpan(4.9, 10, 1)]
 
         result = assign_speakers([segment], spans)
         assert len(result) == 1
         assert result[0] is segment  # identity preserved: no split happened
         assert result[0].speaker == 0
+
+    def test_fully_covered_long_word_survives_as_an_interjection(self):
+        """
+        The behaviour the run-length floor used to erase: a genuine one-word
+        turn ("כן", "לא") spoken entirely inside the other speaker's span.
+
+        Length alone cannot tell this apart from a boundary slip, which is why
+        coverage decides it - here speaker 1 covers the whole word, and the
+        word is long enough to carry a real utterance, so it keeps its own run
+        and the segment splits three ways.
+        """
+        words = [
+            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(2.0, 3.0, text=" c"),
+            word(3.0, 4.0, text=" d"), word(4.0, 5.0, text=" e"),
+        ]
+        segment = Segment(start=0.0, end=5.0, text="a b c d e", words=words)
+        spans = [
+            SpeakerSpan(0.0, 2.0, 0),
+            SpeakerSpan(2.0, 3.0, 1),
+            SpeakerSpan(3.0, 5.0, 0),
+        ]
+
+        result = assign_speakers([segment], spans)
+        assert [s.speaker for s in result] == [0, 1, 0]
+        assert [s.text for s in result] == ["a b", "c", "d e"]
+
+    def test_short_run_folds_toward_the_better_supported_neighbour(self):
+        """
+        The left-fold bias, directly. A too-short run sits between two
+        different speakers; the audio supports the RIGHT one, so that is where
+        it goes. Folding left unconditionally - which is what this code did -
+        is how the earlier speaker accumulated the other's words.
+        """
+        words = [
+            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(2.0, 2.2, text=" c"),
+            word(2.2, 3.2, text=" d"), word(3.2, 4.2, text=" e"),
+        ]
+        segment = Segment(start=0.0, end=4.2, text="a b c d e", words=words)
+        # "c" is a 0.2s boundary slip (too short to be an interjection), and
+        # the split is deliberately lopsided: speaker 0 covers only 0.05s of
+        # it against speaker 2's 0.15s. An even split would land on the
+        # tie-break instead and prove nothing about the scoring.
+        spans = [
+            SpeakerSpan(0.0, 2.05, 0),
+            SpeakerSpan(2.05, 4.2, 2),
+        ]
+
+        result = assign_speakers([segment], spans)
+        assert [s.speaker for s in result] == [0, 2]
+        assert [s.text for s in result] == ["a b", "c d e"]
 
     def test_falls_back_to_segment_span_without_word_timings(self):
         segment = Segment(start=0, end=5, text="a", words=[])
@@ -156,7 +213,14 @@ class TestAssignSpeakers:
         the word boundary where the speaker actually changes, not smeared
         into one majority label.
         """
-        assert MIN_SPEAKER_RUN_WORDS == 2  # pins the guard this test relies on
+        # Pins that the module-level name and the config knob cannot drift
+        # apart, rather than pinning the value itself - the value is a tuning
+        # decision that lives in config.py and is allowed to change; the two
+        # names being the same thing is the invariant this file depends on.
+        from speech_to_text import config as app_config
+
+        assert MIN_SPEAKER_RUN_WORDS == app_config.DIARIZATION_MIN_SPEAKER_RUN_WORDS
+        assert MIN_SPEAKER_RUN_WORDS == 2  # the value this fixture is built for
         words = [
             word(0.0, 1.0, text="a"),
             word(1.0, 2.0, text=" b"),
@@ -209,32 +273,73 @@ class TestAssignSpeakers:
             assert not piece.text.startswith(" ")
             assert not piece.text.endswith(" ")
 
-    def test_lone_flip_between_two_runs_of_the_other_speaker_does_not_split(self):
+    def test_lone_brief_flip_between_two_runs_of_the_other_speaker_does_not_split(self):
         """
-        A middle word flips to speaker 1 for one word only, surrounded by
-        speaker 0 on both sides - too short a run to split on, so it is
-        folded into its neighbours and the whole segment stays speaker 0.
+        A middle word flips to speaker 1 too briefly to be a turn - surrounded
+        by speaker 0 on both sides and only fractionally covered - so it is
+        folded back and the whole segment stays speaker 0.
+
+        The same shape with a fully-covered, long enough word is a real
+        interjection and DOES split; see
+        test_fully_covered_long_word_survives_as_an_interjection.
         """
         words = [
             word(0.0, 1.0, text="a"),
             word(1.0, 2.0, text=" b"),
-            word(2.0, 3.0, text=" c"),
-            word(3.0, 4.0, text=" d"),
-            word(4.0, 5.0, text=" e"),
+            word(2.0, 2.2, text=" c"),
+            word(2.2, 3.2, text=" d"),
+            word(3.2, 4.2, text=" e"),
         ]
-        segment = Segment(start=0.0, end=5.0, text="a b c d e", words=words)
-        # Word "c" (2-3s) alone falls in speaker 1's span; everything else is
-        # speaker 0's.
+        segment = Segment(start=0.0, end=4.2, text="a b c d e", words=words)
+        # Speaker 1 holds a 0.1s sliver inside word "c" only.
         spans = [
-            SpeakerSpan(0.0, 2.0, 0),
-            SpeakerSpan(2.0, 3.0, 1),
-            SpeakerSpan(3.0, 5.0, 0),
+            SpeakerSpan(0.0, 2.05, 0),
+            SpeakerSpan(2.05, 2.15, 1),
+            SpeakerSpan(2.15, 4.2, 0),
         ]
 
         result = assign_speakers([segment], spans)
         assert len(result) == 1
         assert result[0] is segment
         assert result[0].speaker == 0
+
+    def test_gap_word_takes_the_nearer_neighbour_in_time_not_the_earlier_one(self):
+        """
+        The forward-fill bias, directly. The middle word overlaps no span at
+        all; it sits 0.8s after speaker 0 stopped and 0.05s before speaker 1
+        starts, so it belongs with speaker 1. Forward-fill gave it to speaker
+        0 purely because speaker 0 came first.
+        """
+        words = [
+            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(2.8, 2.95, text=" c"),
+            word(3.0, 4.0, text=" d"), word(4.0, 5.0, text=" e"),
+        ]
+        segment = Segment(start=0.0, end=5.0, text="a b c d e", words=words)
+        # Nothing covers 2.8-2.95: it falls in the gap between the two spans.
+        spans = [SpeakerSpan(0.0, 2.0, 0), SpeakerSpan(3.0, 5.0, 1)]
+
+        result = assign_speakers([segment], spans)
+        assert [s.speaker for s in result] == [0, 1]
+        assert [s.text for s in result] == ["a b", "c d e"]
+
+    def test_gap_word_beyond_the_fill_ceiling_stays_unattributed(self):
+        """
+        A word marooned in a long silence keeps no label at all. Guessing one
+        across several seconds is how a single speaker's label used to run on
+        over everything that followed; rendering it with no speaker is the
+        honest outcome.
+        """
+        words = [
+            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(20.0, 21.0, text=" c"),
+        ]
+        segment = Segment(start=0.0, end=21.0, text="a b c", words=words)
+        spans = [SpeakerSpan(0.0, 2.0, 0)]
+
+        result = assign_speakers([segment], spans)
+        assert [s.speaker for s in result] == [0, None]
+        assert [s.text for s in result] == ["a b", "c"]
 
     def test_multiple_segments_are_flattened_into_one_list(self):
         """assign_speakers returns a flat list, splits included, in order."""
@@ -288,16 +393,20 @@ def _install_fake_sherpa_onnx(monkeypatch):
             return True
 
     class FakeSegmentationModelConfig:
-        def __init__(self, pyannote):
+        def __init__(self, pyannote, num_threads=1, provider="cpu"):
             self.pyannote = pyannote
+            self.num_threads = num_threads
+            self.provider = provider
 
     class FakePyannoteModelConfig:
         def __init__(self, model):
             self.model = model
 
     class FakeEmbeddingConfig:
-        def __init__(self, model):
+        def __init__(self, model, num_threads=1, provider="cpu"):
             self.model = model
+            self.num_threads = num_threads
+            self.provider = provider
 
     class FakeClusteringConfig:
         def __init__(self, num_clusters, threshold):
@@ -375,6 +484,79 @@ class TestDiarizeBuildsSherpaConfig:
         built = fake_config_cls.last_instance
         assert built.min_duration_on == app_config.DIARIZATION_MIN_DURATION_ON
         assert built.min_duration_off == app_config.DIARIZATION_MIN_DURATION_OFF
+
+    def test_passes_thread_count_and_provider_to_both_models(self, monkeypatch):
+        """
+        num_threads/provider have to reach BOTH model configs, not just one.
+        They were unset entirely until measured: the embedding extractor is
+        where diarization's wall clock actually goes, so a thread count that
+        reached only the segmentation model would look wired up while leaving
+        the expensive half on onnxruntime's default.
+        """
+        from speech_to_text import config as app_config
+
+        fake_config_cls = _install_fake_sherpa_onnx(monkeypatch)
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+
+        samples = np.zeros(1600, dtype=np.float32)
+        diarization.diarize(samples, sample_rate=16000, num_speakers=2)
+
+        built = fake_config_cls.last_instance
+        for model_config in (built.segmentation, built.embedding):
+            assert model_config.num_threads == app_config.DIARIZATION_NUM_THREADS
+            assert model_config.provider == app_config.DIARIZATION_PROVIDER
+
+    def test_thread_count_stays_below_the_oversubscription_cliff(self):
+        """
+        Pins the reasoning in config.py, not a magic number: handing
+        onnxruntime every core measured SLOWER for this workload (8 threads
+        was 3.8x the per-window cost of 2), so the constant must stay a small
+        cap rather than drifting to os.cpu_count() in some later tidy-up.
+        """
+        from speech_to_text import config as app_config
+
+        assert 1 <= app_config.DIARIZATION_NUM_THREADS <= 4
+
+    def test_engine_constant_routes_to_the_powerset_pipeline(self, monkeypatch):
+        """
+        The whole point of DIARIZATION_ENGINE being one constant is that
+        flipping it changes which pipeline runs and nothing else. If this
+        dispatch is ever refactored away, the sherpa path would keep working
+        and the powerset path would silently become dead code - which is
+        exactly the kind of regression that shows up as "the fix stopped
+        helping" months later rather than as a failing test.
+        """
+        from speech_to_text import config as app_config
+
+        called = {}
+
+        def fake_powerset(samples, sample_rate, num_speakers, progress):
+            called["args"] = (len(samples), sample_rate, num_speakers)
+            return ["sentinel"]
+
+        import speech_to_text.core.diarization_powerset as powerset_module
+        monkeypatch.setattr(powerset_module, "diarize_powerset", fake_powerset)
+        monkeypatch.setattr(app_config, "DIARIZATION_ENGINE", "powerset")
+
+        result = diarization.diarize(
+            np.zeros(1600, dtype=np.float32), sample_rate=16000, num_speakers=3
+        )
+
+        assert result == ["sentinel"]
+        assert called["args"] == (1600, 16000, 3)
+
+    def test_default_engine_still_runs_sherpa(self, monkeypatch):
+        """The powerset engine is opt-in; the shipped default must not move."""
+        from speech_to_text import config as app_config
+
+        assert app_config.DIARIZATION_ENGINE == "sherpa"
+
+        _install_fake_sherpa_onnx(monkeypatch)
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+        spans = diarization.diarize(
+            np.zeros(1600, dtype=np.float32), sample_rate=16000, num_speakers=2
+        )
+        assert [(s.start, s.end, s.speaker) for s in spans] == [(0.0, 1.0, 0), (1.0, 2.0, 1)]
 
     def test_wrong_sample_rate_raises_diarization_unavailable(self, monkeypatch):
         import pytest
