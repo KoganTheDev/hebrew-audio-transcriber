@@ -2,7 +2,8 @@
 
   // bindAudio() used to be 222 lines with five nested functions closing over
   // six independent module-level-looking variables (current, currentSection,
-  // boundEnd, scrubbing, lastSweep, playing) - a module wearing a "binder"
+  // boundEnd, scrubbing, and the since-removed lastSweep/playing pair that
+  // drove the playing-turn highlight) - a module wearing a "binder"
   // function's name. Pulled apart into this shared, explicit playback-state
   // object plus a handful of top-level helpers that take the pieces they
   // need as arguments, so each one's signature says what it touches instead
@@ -21,8 +22,6 @@
       // in progress - the same "don't fight the control the reader's
       // fingers are on" rule the search box's re-entrancy guard follows.
       scrubbing: false,
-      lastSweep: 0,          // Date.now() of the last throttled highlight sweep
-      playing: null,         // the .turn currently marked data-playing
     };
   }
 
@@ -52,29 +51,21 @@
     timeEl.textContent = '⁦' + formatPlayerTime(audio.currentTime) + ' / ' + formatPlayerTime(duration) + '⁩';
   }
 
-  // timeupdate fires several times a second. The clock is cheap, but
-  // re-deciding which turn is playing walks the section, so that part is
-  // throttled to roughly four times a second (see bindAudio()'s own
-  // timeupdate handler for the throttle itself) - fast enough to feel live,
-  // slow enough to stay off the main thread's budget.
-  function highlightPlayingTurn(pstate, position) {
-    // The section is held as an element reference rather than looked up by
-    // its filename - a filename is arbitrary text and has no business being
-    // spliced into a selector.
-    var section = pstate.currentSection;
-    if (!section) { return; }
-
-    // The turn being spoken is the last one that started at or before now.
-    var found = null;
-    section.querySelectorAll('.turn').forEach(function (turn) {
-      if (Number(turn.dataset.start) <= position) { found = turn; }
-    });
-    if (found === pstate.playing) { return; }
-
-    if (pstate.playing) { delete pstate.playing.dataset.playing; }
-    pstate.playing = found;
-    if (pstate.playing) { pstate.playing.dataset.playing = 'true'; }
-  }
+  // highlightPlayingTurn() lived here: a throttled sweep that walked the
+  // current .source roughly four times a second, found the last .turn whose
+  // data-start was at or before the playhead, and moved a data-playing
+  // attribute onto it. The CSS behind it (.turn[data-playing] in
+  // css/48-turn.css - a background wash plus a 4px accent edge) is gone, so
+  // the sweep went with it rather than staying on as a per-tick DOM walk
+  // maintaining an attribute nothing reads. See that stylesheet's own
+  // comment for why the cue was dropped.
+  //
+  // The throttle it needed is gone too. What remains in the timeupdate
+  // handler - the clock, the seek fill, the range-bound stop - was always
+  // unthrottled: each is a couple of number operations, and the range stop
+  // in particular HAD to run every tick (a short turn could otherwise finish
+  // before the 250ms sweep next looked). Nothing left in that handler
+  // touches the DOM per turn, which is what the throttle existed to bound.
 
   // Driven off the audio element's own play/pause events, not off the
   // toggle button's click handler, so the glyph and label are correct
@@ -199,17 +190,17 @@
       updateSeekFill(seek);
     });
 
-    // The range-stop check runs on every timeupdate tick, unthrottled,
-    // unlike the highlight sweep below - it is a single number comparison,
-    // cheap enough to run every time, and it has to: at the ~250ms
-    // resolution the throttled sweep runs at, a short turn could finish
-    // playing before the throttle ever looked, overshooting well past its
-    // end. A setTimeout timed to the range's length was the other option
-    // and was rejected - it would race whatever called pause() or changed
-    // currentTime in between, firing a stale stop after a reader had
-    // already sought elsewhere. Overshoot here is bounded by one
-    // timeupdate tick, which reads as "stopped right around there," not as
-    // a bug.
+    // The range-stop check runs on every timeupdate tick - it is a single
+    // number comparison, cheap enough to run every time, and it has to run
+    // that often: a short turn can be over in well under a second, so any
+    // coarser sampling would overshoot past its end. (It used to be
+    // contrasted here with the throttled highlight sweep, which is gone -
+    // see highlightPlayingTurn()'s former home above.) A setTimeout timed
+    // to the range's length was the other option and was rejected - it
+    // would race whatever called pause() or changed currentTime in
+    // between, firing a stale stop after a reader had already sought
+    // elsewhere. Overshoot here is bounded by one timeupdate tick, which
+    // reads as "stopped right around there," not as a bug.
     audio.addEventListener('timeupdate', function () {
       updatePlayerReadout(audio, timeEl);
       // Left alone mid-drag: the seek input's own 'input' handler is already
@@ -227,16 +218,6 @@
         audio.currentTime = pstate.boundEnd;
         pstate.boundEnd = null;
       }
-
-      var now = Date.now();
-      if (now - pstate.lastSweep < 250) { return; }
-      pstate.lastSweep = now;
-      highlightPlayingTurn(pstate, audio.currentTime);
-    });
-
-    audio.addEventListener('pause', function () {
-      if (pstate.playing) { delete pstate.playing.dataset.playing; }
-      pstate.playing = null;
     });
 
     audio.addEventListener('play', function () { syncToggleGlyph(audio, toggle); });

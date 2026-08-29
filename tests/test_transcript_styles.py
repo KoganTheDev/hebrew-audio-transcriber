@@ -618,6 +618,30 @@ def test_no_blur_declarations():
     )
 
 
+def test_no_playing_turn_highlight():
+    """
+    The follow-the-audio marker is gone by request. .turn[data-playing] used
+    to paint a --surface-hover wash plus a 4px --accent border-inline-start
+    on whichever block of sentences the playhead was inside, repainting as
+    playback moved down the transcript; the user asked for it removed (the
+    fixed player bar at the foot of the page still carries file name, glyph,
+    seek track and clock, so "is audio playing" is still answerable).
+
+    Guarded rather than left to the diff for the same reason as
+    test_no_blur_declarations above: the rule is the obvious thing for a
+    later edit to "restore" on the assumption it was dropped by accident.
+    Comments are free to keep discussing it - several deliberately do,
+    including the one that replaced this rule in css/48-turn.css - so only a
+    live selector counts, hence the comment strip.
+    """
+    without_comments = re.sub(r"/\*.*?\*/", "", _css_source(), flags=re.S)
+    assert "data-playing" not in without_comments, (
+        "a live [data-playing] selector reappeared in the transcript "
+        "stylesheet - the playing-turn highlight was removed on request, see "
+        "the comment where it used to live in css/48-turn.css"
+    )
+
+
 def test_focus_ring_gated_behind_keyboard_flag():
     """
     Phase 7: .body and .plain-body are the two elements the user reported the

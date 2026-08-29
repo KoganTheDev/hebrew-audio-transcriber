@@ -7,40 +7,27 @@
    that actually reads as a card, one per sentence, since there is no
    cluster header left to draw around a run of them. .turn keeps only its
    identity attributes (data-turn, data-start, data-speaker/data-palette)
-   and the two rules below that still act on the wrapper itself: the dim-the-
+   and the one rule below that still acts on the wrapper itself: the dim-the-
    rest hover rule (still meaningful - it dims a whole block of bubbles
    together, which is a real grouping effect even though the wrapper itself
-   is invisible) and the "currently playing" accent, which still needs
-   SOMEWHERE to paint since a run of bubbles has no shared border of its own
-   any more to widen. */
+   is invisible).
 
-/* The turn currently being spoken. A filled, widened accent edge along the
-   whole invisible wrapper - not a background wash, so it does not fight the
-   low-confidence shading inside the text, and not something painted on
-   every individual bubble, which would repeat the same accent once per
-   sentence in the block rather than marking the block as a whole.
+   REMOVED, deliberately, not lost in a refactor: the "currently playing"
+   accent (.turn[data-playing] - a --surface-hover wash plus a 4px --accent
+   border-inline-start along the whole wrapper). It was a follow-the-audio
+   cue that repainted a whole block of body copy roughly four times a second
+   as playback moved down the transcript, and that motion in the reader's
+   peripheral vision is what the user asked to be rid of. The attribute that
+   drove it is gone from the page script too (see js/64-audio.js, where
+   highlightPlayingTurn() and the throttled sweep that called it were removed
+   along with it) rather than left set on an element nothing styles - a
+   stylesheet with no rule for an attribute and a script still writing it
+   four times a second is the shape a later reader mistakes for a bug.
 
-   Previously an inset box-shadow with a hand-written :root[dir="rtl"]
-   override to flip which side it painted on. box-shadow has no "start/end"
-   concept, so mirroring it for RTL meant maintaining two copies of the same
-   rule by hand. border-inline-start is a logical property: the layout engine
-   already knows which physical side "start" resolves to from the element's
-   direction, so thickening and recolouring that one border does the same job
-   with no duplicate selector and no risk of the two copies drifting apart.
-
-   Deliberately does NOT add font-weight, unlike
-   .outline-files a[aria-current="true"] - see that rule's own comment for
-   why the two "this is current" cues stay different rather than aligned. */
-.turn[data-playing] {
-  background: var(--surface-hover);
-  /* -style has to be declared here too, not just -width/-color: .turn no
-     longer has a resting border-inline-start at all (see the comment
-     above), so there is no inherited "solid" for this rule to merely
-     widen and recolour the way it used to. */
-  border-inline-start-style: solid;
-  border-inline-start-width: 4px;
-  border-inline-start-color: var(--accent);
-}
+   Playback still has visible state: the fixed player bar at the foot of the
+   page (64-player.css) carries the file name, the play/pause glyph, the seek
+   track and the running clock. What went away is only the marker inside the
+   reading column, not the reader's ability to tell that audio is playing. */
 
 /* Hovering one card dims the others so a single speaker's thread is easy to
    follow. Purely decorative - the name still carries the meaning.

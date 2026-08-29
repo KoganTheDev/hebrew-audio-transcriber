@@ -284,6 +284,42 @@ test('clicking a bubble\'s .ts sets playback bounds from that bubble, not the tu
   window.close();
 });
 
+test('playback marks no turn - the follow-the-audio highlight is gone', () => {
+  // Removed by request: .turn[data-playing] used to wash a whole block of
+  // sentences and thicken its inline-start edge to --accent, moving down the
+  // transcript as the audio advanced. The attribute that drove it is gone
+  // from js/64-audio.js along with the CSS (css/48-turn.css), and this is the
+  // behavioural half of that guard - tests/test_transcript_styles.py's
+  // test_no_playing_turn_highlight covers the stylesheet.
+  //
+  // Worth having as a real playback simulation rather than only a grep: the
+  // failure this prevents is a sweep quietly coming back and setting the
+  // attribute again, which a source scan would miss the moment it were
+  // spelled differently (a class, a different attribute name) while looking
+  // identical on screen.
+  const { window, document } = buildWindow(getFixtureHtml('full'));
+  const audio = document.getElementById('audio');
+  audio.play = () => Promise.resolve();
+
+  click(document.querySelector('.bubble[data-line="0-0-0"] .ts'));
+
+  // Several ticks, deliberately: the old sweep was throttled to ~250ms, so a
+  // single timeupdate could have missed it even when it was still present.
+  // Each tick advances into a different turn of the fixture, so any
+  // surviving "which turn is playing" logic would have had every chance to
+  // fire on at least one of them.
+  [0.5, 1.5, 2.5, 5.5].forEach((position) => {
+    Object.defineProperty(audio, 'currentTime', { value: position, writable: true, configurable: true });
+    fire(audio, 'timeupdate');
+    assert.equal(
+      document.querySelectorAll('.turn[data-playing]').length, 0,
+      `a turn was marked data-playing at ${position}s - the playing-turn highlight was removed on request`
+    );
+  });
+
+  window.close();
+});
+
 // There is no more cluster-header .ts to play a whole turn from - the
 // header that carried one is gone (see the review plan's "flat sentence
 // cards" section); every play control is a bubble's own now, covered by

@@ -49,9 +49,11 @@
 .outline-files li { margin: 0.1rem 0; }
 /* Squircle like every other control - a sidebar file entry is a navigation
    button in every sense that matters here. The "current file" cue below
-   escalates the same border rather than adding a second visual language:
-   compare .turn[data-playing], which thickens and recolours its own
-   border-inline-start rather than introducing a background wash. */
+   escalates the same border rather than adding a second visual language.
+   (This used to cite .turn[data-playing] as the other instance of that
+   pattern; that rule has since been removed - see 48-turn.css - so the
+   sidebar marker is now the only "this one is current" cue in the
+   document.) */
 .outline-files a {
   display: flex;
   align-items: center;
@@ -69,16 +71,16 @@
 /* The file currently in view, kept in sync by the page script (core/assets/js/)'s
    IntersectionObserver over the .source sections - the accent border and
    the thicker inline-start edge together are what escalate the resting
-   control border into "this one is current", the same reasoning
-   .turn[data-playing] already follows for "the turn playing right now".
+   control border into "this one is current".
 
-   STATED EXCEPTION: this rule also bolds the label; .turn[data-playing]
-   escalates only its border. Not an oversight - a bolded nav label is a few
-   words taking on weight, the normal place a "you are here" cue lives; a
-   playing turn's text is a full paragraph of body copy a reader may be
-   mid-read of, and it already has its own escalated, filled accent border
-   (see that rule's comment) - bolding the paragraph too would be a much
-   heavier change than bolding the label is. Kept deliberately different. */
+   The bolded label is deliberate and safe HERE specifically: this is a few
+   words of navigation chrome taking on weight, the normal place a "you are
+   here" cue lives. It is not a licence to bold anything else that becomes
+   "current" - the removed .turn[data-playing] rule (48-turn.css) covered a
+   full paragraph of body copy a reader may be mid-read of, where the same
+   treatment would have been far heavier. That distinction is why the two
+   cues were never aligned, and it still applies to anything that might
+   replace the playing-turn marker later. */
 .outline-files a[aria-current="true"] {
   color: var(--text);
   font-weight: 600;
