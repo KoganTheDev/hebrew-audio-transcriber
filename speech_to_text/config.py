@@ -21,7 +21,21 @@ from typing import List
 #
 # Entries are ordered by ascending accuracy_score - the GUI renders the cards in
 # this order, and tests assert the ordering holds.
-
+#
+# "download_size" is the one-time HuggingFace download for a model faster-
+# whisper hasn't cached locally yet (figures from this repo's own README
+# table). It exists ONLY as this static, structured number - there is no
+# download PROGRESS signal anywhere in this app. core/transcriber.py's
+# load_model() emits "w_loading_model" once and then calls WhisperModel(...)
+# directly; that call downloads internally (via huggingface_hub) with no
+# callback wired back through progress_callback, so the GUI has nothing to
+# show while a multi-GB download is actually in flight - "Loading model..."
+# covers both "downloading it for the first time" and "reading it off disk",
+# indistinguishably. Faking a percentage here would be worse than saying
+# nothing: a bar that doesn't move with the real download is a second,
+# actively misleading kind of silence. gui/steps/model_select.py uses this
+# field to warn about the download BEFORE the model is picked, which is the
+# one place in the download's lifecycle this app can currently be honest.
 MODELS = {
     "tiny": {
         "repo": "tiny",
@@ -39,6 +53,7 @@ MODELS = {
         ],
         "time_estimate": "~30 minutes",
         "ram_required": "1 GB",
+        "download_size": "76 MB",
         "accuracy_score": 2,
         "best_for": "Quick testing only",
         "recommended": False,
@@ -59,6 +74,7 @@ MODELS = {
         ],
         "time_estimate": "~3-5 hours",
         "ram_required": "2 GB",
+        "download_size": "145 MB",
         "accuracy_score": 3,
         "best_for": "Casual transcription",
         "recommended": False,
@@ -79,6 +95,7 @@ MODELS = {
         ],
         "time_estimate": "~8-10 hours",
         "ram_required": "3 GB",
+        "download_size": "484 MB",
         "accuracy_score": 3.5,
         "best_for": "Good quality transcription",
         "recommended": False,
@@ -99,6 +116,7 @@ MODELS = {
         ],
         "time_estimate": "~20-24 hours",
         "ram_required": "5 GB",
+        "download_size": "1.5 GB",
         "accuracy_score": 4,
         "best_for": "General-purpose transcription",
         "recommended": False,
@@ -123,6 +141,7 @@ MODELS = {
         ],
         "time_estimate": "~40+ hours",
         "ram_required": "8 GB",
+        "download_size": "3.1 GB",
         "accuracy_score": 4.5,
         "best_for": "Mixed-language or non-Hebrew content",
         "recommended": False,
@@ -154,6 +173,7 @@ MODELS = {
         ],
         "time_estimate": "~8-12 hours",
         "ram_required": "3 GB",
+        "download_size": "1.6 GB",
         "accuracy_score": 5,
         "best_for": "Hebrew transcription (RECOMMENDED)",
         "recommended": True,
@@ -174,6 +194,7 @@ MODELS = {
         ],
         "time_estimate": "~40+ hours",
         "ram_required": "8 GB",
+        "download_size": "3.1 GB",
         "accuracy_score": 5.5,
         "best_for": "Critical Hebrew content",
         "recommended": False,

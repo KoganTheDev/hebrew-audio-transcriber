@@ -1,6 +1,7 @@
 """Step 2: model selection, with a live, data-driven recommendation."""
 
 import logging
+import os
 
 from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -27,6 +28,61 @@ from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
+# Mirrors core/transcriber.py's WhisperModel(..., download_root="./whisper_models")
+# literally, not by importing a shared constant - there isn't one, and this
+# module has no business defining it either (see the docstring below on why
+# this whole check is GUI-only guesswork, not something core/ should carry).
+# If that literal ever changes, this needs to change with it by hand.
+_WHISPER_DOWNLOAD_ROOT = "./whisper_models"
+
+
+def _model_is_downloaded(repo: str) -> bool:
+    """
+    Best-effort guess at whether `repo` already sits in faster-whisper's
+    local download cache, so a model card can skip warning about a
+    download that has already happened.
+
+    This pokes directly at an IMPLEMENTATION DETAIL of a downstream
+    library - huggingface_hub's on-disk cache layout, a folder named
+    "models--<owner>--<repo>" per snapshot - not a documented, stable
+    contract. faster-whisper resolves a bare size like "tiny" to
+    "Systran/faster-whisper-tiny" before that layout is ever applied
+    (config.MODELS' "repo" field mirrors that: bare sizes for stock
+    Whisper, an explicit "owner/repo" for the ivrit.ai models), so this
+    has to redo that same resolution to compute the folder name it's
+    looking for.
+
+    Fail-safe in ONE direction only, deliberately: any doubt at all -
+    the folder's missing, a "snapshots" subfolder is missing or empty,
+    the path can't even be listed, a future huggingface_hub version
+    reshuffles this layout entirely - reports "not downloaded", never
+    the reverse. Getting this wrong one way just means an already-cached
+    model shows a redundant download-size note on its card (mildly
+    annoying). Getting it wrong the other way would tell someone a
+    multi-GB download isn't coming when it actually is, which is a wrong
+    claim about to cost them real time - see this function's caller for
+    where that asymmetry matters.
+
+    Also note (not fixed here - see this function's caller for why):
+    "./whisper_models" is relative to the process's CURRENT WORKING
+    DIRECTORY, not this file's location or the repo root. Launching the
+    app from a different working directory makes both the real download
+    AND this presence check land in a different place, so a model
+    downloaded during one working-directory session can read as "not
+    downloaded" from another. Changing download_root to an absolute path
+    would fix that, but would also orphan every model already downloaded
+    under the old relative path on whatever machine is running this -
+    a decision for whoever owns that tradeoff, not something to sneak in
+    as a side effect of a GUI label.
+    """
+    try:
+        repo_id = repo if "/" in repo else f"Systran/faster-whisper-{repo}"
+        cache_dir_name = "models--" + repo_id.replace("/", "--")
+        snapshots_dir = os.path.join(_WHISPER_DOWNLOAD_ROOT, cache_dir_name, "snapshots")
+        return os.path.isdir(snapshots_dir) and bool(os.listdir(snapshots_dir))
+    except OSError:
+        return False
+
 
 class ModelSelectStep(QFrame):
     """Step 2: Model Selection with recommendation and time estimates."""
@@ -46,6 +102,16 @@ class ModelSelectStep(QFrame):
         # the card (not the radio Qt actually focuses) needs its own
         # keyboard-focus ring.
         self._badges = {}       # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
+        # Computed once at construction, not re-checked per card render: a
+        # download completing mid-session (this app's own transcription run
+        # is the only thing that would trigger one) is already covered by a
+        # full model-select rebuild never happening without a restart, so
+        # there's no live event this would need to react to. See
+        # _model_is_downloaded's docstring for what "downloaded" means here
+        # and why it's guesswork, not a guarantee.
+        self._downloaded = {
+            name: _model_is_downloaded(info["repo"]) for name, info in config.MODELS.items()
+        }
         self._error_key = None      # (key, params) of the last shown error, for retranslation
         self._error_params = {}
         self._user_touched_model = False  # True once the user manually picks a model
@@ -100,6 +166,25 @@ class ModelSelectStep(QFrame):
         error_layout.addWidget(self.error_label, 1)
 
         layout.addWidget(self.error_banner)
+
+        # Calibration note - every time estimate on this step is a
+        # placeholder (config.SPEED_FACTORS's guessed constants, see
+        # HardwareDetector.estimate_transcription_time) until the background
+        # benchmark that started in MainWindow.__init__ finishes. Hidden
+        # whenever hardware.tiny_seconds_per_audio_second is already known
+        # (the common case - calibration usually finishes well before the
+        # user reaches this step), shown otherwise; see
+        # _set_calibration_note, update_audio_duration and
+        # mark_calibration_unmeasured for the three states this can be in.
+        self._calibration_note_key = None
+        self.calibration_note = QLabel()
+        self.calibration_note.setFont(Fonts.CAPTION)
+        self.calibration_note.setStyleSheet(theme.text_qss("text_tertiary"))
+        self.calibration_note.setWordWrap(True)
+        self.calibration_note.hide()
+        layout.addWidget(self.calibration_note)
+        if hardware.tiny_seconds_per_audio_second is None:
+            self._set_calibration_note("calibration_pending")
 
         # The cards used to be laid out directly, sized so all five fit the
         # fixed window without scrolling. Adding the two Hebrew-tuned models
@@ -323,6 +408,20 @@ class ModelSelectStep(QFrame):
         for card_name, card in self._cards.items():
             card.setStyleSheet(theme.card_qss(f"modelCard_{card_name}", selected=(card_name == name)))
 
+    def _info_note(self, name: str) -> str:
+        """
+        RAM (always) plus, for a model not yet cached locally, the full
+        "not downloaded yet" sentence - the words the caption's terse
+        "↓ {size}" arrow (see _desc_text) doesn't have room to spell out.
+        Shared by the card's tooltip and the radio's accessible description
+        so the two surfaces never drift out of sync with each other.
+        """
+        info = config.MODELS[name]
+        note = t("model_ram_tooltip", ram=info["ram_required"])
+        if not self._downloaded[name]:
+            note = note + " " + t("model_download_tooltip", size=info["download_size"])
+        return note
+
     def _create_model_card(self, idx: int, name: str, info: dict, is_recommended: bool = False) -> QFrame:
         """Create and return a model selection card with radio button and details."""
         card = QFrame()
@@ -330,6 +429,11 @@ class ModelSelectStep(QFrame):
         card.setObjectName(object_name)
         # Initially, the recommended model is also the selected one.
         card.setStyleSheet(theme.card_qss(object_name, selected=is_recommended))
+        # Mouse-hover equivalent of the radio's accessible description
+        # above - a sighted mouse user gets the same RAM (and, where it
+        # applies, download) information a screen reader announces, without
+        # any of it costing the caption's width.
+        card.setToolTip(self._info_note(name))
 
         layout = QHBoxLayout(card)
         layout.setContentsMargins(Spacing.MD, Spacing.XS, Spacing.MD, Spacing.XS)
@@ -343,7 +447,12 @@ class ModelSelectStep(QFrame):
         radio.setChecked(is_recommended)
         radio.toggled.connect(lambda checked: self._on_radio_toggled(name, checked))
         radio.setAccessibleName(model_text(name, "name"))
-        radio.setAccessibleDescription(model_text(name, "description"))
+        # RAM (and, when relevant, the pending-download sentence) lives here
+        # and in the card's tooltip below rather than inline in the caption
+        # text - see _desc_text's comment on why: RAM applies to every card,
+        # always, and the caption doesn't have room to spell either out in
+        # full for all seven without overflowing.
+        radio.setAccessibleDescription(model_text(name, "description") + ". " + self._info_note(name))
         self.model_group.addButton(radio, idx)
         self.model_radios[name] = radio
         # The card frame, not the radio, has to show the keyboard-focus ring
@@ -370,8 +479,37 @@ class ModelSelectStep(QFrame):
         model_label.setFont(Fonts.BODY_BOLD)
         model_label.setStyleSheet(theme.text_qss("text_primary"))
         model_label.setAlignment(self._card_text_alignment())
-        text_layout.addWidget(model_label)
         self._name_labels[name] = model_label
+
+        # Name row: name label + RECOMMENDED badge, side by side. The badge
+        # used to sit on the OUTER row, at the card's trailing edge, sharing
+        # its width with the caption below via layout.addStretch() - fine
+        # while the caption was short, but adding the RAM/download text (see
+        # _desc_text) pushed the caption's own natural width past what was
+        # left after the badge, on the exact card most likely to carry both:
+        # the RECOMMENDED one. Measured before landing on this fix: on the
+        # Ivrit Turbo card (this app's default recommendation) in English,
+        # and on Ivrit Large in Hebrew, the badge was shoved half off the
+        # visible card - not merely a tight fit, an actual clipped control.
+        # Moving the badge here instead gives the caption row the card's
+        # full width on every card, badge or not - the name row has plenty
+        # of slack a two-or-three-word model name never gets close to using.
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(Spacing.XS)
+        name_row.addWidget(model_label)
+
+        # Recommended badge - always created so update_audio_duration can
+        # show/hide it as the real recommendation shifts, instead of only
+        # ever reflecting the recommendation computed at construction time.
+        badge = QLabel(t("recommended_badge"))
+        badge.setStyleSheet(theme.badge_qss())
+        badge.setVisible(is_recommended)
+        name_row.addWidget(badge)
+        name_row.addStretch()
+        self._badges[name] = badge
+
+        text_layout.addLayout(name_row)
 
         # Description + time estimate (kept up to date via update_audio_duration)
         desc_label = QLabel(self._desc_text(name))
@@ -381,17 +519,7 @@ class ModelSelectStep(QFrame):
         text_layout.addWidget(desc_label)
         self._desc_labels[name] = desc_label
 
-        layout.addLayout(text_layout)
-        layout.addStretch()
-
-        # Recommended badge - always created so update_audio_duration can
-        # show/hide it as the real recommendation shifts, instead of only
-        # ever reflecting the recommendation computed at construction time.
-        badge = QLabel(t("recommended_badge"))
-        badge.setStyleSheet(theme.badge_qss())
-        badge.setVisible(is_recommended)
-        layout.addWidget(badge)
-        self._badges[name] = badge
+        layout.addLayout(text_layout, 1)
 
         # +2px over the pre-redesign 56: BODY_BOLD grew a point (11 -> 12pt,
         # see Fonts) and moved to DemiBold, so the name label needs a
@@ -459,6 +587,27 @@ class ModelSelectStep(QFrame):
         card.style().polish(card)
         card.update()
 
+    def _set_calibration_note(self, key) -> None:
+        """Show `key`'s text as the calibration note, or hide it when key is None."""
+        self._calibration_note_key = key
+        if key is None:
+            self.calibration_note.hide()
+        else:
+            self.calibration_note.setText(t(key))
+            self.calibration_note.show()
+
+    def mark_calibration_unmeasured(self) -> None:
+        """
+        Called from MainWindow._on_calibration_failed: the background
+        benchmark didn't just take a while, it actively failed, so
+        hardware.tiny_seconds_per_audio_second will stay None for the rest
+        of this run. Leaving the "still measuring" note up would keep
+        promising a real number that is never coming; this swaps it for a
+        resting message that states the permanent condition instead - the
+        estimates are rough, not provisional.
+        """
+        self._set_calibration_note("calibration_unmeasured")
+
     def update_audio_duration(self, seconds: int) -> None:
         """
         Recompute time estimates and the real recommendation in place, once
@@ -467,6 +616,13 @@ class ModelSelectStep(QFrame):
         """
         self.audio_duration = seconds
         self._refresh_desc_labels(recompute=True)
+        # Only clear the note here if calibration is now actually known -
+        # this is also called on every step-1-to-2 advance regardless of
+        # calibration state (see MainWindow._go_next), so blindly hiding it
+        # would erase a still-accurate "these are provisional" note the
+        # moment the user picks a file, well before the benchmark is done.
+        if self.hardware.tiny_seconds_per_audio_second is not None:
+            self._set_calibration_note(None)
 
         recommended_model, _ = self.hardware.recommend_model(seconds)
         self._apply_recommendation(recommended_model)
@@ -510,7 +666,22 @@ class ModelSelectStep(QFrame):
             )
             time_str = self.hardware.get_time_estimate_display(time_est)
             self._time_strs[name] = time_str
-        return t("model_desc_est", desc=model_text(name, "description"), time=time_str)
+        text = t("model_desc_est", desc=model_text(name, "description"), time=time_str)
+        if not self._downloaded[name]:
+            # Direct dict access, not .get() - a model added to config.MODELS
+            # without a download_size should raise here at card-build time,
+            # not render a blank/"None" note that's easy to miss in review.
+            size = config.MODELS[name]["download_size"]
+            # RAM (relevant to every card, always) lives in the card's
+            # tooltip/accessible description instead of this line (see
+            # _create_model_card) - putting both there and here was measured
+            # to overflow the caption's ~520px budget on the recommended
+            # card in Hebrew. Download size stays inline because it's the
+            # one fact that changes a decision RIGHT NOW, for the one or two
+            # models that actually need it - most cards carry no extra text
+            # at all once they're cached locally.
+            text = text + " " + t("model_download_pending", size=size)
+        return text
 
     def _refresh_desc_labels(self, recompute: bool = False) -> None:
         if recompute:
@@ -543,7 +714,9 @@ class ModelSelectStep(QFrame):
             badge.setText(t("recommended_badge"))
         for name, radio in self.model_radios.items():
             radio.setAccessibleName(model_text(name, "name"))
-            radio.setAccessibleDescription(model_text(name, "description"))
+            radio.setAccessibleDescription(model_text(name, "description") + ". " + self._info_note(name))
+        for name, card in self._cards.items():
+            card.setToolTip(self._info_note(name))
         self.identify_speakers_check.setText(t("identify_speakers"))
         self.speaker_count_label.setText(t("speaker_count"))
         self.speaker_count_spin.setAccessibleName(t("speaker_count"))
@@ -552,6 +725,8 @@ class ModelSelectStep(QFrame):
         # _apply_spin_button_direction's docstring.
         self._apply_spin_button_direction()
         self._refresh_desc_labels()
+        if self._calibration_note_key is not None:
+            self.calibration_note.setText(t(self._calibration_note_key))
         if self._error_key is not None:
             self.error_label.setText(
                 t("transcription_failed", message=t(self._error_key, **self._error_params))

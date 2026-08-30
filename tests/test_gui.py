@@ -175,6 +175,132 @@ class TestFileSelectStepFileList:
         assert file_select_step.total_duration == 0
 
 
+class TestFileSelectStepSummaryPlurals:
+    """
+    One selected file should read "1 file selected", not "1 files selected".
+
+    Worth pinning rather than leaving to review: a single dropped file is an
+    ordinary case, and Hebrew inflects the verb and the noun together for it
+    (נבחר קובץ אחד against נבחרו N קבצים), so the singular is a different
+    string in both languages rather than a formatting detail one of them can
+    get away with.
+    """
+
+    def test_one_file_reads_singular_in_both_languages(self, file_select_step, tmp_path, monkeypatch):
+        from speech_to_text.gui import i18n
+
+        monkeypatch.setattr(
+            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: 65
+        )
+        one = tmp_path / "clip.wav"
+        one.write_bytes(b"x")
+        try:
+            for lang, forbidden in (("en", "1 files"), ("he", "1 קבצים")):
+                i18n.set_language(lang)
+                file_select_step.reset()
+                file_select_step._add_files([str(one)])
+                text = file_select_step.summary_label.text()
+                assert forbidden not in text, f"{lang}: plural form used for a single file: {text!r}"
+        finally:
+            i18n.set_language("en")
+
+    def test_several_files_still_read_plural(self, file_select_step, tmp_path, monkeypatch):
+        from speech_to_text.gui import i18n
+
+        monkeypatch.setattr(
+            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: 65
+        )
+        paths = []
+        for i in range(3):
+            p = tmp_path / f"clip_{i}.wav"
+            p.write_bytes(b"x")
+            paths.append(str(p))
+        i18n.set_language("en")
+        file_select_step.reset()
+        file_select_step._add_files(paths)
+        assert "3 files" in file_select_step.summary_label.text()
+
+
+class TestFileSelectStepDirectDropFiltering:
+    """
+    A file dropped directly (not via a folder) used to be added whatever it
+    was - config.SUPPORTED_FORMATS was only ever consulted for a dropped
+    FOLDER's contents (_expand_directory), so a .txt dropped straight onto
+    the zone got a green check and sat in the list until the worker choked
+    on it much later. _drop now filters a direct drop through the same
+    list, and says what it skipped instead of the file just vanishing.
+    """
+
+    def test_unsupported_direct_drop_is_skipped_supported_one_is_kept(
+        self, file_select_step, tmp_path, monkeypatch
+    ):
+        from speech_to_text.gui.steps import file_select as file_select_module
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 30)
+
+        mp3 = tmp_path / "meeting.mp3"
+        txt = tmp_path / "notes.txt"
+        mp3.write_bytes(b"")
+        txt.write_bytes(b"")
+
+        received = []
+        file_select_step.files_selected.connect(
+            lambda paths, total: received.append(paths)
+        )
+        from PyQt5.QtCore import QMimeData, QPoint, QUrl
+        from PyQt5.QtGui import QDropEvent
+
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(mp3)), QUrl.fromLocalFile(str(txt))])
+        drop = QDropEvent(
+            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+        )
+        file_select_step._drop(drop)
+
+        # QUrl.fromLocalFile()/toLocalFile() can normalize separators
+        # differently from str(Path) on Windows - compare basenames, like
+        # TestDropZoneEventPath's real-drop test does, rather than exact
+        # path strings.
+        assert len(file_select_step.selected_files) == 1
+        assert file_select_step.selected_files[0].endswith("meeting.mp3")
+        assert received and len(received[-1]) == 1 and received[-1][0].endswith("meeting.mp3")
+        summary = file_select_step.summary_label.text()
+        assert "1" in summary  # 1 skipped
+        assert "notes.txt" not in summary  # count only, no filenames (width is tight)
+
+    def test_a_drop_that_skips_everything_still_updates_the_summary(
+        self, file_select_step, tmp_path
+    ):
+        """
+        No supported file at all means _add_files never runs (paths is
+        empty), but the skip note still has to reach the summary line -
+        otherwise a drop consisting entirely of unsupported files is once
+        again a silent no-op.
+        """
+        from PyQt5.QtCore import QMimeData, QPoint, QUrl
+        from PyQt5.QtGui import QDropEvent
+
+        txt = tmp_path / "notes.txt"
+        txt.write_bytes(b"")
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(txt))])
+        drop = QDropEvent(
+            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+        )
+        file_select_step._drop(drop)
+
+        assert file_select_step.selected_files == []
+        assert "1" in file_select_step.summary_label.text()
+
+    def test_is_supported_file_uses_config_supported_formats(self, file_select_step):
+        """
+        config.SUPPORTED_FORMATS holds glob patterns ("*.mp3"), not bare
+        extensions - pinning both a match and a non-match guards against a
+        future rewrite that assumes the bare-extension shape instead.
+        """
+        assert file_select_step._is_supported_file("C:/audio/meeting.MP3")
+        assert not file_select_step._is_supported_file("C:/docs/notes.txt")
+
+
 class TestTranscriptionStepOpenButton:
     """
     The output is an editable HTML application now, not a text file, so the
@@ -800,3 +926,116 @@ class TestMainWindowCancelConfirm:
 
         assert not main_window._cancel_armed
         assert not main_window.cancel_confirm_label.isVisible()
+
+
+class TestModelDownloadSize:
+    """
+    config.MODELS.download_size is a structured, per-model download-size
+    figure (see that dict's own module docstring for why it exists at all:
+    there is no live download-progress signal anywhere in this app, so the
+    GUI's only honest option is to say the cost up front, before the model
+    is picked). A model added to that table later without this field should
+    fail a test, not silently render a blank or "None" note on its card.
+    """
+
+    def test_every_model_declares_a_download_size(self):
+        from speech_to_text import config
+
+        missing = [name for name, info in config.MODELS.items() if "download_size" not in info]
+        assert not missing, f"config.MODELS entries missing download_size: {missing}"
+
+    def test_download_size_is_non_empty_text(self):
+        """Guards against a present-but-blank value slipping through the check above."""
+        from speech_to_text import config
+
+        for name, info in config.MODELS.items():
+            assert isinstance(info["download_size"], str) and info["download_size"].strip(), (
+                f"{name}'s download_size is empty or not a string: {info.get('download_size')!r}"
+            )
+
+
+@pytest.fixture
+def model_hardware_stub():
+    """
+    Just enough of HardwareDetector's interface for ModelSelectStep.__init__
+    plus the calls _desc_text/update_audio_duration make on it.
+    """
+    hw = MagicMock()
+    hw.tiny_seconds_per_audio_second = None  # calibration not yet run - see the tests below
+    hw.recommend_model.return_value = ("tiny", "stub")
+    hw.estimate_transcription_time.return_value = (60, "stub")
+    hw.get_time_estimate_display.return_value = "~1 min"
+    return hw
+
+
+class TestModelSelectStepCalibrationNote:
+    """
+    Every time estimate on this step is a placeholder (config.SPEED_FACTORS'
+    guessed constants) until the background hardware benchmark
+    (CalibrationThread, started in MainWindow.__init__) finishes - and
+    nothing said so before this. These pin the three states the note can be
+    in: shown while unmeasured, hidden once a real measurement lands, and a
+    different, permanent message if the benchmark fails outright instead of
+    just taking a while.
+    """
+
+    def test_note_is_shown_while_calibration_is_unmeasured(self, qapp, model_hardware_stub):
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        step = ModelSelectStep(model_hardware_stub)
+
+        assert not step.calibration_note.isHidden()
+        assert step.calibration_note.text()  # not just visible, actually says something
+
+    def test_note_is_cleared_once_calibration_lands(self, qapp, model_hardware_stub):
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        step = ModelSelectStep(model_hardware_stub)
+        assert not step.calibration_note.isHidden()
+
+        # Simulate MainWindow._on_calibration_done: the hardware object now
+        # knows a real value, then update_audio_duration is called (exactly
+        # as MainWindow does after a successful calibration).
+        model_hardware_stub.tiny_seconds_per_audio_second = 0.5
+        step.update_audio_duration(120)
+
+        assert step.calibration_note.isHidden()
+
+    def test_update_audio_duration_does_not_clear_the_note_while_still_unmeasured(
+        self, qapp, model_hardware_stub
+    ):
+        """
+        update_audio_duration also runs on every step-1-to-2 advance
+        regardless of calibration state (see MainWindow._go_next) - it must
+        not blindly hide an accurate "still measuring" note just because the
+        user picked a file before the benchmark finished.
+        """
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        step = ModelSelectStep(model_hardware_stub)
+        step.update_audio_duration(120)
+
+        assert not step.calibration_note.isHidden()
+
+    def test_failed_calibration_shows_a_different_permanent_note(self, qapp, model_hardware_stub):
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        step = ModelSelectStep(model_hardware_stub)
+        pending_text = step.calibration_note.text()
+
+        step.mark_calibration_unmeasured()
+
+        assert not step.calibration_note.isHidden()
+        assert step.calibration_note.text() != pending_text
+        assert step._calibration_note_key == "calibration_unmeasured"
+
+    def test_note_hidden_from_the_start_once_calibration_is_already_known(
+        self, qapp, model_hardware_stub
+    ):
+        """The common case: calibration usually finishes before step 2 is ever built."""
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        model_hardware_stub.tiny_seconds_per_audio_second = 0.5
+        step = ModelSelectStep(model_hardware_stub)
+
+        assert step.calibration_note.isHidden()

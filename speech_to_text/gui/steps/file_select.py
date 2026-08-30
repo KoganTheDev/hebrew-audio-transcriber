@@ -1,5 +1,6 @@
 """Step 1: file selection with drag-and-drop and a hardware specs table."""
 
+import fnmatch
 import glob
 import os
 import logging
@@ -208,6 +209,13 @@ class FileSelectStep(QFrame):
         self.selected_files: List[str] = []
         self._durations: Dict[str, int] = {}
         self._rows: Dict[str, QFrame] = {}
+        # Basenames skipped by the most recent drop (see _drop) - rendered
+        # into the summary line by _update_summary until the next drop
+        # replaces it or reset() clears it. Not cleared by browse_for_files
+        # or _remove_file: those aren't drops, and a skip note from one
+        # drop staying visible while the user removes an unrelated file
+        # from the list is still an accurate statement about what happened.
+        self._skipped_last_drop: List[str] = []
         # Tab-order chain anchor - see _add_row. Starts at the drop zone,
         # the first (and while the list is empty, only) focusable thing on
         # this step.
@@ -235,16 +243,44 @@ class FileSelectStep(QFrame):
     def _drop(self, event: QDropEvent):
         self._reset_drop_zone()
         paths = []
+        # Names skipped on THIS drop specifically, not a running total - see
+        # _update_summary. A folder drop is filtered by _expand_directory
+        # already (glob only ever matches supported patterns to begin with),
+        # so nothing from inside a folder ever lands here; this only ever
+        # catches a file dropped directly that isn't one this app can open.
+        skipped_names = []
         for url in event.mimeData().urls():
             local_path = url.toLocalFile()
             if not local_path:
                 continue
             if os.path.isdir(local_path):
                 paths.extend(self._expand_directory(local_path))
-            else:
+            elif self._is_supported_file(local_path):
                 paths.append(local_path)
+            else:
+                skipped_names.append(os.path.basename(local_path))
+        self._skipped_last_drop = skipped_names
         if paths:
             self._add_files(paths)
+        # _add_files only calls _update_summary when it actually changes the
+        # list (e.g. every dropped path was already selected), but a skip
+        # note needs to render even then - and even when nothing at all was
+        # added (every dropped file was unsupported) - so this always runs,
+        # on top of whatever _add_files already did.
+        self._update_summary()
+
+    @staticmethod
+    def _is_supported_file(path: str) -> bool:
+        """
+        Whether `path` matches one of config.SUPPORTED_FORMATS' glob
+        patterns ("*.mp3", not a bare ".mp3" - see that constant's
+        docstring), by filename rather than by opening the file. Used to
+        filter a file dropped directly onto the zone; _expand_directory
+        already filters a dropped folder's contents the same way via
+        glob.glob itself, so this only needs to cover the direct-drop case.
+        """
+        name = os.path.basename(path).lower()
+        return any(fnmatch.fnmatch(name, pattern.lower()) for pattern in config.SUPPORTED_FORMATS)
 
     @staticmethod
     def _expand_directory(dir_path: str) -> List[str]:
@@ -406,15 +442,32 @@ class FileSelectStep(QFrame):
         # through) rather than at each call site.
         self._rows_scroll.setVisible(bool(self.selected_files))
         if not self.selected_files:
-            self.summary_label.setText(t("no_file_selected"))
-            return
-        total = self.total_duration
-        self.summary_label.setText(t(
-            "files_summary",
-            count=len(self.selected_files),
-            minutes=total // 60,
-            seconds=total % 60,
-        ))
+            text = t("no_file_selected")
+        else:
+            total = self.total_duration
+            # Separate singular key rather than one template with a count in
+            # it: Hebrew changes the verb and the noun together for one file
+            # (נבחר קובץ אחד against נבחרו N קבצים), so no single string
+            # could have read correctly in both languages at both counts.
+            count = len(self.selected_files)
+            text = t(
+                "files_summary" if count != 1 else "files_summary_one",
+                count=count,
+                minutes=total // 60,
+                seconds=total % 60,
+            )
+        if self._skipped_last_drop:
+            # Appended rather than swapped in: the user still needs to see
+            # what IS selected, not just what wasn't. Count only, no
+            # filenames - this line has little width to spare (see
+            # FileSelectStep's module-level layout comments), and "3
+            # skipped" already answers the question a vanished file would
+            # otherwise raise silently.
+            skipped = len(self._skipped_last_drop)
+            text = text + " " + t(
+                "files_skipped" if skipped != 1 else "files_skipped_one", count=skipped
+            )
+        self.summary_label.setText(text)
 
     def reset(self):
         """Clear every selected file and restore the placeholder label."""
@@ -424,6 +477,7 @@ class FileSelectStep(QFrame):
         self._rows.clear()
         self._durations.clear()
         self.selected_files.clear()
+        self._skipped_last_drop = []
         self._update_summary()
         # Every remove button just went away, so the tab-order chain (see
         # _add_row) has to restart from the drop zone too, or the next

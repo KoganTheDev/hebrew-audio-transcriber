@@ -107,6 +107,23 @@ STRINGS = {
         "en": "{count} files selected | Total: {minutes}m {seconds}s",
         "he": "נבחרו {count} קבצים | סה\"כ: {minutes} דק' {seconds} שנ'",
     },
+    # Singular counterparts. Worth the extra keys rather than a bare "{count}
+    # files": a single dropped file is an ordinary case, not an edge one, and
+    # "1 files selected" is the kind of detail that makes an interface feel
+    # unfinished. Hebrew is not simply the same string with a different
+    # number either - the verb and the noun both change (נבחרו/נבחר,
+    # קבצים/קובץ), so a count-agnostic template could not have been right in
+    # both languages anyway.
+    "files_summary_one": {
+        "en": "1 file selected | Total: {minutes}m {seconds}s",
+        "he": "נבחר קובץ אחד | סה\"כ: {minutes} דק' {seconds} שנ'",
+    },
+    # Appended to the line above (or to no_file_selected) when a direct file
+    # drop skipped something outside config.SUPPORTED_FORMATS - see
+    # FileSelectStep._drop. Count only, no filenames: this line has little
+    # width to spare (see file_select.py's layout comments).
+    "files_skipped": {"en": "({count} skipped)", "he": "({count} דולגו)"},
+    "files_skipped_one": {"en": "(1 skipped)", "he": "(קובץ אחד דולג)"},
     # Short "N files" label - used as the filename slot of file_model_info
     # (step 3's header) when a batch, rather than a single file, is running.
     "files_count_label": {"en": "{count} files", "he": "{count} קבצים"},
@@ -124,6 +141,49 @@ STRINGS = {
     "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
     "transcription_failed": {"en": "Transcription failed: {message}", "he": "התמלול נכשל: {message}"},
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
+    # RAM required, shown on the model card's tooltip and folded into its
+    # radio's accessible description - not inline in the caption text (see
+    # ModelSelectStep._desc_text): it applies to every card, always, and the
+    # caption doesn't have room to say so for all seven without overflowing
+    # in Hebrew on the RECOMMENDED card specifically (measured).
+    "model_ram_tooltip": {"en": "Requires {ram} RAM", "he": "דורש {ram} זיכרון RAM"},
+    # Appended to a card's caption ONLY for a model not yet present in the
+    # local download cache (see model_select.py's _model_is_downloaded) -
+    # the one fact that changes a decision right now, for the one or two
+    # models that actually need it. Most cards carry no extra text at all.
+    #
+    # Deliberately terse (a bare down-arrow, not the word "download"/"הורדה"):
+    # measured against the RECOMMENDED card - the one this note is most
+    # likely to land on, since the app's own default recommendation is
+    # usually the least-downloaded model - the full word pushed the caption
+    # past the scroll area's actual viewport width (was 539px against a
+    # ~514px budget once the vertical scrollbar is showing; the word alone
+    # cost ~45 of those px). The arrow trades a few px of self-explanation
+    # for fitting at all; model_download_tooltip below (on the card and the
+    # radio's accessible description) carries the full sentence for anyone
+    # who needs it spelled out.
+    "model_download_pending": {"en": "| ↓ {size}", "he": "| ↓ {size}"},
+    # Full sentence version of the note above, for the card's tooltip and
+    # the radio's accessible description - a screen reader or a hovering
+    # mouse gets the words a screen glance at "↓ 1.6 GB" doesn't have room
+    # to spell out.
+    "model_download_tooltip": {
+        "en": "Not downloaded yet - {size} on first use",
+        "he": "טרם הורד - {size} בשימוש הראשון",
+    },
+    # Calibration note (ModelSelectStep.calibration_note) - see
+    # HardwareDetector.tiny_seconds_per_audio_second and CalibrationThread.
+    # "_pending" is the transient state while the background benchmark is
+    # still running; "_unmeasured" is the permanent resting state once it's
+    # known to have failed outright (see MainWindow._on_calibration_failed).
+    "calibration_pending": {
+        "en": "Measuring this machine's speed - estimates below are provisional",
+        "he": "מודד את מהירות המחשב - האומדנים למטה זמניים",
+    },
+    "calibration_unmeasured": {
+        "en": "Couldn't measure this machine's speed - estimates below are rough guesses",
+        "he": "לא ניתן היה למדוד את מהירות המחשב - האומדנים למטה משוערים בגסות",
+    },
 
     # --- Step 3: transcription ---
     "transcribing_title": {"en": "Transcribing", "he": "מתמלל"},

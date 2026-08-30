@@ -141,6 +141,11 @@ class MainWindow(QMainWindow):
 
     def _on_calibration_failed(self, message: str):
         logger.warning(f"Hardware calibration failed, keeping placeholder estimates: {message}")
+        # The "still measuring" note on step 2 (see ModelSelectStep) would
+        # otherwise stay up forever, quietly promising a real number that's
+        # never coming now that the benchmark itself has failed - swap it
+        # for a permanent, honest "these are rough" resting state instead.
+        self.model_step.mark_calibration_unmeasured()
 
     def center_on_screen(self):
         """Center window on screen."""
