@@ -39,6 +39,19 @@ STRINGS = {
     "nav_new_file": {"en": "New File", "he": "קובץ חדש"},
     "no_model_title": {"en": "No Model", "he": "לא נבחר מודל"},
     "no_model_body": {"en": "Please select a model", "he": "אנא בחרו מודל"},
+    # Header language toggle - accessible name/tooltip. The button's own
+    # visible text already shows the TARGET language ("EN"/"עב" - see
+    # MainWindow._retranslate_chrome), which reads fine visually next to
+    # the app's current language, but says nothing about what the control
+    # DOES to a screen reader with no visual context, so this names the
+    # action instead. Static across both languages' target rather than
+    # re-derived per toggle - "switches the interface language" is true
+    # regardless of which direction it's about to switch.
+    "toggle_language_name": {"en": "Toggle interface language", "he": "החלפת שפת הממשק"},
+    "toggle_language_tooltip": {
+        "en": "Switch interface language (Ctrl+Shift+L)",
+        "he": "החלפת שפת הממשק (Ctrl+Shift+L)",
+    },
 
     # --- Step 1: file selection ---
     "specs_title": {"en": "Specs", "he": "מפרט מערכת"},
@@ -47,6 +60,23 @@ STRINGS = {
     "drop_formats": {"en": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV", "he": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV"},
     "drop_alt": {"en": "or click anywhere here to browse", "he": "או לחצו כאן כדי לבחור קובץ"},
     "no_file_selected": {"en": "No file selected", "he": "לא נבחר קובץ"},
+    # Drop zone accessibility. Read together by a screen reader (name then
+    # description) when the zone receives focus, so the description spells
+    # out both input paths (keyboard AND drag/drop) even though only the
+    # keyboard one is reachable without a mouse - a sighted keyboard user
+    # scanning past this control by ear should still learn drag-and-drop
+    # exists.
+    "drop_zone_name": {"en": "Audio file drop zone", "he": "אזור גרירת קובץ אודיו"},
+    "drop_zone_desc": {
+        "en": "Press Enter or Space to browse for a file, or drag and drop a file or folder here.",
+        "he": "לחצו Enter או Space כדי לבחור קובץ, או גררו לכאן קובץ או תיקייה.",
+    },
+    # Per-file remove button in the selected-files list (file_select.py) -
+    # a bare 20px "x" with no label of any kind before this step. {filename}
+    # disambiguates which row's button this is once more than one file is
+    # queued; a generic "Remove" would be indistinguishable across rows to
+    # a screen reader jumping between controls rather than reading linearly.
+    "remove_file": {"en": "Remove {filename}", "he": "הסרת {filename}"},
     "file_info": {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",
         "he": _RLM + "{filename} | {minutes} דק' {seconds} שנ' | {size} MB",

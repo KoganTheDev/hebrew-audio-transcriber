@@ -9,16 +9,23 @@ import sys
 from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QThread
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
     QDesktopWidget,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QShortcut,
     QStackedWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +33,7 @@ from PyQt5.QtWidgets import (
 from speech_to_text import config
 from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.gui import i18n, theme
+from speech_to_text.gui.focus import KeyboardFocusTracker
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.theme import COLORS, Fonts
@@ -34,6 +42,19 @@ from speech_to_text.gui.widgets import IconTextButton
 from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
+
+
+def _is_text_entry_widget(widget) -> bool:
+    """
+    True for any widget where Enter means "confirm what I just typed here",
+    not "advance to the next step" - the window-level Enter shortcut below
+    checks this before acting. The speaker-count QSpinBox on step 2 is the
+    concrete case that matters (typing "10" and pressing Enter must not
+    skip the screen), but every native Qt text-entry base class is covered
+    here rather than special-casing just that one widget, so a future text
+    field on any step gets the same protection for free.
+    """
+    return isinstance(widget, (QAbstractSpinBox, QLineEdit, QTextEdit, QPlainTextEdit, QComboBox))
 
 
 class MainWindow(QMainWindow):
@@ -49,7 +70,8 @@ class MainWindow(QMainWindow):
         self.setFixedSize(config.GUI_WINDOW_WIDTH, config.GUI_WINDOW_HEIGHT)
         # Fixed-size window: no resize/maximize, so layouts never need to adapt.
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
-        self.setStyleSheet(f"QMainWindow {{ background-color: {COLORS['bg_primary']}; }}")
+        # Main window background is set by theme.app_stylesheet() on the
+        # QApplication (see main()) rather than here per-instance.
 
         self.hardware = HardwareDetector()
         self.current_step = Step.FILE_SELECT
@@ -63,6 +85,18 @@ class MainWindow(QMainWindow):
 
         # Build UI
         self._init_ui()
+
+        # Keyboard-vs-mouse focus-ring gate (see gui/focus.py). One tracker
+        # per QApplication, not per window - installing a second one on a
+        # hypothetical second MainWindow would double-stamp every focus
+        # change, which is harmless but wasteful, so this is guarded by
+        # checking whether the application already carries one rather than
+        # assuming MainWindow.__init__ only ever runs once.
+        app = QApplication.instance()
+        if getattr(app, "_kbd_focus_tracker", None) is None:
+            app._kbd_focus_tracker = KeyboardFocusTracker(app)
+
+        self._init_shortcuts()
 
         # Center on screen
         self.center_on_screen()
@@ -95,6 +129,81 @@ class MainWindow(QMainWindow):
         y = (screen.height() - self.height()) // 2
         self.move(x, y)
         logger.debug(f"Window centered at ({x}, {y})")
+
+    def _init_shortcuts(self):
+        """
+        Window-level keyboard shortcuts. Each is a QShortcut parented to
+        the window with the default Qt.WindowShortcut context, so it fires
+        whenever this window (or a descendant) has focus, regardless of
+        which specific widget that is - the per-widget guards below (the
+        text-entry check for Enter, the step check for Escape) are what
+        keep that broad reach from firing somewhere it shouldn't, rather
+        than narrowing the shortcut's context itself.
+
+        References are kept on self even though QShortcut's Qt-parent
+        already prevents garbage collection - documents what exists and
+        makes them inspectable from a debugger or a test.
+        """
+        self._shortcut_browse = QShortcut(QKeySequence("Ctrl+O"), self)
+        self._shortcut_browse.activated.connect(self._on_browse_shortcut)
+
+        self._shortcut_toggle_language = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+        self._shortcut_toggle_language.activated.connect(self._toggle_language)
+
+        # Return AND Enter - the numpad key sends Qt.Key_Enter, the main
+        # keyboard's sends Qt.Key_Return, and QKeySequence("Return") only
+        # matches one of them.
+        self._shortcut_advance_return = QShortcut(QKeySequence(Qt.Key_Return), self)
+        self._shortcut_advance_return.activated.connect(self._on_advance_shortcut)
+        self._shortcut_advance_enter = QShortcut(QKeySequence(Qt.Key_Enter), self)
+        self._shortcut_advance_enter.activated.connect(self._on_advance_shortcut)
+
+        self._shortcut_back = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._shortcut_back.activated.connect(self._on_escape_shortcut)
+
+    def _on_browse_shortcut(self):
+        """Ctrl+O: open the file-picker dialog. Only meaningful on step 1."""
+        if self.current_step == Step.FILE_SELECT:
+            self.file_step.browse_for_files()
+
+    def _on_advance_shortcut(self):
+        """
+        Enter/Return: equivalent to clicking Next, guarded against firing
+        while the user is mid-entry in a text field (see
+        _is_text_entry_widget - the speaker-count QSpinBox on step 2 is the
+        case that matters: typing "10" and pressing Enter must confirm the
+        number, not skip the screen).
+
+        DropZone (gui/widgets.py) already wins this race on step 1 via its
+        own ShortcutOverride handling, so Enter there opens the browse
+        dialog instead of reaching this slot at all - see its docstring.
+
+        Gated on next_btn's own visible+enabled state rather than switching
+        on self.current_step: that state already encodes every reason
+        Enter should be a no-op right now (no file chosen yet, no model
+        chosen yet, a transcription in progress with Next hidden), so
+        re-deriving the same conditions here would just be a second place
+        for them to drift out of sync.
+        """
+        focused = QApplication.focusWidget()
+        if _is_text_entry_widget(focused):
+            return
+        if self.next_btn.isVisible() and self.next_btn.isEnabled():
+            self.next_btn.click()
+
+    def _on_escape_shortcut(self):
+        """
+        Escape: go Back, but ONLY on step 2 (Choose Model). Deliberately
+        does not touch step 3: Cancel there stops a possibly long-running
+        transcription with no confirmation prompt (a later step adds one -
+        see the redesign plan), so binding Escape to it now would let one
+        stray keystroke throw away a run that might be 40 minutes in.
+        Step 1 has nothing behind it to go back TO, so it's left unbound
+        there too rather than closing the window or doing nothing silently
+        surprising.
+        """
+        if self.current_step == Step.MODEL_SELECT:
+            self._go_back()
 
     def _init_ui(self):
         """Initialize UI."""
@@ -132,6 +241,14 @@ class MainWindow(QMainWindow):
         self.lang_btn.setFont(Fonts.CAPTION_BOLD)
         self.lang_btn.setStyleSheet(theme.button_secondary_qss(padding="2px 4px"))
         self.lang_btn.setCursor(Qt.PointingHandCursor)
+        # Icon-only in effect: its visible text is a language code ("EN" /
+        # "עב"), the TARGET language, which reads fine next to the app's
+        # current language but says nothing about what clicking it does to
+        # a screen reader with no visual context - see i18n's
+        # toggle_language_name/_tooltip for why these are static rather
+        # than re-derived per toggle direction.
+        self.lang_btn.setAccessibleName(t("toggle_language_name"))
+        self.lang_btn.setToolTip(t("toggle_language_tooltip"))
         self.lang_btn.clicked.connect(self._toggle_language)
 
         header_spacer = QWidget()
@@ -227,6 +344,35 @@ class MainWindow(QMainWindow):
 
         self._next_btn_mode = "next"
         self._retranslate_chrome()
+        self._wire_tab_order()
+
+    def _wire_tab_order(self):
+        """
+        Explicit Tab chain spanning the whole window, following visual
+        order top to bottom: header language toggle, then each step's own
+        internal chain (each step already wires its own controls in
+        __init__/showEvent - see FileSelectStep and ModelSelectStep), then
+        the nav bar.
+
+        Chaining across all three steps in one sequence is safe even
+        though only one is ever visible at a time: Qt's own Tab-key
+        handling skips any widget that isn't visible, so the inactive
+        steps' links in this chain are simply never used, and no per-step
+        branching is needed here to keep them from interfering with each
+        other.
+        """
+        first_model = next(iter(config.MODELS))
+        last_model = list(config.MODELS)[-1]
+        self.setTabOrder(self.lang_btn, self.file_step.drop_zone)
+        self.setTabOrder(self.file_step.drop_zone, self.model_step.model_radios[first_model])
+        self.setTabOrder(
+            self.model_step.model_radios[last_model], self.model_step.identify_speakers_check
+        )
+        self.setTabOrder(self.model_step.speaker_count_spin, self.back_btn)
+        self.setTabOrder(self.back_btn, self.cancel_btn)
+        self.setTabOrder(self.cancel_btn, self.transcription_step.open_button)
+        self.setTabOrder(self.transcription_step.open_button, self.next_btn)
+        self.setTabOrder(self.next_btn, self.lang_btn)
 
     def _retranslate_chrome(self):
         """(Re-)apply window title, header, and nav button text/icons/directions."""
@@ -234,16 +380,20 @@ class MainWindow(QMainWindow):
         self.title_label.setPixmap(theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD))
         # Toggle shows the language it switches TO.
         self.lang_btn.setText("עב" if i18n.get_language() == "en" else "EN")
+        self.lang_btn.setAccessibleName(t("toggle_language_name"))
+        self.lang_btn.setToolTip(t("toggle_language_tooltip"))
 
         rtl = i18n.is_rtl()
         # Back's arrow points against the reading direction, on the leading
         # side of the text: [← Back] mirrors to [חזרה →].
         self.back_btn.setText(t("nav_back"))
+        self.back_btn.setAccessibleName(t("nav_back"))
         self.back_btn.set_icon_spec("arrow_right" if rtl else "arrow_left",
                                     side="right" if rtl else "left")
 
         # Cancel's x sits on the leading side of the text in both languages.
         self.cancel_btn.setText(t("nav_cancel"))
+        self.cancel_btn.setAccessibleName(t("nav_cancel"))
         self.cancel_btn.set_icon_spec("x", side="right" if rtl else "left")
 
         self._set_next_button_mode(self._next_btn_mode)
@@ -260,11 +410,13 @@ class MainWindow(QMainWindow):
         if mode == "new_file":
             # Reset action: plus-file icon on the leading side of the text.
             self.next_btn.setText(t("nav_new_file"))
+            self.next_btn.setAccessibleName(t("nav_new_file"))
             self.next_btn.set_icon_spec("file_plus", side="right" if rtl else "left")
         else:
             # Forward arrow on the trailing side of the text, pointing along
             # the reading direction: [Next →] mirrors to [← הבא].
             self.next_btn.setText(t("nav_next"))
+            self.next_btn.setAccessibleName(t("nav_next"))
             self.next_btn.set_icon_spec("arrow_left" if rtl else "arrow_right",
                                         side="left" if rtl else "right")
 
@@ -481,6 +633,7 @@ def main():
     from PyQt5.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
+    app.setStyleSheet(theme.app_stylesheet())
 
     i18n.apply_saved_language(app)
 
