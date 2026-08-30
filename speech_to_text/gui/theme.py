@@ -32,7 +32,7 @@ per-widget call - app_stylesheet() is not the place to fight it.
 import os
 import tempfile
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QStandardPaths, Qt
 from PyQt5.QtGui import QFont, QFontMetrics, QLinearGradient, QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
 
@@ -499,6 +499,30 @@ def result_panel_qss(object_name: str) -> str:
     """
 
 
+def _glyph_cache_dir() -> str:
+    """
+    A per-user, app-owned directory for the generated glyphs.
+
+    GenericCacheLocation rather than CacheLocation because the latter is
+    derived from QCoreApplication's organization/application names, which
+    this app never sets (its QSettings identity is passed explicitly - see
+    gui/i18n.py), so it would resolve off the host executable's name and
+    differ between a normal run and a frozen build. This is
+    %LOCALAPPDATA%\cache on Windows and ~/.cache elsewhere, both per-user,
+    with our own subdirectory under it.
+
+    The mode is only honoured on POSIX; Windows already scopes
+    LOCALAPPDATA to the user, so it is belt and braces rather than the
+    primary control.
+    """
+    base = QStandardPaths.writableLocation(QStandardPaths.GenericCacheLocation)
+    if not base:
+        base = tempfile.gettempdir()
+    cache_dir = os.path.join(base, "HebrewAudioTranscriber", "glyphs")
+    os.makedirs(cache_dir, mode=0o700, exist_ok=True)
+    return cache_dir
+
+
 def _glyph_image_url(icon_name: str, size: int, color: str, rotation: int = 0) -> str:
     """
     Rasterize an ICONS[...] entry (see gui/icons.py) to a cached temp PNG
@@ -515,13 +539,24 @@ def _glyph_image_url(icon_name: str, size: int, color: str, rotation: int = 0) -
     after it's constructed), never at module import time, when no
     QApplication is guaranteed to exist yet (e.g. under pytest collection).
 
-    The cache filename encodes every input that changes the pixel content -
-    icon, size, color, rotation - rather than just the glyph's role. A
-    filename like "checkbox_tick.png" would go stale silently the moment a
-    color token changes, since the cache-hit check below is a bare
-    os.path.exists with no content comparison; encoding the inputs makes a
-    palette change produce a new filename and regenerate on its own instead
-    of quietly reusing yesterday's color forever.
+    The filename encodes every input that changes the pixel content - icon,
+    size, color, rotation - rather than just the glyph's role, so a palette
+    change lands on a different name instead of quietly reusing yesterday's
+    color forever.
+
+    It is written to a per-user cache directory of our own, NOT the shared
+    temp dir, and it is regenerated on every run rather than reused when a
+    file already happens to be sitting at that path. Both halves of that
+    matter, and the second is the important one: a predictable name in a
+    shared directory plus a bare os.path.exists check means any process
+    that can write there can pre-create the file, and this function would
+    then hand Qt an image nobody here produced. The glyphs in question are
+    a checkbox tick and the spin box arrows - the tick sits on the control
+    that decides whether diarization runs at all, so a spoofed "checked"
+    state is a real misrepresentation, and either way it feeds unvetted
+    bytes to an image decoder. Regenerating unconditionally removes the
+    trust-on-existence entirely, and costs three small rasterizations once
+    per process.
 
     Deliberately swallows every exception: this is a cosmetic asset, not
     something that should be able to crash stylesheet construction. On
@@ -531,21 +566,37 @@ def _glyph_image_url(icon_name: str, size: int, color: str, rotation: int = 0) -
     blank box (checkbox) or an unlabeled button (spin box arrows).
     """
     color_tag = color.lstrip("#")
-    cache_name = f"hat_glyph_{icon_name}_{size}_{color_tag}_{rotation}.png"
-    cache_path = os.path.join(tempfile.gettempdir(), cache_name)
-    if not os.path.exists(cache_path):
+    cache_name = f"glyph_{icon_name}_{size}_{color_tag}_{rotation}.png"
+    try:
+        cache_path = os.path.join(_glyph_cache_dir(), cache_name)
+
+        from PyQt5.QtGui import QTransform
+
+        from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+
+        pixmap = svg_to_pixmap(ICONS[icon_name], size=size, color=color)
+        if rotation:
+            pixmap = pixmap.transformed(QTransform().rotate(rotation), Qt.SmoothTransformation)
+
+        # Rendered to a fresh O_EXCL file and moved into place, rather than
+        # saved straight onto the final name. Writing to the destination
+        # directly would follow anything already sitting there, and would
+        # also let a second instance starting at the same moment read a
+        # half-written PNG; os.replace is atomic and swaps the name itself.
+        handle, staging = tempfile.mkstemp(prefix=cache_name, suffix=".part",
+                                           dir=os.path.dirname(cache_path))
+        os.close(handle)
         try:
-            from PyQt5.QtGui import QTransform
-
-            from speech_to_text.gui.icons import ICONS, svg_to_pixmap
-
-            pixmap = svg_to_pixmap(ICONS[icon_name], size=size, color=color)
-            if rotation:
-                pixmap = pixmap.transformed(QTransform().rotate(rotation), Qt.SmoothTransformation)
-            if not pixmap.save(cache_path, "PNG"):
+            if not pixmap.save(staging, "PNG"):
+                os.unlink(staging)
                 return ""
+            os.replace(staging, cache_path)
         except Exception:
-            return ""
+            if os.path.exists(staging):
+                os.unlink(staging)
+            raise
+    except Exception:
+        return ""
     # QSS's url() wants forward slashes even on Windows; a raw Windows path
     # with backslashes is silently ignored by Qt's stylesheet parser.
     return f"image: url({cache_path.replace(chr(92), '/')});"
