@@ -47,12 +47,25 @@ class ModelSelectStep(QFrame):
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(Spacing.SM)
-        layout.setContentsMargins(Spacing.XL, Spacing.MD, Spacing.XL, Spacing.MD)
+        # Tighter than steps 1/3 (XS, not SM) - every px of vertical gap
+        # here is a px the seven-card scroll area doesn't get.
+        layout.setSpacing(Spacing.XS)
+        # Horizontal margin widened XL -> XXL like the other two steps (it
+        # costs no vertical room, which is the scarce resource on this
+        # page). Vertical margin pulled in to SM, tighter than before
+        # (was MD) to buy back some of the room the taller DISPLAY heading
+        # spends - see the title comment above on why step 2 stays
+        # conservative.
+        layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
 
-        # Title
+        # Title. Uses Fonts.DISPLAY like the other two steps' headings for
+        # a consistent hierarchy across the flow, even though step 2 is the
+        # conservative one on spacing - see the room analysis in
+        # theme.Spacing's docstring: seven model cards already need a
+        # QScrollArea to fit, so the size increase here isn't paired with
+        # the same margin/gap increases steps 1 and 3 get.
         self.title = QLabel(t("choose_model"))
-        self.title.setFont(Fonts.TITLE)
+        self.title.setFont(Fonts.DISPLAY)
         self.title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(self.title)
 
@@ -62,6 +75,12 @@ class ModelSelectStep(QFrame):
         self.error_banner = QFrame()
         self.error_banner.setObjectName("modelErrorBanner")
         self.error_banner.setStyleSheet(theme.error_banner_qss("modelErrorBanner"))
+        # Second (and last) surface that gets the drop shadow - see
+        # theme.elevation_shadow's docstring. Subtler than the result
+        # panel's default: the banner is a slim single-line strip, not a
+        # big centered block, so a shadow as strong as the result panel's
+        # would read as heavier than the banner's own visual weight.
+        self.error_banner.setGraphicsEffect(theme.elevation_shadow(blur_radius=20, y_offset=6, alpha=110))
         self.error_banner.hide()
         error_layout = QHBoxLayout(self.error_banner)
         error_layout.setContentsMargins(Spacing.SM, Spacing.XS, Spacing.SM, Spacing.XS)
@@ -128,6 +147,19 @@ class ModelSelectStep(QFrame):
         # scrolls should still see what the app is recommending.
         self._scroll_area = models_scroll
 
+        # Explicit Tab chain, matching the page's visual top-to-bottom order:
+        # every model radio in config.MODELS order, then the speaker-identify
+        # checkbox, then the speaker-count spin box below the card list. Not
+        # left to Qt's default (creation-order) chain because the speaker row
+        # is built BEFORE the cards (see the comment above speaker_row) so
+        # its widgets would otherwise sit ahead of the cards in the implicit
+        # chain - backwards from how the page reads top to bottom.
+        radios_in_order = [self.model_radios[name] for name in config.MODELS]
+        for earlier, later in zip(radios_in_order, radios_in_order[1:]):
+            self.setTabOrder(earlier, later)
+        self.setTabOrder(radios_in_order[-1], self.identify_speakers_check)
+        self.setTabOrder(self.identify_speakers_check, self.speaker_count_spin)
+
     def _build_speaker_row(self) -> QFrame:
         """
         The "identify speakers" toggle and speaker count.
@@ -162,6 +194,11 @@ class ModelSelectStep(QFrame):
         self.speaker_count_spin.setRange(2, 10)
         self.speaker_count_spin.setValue(2)
         self.speaker_count_spin.setFont(Fonts.BODY)
+        # speaker_count_label is a plain QLabel, not a buddy - QSpinBox has
+        # no visible label of its own baked into the control the way
+        # identify_speakers_check's QCheckBox(text) does, so without this a
+        # screen reader would announce it as an unlabelled number field.
+        self.speaker_count_spin.setAccessibleName(t("speaker_count"))
         layout.addWidget(self.speaker_count_spin)
 
         layout.addStretch()
@@ -213,7 +250,19 @@ class ModelSelectStep(QFrame):
                 self._user_touched_model = True
 
     def _apply_selection(self, name: str) -> None:
-        """Move the accent border to whichever card's radio is currently picked."""
+        """
+        Move the accent border to whichever card's radio is currently picked.
+
+        Tried and dropped: a drop shadow on the selected card, matching the
+        result panel's. Screenshotted it (see the redesign notes) and it
+        was invisible - QGraphicsDropShadowEffect paints outside the
+        widget's own rect, and this card lives inside models_scroll's
+        QScrollArea with no margin reserved for a shadow to bleed into, so
+        the viewport clips it away entirely. All cost (still a candidate
+        repaint-artifact source per QGraphicsDropShadowEffect-in-a-
+        QScrollArea) and no visible benefit, so the accent border alone
+        carries "this one is selected" here.
+        """
         for card_name, card in self._cards.items():
             card.setStyleSheet(theme.card_qss(f"modelCard_{card_name}", selected=(card_name == name)))
 
@@ -229,13 +278,21 @@ class ModelSelectStep(QFrame):
         layout.setContentsMargins(Spacing.MD, Spacing.XS, Spacing.MD, Spacing.XS)
         layout.setSpacing(Spacing.MD)
 
-        # Radio button
+        # Radio button. It carries no text of its own - the model name and
+        # description are separate QLabels beside it (below) - so without
+        # an explicit accessible name a screen reader would announce every
+        # one of these seven radios identically as just "radio button".
         radio = QRadioButton()
         radio.setChecked(is_recommended)
         radio.toggled.connect(lambda checked: self._on_radio_toggled(name, checked))
+        radio.setAccessibleName(model_text(name, "name"))
+        radio.setAccessibleDescription(model_text(name, "description"))
         self.model_group.addButton(radio, idx)
         self.model_radios[name] = radio
-        radio.setStyleSheet(f"QRadioButton {{ color: {COLORS['text_primary']}; }}")
+        # No per-widget setStyleSheet here anymore: app_stylesheet() now has
+        # an app-wide QRadioButton color rule (plus the ::indicator rules a
+        # per-widget QRadioButton {} sheet couldn't touch anyway), so this
+        # would only have duplicated theme.py's COLORS['text_primary'].
         layout.addWidget(radio)
 
         # Model name and description
@@ -273,7 +330,13 @@ class ModelSelectStep(QFrame):
         layout.addWidget(badge)
         self._badges[name] = badge
 
-        card.setFixedHeight(56)
+        # +2px over the pre-redesign 56: BODY_BOLD grew a point (11 -> 12pt,
+        # see Fonts) and moved to DemiBold, so the name label needs a
+        # little more room than before. Kept small deliberately - this is
+        # the one step where extra height is not free (each px here is a
+        # px the seven-card scroll area doesn't get - see the class
+        # docstring on why the cards need a QScrollArea at all).
+        card.setFixedHeight(58)
         self._cards[name] = card
         return card
 
@@ -295,9 +358,19 @@ class ModelSelectStep(QFrame):
 
         With seven cards behind a scroll area the recommendation can start off
         below the fold, and a user who doesn't scroll would never see it.
+
+        Also seeds Tab's starting point at the currently-selected model's
+        radio (see FileSelectStep.showEvent for why this doesn't paint a
+        ring on its own - the same reasoning applies here). Whichever radio
+        is actually checked, not necessarily the recommended one - a user
+        who already picked a different model on a previous visit to this
+        step shouldn't have Tab silently reset them to the recommendation.
         """
         super().showEvent(event)
         self._scroll_to_recommended()
+        radio = self.model_radios.get(self.selected_model)
+        if radio is not None:
+            radio.setFocus(Qt.OtherFocusReason)
 
     def _scroll_to_recommended(self) -> None:
         card = self._cards.get(self._current_recommended)
@@ -350,8 +423,12 @@ class ModelSelectStep(QFrame):
             label.setAlignment(alignment)
         for badge in self._badges.values():
             badge.setText(t("recommended_badge"))
+        for name, radio in self.model_radios.items():
+            radio.setAccessibleName(model_text(name, "name"))
+            radio.setAccessibleDescription(model_text(name, "description"))
         self.identify_speakers_check.setText(t("identify_speakers"))
         self.speaker_count_label.setText(t("speaker_count"))
+        self.speaker_count_spin.setAccessibleName(t("speaker_count"))
         self._refresh_desc_labels()
         if self._error_key is not None:
             self.error_label.setText(

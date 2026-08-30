@@ -35,13 +35,34 @@ class TranscriptionStep(QFrame):
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(Spacing.XL)
-        layout.setContentsMargins(Spacing.XL, Spacing.XL, Spacing.XL, Spacing.XL)
+        # Step 3 has a large empty middle at 650x600 (see the room analysis
+        # in theme.Spacing's docstring) - the most slack of any of the
+        # three steps - so the outer margin moves up a full notch (XL ->
+        # XXL). The blanket inter-widget spacing is deliberately kept
+        # tight (SM), NOT bumped the same way: this layout has nine items
+        # (title, file info, two explicit addSpacing gaps, progress bar,
+        # status, time, the result panel, a trailing stretch), and
+        # layout.setSpacing() multiplies across every one of those eight
+        # gaps. Measured empirically: at a generous blanket spacing,
+        # combined with the taller DISPLAY heading and the result panel's
+        # own widened padding, the nine items' minimum height exceeds the
+        # 471px this step actually gets (650x600 minus the header and nav
+        # bar), and because the layout carries an explicit AlignCenter, Qt
+        # doesn't just clip the overflow - it compresses every item below
+        # its sizeHint, and the result panel's own wrapped labels (result_
+        # path especially) render as visibly corrupted double-struck glyphs
+        # once squeezed below the height their wrapped text needs - worse
+        # than merely looking cramped. Kept at SM; the two explicit
+        # addSpacing() calls below carry the "generous gap before a major
+        # section" emphasis instead, since spending space there only costs
+        # one gap, not eight.
+        layout.setSpacing(Spacing.SM)
+        layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
         layout.setAlignment(Qt.AlignCenter)
 
         # Title
         self.title = QLabel(t("transcribing_title"))
-        self.title.setFont(Fonts.TITLE)
+        self.title.setFont(Fonts.DISPLAY)
         self.title.setStyleSheet(theme.text_qss("text_primary"))
         self.title.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.title)
@@ -53,12 +74,17 @@ class TranscriptionStep(QFrame):
         self.file_info.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.file_info)
 
-        layout.addSpacing(Spacing.XL)
+        layout.addSpacing(Spacing.LG)
 
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(theme.progress_bar_qss())
         self.progress_bar.setMinimumHeight(28)
+        # The percentage is not drawn inside the bar - see progress_bar_qss()
+        # for why no ink is legible over both the filled chunk and the empty
+        # groove. Progress is carried by the fill itself plus status_label and
+        # time_label below.
+        self.progress_bar.setTextVisible(False)
         layout.addWidget(self.progress_bar)
 
         # Animates value changes instead of snapping instantly - real
@@ -84,12 +110,17 @@ class TranscriptionStep(QFrame):
         self.time_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.time_label)
 
-        layout.addSpacing(Spacing.MD - 2)
+        layout.addSpacing(Spacing.LG)
 
         # Result display (hidden until done)
         self.result_widget = QFrame()
         self.result_widget.setObjectName("resultPanel")
         self.result_widget.setStyleSheet(theme.result_panel_qss("resultPanel"))
+        # The one drop shadow this redesign keeps (see theme.elevation_shadow
+        # for why not more): the result panel is static, never inside a
+        # QScrollArea, and step 3's empty middle leaves room for a shadow to
+        # actually bleed into without being clipped by a tight parent layout.
+        self.result_widget.setGraphicsEffect(theme.elevation_shadow())
         result_layout = QVBoxLayout(self.result_widget)
         result_layout.setSpacing(Spacing.SM)
 

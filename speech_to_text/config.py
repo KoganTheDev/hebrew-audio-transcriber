@@ -291,7 +291,12 @@ GUI_WINDOW_MIN_HEIGHT = 550     # Minimum resizable height (px)
 # ============================================================================
 # File selection zone styling and spacing
 
-GUI_DROP_ZONE_HEIGHT = 210      # Drop zone height (px) - shrunk to make room for the system info table above it
+GUI_DROP_ZONE_HEIGHT = 170      # Drop zone MINIMUM height (px). Its own content (icon +
+                                # three lines) floors at ~172px, so a larger value here is a
+                                # floor the layout cannot compress below, not a target it can
+                                # give back - which is what overflowed the fixed window. The
+                                # zone grows well past this via its layout stretch factor
+                                # whenever the step has slack; see file_select.py.
 GUI_DROP_ZONE_PADDING = 20      # Internal padding in drop zone (px) - reduced to fit the shorter zone
 GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) - reduced to fit the shorter zone
 

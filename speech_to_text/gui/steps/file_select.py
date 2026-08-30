@@ -19,8 +19,12 @@ from speech_to_text.gui.i18n import t
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.audio_utils import get_audio_duration
+from speech_to_text.gui.widgets import DropZone
 
 logger = logging.getLogger(__name__)
+
+# Minimum height of a single file row, paired with _sync_rows_height().
+ROW_MIN_HEIGHT = 26
 
 
 class FileSelectStep(QFrame):
@@ -34,20 +38,45 @@ class FileSelectStep(QFrame):
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(Spacing.LG)
-        layout.setContentsMargins(Spacing.XL, Spacing.XL, Spacing.XL, Spacing.XL)
+        # Blanket spacing cut LG -> XS. This step turned out NOT to have the
+        # slack the original room analysis assumed (it counted the empty
+        # band at the bottom without accounting for the trailing stretch and
+        # the drop zone's old fixed height - see the setMinimumHeight note
+        # below), and layout.setSpacing() multiplies across every one of
+        # this layout's seven gaps: at LG that was 112px before a single
+        # widget was drawn, which is what pushed the step from marginally
+        # tight to actually overflowing (measured with probe.py: 84px over
+        # the 471px this step gets). Kept tight; the explicit addSpacing()
+        # calls below put deliberate air back only at the two section
+        # boundaries that read as a break, the same technique used to fix
+        # step 3's equivalent overflow.
+        layout.setSpacing(Spacing.XS)
+        # Horizontal margins stay generous at XXL - side padding is free
+        # here (it doesn't compete with any other widget for vertical room)
+        # and is where the "elevated and generous" direction actually reads
+        # on this step.
+        layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
 
         # Title - "Specs" now, since the system-info table is the first
         # thing on this page.
         self.title = QLabel(t("specs_title"))
-        self.title.setFont(Fonts.TITLE)
+        self.title.setFont(Fonts.DISPLAY)
         self.title.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(self.title)
+        # Extra gap under the step heading before its content starts - the
+        # bigger DISPLAY heading needs more air below it than the old 14pt
+        # TITLE did, or the hardware table reads as crowding the title
+        # instead of following it.
+        layout.addSpacing(Spacing.SM)
 
         # System info table - shown here (above the drop zone) since it's
         # relevant context before the user even picks a file or model.
         hw_table = self._create_hardware_table()
         layout.addWidget(hw_table)
+        # Section break: specs table above, file picker below. The one other
+        # deliberate gap on this step, same reasoning as the one after the
+        # title.
+        layout.addSpacing(Spacing.SM)
 
         # Subheading for the drop zone below.
         self.file_heading = QLabel(t("select_audio_file"))
@@ -57,16 +86,37 @@ class FileSelectStep(QFrame):
 
         # Drop zone - large and spacious. Also acts as the browse button: the
         # whole area is clickable to open a file dialog, in addition to drag-and-drop.
-        self.drop_zone = QFrame()
+        # DropZone (gui/widgets.py) is what makes it a real keyboard control -
+        # StrongFocus plus a Space/Enter key handler - while every line below
+        # keeps assigning the drag/drop/click handlers onto the instance
+        # exactly as before, since tests/test_gui.py::TestDropZoneEventPath
+        # sends real Qt events through this exact wiring.
+        self.drop_zone = DropZone()
         self.drop_zone.setObjectName("dropZone")
         self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=False))
         self.drop_zone.setAcceptDrops(True)
         self.drop_zone.setCursor(Qt.PointingHandCursor)
+        self.drop_zone.setAccessibleName(t("drop_zone_name"))
+        self.drop_zone.setAccessibleDescription(t("drop_zone_desc"))
+        self.drop_zone.setToolTip(t("drop_zone_desc"))
         self.drop_zone.dragEnterEvent = self._drag_enter
         self.drop_zone.dragLeaveEvent = lambda e: self._reset_drop_zone()
         self.drop_zone.dropEvent = self._drop
         self.drop_zone.mousePressEvent = lambda e: self._browse()
-        self.drop_zone.setFixedHeight(config.GUI_DROP_ZONE_HEIGHT)
+        self.drop_zone.activated.connect(self._browse)
+        # A minimum plus a layout stretch factor, not a fixed height, and the
+        # minimum has to sit AT the content floor rather than above it. A
+        # fixed height clamps min==max so the zone can never yield; but a
+        # minimum above the content floor is just as rigid downward - Qt
+        # treats an explicit minimumHeight as a hard limit it will not
+        # compress past, so a 210px minimum still overflowed the step the
+        # moment the file list appeared and claimed its own 54px. The floor
+        # is now the zone's real content minimum (icon + three lines), and
+        # the generosity comes from the stretch factor on addWidget below:
+        # the zone expands into whatever slack the step has, which is most
+        # of the window while no file is selected, and gives that space
+        # back as the list grows.
+        self.drop_zone.setMinimumHeight(config.GUI_DROP_ZONE_HEIGHT)
 
         drop_layout = QVBoxLayout(self.drop_zone)
         drop_layout.setSpacing(config.GUI_DROP_ZONE_SPACING)
@@ -106,7 +156,7 @@ class FileSelectStep(QFrame):
         self.alt_text.setMaximumHeight(16)
         drop_layout.addWidget(self.alt_text)
 
-        layout.addWidget(self.drop_zone)
+        layout.addWidget(self.drop_zone, 1)
 
         # Selected-files summary line, above the scrollable list.
         self.summary_label = QLabel(t("no_file_selected"))
@@ -131,15 +181,34 @@ class FileSelectStep(QFrame):
         self._rows_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._rows_scroll.setStyleSheet("background: transparent;")
         self._rows_scroll.setMaximumHeight(140)
-        layout.addWidget(self._rows_scroll)
+        # Stretch here as well as on the drop zone: the two share the step's
+        # slack, so once files exist the list can grow toward its 140px cap
+        # while the drop target gives space back, instead of the drop zone
+        # holding everything and pinning the list at its bare minimum.
+        layout.addWidget(self._rows_scroll, 1)
+        # Hidden until the first file is added (see _update_summary): a
+        # hidden widget's QLayoutItem is treated as empty by QBoxLayout, so
+        # it claims none of its 54px minimum while the list has nothing to
+        # show - the single largest remaining piece of slack on this step
+        # once the drop zone stopped being fixed-height and the blanket
+        # spacing was cut.
+        self._rows_scroll.hide()
 
-        layout.addStretch()
+        # No trailing addStretch() here: the drop zone above carries the
+        # stretch instead, so leftover room inflates the drop target rather
+        # than pooling in an invisible spacer at the bottom of the step. Two
+        # stretch items would split the slack between them and halve the
+        # effect.
 
         # Parallel to each other and to the row widgets, all keyed by path -
         # simpler than one struct per file given how small this state is.
         self.selected_files: List[str] = []
         self._durations: Dict[str, int] = {}
         self._rows: Dict[str, QFrame] = {}
+        # Tab-order chain anchor - see _add_row. Starts at the drop zone,
+        # the first (and while the list is empty, only) focusable thing on
+        # this step.
+        self._last_tab_widget = self.drop_zone
 
     @property
     def total_duration(self) -> int:
@@ -193,6 +262,10 @@ class FileSelectStep(QFrame):
         if file_paths:
             self._add_files(file_paths)
 
+    def browse_for_files(self) -> None:
+        """Public entry point for the window-level Ctrl+O shortcut (see MainWindow)."""
+        self._browse()
+
     def _add_files(self, paths: List[str]) -> None:
         """Append new files, skipping any already listed - a second drop never duplicates."""
         changed = False
@@ -211,6 +284,9 @@ class FileSelectStep(QFrame):
     def _add_row(self, path: str) -> None:
         row = QFrame()
         row.setStyleSheet("background: transparent;")
+        # A floor per row - necessary, but not sufficient on its own. See
+        # _sync_rows_height() for the half that actually makes it stick.
+        row.setMinimumHeight(ROW_MIN_HEIGHT)
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(Spacing.XS)
@@ -227,14 +303,24 @@ class FileSelectStep(QFrame):
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row_layout.addWidget(label, 1)
 
+        # A bare 20px "x" glyph with no label of any kind before this step -
+        # the icon alone tells a sighted mouse user "remove", but says
+        # nothing to a screen reader and nothing to anyone hovering without
+        # already knowing the convention. {filename} (set in
+        # _render_row_label, since it's the one place both _add_row and
+        # retranslate() already funnel through) disambiguates which row's
+        # button this is once more than one file is queued.
         remove_btn = QPushButton()
         remove_btn.setIcon(QIcon(svg_to_pixmap(ICONS["x"], 14, COLORS['text_tertiary'])))
         remove_btn.setFixedSize(20, 20)
         remove_btn.setCursor(Qt.PointingHandCursor)
+        remove_btn.setFocusPolicy(Qt.StrongFocus)
         hover_bg = COLORS['bg_tertiary']
         remove_btn.setStyleSheet(
             "QPushButton { background: transparent; border: none; }"
             f"QPushButton:hover {{ background-color: {hover_bg}; border-radius: 4px; }}"
+            f"QPushButton[kbdFocus=\"true\"] {{ background-color: {hover_bg}; border-radius: 4px; "
+            f"border: 1px solid {COLORS['focus']}; }}"
         )
         remove_btn.clicked.connect(lambda: self._remove_file(path))
         row_layout.addWidget(remove_btn)
@@ -243,6 +329,14 @@ class FileSelectStep(QFrame):
         # keep appearing at the top of the list rather than after the spacer.
         self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
         self._rows[path] = row
+        # Chains each new row's remove button onto the previous focusable
+        # widget's tab order (starting from the drop zone itself), so
+        # Tab visits the list top-to-bottom in the same order the rows are
+        # drawn. Rows removed later just drop out of the chain on their own
+        # (a destroyed widget is skipped by Qt's own tab-order walk) rather
+        # than needing to be unlinked here.
+        self.setTabOrder(self._last_tab_widget, remove_btn)
+        self._last_tab_widget = remove_btn
         self._render_row_label(path)
 
     def _render_row_label(self, path: str) -> None:
@@ -252,13 +346,18 @@ class FileSelectStep(QFrame):
         label = row.layout().itemAt(1).widget()
         duration = self._durations[path]
         size_mb = os.path.getsize(path) / (1024 * 1024)
+        filename = os.path.basename(path)
         label.setText(t(
             "file_info",
-            filename=os.path.basename(path),
+            filename=filename,
             minutes=duration // 60,
             seconds=duration % 60,
             size=f"{size_mb:.1f}",
         ))
+        remove_btn = row.layout().itemAt(2).widget()
+        remove_label = t("remove_file", filename=filename)
+        remove_btn.setAccessibleName(remove_label)
+        remove_btn.setToolTip(remove_label)
 
     def _remove_file(self, path: str) -> None:
         row = self._rows.pop(path, None)
@@ -272,7 +371,37 @@ class FileSelectStep(QFrame):
         self._update_summary()
         self.files_selected.emit(list(self.selected_files), self.total_duration)
 
+    def _sync_rows_height(self) -> None:
+        """
+        Give the scrolled container an explicit minimum height matching the
+        rows it holds.
+
+        A setMinimumHeight on each row is not enough on its own.
+        setWidgetResizable(True) makes QScrollArea call resize() on the
+        container to match the viewport, and QWidget.resize() clamps to
+        minimumSize(), which defaults to zero - it never consults the
+        layout's own minimum. So the container really does get resized to the
+        viewport height, and its QVBoxLayout then compresses the rows past
+        their own minimums to fit, which is why the list rendered as stacked
+        half-height slices of text rather than scrolling. Setting the
+        container's minimumSize is what makes that resize refuse to shrink
+        below the rows' combined height, which is in turn the condition that
+        makes the scroll area show a scrollbar at all.
+        """
+        rows = len(self._rows)
+        if not rows:
+            self._rows_container.setMinimumHeight(0)
+            return
+        spacing = self._rows_layout.spacing() * (rows - 1)
+        self._rows_container.setMinimumHeight(rows * ROW_MIN_HEIGHT + spacing)
+
     def _update_summary(self) -> None:
+        self._sync_rows_height()
+        # The row list only earns its 54px once there's something in it -
+        # see the .hide() call where _rows_scroll is built. Toggled here
+        # (the one place both _add_files and _remove_file already funnel
+        # through) rather than at each call site.
+        self._rows_scroll.setVisible(bool(self.selected_files))
         if not self.selected_files:
             self.summary_label.setText(t("no_file_selected"))
             return
@@ -292,7 +421,28 @@ class FileSelectStep(QFrame):
         self._rows.clear()
         self._durations.clear()
         self.selected_files.clear()
-        self.summary_label.setText(t("no_file_selected"))
+        self._update_summary()
+        # Every remove button just went away, so the tab-order chain (see
+        # _add_row) has to restart from the drop zone too, or the next
+        # file added would try to chain onto a widget mid-deleteLater().
+        self._last_tab_widget = self.drop_zone
+
+    def showEvent(self, event) -> None:
+        """
+        Seed a sensible Tab starting point whenever this step becomes
+        visible: the drop zone, since it's both the first thing on the page
+        and, on a fresh run, the only way to make any progress at all (see
+        DropZone's docstring in gui/widgets.py).
+
+        This does NOT paint a focus ring by itself - gui/focus.py's
+        KeyboardFocusTracker only stamps the ring while keyboard modality
+        is active, and setFocus() here runs regardless of how the step
+        became visible (including the very first launch, before the user
+        has touched a key at all), so the ring stays invisible until an
+        actual Tab press earns it.
+        """
+        super().showEvent(event)
+        self.drop_zone.setFocus(Qt.OtherFocusReason)
 
     def retranslate(self):
         """Re-render all text in the current UI language (live toggle)."""
@@ -316,7 +466,12 @@ class FileSelectStep(QFrame):
         card.setStyleSheet(theme.hardware_card_qss("hardwareCard"))
 
         outer = QVBoxLayout(card)
-        outer.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
+        # Internal padding widened (MD/SM -> LG/MD) for the "elevated and
+        # generous" pass - this card sits right under the page's DISPLAY
+        # heading and there's vertical room to spend on step 1 (see the
+        # room analysis in Spacing's docstring), so a bit more air inside
+        # the card reads as intentional rather than merely bigger text.
+        outer.setContentsMargins(Spacing.LG, Spacing.MD, Spacing.LG, Spacing.MD)
         outer.setSpacing(Spacing.XS)
         # No in-card header here - the page title above the card already
         # reads "Specs", so a repeated label inside would be redundant.
@@ -378,16 +533,24 @@ class FileSelectStep(QFrame):
 
         return cell
 
+    # Both dividers read COLORS['border'], the decorative hairline, not
+    # COLORS['control_border']. They separate cells inside a static table;
+    # they are not the edge of anything interactive, so they sit below the
+    # 3:1 floor on purpose and should stay quiet. This used to read a
+    # 'border_light' key that the Catppuccin repaint folded into
+    # control_border, which made these table rules noticeably brighter than
+    # they had ever been - a side effect of a compatibility alias, not a
+    # decision anyone made.
     @staticmethod
     def _hline() -> QFrame:
         line = QFrame()
         line.setFixedHeight(1)
-        line.setStyleSheet(f"background-color: {COLORS['border_light']};")
+        line.setStyleSheet(f"background-color: {COLORS['border']};")
         return line
 
     @staticmethod
     def _vline() -> QFrame:
         line = QFrame()
         line.setFixedWidth(1)
-        line.setStyleSheet(f"background-color: {COLORS['border_light']};")
+        line.setStyleSheet(f"background-color: {COLORS['border']};")
         return line
