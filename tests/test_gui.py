@@ -17,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
+from PyQt5.QtCore import Qt  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 
@@ -299,3 +300,217 @@ class TestDropZoneEventPath:
         )
         qapp.sendEvent(file_select_step.drop_zone, enter)
         assert not enter.isAccepted()
+
+
+class TestDropZoneKeyboardAccess:
+    """
+    Before this step the drop zone was a bare QFrame with no focus policy
+    and no key handler at all (see DropZone in gui/widgets.py) - a
+    keyboard-only user could never reach it, and since it doubles as the
+    only "browse" control in the app, that meant they could never select a
+    file at all. These pin the fix rather than just eyeballing it.
+    """
+
+    def test_the_zone_is_a_real_tab_stop(self, file_select_step):
+        from PyQt5.QtCore import Qt
+        assert file_select_step.drop_zone.focusPolicy() == Qt.StrongFocus
+
+    @pytest.mark.parametrize("key", [Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter])
+    def test_space_and_enter_open_the_browse_dialog(self, qapp, file_select_step, key):
+        from PyQt5.QtCore import QEvent, Qt
+        from PyQt5.QtGui import QKeyEvent
+
+        event = QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier)
+        with patch(
+            "speech_to_text.gui.steps.file_select.QFileDialog.getOpenFileNames",
+            return_value=([], ""),
+        ) as dialog:
+            qapp.sendEvent(file_select_step.drop_zone, event)
+        dialog.assert_called_once()
+
+    def test_an_unrelated_key_does_not_open_the_dialog(self, qapp, file_select_step):
+        """A key the zone doesn't own must not accidentally trigger browse."""
+        from PyQt5.QtCore import QEvent, Qt
+        from PyQt5.QtGui import QKeyEvent
+
+        event = QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.NoModifier)
+        with patch(
+            "speech_to_text.gui.steps.file_select.QFileDialog.getOpenFileNames"
+        ) as dialog:
+            qapp.sendEvent(file_select_step.drop_zone, event)
+        dialog.assert_not_called()
+
+    def test_accessible_name_and_description_are_set(self, file_select_step):
+        """
+        Set once, from i18n, rather than left at Qt's default (empty) -
+        without these a screen reader announces the zone as an unlabeled
+        frame, the same silence a sighted keyboard user is spared by the
+        StrongFocus/keyPressEvent work above.
+        """
+        assert file_select_step.drop_zone.accessibleName()
+        assert file_select_step.drop_zone.accessibleDescription()
+
+
+class TestKeyboardFocusTracker:
+    """
+    gui/focus.py's modality gate: the ring should be scoped to a keyboard
+    session in progress, not to "some widget merely has focus" (native
+    :focus's actual behaviour, and the bug this module exists to fix - see
+    its module docstring).
+    """
+
+    def test_tab_keydown_marks_the_newly_focused_widget(self, qapp):
+        from PyQt5.QtCore import QEvent, Qt
+        from PyQt5.QtGui import QKeyEvent
+        from PyQt5.QtWidgets import QPushButton
+
+        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+
+        tracker = KeyboardFocusTracker(qapp)
+        btn = QPushButton()
+        btn.show()
+        try:
+            qapp.sendEvent(btn, QKeyEvent(QEvent.KeyPress, Qt.Key_Tab, Qt.NoModifier))
+            btn.setFocus()
+            qapp.processEvents()
+            assert btn.property(PROPERTY) is True
+        finally:
+            btn.setParent(None)
+            btn.deleteLater()
+            tracker.deleteLater()
+
+    def test_a_click_retracts_the_ring_even_when_focus_does_not_move(self, qapp):
+        """
+        Clicking a non-focusable area (a label, a panel, the window ground)
+        leaves focus exactly where it was, so focusChanged never fires. The
+        property lives on the widget, not on a root element the way the JS
+        original's data-kbd does, so without an explicit retraction the ring
+        stays painted on a widget the user has stopped driving by keyboard.
+        """
+        from PyQt5.QtCore import QEvent, QPoint, Qt
+        from PyQt5.QtGui import QKeyEvent, QMouseEvent
+        from PyQt5.QtWidgets import QPushButton
+
+        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+
+        tracker = KeyboardFocusTracker(qapp)
+        btn = QPushButton()
+        btn.show()
+        try:
+            qapp.sendEvent(btn, QKeyEvent(QEvent.KeyPress, Qt.Key_Tab, Qt.NoModifier))
+            btn.setFocus()
+            qapp.processEvents()
+            assert btn.property(PROPERTY) is True, "precondition: keyboard session is on"
+
+            # Deliberately NOT sent to btn, and btn keeps focus throughout.
+            qapp.sendEvent(tracker, QMouseEvent(
+                QEvent.MouseButtonPress, QPoint(0, 0),
+                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+            ))
+            qapp.processEvents()
+            assert btn.hasFocus(), "focus must not have moved for this to be the case under test"
+            assert btn.property(PROPERTY) is False
+        finally:
+            btn.setParent(None)
+            btn.deleteLater()
+            tracker.deleteLater()
+
+    def test_a_mouse_click_does_not_mark_the_focused_widget(self, qapp):
+        from PyQt5.QtCore import QEvent, Qt
+        from PyQt5.QtGui import QMouseEvent
+        from PyQt5.QtWidgets import QPushButton
+
+        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+
+        tracker = KeyboardFocusTracker(qapp)
+        btn = QPushButton()
+        btn.show()
+        try:
+            click = QMouseEvent(
+                QEvent.MouseButtonPress, btn.rect().center(),
+                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+            )
+            qapp.sendEvent(btn, click)
+            btn.setFocus()
+            qapp.processEvents()
+            assert not btn.property(PROPERTY)
+        finally:
+            btn.setParent(None)
+            btn.deleteLater()
+            tracker.deleteLater()
+
+
+class TestMainWindowKeyboardGuards:
+    """
+    MainWindow._on_advance_shortcut: Enter is wired at the window level to
+    act like clicking Next (see MainWindow._init_shortcuts), which would be
+    actively harmful on step 2 if it fired while the user is mid-entry in
+    the speaker-count QSpinBox - typing "10" and pressing Enter must
+    confirm the number, not silently skip to Transcribing.
+
+    Builds a real MainWindow rather than testing the guard in isolation:
+    HardwareDetector is stubbed (its real implementation spawns a
+    background calibration subprocess - see CalibrationThread - which has
+    no place in a unit test), but everything downstream of that, including
+    QApplication.focusWidget() actually reflecting which widget has focus,
+    is exercised for real.
+    """
+
+    @pytest.fixture
+    def main_window(self, qapp, monkeypatch):
+        from speech_to_text.gui import main_window as main_window_module
+
+        hw = MagicMock()
+        # Not None - MainWindow only starts CalibrationThread's background
+        # subprocess when this is unset.
+        hw.tiny_seconds_per_audio_second = 1.0
+        hw.cpu_count = 4
+        hw.get_hardware_info.return_value = {
+            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+        }
+        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.estimate_transcription_time.return_value = (60, "stub")
+        hw.get_time_estimate_display.return_value = "~1 min"
+        hw.get_device_recommendation.return_value = ("cpu", "stub")
+        monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
+
+        window = main_window_module.MainWindow()
+        window.show()
+        yield window
+        window.close()
+
+    def test_enter_does_not_advance_while_the_spinbox_has_focus(self, qapp, main_window):
+        # setFocus() is a no-op on a widget Qt considers invisible, and
+        # model_step starts hidden behind file_step in the QStackedWidget -
+        # bring it to the front first, the same way _go_next() would.
+        main_window.stacked_widget.setCurrentWidget(main_window.model_step)
+        main_window.model_step.speaker_count_spin.setFocus()
+        qapp.processEvents()
+        assert qapp.focusWidget() is main_window.model_step.speaker_count_spin
+
+        with patch.object(main_window.next_btn, "click") as click:
+            main_window._on_advance_shortcut()
+        click.assert_not_called()
+
+    def test_enter_advances_when_focus_is_elsewhere(self, qapp, main_window):
+        main_window.file_step.drop_zone.setFocus()
+        qapp.processEvents()
+        main_window.next_btn.setEnabled(True)
+        main_window.next_btn.show()
+
+        with patch.object(main_window.next_btn, "click") as click:
+            main_window._on_advance_shortcut()
+        click.assert_called_once()
+
+    def test_escape_goes_back_only_on_model_select(self, main_window):
+        from speech_to_text.gui.steps import Step
+
+        main_window.current_step = Step.FILE_SELECT
+        with patch.object(main_window, "_go_back") as go_back:
+            main_window._on_escape_shortcut()
+        go_back.assert_not_called()
+
+        main_window.current_step = Step.MODEL_SELECT
+        with patch.object(main_window, "_go_back") as go_back:
+            main_window._on_escape_shortcut()
+        go_back.assert_called_once()
