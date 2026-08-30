@@ -499,6 +499,22 @@ class MainWindow(QMainWindow):
         self.back_btn.hide()
         self.next_btn.hide()
         self.cancel_btn.show()
+        # Steps 1 and 2 seed a sensible Tab starting point in their own
+        # showEvent (the drop zone / the selected radio - see
+        # FileSelectStep.showEvent and ModelSelectStep.showEvent), because
+        # each of those steps owns a widget worth landing on. Step 3 has no
+        # such widget of its own while a run is in progress: the title,
+        # file info, progress bar and status/time labels are all plain,
+        # non-focusable QLabels/QProgressBar, and the result panel (the one
+        # place with a real control, open_button) stays hidden until
+        # show_result() runs, possibly tens of minutes from now. The only
+        # thing on screen a keyboard user can actually act on during that
+        # window is Cancel - which lives on MainWindow's own nav bar, not
+        # inside TranscriptionStep, so TranscriptionStep has no showEvent of
+        # its own that could seed it; this is the one place that already
+        # knows both "step 3 just became current" and "cancel_btn just
+        # became visible", so it seeds focus here instead.
+        self.cancel_btn.setFocus(Qt.OtherFocusReason)
 
         if len(self.selected_files) == 1:
             file_summary = os.path.basename(self.selected_files[0])

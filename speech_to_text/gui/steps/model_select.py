@@ -2,8 +2,9 @@
 
 import logging
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QFrame,
@@ -18,6 +19,7 @@ from PyQt5.QtWidgets import (
 
 from speech_to_text import config
 from speech_to_text.gui import theme
+from speech_to_text.gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from speech_to_text.gui.i18n import is_rtl, model_text, t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
@@ -39,6 +41,10 @@ class ModelSelectStep(QFrame):
         self._time_strs = {}    # model_name -> last computed time-estimate display string
         self._name_labels = {}  # model_name -> QLabel showing the model name
         self._cards = {}        # model_name -> QFrame card
+        self._radio_cards = {}  # QRadioButton -> its own QFrame card, for
+        # _sync_card_focus_ring below - see that method's docstring for why
+        # the card (not the radio Qt actually focuses) needs its own
+        # keyboard-focus ring.
         self._badges = {}       # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
         self._error_key = None      # (key, params) of the last shown error, for retranslation
         self._error_params = {}
@@ -188,6 +194,7 @@ class ModelSelectStep(QFrame):
         layout.addWidget(self.speaker_count_label)
 
         self.speaker_count_spin = QSpinBox()
+        self.speaker_count_spin.setObjectName("speakerCountSpin")
         # Lower bound 2: diarizing a single speaker is a contradiction, and the
         # app is for conversations. Upper bound 10 keeps the clustering
         # meaningful - beyond that the count is realistically unknown.
@@ -200,12 +207,66 @@ class ModelSelectStep(QFrame):
         # screen reader would announce it as an unlabelled number field.
         self.speaker_count_spin.setAccessibleName(t("speaker_count"))
         layout.addWidget(self.speaker_count_spin)
+        self._apply_spin_button_direction()
 
         layout.addStretch()
 
         self.identify_speakers_check.toggled.connect(self._on_identify_toggled)
         self._on_identify_toggled(True)
         return row
+
+    def _apply_spin_button_direction(self) -> None:
+        """
+        Mirror the speaker-count spin box's up/down buttons to the leading
+        edge in RTL, matching every other control on this row (the checkbox
+        sits on the trailing side of its own label, the label text itself
+        reflows RTL).
+
+        Investigated before changing anything, per this item's own brief -
+        the fix below is NOT what a first guess would write, and the actual
+        mechanism is worth recording so nobody "simplifies" this back to the
+        wrong guess later:
+
+        Root cause: app_stylesheet()'s QSpinBox::up-button/::down-button
+        rules never set subcontrol-position, so Qt falls back to its
+        built-in default of "top right"/"bottom right" - and that default is
+        NEVER logically re-resolved against the widget's layoutDirection,
+        which is the bug (buttons stay physically right in Hebrew too).
+
+        The first guess was to branch on is_rtl() and hand the widget an
+        explicit "top left"/"bottom left" for RTL, "top right"/"bottom
+        right" for LTR - the obviously "direction-aware" fix. Screenshotted
+        (tabtest/shoot harness) and it did NOT move the buttons at all in
+        Hebrew: they stayed on the physical right, identical to English.
+
+        The reason, found by then screenshotting an explicit "top right" in
+        BOTH directions instead of branching: Qt's QStyleSheetStyle DOES
+        apply logical-to-physical mirroring to an EXPLICITLY-declared
+        subcontrol-position, via the same visualPos()/visualRect() logic a
+        style uses for RTL in general - but only once a value is actually
+        declared. The undeclared, built-in default a style computes
+        internally never goes through that mirroring step at all, which is
+        exactly why leaving subcontrol-position unset (the pre-fix state)
+        produced the bug in the first place, and why the branching first
+        guess was self-defeating: it fed RTL a literal "left", which Qt then
+        mirrored a SECOND time back to physical right, cancelling the fix
+        against itself.
+
+        So the actual fix is simpler than the first guess, not more
+        elaborate: declare the plain LTR-correct position ("top right" /
+        "bottom right") unconditionally, once, and let Qt's own mirroring -
+        which only engages when a value is declared - do the flip for RTL.
+        No is_rtl() branch, and (unlike the first guess) no need to call
+        this again from retranslate() on a language toggle either, since the
+        declared value never changes; the call there and at construction
+        time is kept anyway as cheap insurance against a future Qt version
+        changing that mirroring behaviour, not because this code depends on
+        being re-run per direction today.
+        """
+        self.speaker_count_spin.setStyleSheet("""
+            QSpinBox#speakerCountSpin::up-button { subcontrol-position: top right; }
+            QSpinBox#speakerCountSpin::down-button { subcontrol-position: bottom right; }
+        """)
 
     def _on_identify_toggled(self, enabled: bool) -> None:
         """Speaker count is meaningless when identification is off."""
@@ -289,6 +350,12 @@ class ModelSelectStep(QFrame):
         radio.setAccessibleDescription(model_text(name, "description"))
         self.model_group.addButton(radio, idx)
         self.model_radios[name] = radio
+        # The card frame, not the radio, has to show the keyboard-focus ring
+        # (see _sync_card_focus_ring's docstring) - the radio is what Qt
+        # actually gives focus to (it's the only focusable widget on the
+        # card), so this step has to react on the radio's behalf.
+        self._radio_cards[radio] = card
+        radio.installEventFilter(self)
         # No per-widget setStyleSheet here anymore: app_stylesheet() now has
         # an app-wide QRadioButton color rule (plus the ::indicator rules a
         # per-widget QRadioButton {} sheet couldn't touch anyway), so this
@@ -339,6 +406,62 @@ class ModelSelectStep(QFrame):
         card.setFixedHeight(58)
         self._cards[name] = card
         return card
+
+    def eventFilter(self, obj, event):
+        """
+        Watches every model radio's own FocusIn/FocusOut (installed in
+        _create_model_card), so the surrounding card can react to a focus
+        change that lands on its child rather than on itself - see
+        _sync_card_focus_ring for why that indirection is needed at all.
+        Never claims the event: Tab navigation and the radio's own focus
+        handling must proceed exactly as if this filter didn't exist.
+        """
+        card = self._radio_cards.get(obj)
+        if card is not None and event.type() in (QEvent.FocusIn, QEvent.FocusOut):
+            self._sync_card_focus_ring(card, focused_in=event.type() == QEvent.FocusIn)
+        return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _sync_card_focus_ring(card: QFrame, focused_in: bool) -> None:
+        """
+        Stamp the model card's own [kbdFocus] property (see theme.card_qss)
+        from its RADIO's focus state, not the card's own - the radio is the
+        card's only focusable child, so Qt gives real focus to it, and
+        gui/focus.py's KeyboardFocusTracker only ever stamps the widget that
+        actually receives focus. Left alone, tabbing onto a card would ring
+        the small 18px indicator and leave the card itself - the thing a
+        sighted keyboard user is actually scanning for "where am I" - looking
+        identical to every other unselected card.
+
+        This does NOT reuse the radio's own kbdFocus property value, even
+        though the radio has one and it says the same thing eventually: by
+        the time this runs (from FocusIn, delivered synchronously before
+        KeyboardFocusTracker's focusChanged-driven update), the radio's own
+        property may not be written yet - see
+        KeyboardFocusTracker.is_keyboard_active's docstring for the exact
+        ordering reason. Re-deriving "is a keyboard driving this" from the
+        tracker's own live flag sidesteps that race instead of depending on
+        a signal-connection order that happens to work today.
+
+        Three-way distinction this has to preserve (see theme.card_qss):
+        selected cards keep the accent border, plain unselected cards keep
+        control_border, and this only ever overrides that with the focus
+        colour - never with accent - so a focused-but-unselected card reads
+        as "focused", not as "selected". A selected card that also gets
+        keyboard focus shows the focus colour too (overriding accent for as
+        long as focus stays there); that is an acceptable fourth state, not
+        one this method needs to keep apart from the other three, since
+        nothing above asks a selected+focused card to look distinct from a
+        focused one - only "not to look selected" is a live requirement.
+        """
+        show_ring = False
+        if focused_in:
+            tracker = getattr(QApplication.instance(), "_kbd_focus_tracker", None)
+            show_ring = bool(tracker is not None and tracker.is_keyboard_active())
+        card.setProperty(KBD_FOCUS_PROPERTY, show_ring)
+        card.style().unpolish(card)
+        card.style().polish(card)
+        card.update()
 
     def update_audio_duration(self, seconds: int) -> None:
         """
@@ -429,6 +552,10 @@ class ModelSelectStep(QFrame):
         self.identify_speakers_check.setText(t("identify_speakers"))
         self.speaker_count_label.setText(t("speaker_count"))
         self.speaker_count_spin.setAccessibleName(t("speaker_count"))
+        # Direction can change mid-session (the header language toggle), and
+        # this control's button placement is direction-dependent - see
+        # _apply_spin_button_direction's docstring.
+        self._apply_spin_button_direction()
         self._refresh_desc_labels()
         if self._error_key is not None:
             self.error_label.setText(

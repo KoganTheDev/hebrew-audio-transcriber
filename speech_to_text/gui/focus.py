@@ -99,6 +99,29 @@ class KeyboardFocusTracker(QObject):
         if new is not None and self._keyboard_active:
             self._set_property(new, True)
 
+    def is_keyboard_active(self) -> bool:
+        """
+        Whether the most recent input was a keyboard press (Tab/Backtab)
+        rather than a mouse click - the same flag _on_focus_changed reads to
+        decide whether to stamp PROPERTY on the widget actually gaining
+        focus.
+
+        Exists for a widget that needs the ring painted on something OTHER
+        than the widget Qt gave real focus to - the model-select card is the
+        one case in this app: the QRadioButton inside it is what receives
+        focus, but the card QFrame around it is what should show the ring
+        (see ModelSelectStep._install_card_focus_ring). That widget can't
+        just read the radio's own PROPERTY, because by the time its
+        FocusIn/FocusOut handler runs the radio's PROPERTY may not be set
+        yet - QApplication delivers the QFocusEvent to the widget BEFORE
+        emitting focusChanged (see _on_focus_changed above, which is what
+        actually sets PROPERTY, and runs off that later signal). Re-deriving
+        "is a keyboard driving this focus change" from this flag directly,
+        at FocusIn time, sidesteps that ordering question entirely rather
+        than depending on it.
+        """
+        return self._keyboard_active
+
     @staticmethod
     def _set_property(widget, value: bool) -> None:
         """
