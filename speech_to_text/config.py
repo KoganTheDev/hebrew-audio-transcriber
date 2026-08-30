@@ -301,11 +301,59 @@ REQUIRED_PACKAGES = {
 # ============================================================================
 # Window sizing optimized for 1080p displays. Centered on screen.
 # Minimal size ensures content is not cramped on smaller displays.
+#
+# The window used to be setFixedSize'd at 650x600, with the maximize hint
+# stripped - no resize logic anywhere had to cope with a size other than
+# exactly this one. That hid a real shortfall rather than avoiding it:
+# measured with minsize.py, the chrome (header 50 + step indicator 20 + nav
+# bar 83) is 153px, and the worst step - transcription, once show_result()
+# has populated the completion panel - needs 475px on its own. 153 + 475 =
+# 628px, 28px more than the 600px the fixed window ever gave it, which is
+# exactly the "result panel clipped on completion" bug. Step 1 fares only
+# slightly better (440 + 153 = 593px, 7px of slack) - both are the same
+# underlying problem, a window too short for its own content, not two
+# separate bugs.
+#
+# GUI_WINDOW_MIN_HEIGHT is the floor this drives: it has to sit at or above
+# 628px or the same clipping comes back the moment the window is resized
+# down to it. 550 (the old, never-enforced value - the window was fixed-size
+# so nothing ever read it) is below that floor and would be a lie. 640 gives
+# a small, deliberate margin above the measured 628px minimum rather than
+# pinning the floor exactly on it, so the completion panel doesn't start
+# touching the window edge the instant someone drags to the smallest allowed
+# size.
+#
+# GUI_WINDOW_HEIGHT (the default, initial size) stays clearly above the
+# minimum rather than sitting on it, for the same reason step 3's own
+# comments give for widening its margins: a size that exactly matches the
+# content floor reads as cramped even when nothing is technically clipped.
+# 720 leaves the completion panel - the tallest state of any step - about
+# 90px of breathing room by default, while remaining well short of forcing
+# a scroll on a 1080p display.
+#
+# GUI_WINDOW_MIN_WIDTH is unchanged at 600: the model card caption (the
+# tightest element width-wise) has 57px of slack at 600px and only starts
+# clipping below roughly 545px, so 600 was already a safe floor and this
+# step's overflow was purely a height problem.
+#
+# Deliberately NOT addressed here: the app never calls
+# AA_EnableHighDpiScaling / AA_UseHighDpiPixmaps or sets a high-DPI rounding
+# policy, so it is DPI-unaware and Windows bitmap-scales the whole window at
+# 125%/150% instead of Qt resolving fonts and layouts at the real DPI. That
+# is precisely why fixed pixel budgets like the ones above have held up
+# this long, and why every number measured for this step was measured
+# against that same unaware rendering path. Turning high-DPI scaling on
+# would make every font metric resolve differently (generally larger) and
+# re-tighten every budget this revamp just balanced - a real quality
+# improvement (sharper text, correct scaling on high-DPI displays) but a
+# separate change that needs its own re-measurement pass across all three
+# steps, not something to fold into a resize fix with no time left to
+# re-verify.
 
-GUI_WINDOW_WIDTH = 650          # Main window width (px)
-GUI_WINDOW_HEIGHT = 600         # Main window height (px)
+GUI_WINDOW_WIDTH = 650          # Main window default width (px)
+GUI_WINDOW_HEIGHT = 720         # Main window default height (px) - see note above
 GUI_WINDOW_MIN_WIDTH = 600      # Minimum resizable width (px)
-GUI_WINDOW_MIN_HEIGHT = 550     # Minimum resizable height (px)
+GUI_WINDOW_MIN_HEIGHT = 640     # Minimum resizable height (px) - measured content floor is 628px
 
 # ============================================================================
 # GUI Configuration - Drag-Drop Zone

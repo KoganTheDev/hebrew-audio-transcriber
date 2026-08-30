@@ -395,6 +395,123 @@ class TestTranscriptionStepFolderButton:
         i18n.set_language("en")
 
 
+class TestTranscriptionStepResultPathElision:
+    """
+    result_path used to be one QLabel holding "Saved to:\\n<path>" with
+    setWordWrap(True), which makes a label's height a function of its
+    width (Qt's heightForWidth). Under this layout's Qt.AlignCenter, a
+    width-dependent child can get compressed below the height its own
+    content needs even when the step has room to spare - measured
+    concretely at 900x1000 (hundreds of spare pixels top and bottom):
+    minimumSizeHint reported 50px, the label was only allocated 37px, and
+    the glyph bottoms of the path line were sliced off. This is the same
+    AlignCenter-plus-width-dependent-child trap the layout-spacing comment
+    in __init__ already documents for the case that made it overflow
+    outright; here it clipped without ever overflowing the step at all.
+
+    The fix (see _render_result_path) splits the caption and the path into
+    two plain, unwrapped, single-line labels and middle-elides the path in
+    code to fit the panel's actual width, so the label's height depends
+    only on the font's line height - never on width - and the full path
+    still reaches the user via the tooltip and accessible description.
+    These tests pin the height side of that (the label must never be
+    allocated less than its own minimumSizeHint - if the old wrapped
+    two-line label ever came back, this fails the same way it failed for
+    real) and the elision/full-text side.
+    """
+
+    @pytest.fixture
+    def step(self, qapp):
+        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        s = TranscriptionStep()
+        # show() matters here, not just resize(): an un-shown top-level
+        # widget's resize() sets its own geometry but Qt doesn't cascade a
+        # real QResizeEvent down to children without a window handle, so
+        # the elision-follows-width test below would see a stale width
+        # with only resize(). Every other TranscriptionStep fixture in this
+        # file skips show() because nothing else here depends on real
+        # child-geometry propagation.
+        s.show()
+        s.resize(900, 1000)
+        return s
+
+    def test_allocated_height_matches_minimum_size_hint(self, qapp, step):
+        from PyQt5.QtGui import QFontMetrics
+
+        step.set_file_info("meeting.m4a", "tiny")
+        step.show_result(r"C:\Users\yuval\Desktop\meeting_transcription.html")
+        qapp.processEvents()
+
+        rp = step.result_path
+        # A layout is never supposed to allocate a widget less than its own
+        # minimumSizeHint - this is the invariant the old wrapped label
+        # violated in the wild (50px needed, 37px given at 900x1000 inside
+        # a real MainWindow). It doesn't reliably reproduce as a pixel gap
+        # here (Qt's offscreen test platform resolves font metrics
+        # differently from a real screen - see config.py's
+        # GUI_WINDOW_MIN_HEIGHT comment for the same platform quirk showing
+        # up elsewhere in this suite), so the two checks below pin the
+        # actual mechanism instead of a pixel count that would only hold on
+        # one platform:
+        #
+        # 1. hasHeightForWidth() must be False. This is Qt's own flag for
+        #    "this widget's height depends on the width it's given" - True
+        #    on the old wrapped, multi-line label (setWordWrap(True) plus
+        #    an embedded "\n" both set it), False here because
+        #    _render_result_path keeps the label single-line. If a wrapped
+        #    label ever comes back, this fails immediately, on any
+        #    platform, without needing a specific window size to trigger
+        #    the clip.
+        assert not rp.hasHeightForWidth()
+        # 2. With no width dependency, the label's allocated height has to
+        #    track a single line of its own font - not a second wrapped
+        #    line's worth taller, and never compressed below it. A few
+        #    pixels of frame/margin slack is fine; a whole extra text line
+        #    (the old bug's failure mode) is not.
+        single_line = QFontMetrics(rp.font()).height()
+        assert single_line <= rp.height() <= single_line + 4
+        assert rp.height() >= rp.minimumSizeHint().height()
+
+    def test_the_displayed_line_is_elided_but_the_full_path_is_recoverable(self, qapp, step):
+        long_path = r"C:\Users\yuval\Desktop\a very long meeting name that will not fit on one line without eliding.html"
+        step.set_file_info("meeting.m4a", "tiny")
+        step.show_result(long_path)
+        qapp.processEvents()
+
+        rp = step.result_path
+        # Elided, not wrapped - a second line would mean heightForWidth is
+        # back in play.
+        assert "\n" not in rp.text()
+        assert rp.text() != long_path
+        assert rp.text().endswith(".html")
+        # The truncation costs nothing precisely because the full path is
+        # still reachable here.
+        assert long_path in rp.toolTip()
+        assert long_path in rp.accessibleDescription()
+
+    def test_reflows_when_the_panel_is_resized_narrower(self, qapp, step):
+        """The elision has to track the panel's actual width, not just the width at show_result time."""
+        long_path = r"C:\Users\yuval\Desktop\a very long meeting name that will not fit on one line without eliding.html"
+        step.set_file_info("meeting.m4a", "tiny")
+        step.show_result(long_path)
+        qapp.processEvents()
+        wide_text = step.result_path.text()
+
+        # Below roughly 750px this bare, parentless step hits its own
+        # layout's minimum width (the two result buttons side by side) and
+        # stops shrinking further - not a bound that exists in the real
+        # app, where MainWindow's own minimum is what stops the shrink
+        # (see config.GUI_WINDOW_MIN_WIDTH), just a detail of testing this
+        # step standalone. 700 stays comfortably inside the range where it
+        # actually does shrink.
+        step.resize(700, 1000)
+        qapp.processEvents()
+        narrow_text = step.result_path.text()
+
+        assert len(narrow_text) < len(wide_text)
+        assert step.result_path.height() >= step.result_path.minimumSizeHint().height()
+
+
 class TestTranscriptionStepBatchStrip:
     """
     Which file is running, in a ten-file batch, used to be legible only by
@@ -926,6 +1043,107 @@ class TestMainWindowCancelConfirm:
 
         assert not main_window._cancel_armed
         assert not main_window.cancel_confirm_label.isVisible()
+
+
+class TestMainWindowResizing:
+    """
+    Step 9: the window used to be setFixedSize'd at 650x600 with the
+    maximize hint stripped, which hid a genuine shortfall rather than
+    avoiding it - see config.py's GUI_WINDOW_MIN_HEIGHT comment for the
+    628px measurement behind these numbers (chrome of 153px plus the
+    transcription step's own 475px minimum once show_result() has
+    populated the completion panel). These pin that the window is now
+    genuinely resizable, that its floor is honest (at or above that
+    measured content floor rather than the old, never-enforced 550), and
+    that the transcription step's completion panel - the single tightest
+    state of any step - actually fits once the window is dragged down to
+    that floor. The last of these is the regression test for the bug this
+    step fixes.
+    """
+
+    @pytest.fixture
+    def main_window(self, qapp, monkeypatch):
+        from speech_to_text.gui import main_window as main_window_module
+
+        hw = MagicMock()
+        # Not None - MainWindow only starts CalibrationThread's background
+        # subprocess when this is unset.
+        hw.tiny_seconds_per_audio_second = 1.0
+        hw.cpu_count = 4
+        hw.get_hardware_info.return_value = {
+            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+        }
+        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.estimate_transcription_time.return_value = (60, "stub")
+        hw.get_time_estimate_display.return_value = "~1 min"
+        hw.get_device_recommendation.return_value = ("cpu", "stub")
+        monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
+
+        window = main_window_module.MainWindow()
+        window.show()
+        yield window
+        window.close()
+
+    def test_window_is_resizable_with_maximize_available(self, main_window):
+        # setFixedSize() clamps maximumSize() down to minimumSize(); a
+        # genuinely resizable window's maximum stays far above its minimum
+        # (Qt's default is effectively unbounded), and the maximize button
+        # - deliberately stripped from the old fixed-size window since
+        # maximizing a window that can't resize would do nothing - is back.
+        assert main_window.maximumHeight() > main_window.minimumHeight() + 1000
+        assert main_window.maximumWidth() > main_window.minimumWidth() + 1000
+        assert bool(main_window.windowFlags() & Qt.WindowMaximizeButtonHint)
+
+    def test_minimum_size_is_at_least_the_measured_content_floor(self, main_window):
+        from speech_to_text import config
+
+        # 628px is the measured floor (153px chrome + the transcription
+        # step's worst-case 475px minimumSizeHint once show_result() has
+        # run) - see config.py's GUI_WINDOW_MIN_HEIGHT comment. The old
+        # 550 constant sat below this and was simply never enforced, since
+        # the window was fixed-size and nothing ever read it.
+        assert config.GUI_WINDOW_MIN_HEIGHT >= 628
+        assert main_window.minimumHeight() == config.GUI_WINDOW_MIN_HEIGHT
+        assert main_window.minimumWidth() == config.GUI_WINDOW_MIN_WIDTH
+
+    def test_transcription_step_does_not_overflow_at_minimum_height_once_show_result_has_run(
+        self, main_window, qapp
+    ):
+        from speech_to_text import config
+
+        main_window.resize(config.GUI_WINDOW_MIN_WIDTH, config.GUI_WINDOW_MIN_HEIGHT)
+        ts = main_window.transcription_step
+        ts.set_file_info("meeting.m4a", "tiny")
+        ts.show_result(r"C:\Users\yuval\Desktop\meeting_transcription.html")
+        main_window.stacked_widget.setCurrentWidget(ts)
+        qapp.processEvents()
+
+        # Chrome measured the same way config.py's own comment measured it
+        # (header + step indicator + nav bar - NOT the stacked widget's
+        # content area, which is what varies per step) via public widgets
+        # rather than layout-item indices, so this stays correct if the
+        # layout is ever restructured. header and nav_widget aren't kept
+        # as self attributes, but title_label and next_btn each live
+        # inside one, which is a stable enough anchor for a test.
+        header = main_window.title_label.parentWidget()
+        nav_bar = main_window.next_btn.parentWidget()
+        chrome = header.height() + main_window.step_indicator.height() + nav_bar.height()
+
+        # This is the regression this step fixes: the old GUI_WINDOW_MIN_HEIGHT
+        # (550) was never actually enforced (the window was setFixedSize'd to
+        # 600, so nothing ever resized down to 550 in the first place) and was
+        # wrong regardless - chrome plus the transcription step's own
+        # minimumSizeHint once show_result() has populated the completion
+        # panel exceeds it. Asserting against the config constant itself
+        # (rather than the window's current allocated height) is what makes
+        # this fail against the old value: the old fixed-size window's
+        # accidental 600px default happened to be tall enough under this
+        # test environment's own font metrics to mask the undersized
+        # constant, which is exactly how the bug shipped unnoticed. Real
+        # font metrics (see config.py's GUI_WINDOW_MIN_HEIGHT comment) need
+        # more room still (628px), so the margin asserted here is a lower
+        # bound on the real one, not a substitute for it.
+        assert config.GUI_WINDOW_MIN_HEIGHT >= chrome + ts.minimumSizeHint().height()
 
 
 class TestModelDownloadSize:

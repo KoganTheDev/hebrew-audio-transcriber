@@ -76,9 +76,18 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(t("app_title"))
         self.setWindowIcon(QIcon(config.ICON_PATH))
         self.move(100, 50)
-        self.setFixedSize(config.GUI_WINDOW_WIDTH, config.GUI_WINDOW_HEIGHT)
-        # Fixed-size window: no resize/maximize, so layouts never need to adapt.
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
+        # Resizable with a real floor, not setFixedSize(): a fixed size let
+        # the window sit at 650x600 while the transcription step's own
+        # content needed 628px, which is what the "result panel clipped on
+        # completion" bug actually was - the window was simply too short,
+        # and setFixedSize() meant nothing downstream ever had to notice or
+        # adapt. See config.py's GUI_WINDOW_MIN_HEIGHT comment for the
+        # measurement behind these numbers. The maximize hint that used to
+        # be stripped here comes back for the same reason: a maximize
+        # button next to a resizable window that silently refuses to
+        # maximize would be its own small bug.
+        self.resize(config.GUI_WINDOW_WIDTH, config.GUI_WINDOW_HEIGHT)
+        self.setMinimumSize(config.GUI_WINDOW_MIN_WIDTH, config.GUI_WINDOW_MIN_HEIGHT)
         # Main window background is set by theme.app_stylesheet() on the
         # QApplication (see main()) rather than here per-instance.
 

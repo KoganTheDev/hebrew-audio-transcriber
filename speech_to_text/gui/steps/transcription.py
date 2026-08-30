@@ -9,7 +9,7 @@ from typing import List
 
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QFrame
 from PyQt5.QtCore import Qt, QTimer, QUrl, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtGui import QDesktopServices, QFontMetrics
 
 from speech_to_text.core.formatting import format_mmss
 from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
@@ -51,16 +51,34 @@ class TranscriptionStep(QFrame):
         # 471px this step actually gets (650x600 minus the header and nav
         # bar), and because the layout carries an explicit AlignCenter, Qt
         # doesn't just clip the overflow - it compresses every item below
-        # its sizeHint, and the result panel's own wrapped labels (result_
-        # path especially) render as visibly corrupted double-struck glyphs
-        # once squeezed below the height their wrapped text needs - worse
-        # than merely looking cramped. Kept at SM; the two explicit
+        # its sizeHint, and any width-dependent label caught in that
+        # squeeze (the result panel's path label used to be a wrapped
+        # two-line QLabel and is exactly this case - see the comment above
+        # its construction for why it no longer wraps) renders as visibly
+        # corrupted double-struck glyphs once squeezed below the height its
+        # content needs - worse than merely looking cramped. Kept at SM;
+        # the two explicit
         # addSpacing() calls below carry the "generous gap before a major
         # section" emphasis instead, since spending space there only costs
         # one gap, not eight.
         layout.setSpacing(Spacing.SM)
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
         layout.setAlignment(Qt.AlignCenter)
+
+        # Leading stretch, paired with the trailing one added after
+        # result_widget below. With only a trailing stretch, every pixel of
+        # slack a resized window hands this step collects at the bottom -
+        # the content (and the completion panel especially) stays pinned to
+        # the top of the page while an ever-growing dead band opens up
+        # underneath it, which is exactly what a "floating in space" bug
+        # looks like the moment the window is enlarged rather than left at
+        # its default size. Two zero-stretch spacers split whatever slack
+        # exists evenly between them instead, so the whole block - file
+        # info through the result panel - stays vertically centered as the
+        # window grows, which is what layout.setAlignment(Qt.AlignCenter)
+        # above was already declaring as the intent; a lone trailing
+        # stretch is what had been overriding it in practice.
+        layout.addStretch()
 
         # No page title here any more - "Transcribing" is now carried by
         # the wizard step indicator above the stacked widget (see
@@ -183,12 +201,42 @@ class TranscriptionStep(QFrame):
         self.success_msg.setAlignment(Qt.AlignCenter)
         result_layout.addWidget(self.success_msg)
 
-        # File path
+        # File path - caption and path are two separate labels now, not one
+        # wrapped two-line string. They used to be a single QLabel with an
+        # explicit "\n" and setWordWrap(True), which made the label's height
+        # a function of its width (Qt's heightForWidth). That interacted
+        # badly with this layout's Qt.AlignCenter (see the __init__-level
+        # comment above and show_result()'s note on the batch-strip removal,
+        # the same failure mode caught twice): minimumSizeHint() reported
+        # 50px for "Saved to:\n<long path>" at its real width, but the
+        # allocated height was 37px - 13px short, with hundreds of spare
+        # pixels elsewhere in the panel, so this was never the window being
+        # too small. AlignCenter's compression only measures against a
+        # child's sizeHint at ITS current width, and a width-dependent
+        # sizeHint under a center-aligned layout is exactly the trap that
+        # corrupts glyphs; it does not reliably clip cleanly instead.
+        #
+        # The caption is now a plain, unwrapped, single-line label - fixed
+        # text, fixed height, no heightForWidth involved. The path is a
+        # second plain label, also single-line and unwrapped, with its text
+        # middle-elided in code (_render_result_path) to fit the panel's
+        # actual width rather than wrapped to it - so its height depends
+        # only on the font's line height, never on its width, and the
+        # AlignCenter trap has nothing left to grab onto. The full,
+        # unelided path still reaches the user via tooltip and accessible
+        # description (set in _render_result_path), and via "Show in
+        # folder" / "Open transcript" right below it.
+        self.result_saved_caption = QLabel(t("saved_to_caption"))
+        self.result_saved_caption.setFont(Fonts.BODY)
+        self.result_saved_caption.setStyleSheet(theme.text_qss("text_secondary"))
+        self.result_saved_caption.setAlignment(Qt.AlignCenter)
+        result_layout.addWidget(self.result_saved_caption)
+
         self.result_path = QLabel()
         self.result_path.setFont(Fonts.BODY)
         self.result_path.setStyleSheet(theme.text_qss("text_secondary"))
         self.result_path.setAlignment(Qt.AlignCenter)
-        self.result_path.setWordWrap(True)
+        self.result_path.setWordWrap(False)
         result_layout.addWidget(self.result_path)
 
         # The output stopped being a text file and became a small application:
@@ -476,7 +524,50 @@ class TranscriptionStep(QFrame):
         # one thing competing for that space again.
         self.batch_strip.hide()
         self.result_widget.show()
-        self.result_path.setText(t("saved_to", path=self._result_path_value))
+        self._render_result_path()
+
+    def _render_result_path(self) -> None:
+        """
+        Render self._result_path_value into result_path as one middle-elided
+        line, and put the full path where truncation costs nothing: the
+        tooltip and the accessible description. See the comment above
+        result_path's construction for why this replaced a wrapped two-line
+        label.
+
+        Called from three places - show_result, retranslate (the path's
+        Hebrew rendering differs from English, see the RLM anchor on the
+        "saved_to" i18n key used for the tooltip/accessible text below), and
+        resizeEvent (the elision has to be recomputed whenever the panel's
+        available width changes, which a window resize or maximize does) -
+        so it always reflects both the current language and the current
+        width rather than whatever was true when show_result last ran.
+        """
+        if self._result_path_value is None:
+            return
+        path = self._result_path_value
+        # result_path.width() is 0 before its first real layout pass (e.g.
+        # a test that builds the step but never shows it) - fall back to
+        # the panel's own width in that case rather than eliding against
+        # zero, which would render as just an ellipsis. Either way this
+        # self-corrects on the next real resizeEvent once the widget has an
+        # actual width.
+        available = self.result_path.width() or self.result_widget.width()
+        metrics = QFontMetrics(self.result_path.font())
+        self.result_path.setText(metrics.elidedText(path, Qt.ElideMiddle, available))
+        full_text = t("saved_to", path=path)
+        self.result_path.setToolTip(full_text)
+        self.result_path.setAccessibleDescription(full_text)
+
+    def resizeEvent(self, event) -> None:
+        """
+        Keep the elided path in sync with the panel's actual width - see
+        _render_result_path's docstring. A no-op whenever there is no
+        result yet (the guard inside _render_result_path), so this costs
+        nothing on every other resize this step sees before a run has
+        completed.
+        """
+        super().resizeEvent(event)
+        self._render_result_path()
 
     def _open_result(self):
         """
@@ -520,12 +611,12 @@ class TranscriptionStep(QFrame):
     def retranslate(self):
         """Re-render all text in the current UI language (live toggle)."""
         self.success_msg.setText(t("transcription_complete"))
+        self.result_saved_caption.setText(t("saved_to_caption"))
         self.open_button.setText(t("open_transcript"))
         self.folder_button.setText(t("show_in_folder"))
         self.status_label.setText(self._render_status())
         if self._file_info_args is not None:
             self.set_file_info(*self._file_info_args)
-        if self._result_path_value is not None:
-            self.result_path.setText(t("saved_to", path=self._result_path_value))
+        self._render_result_path()
         if self.start_time is not None:
             self._refresh_time_label(time.time() - self.start_time)

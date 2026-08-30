@@ -195,6 +195,13 @@ STRINGS = {
     },
     "calculating": {"en": "calculating...", "he": "בחישוב..."},
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
+    # Caption shown above the (now single-line, middle-elided) path label -
+    # see TranscriptionStep._render_result_path for why the path stopped
+    # being part of this same string. "saved_to" below is kept as the full,
+    # untruncated "Saved to:\n<path>" text for the tooltip and accessible
+    # description, where there is no width to elide against and the whole
+    # point is to hand back what the on-screen ellipsis hid.
+    "saved_to_caption": {"en": "Saved to:", "he": "נשמר אל:"},
     "saved_to": {"en": "Saved to:\n{path}", "he": "נשמר אל:\n" + _RLM + "{path}"},
     "open_transcript": {"en": "Open transcript", "he": "פתיחת התמלול"},
     # Secondary action beside "Open transcript" - reveals the containing
