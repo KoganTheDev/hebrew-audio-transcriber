@@ -372,6 +372,55 @@ def button_secondary_qss(padding: str = "8px 18px") -> str:
     """
 
 
+def button_danger_qss() -> str:
+    """
+    Armed-cancel treatment (see MainWindow._on_cancel_clicked): Cancel's
+    second press stops a possibly 40-minute-long run with no further
+    confirmation, so once armed the button itself should read as
+    dangerous rather than relying on the neighboring hint label's wording
+    alone - colour carries the warning even for a viewer who doesn't read
+    the label. Same shape as button_secondary_qss (transparent fill,
+    outlined) with COLORS['error'] standing in for control_border/accent
+    throughout, rather than button_primary_qss's filled shape - Cancel
+    should still read as the secondary action in the nav bar even while
+    armed; only its colour says "the next click is destructive".
+
+    Candidate labels that would explain the armed state in words
+    ("Press again to cancel" etc.) were measured against the fixed
+    130x36 nav button and all came out too wide to fit without either
+    clipping or shrinking the font - both worse than no confirmation at
+    all for a destructive action. So the label stays "Cancel" (it already
+    fits in both languages) and the explanation moves to
+    cancel_confirm_label, a plain text label beside the button with real
+    room for a sentence; this function is what makes the button itself
+    still carry part of that signal.
+    """
+    return f"""
+    QPushButton {{
+        background-color: transparent;
+        color: {COLORS['error']};
+        border: {Border.CONTROL}px solid {COLORS['error']};
+        border-radius: {Radius.CONTROL}px;
+        padding: 8px 18px;
+        font-weight: 600;
+        font-size: 12px;
+    }}
+    QPushButton:hover {{
+        background-color: {COLORS['bg_tertiary']};
+        border-color: {COLORS['error']};
+        color: {COLORS['error']};
+    }}
+    QPushButton:pressed {{
+        background-color: {COLORS['surface_hover']};
+        border-color: {COLORS['error']};
+        color: {COLORS['error']};
+    }}
+    QPushButton[kbdFocus="true"] {{
+        border-color: {COLORS['focus']};
+    }}
+    """
+
+
 def frame_bg_qss(color_key: str = "bg_primary") -> str:
     return f"background-color: {COLORS[color_key]};"
 

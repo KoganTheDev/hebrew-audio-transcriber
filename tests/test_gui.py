@@ -226,6 +226,102 @@ class TestTranscriptionStepOpenButton:
         i18n.set_language("en")
 
 
+class TestTranscriptionStepFolderButton:
+    """
+    "Open transcript" only ever opened the transcript file itself - the
+    other thing people reach for right after a run finishes is the folder
+    it landed in, e.g. to attach the file elsewhere or just confirm it's
+    really there.
+    """
+
+    @pytest.fixture
+    def step(self, qapp):
+        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        return TranscriptionStep()
+
+    def test_opens_the_containing_folder(self, step):
+        step.show_result("C:/tmp/meeting/meeting_transcription.html")
+        with patch("speech_to_text.gui.steps.transcription.QDesktopServices.openUrl") as opened:
+            step._open_folder()
+        opened.assert_called_once()
+        url = opened.call_args[0][0]
+        assert url.toLocalFile().replace("\\", "/").rstrip("/") == "C:/tmp/meeting"
+
+    def test_does_nothing_before_there_is_a_result(self, step):
+        with patch("speech_to_text.gui.steps.transcription.QDesktopServices.openUrl") as opened:
+            step._open_folder()
+        opened.assert_not_called()
+
+    def test_a_failure_to_open_is_not_fatal(self, step):
+        step.show_result("C:/tmp/meeting/meeting_transcription.html")
+        with patch("speech_to_text.gui.steps.transcription.QDesktopServices.openUrl",
+                   side_effect=OSError("no shell")):
+            step._open_folder()
+
+    def test_button_follows_a_live_language_switch(self, step):
+        from speech_to_text.gui import i18n
+        i18n.set_language("en")
+        step.retranslate()
+        assert step.folder_button.text() == "Show in folder"
+        i18n.set_language("he")
+        step.retranslate()
+        assert step.folder_button.text() == "הצגה בתיקייה"
+        i18n.set_language("en")
+
+
+class TestTranscriptionStepBatchStrip:
+    """
+    Which file is running, in a ten-file batch, used to be legible only by
+    catching the status line at the right instant. set_batch_files +
+    update_progress's w_file_progress handling (see transcription.py) make
+    it a persistent, always-visible strip instead.
+    """
+
+    @pytest.fixture
+    def step(self, qapp):
+        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        return TranscriptionStep()
+
+    @staticmethod
+    def _batch_files(n):
+        return [f"file{i}.wav" for i in range(1, n + 1)]
+
+    def test_hidden_for_a_single_file_run(self, step):
+        step.set_batch_files(["only.wav"])
+        assert step.batch_strip.isHidden()
+
+    def test_shown_for_a_batch(self, step):
+        step.set_batch_files(self._batch_files(10))
+        assert not step.batch_strip.isHidden()
+        assert len(step._batch_segment_frames) == 10
+
+    def test_w_file_progress_moves_the_strip_and_updates_the_readout(self, step):
+        from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
+
+        step.set_batch_files(self._batch_files(10))
+        step.update_progress(
+            "w_file_progress", {"i": 3, "n": 10, "name": "file3.wav"}, STATUS_ONLY_PERCENT
+        )
+
+        assert step.batch_readout.text() == "3 / 10"
+        # Segments 1-2 done, 3 current, 4-10 pending - checked via the
+        # accent fill that only the current segment's stylesheet carries.
+        from speech_to_text.gui.theme import COLORS
+        styles = [seg.styleSheet() for seg in step._batch_segment_frames]
+        assert COLORS['accent'] in styles[2]
+        assert COLORS['success'] in styles[0]
+        assert COLORS['success'] in styles[1]
+        assert COLORS['accent'] not in styles[0]
+        assert COLORS['accent'] not in styles[3]
+
+    def test_each_segment_carries_its_own_filename(self, step):
+        filenames = self._batch_files(3)
+        step.set_batch_files(filenames)
+        for seg, name in zip(step._batch_segment_frames, filenames):
+            assert seg.toolTip() == name
+            assert seg.accessibleName() == name
+
+
 class TestDropZoneEventPath:
     """
     Drag-and-drop exercised through Qt's own event delivery, not by calling
@@ -621,3 +717,86 @@ class TestMainWindowStepNavigation:
         assert main_window._next_btn_mode == "next"
         assert not main_window.back_btn.isVisible()
         assert not main_window.next_btn.isEnabled()
+
+
+class TestMainWindowCancelConfirm:
+    """
+    Cancel on step 3 stops a possibly 40-minute run with no further
+    confirmation, so it's a two-press control (see
+    MainWindow._on_cancel_clicked) rather than a single click - the first
+    press only arms it, the second actually cancels.
+    """
+
+    @pytest.fixture
+    def main_window(self, qapp, monkeypatch):
+        from speech_to_text.gui import main_window as main_window_module
+        from speech_to_text.gui.steps import Step
+
+        hw = MagicMock()
+        hw.tiny_seconds_per_audio_second = 1.0
+        hw.cpu_count = 4
+        hw.get_hardware_info.return_value = {
+            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+        }
+        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.estimate_transcription_time.return_value = (60, "stub")
+        hw.get_time_estimate_display.return_value = "~1 min"
+        hw.get_device_recommendation.return_value = ("cpu", "stub")
+        monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
+
+        window = main_window_module.MainWindow()
+        window.show()
+        # Simulate being mid-run on step 3, with a live thread stub so
+        # _cancel_transcription's disconnect/stop/wait calls have something
+        # real (well, MagicMock-real) to act on.
+        window.current_step = Step.TRANSCRIPTION
+        window.transcription_thread = MagicMock()
+        window.cancel_btn.show()
+        yield window
+        window.close()
+
+    def test_first_press_arms_but_does_not_stop_the_thread(self, main_window):
+        with patch.object(main_window, "_cancel_transcription") as cancel:
+            main_window._on_cancel_clicked()
+        cancel.assert_not_called()
+        assert main_window._cancel_armed
+        assert main_window.cancel_confirm_label.isVisible()
+
+    def test_second_press_stops_the_thread(self, main_window):
+        main_window._on_cancel_clicked()  # arm
+        with patch.object(main_window, "_cancel_transcription") as cancel:
+            main_window._on_cancel_clicked()  # confirm
+        cancel.assert_called_once()
+        assert not main_window._cancel_armed
+        assert not main_window.cancel_confirm_label.isVisible()
+
+    def test_arming_reverts_after_its_timeout(self, main_window):
+        main_window._on_cancel_clicked()  # arm
+        assert main_window._cancel_armed
+
+        # Simulate the arm timer expiring rather than waiting on a real
+        # QTimer in a test - _disarm_cancel is exactly what its timeout is
+        # connected to (see MainWindow.__init__).
+        main_window._disarm_cancel()
+
+        assert not main_window._cancel_armed
+        assert not main_window.cancel_confirm_label.isVisible()
+        with patch.object(main_window, "_cancel_transcription") as cancel:
+            main_window._on_cancel_clicked()
+        cancel.assert_not_called()  # reverted, so this press only re-arms
+
+    def test_escape_on_step_3_drives_the_same_two_press_flow(self, main_window):
+        with patch.object(main_window, "_cancel_transcription") as cancel:
+            main_window._on_escape_shortcut()  # arm
+            cancel.assert_not_called()
+            main_window._on_escape_shortcut()  # confirm
+        cancel.assert_called_once()
+
+    def test_navigating_away_disarms_cancel(self, main_window):
+        main_window._on_cancel_clicked()  # arm
+        assert main_window._cancel_armed
+
+        main_window._return_to_model_select()
+
+        assert not main_window._cancel_armed
+        assert not main_window.cancel_confirm_label.isVisible()

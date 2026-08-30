@@ -35,6 +35,16 @@ STRINGS = {
     # here, the icons and their visual side are handled by the widget.
     "nav_back": {"en": "Back", "he": "חזרה"},
     "nav_cancel": {"en": "Cancel", "he": "ביטול"},
+    # Shown beside Cancel once it's armed (first press) during step 3 - see
+    # MainWindow._on_cancel_clicked. The button's own label deliberately
+    # stays "Cancel" (every longer phrase measured too wide for the fixed
+    # 130x36 nav button in one or both languages - see button_danger_qss),
+    # so the actual explanation lives here instead, where there's real room
+    # for a sentence.
+    "cancel_confirm_hint": {
+        "en": "Click Cancel again to stop",
+        "he": "לחצו שוב על ביטול כדי לעצור",
+    },
     "nav_next": {"en": "Next", "he": "הבא"},
     "nav_new_file": {"en": "New File", "he": "קובץ חדש"},
     "no_model_title": {"en": "No Model", "he": "לא נבחר מודל"},
@@ -127,6 +137,16 @@ STRINGS = {
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
     "saved_to": {"en": "Saved to:\n{path}", "he": "נשמר אל:\n" + _RLM + "{path}"},
     "open_transcript": {"en": "Open transcript", "he": "פתיחת התמלול"},
+    # Secondary action beside "Open transcript" - reveals the containing
+    # folder instead of the transcript itself (see
+    # TranscriptionStep._open_folder).
+    "show_in_folder": {"en": "Show in folder", "he": "הצגה בתיקייה"},
+    # Batch progress strip (only shown for n > 1 - see
+    # TranscriptionStep.set_batch_files). Pure digits and a slash, so -
+    # unlike file_model_info/saved_to above - it needs no RLM anchor even
+    # though it sits in the Hebrew UI: there's no Latin filename inside it
+    # to anchor.
+    "batch_progress_readout": {"en": "{i} / {n}", "he": "{i} / {n}"},
 
     # Speaker name template written into the transcript file itself, not shown
     # in the GUI. Rendered here and passed to the worker as data: core/ has no

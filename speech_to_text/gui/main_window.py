@@ -8,7 +8,7 @@ import os
 import sys
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtCore import Qt, QThread, QTimer
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QAbstractSpinBox,
@@ -61,6 +61,14 @@ def _is_text_entry_widget(widget) -> bool:
 class MainWindow(QMainWindow):
     """Main application window - lightweight tool interface."""
 
+    # How long an armed Cancel (first press) stays armed before reverting
+    # to its resting state on its own - see _on_cancel_clicked. Long enough
+    # that a deliberate "yes, I meant that" second click isn't a race
+    # against the clock, short enough that walking away from the keyboard
+    # after an accidental first press doesn't leave the button looking
+    # dangerous indefinitely.
+    CANCEL_ARM_TIMEOUT_MS = 3000
+
     def __init__(self):
         super().__init__()
         logger.info("Initializing MainWindow...")
@@ -83,6 +91,17 @@ class MainWindow(QMainWindow):
         # recommendation, since the estimate has to cover the whole batch.
         self.audio_duration: int = 0
         self.calibration_thread: Optional[QThread] = None
+
+        # Two-press Cancel state (see _on_cancel_clicked). A single-shot
+        # timer rather than something driven off _tick or similar: arming
+        # has nothing to do with the transcription's own progress, it's
+        # purely "how long since the first click", so it gets its own
+        # independent clock.
+        self._cancel_armed = False
+        self._cancel_arm_timer = QTimer(self)
+        self._cancel_arm_timer.setSingleShot(True)
+        self._cancel_arm_timer.setInterval(self.CANCEL_ARM_TIMEOUT_MS)
+        self._cancel_arm_timer.timeout.connect(self._disarm_cancel)
 
         # Build UI
         self._init_ui()
@@ -194,17 +213,27 @@ class MainWindow(QMainWindow):
 
     def _on_escape_shortcut(self):
         """
-        Escape: go Back, but ONLY on step 2 (Choose Model). Deliberately
-        does not touch step 3: Cancel there stops a possibly long-running
-        transcription with no confirmation prompt (a later step adds one -
-        see the redesign plan), so binding Escape to it now would let one
-        stray keystroke throw away a run that might be 40 minutes in.
+        Escape: go Back on step 2 (Choose Model); on step 3 (Transcribing),
+        drive the same two-press Cancel confirmation the button itself
+        uses (see _on_cancel_clicked).
+
+        Step 3 was deliberately left unbound here for a while - Cancel used
+        to stop a possibly long-running transcription with a single click
+        and no confirmation prompt, so binding Escape to it would have let
+        one stray keystroke throw away a run that might be 40 minutes in.
+        That reason is gone now that Cancel itself requires two presses:
+        routing Escape through _on_cancel_clicked gives a keyboard user the
+        exact same arm-then-confirm safety net a mouse user gets, rather
+        than leaving Escape as a second, inconsistent path.
+
         Step 1 has nothing behind it to go back TO, so it's left unbound
         there too rather than closing the window or doing nothing silently
         surprising.
         """
         if self.current_step == Step.MODEL_SELECT:
             self._go_back()
+        elif self.current_step == Step.TRANSCRIPTION:
+            self._on_cancel_clicked()
 
     def _init_ui(self):
         """Initialize UI."""
@@ -330,14 +359,35 @@ class MainWindow(QMainWindow):
         # Cancel button - only shown during Step.TRANSCRIPTION, in the same
         # slot as Back (which is hidden at that point). Stops the worker
         # process and returns to Choose Model rather than closing the app.
+        #
+        # Two-press, not a modal confirmation - see _on_cancel_clicked for
+        # the full reasoning and ModelSelectStep.show_error's docstring for
+        # why this app avoids QMessageBox generally. Kept at the fixed
+        # nav_btn_size in both its resting and armed states: candidate
+        # armed labels ("Press again to cancel" etc.) were measured against
+        # this button and all came out too wide in at least one language,
+        # so the label stays "Cancel" throughout and cancel_confirm_label
+        # below carries the explanation instead - see button_danger_qss's
+        # docstring for the measurements.
         self.cancel_btn = IconTextButton()
         self.cancel_btn.setFixedSize(*nav_btn_size)
         self.cancel_btn.setFont(Fonts.BODY_BOLD)
         self.cancel_btn.setStyleSheet(theme.button_secondary_qss())
         self.cancel_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
-        self.cancel_btn.clicked.connect(self._cancel_transcription)
+        self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.hide()
         nav_layout.addWidget(self.cancel_btn)
+
+        # Explains the armed state in words, next to a button whose own
+        # label has no room to (see the comment above cancel_btn). Free-
+        # floating in the nav bar rather than a fixed width because there's
+        # nothing on its other side to stay symmetric with - Back is
+        # already hidden whenever Cancel is visible.
+        self.cancel_confirm_label = QLabel()
+        self.cancel_confirm_label.setFont(Fonts.CAPTION)
+        self.cancel_confirm_label.setStyleSheet(theme.text_qss("error"))
+        self.cancel_confirm_label.hide()
+        nav_layout.addWidget(self.cancel_confirm_label)
 
         nav_layout.addStretch()
 
@@ -388,7 +438,8 @@ class MainWindow(QMainWindow):
         self.setTabOrder(self.model_step.speaker_count_spin, self.back_btn)
         self.setTabOrder(self.back_btn, self.cancel_btn)
         self.setTabOrder(self.cancel_btn, self.transcription_step.open_button)
-        self.setTabOrder(self.transcription_step.open_button, self.next_btn)
+        self.setTabOrder(self.transcription_step.open_button, self.transcription_step.folder_button)
+        self.setTabOrder(self.transcription_step.folder_button, self.next_btn)
         self.setTabOrder(self.next_btn, self.lang_btn)
 
     def _retranslate_chrome(self):
@@ -412,6 +463,10 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setText(t("nav_cancel"))
         self.cancel_btn.setAccessibleName(t("nav_cancel"))
         self.cancel_btn.set_icon_spec("x", side="right" if rtl else "left")
+        # Kept up to date even while hidden, so it's correct the instant
+        # _set_cancel_armed_visual shows it - no separate re-render path
+        # needed for "language changed while armed".
+        self.cancel_confirm_label.setText(t("cancel_confirm_hint"))
 
         self._set_next_button_mode(self._next_btn_mode)
 
@@ -512,6 +567,14 @@ class MainWindow(QMainWindow):
             self.back_btn.setEnabled(True)
 
         self.cancel_btn.setVisible(cancel_visible)
+        # Every navigation away from (or back into) step 3 gets a fresh,
+        # unarmed Cancel - an armed state left over from a previous run, or
+        # from a stray press right before the run finished on its own,
+        # should never carry forward into whatever comes next. Unconditional
+        # rather than only when cancel_visible is False: it's a no-op when
+        # already disarmed, and calling it here once covers every one of
+        # _set_step's five call sites instead of needing each to remember.
+        self._disarm_cancel()
 
         self._set_next_button_mode(next_mode)
         self.next_btn.setVisible(next_visible)
@@ -606,6 +669,11 @@ class MainWindow(QMainWindow):
         else:
             file_summary = t("files_count_label", count=len(self.selected_files))
         self.transcription_step.set_file_info(file_summary, self.selected_model)
+        # Filenames for the batch strip's tooltips come from here, not from
+        # the worker - see TranscriptionStep.set_batch_files's docstring
+        # for why. self.selected_files is exactly the list FileSelectStep
+        # produced on step 1, in run order.
+        self.transcription_step.set_batch_files(self.selected_files)
         self.transcription_step.start()
 
         logger.info(f"Starting transcription: {file_summary} with {self.selected_model} model")
@@ -674,6 +742,59 @@ class MainWindow(QMainWindow):
         self.model_step.show_error(error_key, error_params)
         self._return_to_model_select()
 
+    def _on_cancel_clicked(self):
+        """
+        Cancel's actual clicked/Escape handler - a two-press control rather
+        than the single click _cancel_transcription used to be wired
+        directly to.
+
+        Cancelling is destructive (a run can be 40+ minutes in) and this
+        app deliberately never uses a modal QMessageBox to ask "are you
+        sure" (see ModelSelectStep.show_error's docstring for why), so the
+        confirmation has to live in the control itself: the first press
+        arms it - _set_cancel_armed_visual gives the button a destructive
+        colour treatment and shows cancel_confirm_label's explanation next
+        to it, and _cancel_arm_timer starts a countdown - and only a second
+        press while still armed calls through to _cancel_transcription.
+        Arming times out on its own (see _disarm_cancel) so a single stray
+        press doesn't leave the button looking permanently dangerous.
+        """
+        if not self._cancel_armed:
+            self._arm_cancel()
+            return
+        self._cancel_arm_timer.stop()
+        self._cancel_armed = False
+        self._set_cancel_armed_visual(False)
+        self._cancel_transcription()
+
+    def _arm_cancel(self):
+        self._cancel_armed = True
+        self._set_cancel_armed_visual(True)
+        self._cancel_arm_timer.start()
+
+    def _disarm_cancel(self):
+        """
+        Revert Cancel to its resting state - called by the arm timer's own
+        timeout, and unconditionally by _set_step on every navigation (see
+        its comment) so an armed state never survives leaving step 3.
+        Safe to call when already disarmed: stopping a timer that isn't
+        running and hiding an already-hidden label are both no-ops.
+        """
+        self._cancel_arm_timer.stop()
+        self._cancel_armed = False
+        self._set_cancel_armed_visual(False)
+
+    def _set_cancel_armed_visual(self, armed: bool):
+        """Paint cancel_btn/cancel_confirm_label for `armed` - see _on_cancel_clicked."""
+        if armed:
+            self.cancel_btn.setStyleSheet(theme.button_danger_qss())
+            self.cancel_btn.set_text_colors(COLORS['error'], hover=COLORS['error'])
+            self.cancel_confirm_label.show()
+        else:
+            self.cancel_btn.setStyleSheet(theme.button_secondary_qss())
+            self.cancel_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
+            self.cancel_confirm_label.hide()
+
     def _cancel_transcription(self):
         """Stop a running transcription and return to Choose Model."""
         logger.info("Transcription cancelled by user")
@@ -716,7 +837,21 @@ class MainWindow(QMainWindow):
         logger.debug("Reset to file selection step")
 
     def closeEvent(self, event):
-        """Stop any running transcription before the window closes."""
+        """
+        Stop any running transcription before the window closes.
+
+        Deliberately NOT routed through the two-press arm/confirm flow
+        Cancel and Escape use on step 3 (see _on_cancel_clicked) - closing
+        the window is already an explicit, unambiguous act on the user's
+        part (unlike a single Cancel click or Escape press, which could be
+        a slip), so there is nothing left to confirm. The only mechanism
+        available to ask "are you sure" here would be a modal QMessageBox,
+        which this app deliberately avoids everywhere else (see
+        ModelSelectStep.show_error's docstring) - introducing the one
+        exception at the highest-stakes moment (the user is already
+        leaving) would be a stranger inconsistency than simply trusting
+        the close itself.
+        """
         if self.current_step == Step.TRANSCRIPTION and self.transcription_thread:
             self.transcription_thread.stop()
             self.transcription_thread.wait()
