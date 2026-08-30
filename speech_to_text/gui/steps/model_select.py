@@ -64,16 +64,12 @@ class ModelSelectStep(QFrame):
         # conservative.
         layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
 
-        # Title. Uses Fonts.DISPLAY like the other two steps' headings for
-        # a consistent hierarchy across the flow, even though step 2 is the
-        # conservative one on spacing - see the room analysis in
-        # theme.Spacing's docstring: seven model cards already need a
-        # QScrollArea to fit, so the size increase here isn't paired with
-        # the same margin/gap increases steps 1 and 3 get.
-        self.title = QLabel(t("choose_model"))
-        self.title.setFont(Fonts.DISPLAY)
-        self.title.setStyleSheet(theme.text_qss("text_primary"))
-        layout.addWidget(self.title)
+        # No page title here any more - "Choose Model" is now carried by
+        # the wizard step indicator above the stacked widget (see
+        # gui/stepper.py). Dropping it also buys back height on the one
+        # step that has none to spare (seven model cards already need a
+        # QScrollArea to fit at 650x600 - see the room analysis in
+        # theme.Spacing's docstring).
 
         # Error banner - shown inline (instead of a modal popup) if a
         # transcription attempt fails and the user is sent back here to
@@ -537,7 +533,6 @@ class ModelSelectStep(QFrame):
 
     def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""
-        self.title.setText(t("choose_model"))
         alignment = self._card_text_alignment()
         for name, label in self._name_labels.items():
             label.setText(model_text(name, "name"))

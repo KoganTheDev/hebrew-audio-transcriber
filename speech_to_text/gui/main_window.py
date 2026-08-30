@@ -36,6 +36,7 @@ from speech_to_text.gui import i18n, theme
 from speech_to_text.gui.focus import KeyboardFocusTracker
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
+from speech_to_text.gui.stepper import StepIndicator
 from speech_to_text.gui.theme import COLORS, Fonts
 from speech_to_text.gui.threads import CalibrationThread, TranscriptionThread
 from speech_to_text.gui.widgets import IconTextButton
@@ -264,6 +265,16 @@ class MainWindow(QMainWindow):
 
         i18n.language_manager.language_changed.connect(self._on_language_changed)
 
+        # Wizard step indicator - the only on-screen signal of where the
+        # user is in the flow beyond the page heading each step used to
+        # print itself (now removed - see gui/stepper.py's module
+        # docstring for why one indicator replaces two copies of the same
+        # name). Sits between the header and the stacked widget so it
+        # reads as chrome framing the current page, not as part of any one
+        # step's own content.
+        self.step_indicator = StepIndicator()
+        main_layout.addWidget(self.step_indicator)
+
         # Content area
         content_widget = QWidget()
         content_widget.setStyleSheet(theme.frame_bg_qss("bg_primary"))
@@ -336,7 +347,13 @@ class MainWindow(QMainWindow):
         self.next_btn.setFont(Fonts.BODY_BOLD)
         self.next_btn.setStyleSheet(theme.button_primary_qss())
         self.next_btn.set_text_colors(COLORS['bg_primary'], disabled=COLORS['text_tertiary'])
-        self.next_btn.clicked.connect(self._go_next)
+        # Connected once, to a slot that dispatches on next_btn's current
+        # role (see _on_next_clicked) - not reconnected per step the way
+        # earlier revisions did. That disconnect/reconnect dance needed a
+        # bare `except TypeError` in _return_to_model_select to survive
+        # being called when nothing was connected yet; a single connection
+        # that switches on self._next_btn_mode has no such edge case.
+        self.next_btn.clicked.connect(self._on_next_clicked)
         self.next_btn.setEnabled(False)
         nav_layout.addWidget(self.next_btn)
 
@@ -430,6 +447,7 @@ class MainWindow(QMainWindow):
             Qt.RightToLeft if lang == "he" else Qt.LeftToRight
         )
         self._retranslate_chrome()
+        self.step_indicator.retranslate()
         for i in range(self.stacked_widget.count()):
             self.stacked_widget.widget(i).retranslate()
         # The RTL/LTR flip relocates the buttons (the toggle jumps to the
@@ -456,14 +474,79 @@ class MainWindow(QMainWindow):
         self.next_btn.setEnabled(True)
         logger.debug(f"Model selected: {model}")
 
+    def _set_step(
+        self,
+        step: Step,
+        *,
+        back_visible: bool,
+        cancel_visible: bool,
+        next_visible: bool,
+        next_enabled: bool = False,
+        next_mode: str = "next",
+        focus_widget=None,
+    ) -> None:
+        """
+        Single funnel for every wizard-navigation transition. Owns exactly
+        the bookkeeping that was previously hand-written in five separate
+        places (_go_back, _go_next, _start_transcription,
+        _return_to_model_select, _reset - see this method's call sites
+        below): current_step, the stack index, Back/Cancel/Next visibility
+        and enablement, next_btn's mode, a seeded initial focus (only
+        needed by the one step - Transcription - that has no showEvent of
+        its own to seed it, see _start_transcription's call), and
+        repainting the step indicator.
+
+        Deliberately does NOT do any of the step-specific work that used
+        to sit alongside that bookkeeping in the old methods - starting or
+        tearing down the transcription thread, resetting file_step's
+        state, showing the "no model selected" warning, and so on. Callers
+        do that themselves, before or after calling this, exactly as they
+        did before; this only absorbs the navigation plumbing that was
+        identical in shape across all five.
+        """
+        self.current_step = step
+        self.stacked_widget.setCurrentWidget(self.stacked_widget.widget(step.value))
+
+        self.back_btn.setVisible(back_visible)
+        if back_visible:
+            self.back_btn.setEnabled(True)
+
+        self.cancel_btn.setVisible(cancel_visible)
+
+        self._set_next_button_mode(next_mode)
+        self.next_btn.setVisible(next_visible)
+        self.next_btn.setEnabled(next_enabled)
+
+        if focus_widget is not None:
+            focus_widget.setFocus(Qt.OtherFocusReason)
+
+        self.step_indicator.set_current(step)
+        logger.debug(f"Navigated to: {step}")
+
+    def _on_next_clicked(self):
+        """
+        next_btn's one and only clicked connection (see _init_ui) -
+        dispatches on the button's current role instead of the
+        disconnect/reconnect-a-different-slot dance this used to require.
+        "next" is the forward-navigation role _go_next always handles;
+        "new_file" is the post-completion reset role _on_transcription_complete
+        switches the button into (see _set_next_button_mode).
+        """
+        if self._next_btn_mode == "new_file":
+            self._reset()
+        else:
+            self._go_next()
+
     def _go_back(self):
         """Go to previous step."""
         if self.current_step == Step.MODEL_SELECT:
-            self.current_step = Step.FILE_SELECT
-            self.stacked_widget.setCurrentIndex(0)
-            self.back_btn.hide()
-            self.next_btn.setEnabled(bool(self.selected_files))
-        logger.debug(f"Navigated to: {self.current_step}")
+            self._set_step(
+                Step.FILE_SELECT,
+                back_visible=False,
+                cancel_visible=False,
+                next_visible=True,
+                next_enabled=bool(self.selected_files),
+            )
 
     def _go_next(self):
         """Go to next step."""
@@ -475,11 +558,13 @@ class MainWindow(QMainWindow):
             # user re-clicks an already-checked radio button.
             self.selected_model = self.model_step.selected_model
 
-            self.current_step = Step.MODEL_SELECT
-            self.stacked_widget.setCurrentIndex(1)
-            self.back_btn.show()
-            self.back_btn.setEnabled(True)
-            self.next_btn.setEnabled(self.selected_model is not None)
+            self._set_step(
+                Step.MODEL_SELECT,
+                back_visible=True,
+                cancel_visible=False,
+                next_visible=True,
+                next_enabled=self.selected_model is not None,
+            )
 
         elif self.current_step == Step.MODEL_SELECT:
             if not self.selected_model:
@@ -489,16 +574,9 @@ class MainWindow(QMainWindow):
             # Proceed to transcription once the model is selected.
             self._start_transcription()
 
-        logger.debug(f"Navigated to: {self.current_step}")
-
     def _start_transcription(self):
         """Start transcription thread."""
         self.model_step.clear_error()
-        self.current_step = Step.TRANSCRIPTION
-        self.stacked_widget.setCurrentIndex(2)
-        self.back_btn.hide()
-        self.next_btn.hide()
-        self.cancel_btn.show()
         # Steps 1 and 2 seed a sensible Tab starting point in their own
         # showEvent (the drop zone / the selected radio - see
         # FileSelectStep.showEvent and ModelSelectStep.showEvent), because
@@ -513,8 +591,15 @@ class MainWindow(QMainWindow):
         # inside TranscriptionStep, so TranscriptionStep has no showEvent of
         # its own that could seed it; this is the one place that already
         # knows both "step 3 just became current" and "cancel_btn just
-        # became visible", so it seeds focus here instead.
-        self.cancel_btn.setFocus(Qt.OtherFocusReason)
+        # became visible", so it's the one _set_step call that passes
+        # focus_widget.
+        self._set_step(
+            Step.TRANSCRIPTION,
+            back_visible=False,
+            cancel_visible=True,
+            next_visible=False,
+            focus_widget=self.cancel_btn,
+        )
 
         if len(self.selected_files) == 1:
             file_summary = os.path.basename(self.selected_files[0])
@@ -555,20 +640,23 @@ class MainWindow(QMainWindow):
     def _on_transcription_complete(self, output_file: str):
         """Handle transcription completion."""
         logger.info(f"Transcription complete: {output_file}")
-        self.cancel_btn.hide()
         self.transcription_step.stop()
         # Force the bar to a definitive 100% on completion, regardless of
         # whether every trailing progress message was relayed in time.
         self.transcription_step.update_progress("w_complete", {}, 100)
         self.transcription_step.show_result(output_file)
 
-        # Show completion options. This reuses next_btn, so its icon/layout
-        # need to switch too - a forward arrow reads as "proceed to the next
-        # step", which is misleading for what's actually a reset action.
-        self._set_next_button_mode("new_file")
-        self.next_btn.show()
-        self.next_btn.clicked.disconnect()
-        self.next_btn.clicked.connect(self._reset)
+        # Stays on step 3 - only next_btn's role changes, to a reset
+        # action, since _on_next_clicked now dispatches on next_mode
+        # instead of needing next_btn rewired to a different slot.
+        self._set_step(
+            Step.TRANSCRIPTION,
+            back_visible=False,
+            cancel_visible=False,
+            next_visible=True,
+            next_enabled=True,
+            next_mode="new_file",
+        )
 
     def _on_transcription_error(self, error_key: str, error_params: dict):
         """
@@ -582,7 +670,6 @@ class MainWindow(QMainWindow):
         retry - e.g. with a smaller model - without having to re-pick the file.
         """
         logger.error(f"Transcription error: {error_key} {error_params}")
-        self.cancel_btn.hide()
         self.transcription_step.stop()
         self.model_step.show_error(error_key, error_params)
         self._return_to_model_select()
@@ -600,38 +687,31 @@ class MainWindow(QMainWindow):
             self.transcription_thread.finished.disconnect(self._on_transcription_complete)
             self.transcription_thread.stop()
             self.transcription_thread.wait()
-        self.cancel_btn.hide()
         self._return_to_model_select()
 
     def _return_to_model_select(self):
         """Go back to the Choose Model step, keeping the selected file/model."""
-        self.current_step = Step.MODEL_SELECT
-        self.stacked_widget.setCurrentIndex(1)
-        self.back_btn.show()
-        self.back_btn.setEnabled(True)
-        self._set_next_button_mode("next")
-        self.next_btn.show()
-        self.next_btn.setEnabled(self.selected_model is not None)
-        try:
-            self.next_btn.clicked.disconnect()
-        except TypeError:
-            pass  # already disconnected (e.g. no prior completion state)
-        self.next_btn.clicked.connect(self._go_next)
+        self._set_step(
+            Step.MODEL_SELECT,
+            back_visible=True,
+            cancel_visible=False,
+            next_visible=True,
+            next_enabled=self.selected_model is not None,
+        )
 
     def _reset(self):
         """Reset to file selection."""
         self.model_step.clear_error()
-        self.current_step = Step.FILE_SELECT
-        self.stacked_widget.setCurrentIndex(0)
         self.selected_files = []
         self.selected_model = None
         self.audio_duration = 0
-        self.back_btn.hide()
-        self.next_btn.setEnabled(False)
-        self._set_next_button_mode("next")
-        self.next_btn.show()
-        self.next_btn.clicked.disconnect()
-        self.next_btn.clicked.connect(self._go_next)
+        self._set_step(
+            Step.FILE_SELECT,
+            back_visible=False,
+            cancel_visible=False,
+            next_visible=True,
+            next_enabled=False,
+        )
         self.file_step.reset()
         logger.debug("Reset to file selection step")
 

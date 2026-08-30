@@ -52,6 +52,15 @@ STRINGS = {
         "en": "Switch interface language (Ctrl+Shift+L)",
         "he": "החלפת שפת הממשק (Ctrl+Shift+L)",
     },
+    # Wizard step indicator (gui/stepper.py) - per-segment accessible-name
+    # suffixes. The badge/label color already carries this distinction for
+    # sighted users (peach fill, a check glyph, dimmed text - see
+    # StepIndicator's _paint_* methods), but a screen reader has no way to
+    # read a border color or an icon shape, so each segment's state is
+    # spelled out in words here too.
+    "step_status_current": {"en": "Current step", "he": "השלב הנוכחי"},
+    "step_status_done": {"en": "Completed", "he": "הושלם"},
+    "step_status_pending": {"en": "Not started", "he": "טרם התחיל"},
 
     # --- Step 1: file selection ---
     "specs_title": {"en": "Specs", "he": "מפרט מערכת"},

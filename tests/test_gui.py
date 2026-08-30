@@ -514,3 +514,110 @@ class TestMainWindowKeyboardGuards:
         with patch.object(main_window, "_go_back") as go_back:
             main_window._on_escape_shortcut()
         go_back.assert_called_once()
+
+
+class TestMainWindowStepNavigation:
+    """
+    _set_step (see main_window.py) is the single funnel every navigation
+    method now routes through - _go_back, _go_next, _start_transcription,
+    _return_to_model_select, and _reset used to each hand-roll
+    setCurrentIndex + back_btn.show()/hide() + next_btn enablement
+    themselves. These pin the two things that funnel was built to
+    guarantee: the step indicator actually reflects self.current_step
+    after each transition, and next_btn's single clicked connection
+    (_on_next_clicked) reaches the right handler for its current mode
+    without the old disconnect/reconnect dance.
+    """
+
+    @pytest.fixture
+    def main_window(self, qapp, monkeypatch):
+        from speech_to_text.gui import main_window as main_window_module
+
+        hw = MagicMock()
+        # Not None - MainWindow only starts CalibrationThread's background
+        # subprocess when this is unset.
+        hw.tiny_seconds_per_audio_second = 1.0
+        hw.cpu_count = 4
+        hw.get_hardware_info.return_value = {
+            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+        }
+        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.estimate_transcription_time.return_value = (60, "stub")
+        hw.get_time_estimate_display.return_value = "~1 min"
+        hw.get_device_recommendation.return_value = ("cpu", "stub")
+        monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
+
+        window = main_window_module.MainWindow()
+        window.show()
+        yield window
+        window.close()
+
+    def test_forward_and_back_update_the_step_indicator(self, main_window):
+        from speech_to_text.gui.steps import Step
+
+        assert main_window.step_indicator._current_step == Step.FILE_SELECT
+
+        main_window.file_step.selected_files = ["a.wav"]
+        main_window.next_btn.setEnabled(True)
+        main_window._go_next()
+
+        assert main_window.current_step == Step.MODEL_SELECT
+        assert main_window.stacked_widget.currentWidget() is main_window.model_step
+        assert main_window.step_indicator._current_step == Step.MODEL_SELECT
+        assert main_window.back_btn.isVisible()
+
+        main_window._go_back()
+
+        assert main_window.current_step == Step.FILE_SELECT
+        assert main_window.stacked_widget.currentWidget() is main_window.file_step
+        assert main_window.step_indicator._current_step == Step.FILE_SELECT
+        assert not main_window.back_btn.isVisible()
+
+    def test_next_button_click_dispatches_to_go_next_in_next_mode(self, main_window):
+        assert main_window._next_btn_mode == "next"
+        # A disabled QPushButton silently swallows .click() - enable it
+        # first (this fixture starts with no file selected, which is what
+        # leaves it disabled at construction).
+        main_window.next_btn.setEnabled(True)
+        with patch.object(main_window, "_go_next") as go_next, \
+             patch.object(main_window, "_reset") as reset:
+            main_window.next_btn.click()
+        go_next.assert_called_once()
+        reset.assert_not_called()
+
+    def test_next_button_click_dispatches_to_reset_in_new_file_mode(self, main_window):
+        """
+        A completed run switches next_btn to "New File" mode (see
+        _on_transcription_complete) without ever touching
+        next_btn.clicked's connections - _on_next_clicked reads
+        self._next_btn_mode instead. Pinning that a real .click() reaches
+        _reset in this mode is what the old disconnect/reconnect dance
+        used to accomplish by rewiring the signal itself.
+        """
+        main_window._set_next_button_mode("new_file")
+        main_window.next_btn.setEnabled(True)
+        with patch.object(main_window, "_go_next") as go_next, \
+             patch.object(main_window, "_reset") as reset:
+            main_window.next_btn.click()
+        reset.assert_called_once()
+        go_next.assert_not_called()
+
+    def test_reset_returns_to_step_one(self, main_window):
+        from speech_to_text.gui.steps import Step
+
+        main_window.selected_files = ["a.wav"]
+        main_window.selected_model = "tiny"
+        main_window.audio_duration = 120
+        main_window._set_next_button_mode("new_file")
+
+        main_window._reset()
+
+        assert main_window.current_step == Step.FILE_SELECT
+        assert main_window.stacked_widget.currentWidget() is main_window.file_step
+        assert main_window.step_indicator._current_step == Step.FILE_SELECT
+        assert main_window.selected_files == []
+        assert main_window.selected_model is None
+        assert main_window.audio_duration == 0
+        assert main_window._next_btn_mode == "next"
+        assert not main_window.back_btn.isVisible()
+        assert not main_window.next_btn.isEnabled()

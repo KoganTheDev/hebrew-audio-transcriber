@@ -60,12 +60,9 @@ class TranscriptionStep(QFrame):
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
         layout.setAlignment(Qt.AlignCenter)
 
-        # Title
-        self.title = QLabel(t("transcribing_title"))
-        self.title.setFont(Fonts.DISPLAY)
-        self.title.setStyleSheet(theme.text_qss("text_primary"))
-        self.title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.title)
+        # No page title here any more - "Transcribing" is now carried by
+        # the wizard step indicator above the stacked widget (see
+        # gui/stepper.py). File info becomes the first thing on the page.
 
         # File info
         self.file_info = QLabel()
@@ -322,7 +319,6 @@ class TranscriptionStep(QFrame):
 
     def retranslate(self):
         """Re-render all text in the current UI language (live toggle)."""
-        self.title.setText(t("transcribing_title"))
         self.success_msg.setText(t("transcription_complete"))
         self.open_button.setText(t("open_transcript"))
         self.status_label.setText(self._render_status())

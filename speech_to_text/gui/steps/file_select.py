@@ -57,17 +57,13 @@ class FileSelectStep(QFrame):
         # on this step.
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
 
-        # Title - "Specs" now, since the system-info table is the first
-        # thing on this page.
-        self.title = QLabel(t("specs_title"))
-        self.title.setFont(Fonts.DISPLAY)
-        self.title.setStyleSheet(theme.text_qss("text_primary"))
-        layout.addWidget(self.title)
-        # Extra gap under the step heading before its content starts - the
-        # bigger DISPLAY heading needs more air below it than the old 14pt
-        # TITLE did, or the hardware table reads as crowding the title
-        # instead of following it.
-        layout.addSpacing(Spacing.SM)
+        # No page title here any more - "Specs" is now carried by the
+        # wizard step indicator above the stacked widget (see
+        # gui/stepper.py and MainWindow._init_ui), which already prints
+        # this step's name once. A second DISPLAY heading here would say
+        # the same thing again in the same place on screen; see the
+        # stepper's module docstring for the full reasoning. The hardware
+        # table below is now the first thing on the page.
 
         # System info table - shown here (above the drop zone) since it's
         # relevant context before the user even picks a file or model.
@@ -123,21 +119,30 @@ class FileSelectStep(QFrame):
         drop_layout.setContentsMargins(config.GUI_DROP_ZONE_PADDING, config.GUI_DROP_ZONE_PADDING,
                                         config.GUI_DROP_ZONE_PADDING, config.GUI_DROP_ZONE_PADDING)
 
-        # Folder icon
+        # Folder icon. The pixmap itself is still rasterized at a fixed
+        # 48px (svg_to_pixmap's `size` arg controls the actual glyph, not
+        # this label's box), so no maximumHeight is needed here - a QLabel
+        # showing nothing but a pixmap already sizes to that pixmap.
         icon_label = QLabel()
         icon_pixmap = svg_to_pixmap(ICONS["folder"], 48, COLORS['accent'])
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setMaximumHeight(52)
         drop_layout.addWidget(icon_label)
 
-        # Main text
+        # Main text. No setMaximumHeight - see the note above
+        # GUI_DROP_ZONE_HEIGHT in config.py: these caps (20/16/16px) were
+        # sized against a font database that under-reported its own text
+        # height, so they clip the real, correctly-resolved label the
+        # instant a QApplication exists for real - removed rather than
+        # bumped, since a label's natural sizeHint is already the right
+        # answer once the font resolves correctly, and a stale cap would
+        # just reintroduce the same clipping the next time a font metric
+        # shifts.
         self.main_text = QLabel(t("drop_main"))
         self.main_text.setFont(Fonts.BODY_BOLD)
         self.main_text.setStyleSheet(theme.text_qss("text_primary"))
         self.main_text.setAlignment(Qt.AlignCenter)
-        self.main_text.setMaximumHeight(20)
         drop_layout.addWidget(self.main_text)
 
         # Supported formats
@@ -145,7 +150,6 @@ class FileSelectStep(QFrame):
         self.formats_text.setFont(Fonts.CAPTION)
         self.formats_text.setStyleSheet(theme.text_qss("text_secondary"))
         self.formats_text.setAlignment(Qt.AlignCenter)
-        self.formats_text.setMaximumHeight(16)
         drop_layout.addWidget(self.formats_text)
 
         # Alt text
@@ -153,7 +157,6 @@ class FileSelectStep(QFrame):
         self.alt_text.setFont(Fonts.CAPTION)
         self.alt_text.setStyleSheet(theme.text_qss("text_tertiary"))
         self.alt_text.setAlignment(Qt.AlignCenter)
-        self.alt_text.setMaximumHeight(16)
         drop_layout.addWidget(self.alt_text)
 
         layout.addWidget(self.drop_zone, 1)
@@ -446,7 +449,6 @@ class FileSelectStep(QFrame):
 
     def retranslate(self):
         """Re-render all text in the current UI language (live toggle)."""
-        self.title.setText(t("specs_title"))
         self.file_heading.setText(t("select_audio_file"))
         self.main_text.setText(t("drop_main"))
         self.formats_text.setText(t("drop_formats"))
