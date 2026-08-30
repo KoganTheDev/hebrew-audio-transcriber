@@ -34,7 +34,7 @@ import tempfile
 
 from PyQt5.QtCore import QStandardPaths, Qt
 from PyQt5.QtGui import QFont, QFontMetrics, QLinearGradient, QColor, QPainter, QPixmap
-from PyQt5.QtWidgets import QGraphicsDropShadowEffect
+from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect
 
 COLORS = {
     # Catppuccin Mocha. Hexes marked (doc) are byte-identical to the
@@ -107,41 +107,81 @@ FONT_FAMILY = "Segoe UI"
 _DEMIBOLD = QFont.DemiBold
 
 
-class Fonts:
+class _FontsMeta(type):
     """
-    Named QFont constants, reused instead of constructing QFont(...) inline
-    everywhere. The scale widens size gaps between roles (10/11/12pt used to
-    sit one point apart, which reads as noise rather than hierarchy) and
-    moves weight onto DemiBold so size is no longer the only lever carrying
-    the hierarchy - see _DEMIBOLD above for why DemiBold specifically.
+    Builds each Fonts role on first use, not at class-definition time.
+
+    This is not a style preference, it is a correctness requirement. A QFont
+    constructed before a QApplication exists resolves against an
+    uninitialised font database, and it keeps those wrong metrics
+    afterwards: QFontMetrics on such a font reports a 227px advance for the
+    header title where the same font built after QApplication reports 276px.
+    speech_to_text/main.py imports this module at module level and only
+    constructs its QApplication inside main(), so class-body QFont literals
+    were always being built on the wrong side of that line.
+
+    Most of the app never noticed, because a widget you merely setFont() on
+    is re-resolved by Qt at paint time. What did notice is the one place
+    that measures a font by hand and allocates a canvas from the answer:
+    gradient_text_pixmap() sized the header title's pixmap from the
+    under-reported advance, so the text painted into it was wider than the
+    pixmap and lost a character off each end. That went unseen while the
+    title was 12pt (the shortfall still fit inside the padding) and appeared
+    the moment the type scale moved it to 13pt.
+
+    Roles are cached once a QApplication exists, and deliberately NOT cached
+    before then, so an early access during import or test collection cannot
+    poison the cache with a badly-resolved font for the life of the process.
     """
 
-    # Step heading role (Step 1/2/3 titles - "Specs", "Choose Model",
-    # "Transcribing..."). Replaces the old TITLE constant: with three fixed
-    # steps and no other "biggest text on the page" role in this app, a
-    # separate DISPLAY name says what the size is FOR rather than just how
-    # big it is. Sized well above SUBTITLE_BOLD so a step heading reads as
-    # the page's anchor at a glance, the way the old 14pt TITLE (only 2pt
-    # over SUBTITLE_BOLD's 12) didn't.
-    DISPLAY = QFont(FONT_FAMILY, 19, _DEMIBOLD)
-    # Header title (via gradient_text_pixmap - out of scope for color, but
-    # still uses this size) and the step-3 success headline.
-    SUBTITLE_BOLD = QFont(FONT_FAMILY, 13, _DEMIBOLD)
-    # Model card names, the hardware table's value cells, the drop zone's
-    # main instruction line - the "this is the important word in this row"
-    # weight one notch below a heading.
-    BODY_BOLD = QFont(FONT_FAMILY, 12, _DEMIBOLD)
-    BODY = QFont(FONT_FAMILY, 11)
-    # The transcription step's live status line - bold enough to anchor the
-    # eye on a line that updates every second, without competing with the
-    # step heading above it.
-    BODY_BOLD_SMALL = QFont(FONT_FAMILY, 11, _DEMIBOLD)
-    # Smallest role in the scale - captions, the error banner, model card
-    # descriptions. Held at 9pt (the floor: legible without eating the
-    # step-2 model list's already-tight vertical budget - see Radius/
-    # Spacing notes on step 2 being the conservative one).
-    CAPTION = QFont(FONT_FAMILY, 9)
-    CAPTION_BOLD = QFont(FONT_FAMILY, 9, _DEMIBOLD)
+    _SPECS = {
+        "DISPLAY": (19, True),
+        "SUBTITLE_BOLD": (13, True),
+        "BODY_BOLD": (12, True),
+        "BODY": (11, False),
+        "BODY_BOLD_SMALL": (11, True),
+        "CAPTION": (9, False),
+        "CAPTION_BOLD": (9, True),
+    }
+
+    def __getattr__(cls, name):
+        try:
+            size, demibold = cls._SPECS[name]
+        except KeyError:
+            raise AttributeError(
+                f"{cls.__name__} has no font role {name!r}"
+            ) from None
+        font = QFont(FONT_FAMILY, size, _DEMIBOLD) if demibold else QFont(FONT_FAMILY, size)
+        # Only memoise once the font database is real - see the class
+        # docstring. Before that, hand back a correct-for-now object without
+        # committing to it.
+        if QApplication.instance() is not None:
+            setattr(cls, name, font)
+        return font
+
+
+class Fonts(metaclass=_FontsMeta):
+    """
+    Named font roles, resolved lazily by _FontsMeta - read its docstring
+    before adding one as a plain class attribute, which would reintroduce
+    the pre-QApplication resolution bug.
+
+    The scale widens size gaps between roles (10/11/12pt used to sit one
+    point apart, which reads as noise rather than hierarchy) and moves
+    weight onto DemiBold so size is no longer the only lever carrying the
+    hierarchy - see _DEMIBOLD above for why DemiBold specifically.
+
+    Sizes and weights live in _FontsMeta._SPECS. What each role is FOR:
+      DISPLAY         step headings ("Specs", "Choose Model", "Transcribing")
+      SUBTITLE_BOLD   header title via gradient_text_pixmap, step-3 headline
+      BODY_BOLD       model card names, hardware values, drop zone lead line
+      BODY            default body text
+      BODY_BOLD_SMALL the step-3 live status line
+      CAPTION         captions, error banner, model card descriptions - 9pt
+                      is the floor, legible without eating step 2's tight
+                      vertical budget
+      CAPTION_BOLD    emphasis at caption size
+    """
 
 
 class Spacing:
@@ -367,6 +407,9 @@ def card_qss(object_name: str, selected: bool = False) -> str:
         border: {Border.CONTROL}px solid {border_color};
         border-radius: {Radius.PANEL}px;
         padding: 0px;
+    }}
+    QFrame#{object_name}[kbdFocus="true"] {{
+        border-color: {COLORS['focus']};
     }}
     """
 
