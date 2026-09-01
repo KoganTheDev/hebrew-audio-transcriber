@@ -1172,6 +1172,43 @@ class TestModelDownloadSize:
             )
 
 
+class TestModelDownloadRootSharedWithCore:
+    """
+    gui/steps/model_select.py used to hand-mirror core/transcriber.py's
+    download_root literal ("./whisper_models") in its own module-level
+    _WHISPER_DOWNLOAD_ROOT, with a comment admitting there was no shared
+    constant to import instead. That made the "not yet downloaded" note a
+    model card shows an independent guess that could silently drift from
+    what the real downloader does. Both sides now read
+    config.MODEL_DOWNLOAD_ROOT - these pin that there is exactly one
+    definition left, not two kept in sync by hand.
+    """
+
+    def test_model_select_has_no_hand_mirrored_literal(self):
+        from speech_to_text.gui.steps import model_select as model_select_module
+
+        assert not hasattr(model_select_module, "_WHISPER_DOWNLOAD_ROOT")
+
+    def test_model_is_downloaded_reads_config_download_root(self, monkeypatch, tmp_path):
+        """
+        _model_is_downloaded() must look under whatever config.MODEL_DOWNLOAD_ROOT
+        currently resolves to - proof the presence check and the downloader
+        share one root rather than two literals that can drift apart.
+        """
+        from speech_to_text import config
+        from speech_to_text.gui.steps import model_select as model_select_module
+
+        fake_root = tmp_path / "wherever_config_points"
+        cache_dir = fake_root / "models--Systran--faster-whisper-tiny" / "snapshots" / "abc123"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "model.bin").write_bytes(b"stub")
+
+        monkeypatch.setattr(config, "MODEL_DOWNLOAD_ROOT", str(fake_root))
+
+        assert model_select_module._model_is_downloaded("tiny") is True
+        assert model_select_module._model_is_downloaded("medium") is False
+
+
 @pytest.fixture
 def model_hardware_stub():
     """

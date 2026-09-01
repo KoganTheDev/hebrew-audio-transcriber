@@ -161,7 +161,11 @@ class Transcriber:
         kwargs = dict(
             device=device,
             compute_type=compute_type,
-            download_root="./whisper_models",
+            # Absolute, resolved once at import time - see
+            # config.MODEL_DOWNLOAD_ROOT's own comment for why this used to
+            # be the relative literal "./whisper_models" and what that broke
+            # once the console script could be launched from anywhere.
+            download_root=config.MODEL_DOWNLOAD_ROOT,
         )
         if self.cpu_threads is not None:
             kwargs["cpu_threads"] = self.cpu_threads

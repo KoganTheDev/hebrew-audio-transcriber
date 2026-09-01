@@ -28,14 +28,6 @@ from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
-# Mirrors core/transcriber.py's WhisperModel(..., download_root="./whisper_models")
-# literally, not by importing a shared constant - there isn't one, and this
-# module has no business defining it either (see the docstring below on why
-# this whole check is GUI-only guesswork, not something core/ should carry).
-# If that literal ever changes, this needs to change with it by hand.
-_WHISPER_DOWNLOAD_ROOT = "./whisper_models"
-
-
 def _model_is_downloaded(repo: str) -> bool:
     """
     Best-effort guess at whether `repo` already sits in faster-whisper's
@@ -63,22 +55,21 @@ def _model_is_downloaded(repo: str) -> bool:
     claim about to cost them real time - see this function's caller for
     where that asymmetry matters.
 
-    Also note (not fixed here - see this function's caller for why):
-    "./whisper_models" is relative to the process's CURRENT WORKING
-    DIRECTORY, not this file's location or the repo root. Launching the
-    app from a different working directory makes both the real download
-    AND this presence check land in a different place, so a model
-    downloaded during one working-directory session can read as "not
-    downloaded" from another. Changing download_root to an absolute path
-    would fix that, but would also orphan every model already downloaded
-    under the old relative path on whatever machine is running this -
-    a decision for whoever owns that tradeoff, not something to sneak in
-    as a side effect of a GUI label.
+    Reads config.MODEL_DOWNLOAD_ROOT - the same absolute, resolved-once path
+    core/transcriber.py hands WhisperModel's download_root - so this presence
+    check and the real download always agree on where to look. That used to
+    be two independent copies of the relative literal "./whisper_models",
+    which meant a model downloaded during one working-directory session
+    could read as "not downloaded" from another (the process's current
+    working directory decided where the literal resolved, both for the real
+    download and for this check). See config.MODEL_DOWNLOAD_ROOT's own
+    comment for the resolution order and why it had to move to config.py
+    rather than staying duplicated here.
     """
     try:
         repo_id = repo if "/" in repo else f"Systran/faster-whisper-{repo}"
         cache_dir_name = "models--" + repo_id.replace("/", "--")
-        snapshots_dir = os.path.join(_WHISPER_DOWNLOAD_ROOT, cache_dir_name, "snapshots")
+        snapshots_dir = os.path.join(config.MODEL_DOWNLOAD_ROOT, cache_dir_name, "snapshots")
         return os.path.isdir(snapshots_dir) and bool(os.listdir(snapshots_dir))
     except OSError:
         return False
