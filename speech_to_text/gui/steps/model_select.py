@@ -206,9 +206,9 @@ class ModelSelectStep(QFrame):
         self.selected_model = recommended_model
         self._current_recommended = recommended_model
 
-        for i, (model_name, model_info) in enumerate(config.MODELS.items()):
+        for i, model_name in enumerate(config.MODELS):
             model_card = self._create_model_card(
-                i, model_name, model_info,
+                i, model_name,
                 is_recommended=(model_name == recommended_model)
             )
             models_layout.addWidget(model_card)
@@ -413,7 +413,7 @@ class ModelSelectStep(QFrame):
             note = note + " " + t("model_download_tooltip", size=info["download_size"])
         return note
 
-    def _create_model_card(self, idx: int, name: str, info: dict, is_recommended: bool = False) -> QFrame:
+    def _create_model_card(self, idx: int, name: str, is_recommended: bool = False) -> QFrame:
         """Create and return a model selection card with radio button and details."""
         card = QFrame()
         object_name = f"modelCard_{name}"

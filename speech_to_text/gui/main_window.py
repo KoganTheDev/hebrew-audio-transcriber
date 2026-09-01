@@ -45,6 +45,38 @@ from speech_to_text.hardware_detection import HardwareDetector
 logger = logging.getLogger(__name__)
 
 
+# High-DPI rendering: without these, Qt5 treats the app as DPI-unaware and
+# Windows falls back to bitmap-stretching the whole window at 125%/150%
+# scale - it renders, but every glyph and icon is a blurred upscale of the
+# 100% raster rather than something actually drawn at the higher
+# resolution. AA_EnableHighDpiScaling turns on Qt's own scaling of
+# geometry (so widget sizes/fonts/positions stay correct in logical pixels
+# while Qt asks the OS for physical-pixel-sharp output); AA_UseHighDpiPixmaps
+# makes QIcon/QPixmap request the right physical resolution for the
+# current scale instead of handing over a 100%-scale bitmap for Windows to
+# stretch. setHighDpiScaleFactorRoundingPolicy(PassThrough) additionally
+# stops Qt from ROUNDING a scale factor like 1.25 or 1.5 to the nearest
+# integer before applying it (its default policy since Qt 5.14) - without
+# this, 125% and 150% would both actually render at 100% or 200% internally
+# and only get bitmap-scaled to the requested factor after the fact, which
+# defeats the whole point of enabling high-DPI scaling in the first place.
+#
+# These three calls are QApplication/Qt *class*-level attributes, not
+# instance state, and Qt requires them to be set before the QApplication
+# object is constructed - setting them on an already-running instance is a
+# silent no-op. This module is imported (directly or via `from
+# speech_to_text.gui import theme` pulling in sibling gui modules) by every
+# real and harness entry point - speech_to_text/main.py, this module's own
+# main(), and the screenshot/probe scripts under scratchpad/ - strictly
+# before any of them calls `QApplication(sys.argv)`, so doing it here at
+# module import time, exactly once (Python's module cache guarantees that),
+# is the one place that is guaranteed to run first for all of them without
+# duplicating this call at every call site.
+QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
+
 def _is_text_entry_widget(widget) -> bool:
     """
     True for any widget where Enter means "confirm what I just typed here",
