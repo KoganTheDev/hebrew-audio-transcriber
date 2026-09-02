@@ -167,3 +167,78 @@ class TestHighDpiRendering:
         # as the literal int since the subprocess can only hand back text
         # over stdout, not the enum object itself.
         assert "policy=5" in result.stdout, result.stdout
+
+
+class TestShippedEntryPointAppliesStylesheet:
+    """
+    app.setStyleSheet(theme.app_stylesheet()) used to exist only inside
+    gui/main_window.py's own main(), reachable exclusively via
+    `python -m speech_to_text.gui.main_window` - a path nothing shipped
+    (run.ps1, run.bat, `python -m speech_to_text.main`, the `speech-to-text`
+    console script) ever uses. Every one of those goes through
+    speech_to_text/main.py::main(), which built its own QApplication and
+    never applied the stylesheet at all: the whole themed look (peach
+    checkbox tick, radio ring-and-dot, styled scrollbars/tooltip, the
+    kbdFocus ring on native controls) was silently absent from every real
+    launch. `theme.app_stylesheet()` returning a non-empty string already
+    passed the whole time this bug was live, so a test on that function in
+    isolation proves nothing - this has to run the actual shipped entry
+    point and look at the QApplication instance it produces.
+
+    Like TestHighDpiRendering above, a subprocess is used rather than an
+    in-process call: main.py constructs its own process-wide QApplication
+    and calls sys.exit() on the way out, neither of which plays well with
+    pytest's shared QApplication or its own process. QApplication.exec_ is
+    monkeypatched to capture styleSheet() and return immediately instead of
+    blocking on a real event loop - this test cares whether the stylesheet
+    was applied before the loop starts, not about running the loop itself.
+    """
+
+    def test_main_dot_py_entry_point_applies_a_non_empty_stylesheet(self):
+        repo_root = Path(__file__).resolve().parent.parent
+        script = (
+            "from PyQt5.QtWidgets import QApplication\n"
+            "captured = {}\n"
+            "def fake_exec(self):\n"
+            "    captured['stylesheet'] = self.styleSheet()\n"
+            "    return 0\n"
+            "QApplication.exec_ = fake_exec\n"
+            "import speech_to_text.main as main_module\n"
+            "try:\n"
+            "    main_module.main()\n"
+            "except SystemExit:\n"
+            "    pass\n"
+            "sheet = captured.get('stylesheet', '')\n"
+            "print('STYLESHEET_LEN=%d' % len(sheet))\n"
+        )
+        env = dict(os.environ)
+        # Headless platform plugin - the real entry point builds a full
+        # MainWindow and calls show() on it; offscreen lets that happen
+        # without a real display, same as TestHighDpiRendering above.
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"subprocess failed (exit {result.returncode}):\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        marker = "STYLESHEET_LEN="
+        line = next(
+            (l for l in result.stdout.splitlines() if l.startswith(marker)), None
+        )
+        assert line is not None, (
+            f"subprocess never printed a stylesheet length:\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        length = int(line[len(marker):])
+        assert length > 0, (
+            "speech_to_text.main.main() produced a QApplication with an "
+            "empty styleSheet() - the shipped entry point is not applying "
+            "theme.app_stylesheet() to the real application object."
+        )

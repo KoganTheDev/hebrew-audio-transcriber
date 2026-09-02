@@ -188,7 +188,7 @@ class TranscriptionStep(QFrame):
 
         # Checkmark icon
         result_icon = QLabel()
-        result_pixmap = svg_to_pixmap(ICONS["check"], 48, COLORS['success'])
+        result_pixmap = svg_to_pixmap(ICONS["check"], 48, COLORS['success'], dpr=self.devicePixelRatioF())
         result_icon.setPixmap(result_pixmap)
         result_icon.setStyleSheet("background: transparent;")
         result_icon.setAlignment(Qt.AlignCenter)

@@ -146,7 +146,7 @@ class ModelSelectStep(QFrame):
         error_layout.setSpacing(Spacing.XS)
 
         error_icon = QLabel()
-        error_icon.setPixmap(svg_to_pixmap(ICONS["alert_triangle"], 16, COLORS['error']))
+        error_icon.setPixmap(svg_to_pixmap(ICONS["alert_triangle"], 16, COLORS['error'], dpr=self.devicePixelRatioF()))
         error_icon.setStyleSheet("background: transparent;")
         error_layout.addWidget(error_icon)
 

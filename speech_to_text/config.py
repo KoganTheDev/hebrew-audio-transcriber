@@ -387,56 +387,52 @@ REQUIRED_PACKAGES = {
 #
 # The window used to be setFixedSize'd at 650x600, with the maximize hint
 # stripped - no resize logic anywhere had to cope with a size other than
-# exactly this one. That hid a real shortfall rather than avoiding it:
-# measured with minsize.py, the chrome (header 50 + step indicator 20 + nav
-# bar 83) is 153px, and the worst step - transcription, once show_result()
-# has populated the completion panel - needs 475px on its own. 153 + 475 =
-# 628px, 28px more than the 600px the fixed window ever gave it, which is
-# exactly the "result panel clipped on completion" bug. Step 1 fares only
-# slightly better (440 + 153 = 593px, 7px of slack) - both are the same
-# underlying problem, a window too short for its own content, not two
-# separate bugs.
+# exactly this one. That hid a real shortfall rather than avoiding it, and
+# the window became resizable with a real floor to fix it (see
+# MainWindow.__init__). Re-measured with minsize.py after stepper.py's
+# badge strip gained Spacing.SM (8px) of top/bottom padding (see that
+# module's __init__ comment - the strip used to butt directly against the
+# header's accent-colored bottom border with zero px of air), the chrome
+# (header 50 + step indicator 36 + nav bar 79) is 165px, and the worst
+# step - transcription, once show_result() has populated the completion
+# panel - needs 448px on its own. 165 + 448 = 613px. Step 1 fares better
+# (418 + 165 = 583px). Both numbers were measured with the app stylesheet
+# and high-DPI scaling actually applied (see gui/main_window.py's
+# configure_application and its module-level AA_EnableHighDpiScaling /
+# AA_UseHighDpiPixmaps calls) - a bare, unstyled QApplication resolves
+# different font metrics, so a number measured against one does not carry
+# over to the other. Anyone re-measuring this after a further font/spacing
+# change should do the same: run minsize.py through the real entry point's
+# setup (configure_application), not a hand-rolled QApplication.
 #
 # GUI_WINDOW_MIN_HEIGHT is the floor this drives: it has to sit at or above
-# 628px or the same clipping comes back the moment the window is resized
-# down to it. 550 (the old, never-enforced value - the window was fixed-size
-# so nothing ever read it) is below that floor and would be a lie. 640 gives
-# a small, deliberate margin above the measured 628px minimum rather than
-# pinning the floor exactly on it, so the completion panel doesn't start
-# touching the window edge the instant someone drags to the smallest allowed
-# size.
+# 613px or the same clipping comes back the moment the window is resized
+# down to it. 656 gives 43px of deliberate margin above that measured
+# minimum rather than pinning the floor exactly on it, so the completion
+# panel doesn't start touching the window edge the instant someone drags to
+# the smallest allowed size. It was raised from 640 (which carried its own
+# margin above the pre-padding 628px floor measured before this stepper
+# fix) specifically to keep covering the new 16px the badge strip's padding
+# added - a floor computed before that padding landed would have been a
+# stale, and now wrong, promise.
 #
 # GUI_WINDOW_HEIGHT (the default, initial size) stays clearly above the
 # minimum rather than sitting on it, for the same reason step 3's own
 # comments give for widening its margins: a size that exactly matches the
 # content floor reads as cramped even when nothing is technically clipped.
 # 720 leaves the completion panel - the tallest state of any step - about
-# 90px of breathing room by default, while remaining well short of forcing
+# 107px of breathing room by default, while remaining well short of forcing
 # a scroll on a 1080p display.
 #
 # GUI_WINDOW_MIN_WIDTH is unchanged at 600: the model card caption (the
 # tightest element width-wise) has 57px of slack at 600px and only starts
 # clipping below roughly 545px, so 600 was already a safe floor and this
 # step's overflow was purely a height problem.
-#
-# Deliberately NOT addressed here: the app never calls
-# AA_EnableHighDpiScaling / AA_UseHighDpiPixmaps or sets a high-DPI rounding
-# policy, so it is DPI-unaware and Windows bitmap-scales the whole window at
-# 125%/150% instead of Qt resolving fonts and layouts at the real DPI. That
-# is precisely why fixed pixel budgets like the ones above have held up
-# this long, and why every number measured for this step was measured
-# against that same unaware rendering path. Turning high-DPI scaling on
-# would make every font metric resolve differently (generally larger) and
-# re-tighten every budget this revamp just balanced - a real quality
-# improvement (sharper text, correct scaling on high-DPI displays) but a
-# separate change that needs its own re-measurement pass across all three
-# steps, not something to fold into a resize fix with no time left to
-# re-verify.
 
 GUI_WINDOW_WIDTH = 650          # Main window default width (px)
 GUI_WINDOW_HEIGHT = 720         # Main window default height (px) - see note above
 GUI_WINDOW_MIN_WIDTH = 600      # Minimum resizable width (px)
-GUI_WINDOW_MIN_HEIGHT = 640     # Minimum resizable height (px) - measured content floor is 628px
+GUI_WINDOW_MIN_HEIGHT = 656     # Minimum resizable height (px) - measured content floor is 613px
 
 # ============================================================================
 # GUI Configuration - Drag-Drop Zone

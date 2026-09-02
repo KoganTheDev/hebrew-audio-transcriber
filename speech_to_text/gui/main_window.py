@@ -304,7 +304,9 @@ class MainWindow(QMainWindow):
         # gradient in this theme, as a brand accent rather than a UI backdrop).
         # Rendered as a pixmap, so retranslate() re-renders it on language switch.
         self.title_label = QLabel()
-        self.title_label.setPixmap(theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD))
+        self.title_label.setPixmap(
+            theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF())
+        )
         self.title_label.setStyleSheet("background: transparent;")
         self.title_label.setAlignment(Qt.AlignCenter)
 
@@ -491,7 +493,9 @@ class MainWindow(QMainWindow):
     def _retranslate_chrome(self):
         """(Re-)apply window title, header, and nav button text/icons/directions."""
         self.setWindowTitle(t("app_title"))
-        self.title_label.setPixmap(theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD))
+        self.title_label.setPixmap(
+            theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF())
+        )
         # Toggle shows the language it switches TO.
         self.lang_btn.setText("עב" if i18n.get_language() == "en" else "EN")
         self.lang_btn.setAccessibleName(t("toggle_language_name"))
@@ -905,14 +909,46 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
+def configure_application(app: QApplication) -> None:
+    """
+    Apply the two pieces of process-wide setup every GUI entry point needs
+    on a freshly-constructed QApplication, before any window is built:
+    the app stylesheet and the persisted UI language.
+
+    This used to live only in this module's own main() below, which is
+    reachable exclusively via `python -m speech_to_text.gui.main_window` -
+    a path nothing in the shipped app actually uses. speech_to_text/main.py
+    (the real entry point behind run.ps1, run.bat, `python -m
+    speech_to_text.main`, and the `speech-to-text` console script) built
+    its own QApplication and never applied the stylesheet at all, so the
+    entire themed look - peach checkbox tick, radio ring-and-dot, spin box
+    frame and arrows, dark scrollbars, styled QToolTip, the kbdFocus ring on
+    native controls - was silently absent from every real launch while
+    still looking correct in this module's own main() and in any ad hoc
+    script that happened to call app_stylesheet() itself. Centralizing the
+    setup here, called by both entry points (and by anything else that
+    stands up a QApplication for this GUI, e.g. screenshot/diagnostic
+    scripts), is what keeps them from drifting apart again - adding the one
+    missing line to main.py would have fixed today's symptom but left two
+    independent call sites free to diverge on the next change.
+
+    Must be called AFTER the QApplication is constructed (setStyleSheet and
+    setLayoutDirection are instance calls) but this has no bearing on the
+    high-DPI import-ordering constraint documented above
+    (TestHighDpiEntryPointOrdering): that constraint is about *importing*
+    this module before QApplication() runs, not about when this function is
+    called relative to it.
+    """
+    app.setStyleSheet(theme.app_stylesheet())
+    i18n.apply_saved_language(app)
+
+
 def main():
     """Entry point for GUI."""
     from PyQt5.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
-    app.setStyleSheet(theme.app_stylesheet())
-
-    i18n.apply_saved_language(app)
+    configure_application(app)
 
     window = MainWindow()
     window.show()

@@ -125,7 +125,7 @@ class FileSelectStep(QFrame):
         # this label's box), so no maximumHeight is needed here - a QLabel
         # showing nothing but a pixmap already sizes to that pixmap.
         icon_label = QLabel()
-        icon_pixmap = svg_to_pixmap(ICONS["folder"], 48, COLORS['accent'])
+        icon_pixmap = svg_to_pixmap(ICONS["folder"], 48, COLORS['accent'], dpr=self.devicePixelRatioF())
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
         icon_label.setAlignment(Qt.AlignCenter)
@@ -331,7 +331,7 @@ class FileSelectStep(QFrame):
         row_layout.setSpacing(Spacing.XS)
 
         icon = QLabel()
-        icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success']))
+        icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success'], dpr=self.devicePixelRatioF()))
         icon.setStyleSheet("background: transparent;")
         icon.setFixedSize(16, 16)
         row_layout.addWidget(icon)
@@ -350,7 +350,7 @@ class FileSelectStep(QFrame):
         # retranslate() already funnel through) disambiguates which row's
         # button this is once more than one file is queued.
         remove_btn = QPushButton()
-        remove_btn.setIcon(QIcon(svg_to_pixmap(ICONS["x"], 14, COLORS['text_tertiary'])))
+        remove_btn.setIcon(QIcon(svg_to_pixmap(ICONS["x"], 14, COLORS['text_tertiary'], dpr=self.devicePixelRatioF())))
         remove_btn.setFixedSize(20, 20)
         remove_btn.setCursor(Qt.PointingHandCursor)
         remove_btn.setFocusPolicy(Qt.StrongFocus)

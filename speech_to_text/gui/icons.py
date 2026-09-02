@@ -6,6 +6,8 @@ outline icons that recolor cleanly via the 'currentColor' substitution in
 svg_to_pixmap().
 """
 
+import math
+
 from PyQt5.QtCore import Qt, QByteArray
 from PyQt5.QtGui import QPainter, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
@@ -90,23 +92,38 @@ ICONS = {
 }
 
 
-def svg_to_pixmap(svg_string: str, size: int = 24, color: str = "white") -> QPixmap:
+def svg_to_pixmap(svg_string: str, size: int = 24, color: str = "white", dpr: float = 1.0) -> QPixmap:
     """
     Rasterize an SVG string (with 'currentColor' tokens) to a square QPixmap.
 
     Args:
         svg_string: SVG markup, e.g. an entry from ICONS.
-        size: Width and height of the resulting pixmap in pixels.
+        size: Width and height of the resulting pixmap in device-independent
+            pixels - what the widget displaying it will actually occupy on
+            screen, regardless of dpr.
         color: Replacement color for 'currentColor' tokens.
+        dpr: devicePixelRatio of the screen/widget this pixmap will be shown
+            on. The backing store is allocated at size * dpr (rounded up)
+            and setDevicePixelRatio(dpr) is called before returning, so Qt
+            treats the extra pixels as resolution rather than as a bigger
+            logical icon. Since these are vector SVGs (not a raster being
+            resampled), rendering directly at the higher pixel count is
+            lossless - there is no upscaling step to soften, unlike a photo
+            or a pre-rasterized asset. Defaults to 1.0 so every existing
+            call site keeps behaving exactly as before until it's updated
+            to pass a real ratio.
 
     Returns:
-        QPixmap with a transparent background.
+        QPixmap with a transparent background, tagged with `dpr` so a
+        QLabel/QIcon/QPushButton draws it 1:1 instead of stretching it.
     """
     svg_with_color = svg_string.replace("currentColor", color)
     renderer = QSvgRenderer(QByteArray(svg_with_color.encode()))
-    pixmap = QPixmap(size, size)
+    pixel_size = math.ceil(size * dpr)
+    pixmap = QPixmap(pixel_size, pixel_size)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
+    pixmap.setDevicePixelRatio(dpr)
     return pixmap

@@ -137,10 +137,17 @@ class IconTextButton(QPushButton):
         pixmap = None
         icon_span = 0
         if self._icon_name:
-            cache_key = (self._icon_name, self._icon_px, color)
+            # dpr is part of the key, not just (icon, size, color): without
+            # it, whichever ratio painted first (e.g. 1x during an
+            # off-screen warmup) would get reused for every later repaint
+            # regardless of which screen the button actually ended up on -
+            # a cached 1x pixmap stretched to fill a 1.25x/1.5x button looks
+            # exactly like the un-cached bug this fixes, just intermittently.
+            dpr = self.devicePixelRatioF()
+            cache_key = (self._icon_name, self._icon_px, color, dpr)
             pixmap = self._pixmap_cache.get(cache_key)
             if pixmap is None:
-                pixmap = svg_to_pixmap(ICONS[self._icon_name], self._icon_px, color)
+                pixmap = svg_to_pixmap(ICONS[self._icon_name], self._icon_px, color, dpr=dpr)
                 self._pixmap_cache[cache_key] = pixmap
             icon_span = self._icon_px + (self.GAP if text else 0)
 

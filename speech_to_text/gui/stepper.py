@@ -44,11 +44,18 @@ _STEP_LABELS = [
 
 # Small and deliberately so: this strip has to fit inside the ~23px of
 # slack that removing a step's DISPLAY heading (45px title + 8px spacer)
-# leaves over the stepper's own cost, once the window's fixed 650x600 is
+# leaves over the stepper's own cost, once the window's height budget is
 # divided between header, this strip, the stacked widget, and the nav bar
 # - see probe2.py's before/after numbers in the redesign notes. 20px keeps
 # the circle legible (a 1-digit numeral or the check glyph both read fine
 # at this size) without pushing step 1 back into overflow.
+#
+# That budget used to be the window's fixed 650x600 size; the window is
+# resizable now (see MainWindow.__init__ and config.py's GUI_WINDOW_*
+# constants), with a real minimum height enforced instead of a hard cap -
+# the badge size and its layout margins below (see __init__) are still
+# sized against that same measured content floor, just re-measured against
+# the current minimum rather than a fixed window.
 _BADGE_SIZE = 20
 _BADGE_RADIUS = _BADGE_SIZE // 2
 _CHECK_ICON_SIZE = 12
@@ -66,15 +73,24 @@ class StepIndicator(QFrame):
         # Horizontal margins match the XXL used as the step pages' own side
         # margin, so the badges/labels line up under the content they
         # describe rather than reading as a separately-aligned strip.
-        # Vertical margin is zero, not one of the named spacing tokens:
-        # every pixel of height here is a pixel taken from the stacked
-        # widget's own budget (see the class docstring and probe2.py's
-        # before/after numbers), and this strip already reads as a
-        # distinct band without extra padding - the header above it and
-        # the content below both carry their own visual weight, and the
-        # badge/label row's own line-height already gives the text room to
-        # breathe.
-        layout.setContentsMargins(Spacing.XXL, 0, Spacing.XXL, 0)
+        #
+        # Vertical margin is Spacing.SM (8px) top and bottom, not zero.
+        # It used to be zero on the theory that every pixel of height here
+        # was a pixel taken from the stacked widget's own budget inside the
+        # window's then-fixed 650x600 size - true at the time, but the very
+        # next commit after that comment was written made the window
+        # resizable with a real minimum instead of a hard cap (see
+        # config.py's GUI_WINDOW_MIN_HEIGHT), which is exactly the budget
+        # this zero was defending. Left at zero, the fixed 20px badge sat
+        # flush against the header's `border-bottom: 1px solid accent` -
+        # the single brightest line in the app - with no air between them
+        # at all. Spacing.SM was chosen over the smaller Spacing.XS because
+        # the complaint here is the strip reading as cramped, not merely
+        # touching; XS (4px) would clear the divider but barely register
+        # around a 20px badge. See GUI_WINDOW_MIN_HEIGHT's own comment in
+        # config.py for the height budget this costs and where it was found
+        # from.
+        layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
         layout.setSpacing(Spacing.SM)
 
         self._badges: List[QLabel] = []
@@ -139,7 +155,7 @@ class StepIndicator(QFrame):
 
     def _paint_completed(self, badge: QLabel, text: QLabel, index: int, key: str) -> None:
         badge.clear()
-        badge.setPixmap(svg_to_pixmap(ICONS["check"], _CHECK_ICON_SIZE, COLORS['success']))
+        badge.setPixmap(svg_to_pixmap(ICONS["check"], _CHECK_ICON_SIZE, COLORS['success'], dpr=self.devicePixelRatioF()))
         badge.setStyleSheet(
             f"background-color: transparent; border-radius: {_BADGE_RADIUS}px; "
             f"border: {theme.Border.CONTROL}px solid {COLORS['success']};"

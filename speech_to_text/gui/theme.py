@@ -29,10 +29,11 @@ widget instance (button variants, selected-card borders, etc.) stays a
 per-widget call - app_stylesheet() is not the place to fight it.
 """
 
+import math
 import os
 import tempfile
 
-from PyQt5.QtCore import QStandardPaths, Qt
+from PyQt5.QtCore import QRect, QStandardPaths, Qt
 from PyQt5.QtGui import QFont, QFontMetrics, QLinearGradient, QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect
 
@@ -666,6 +667,17 @@ def _glyph_image_url(icon_name: str, size: int, color: str, rotation: int = 0) -
 
         from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 
+        # Deliberately NOT passed a dpr here (stays at svg_to_pixmap's 1.0
+        # default): the result is saved to a plain PNG and handed to QSS as
+        # a flat 'image: url(...)' rule, which has no devicePixelRatio
+        # concept at all - QSS would need Qt's multi-resolution
+        # 'image: url(a); image: url(b)' syntax (one URL per ratio, chosen
+        # by Qt at paint time) to benefit from a higher-res source here, and
+        # nothing in app_stylesheet() generates that today. This only starts
+        # being worth doing now that fixing the "stylesheet never reaches
+        # the real app" bug (see gui/main_window.py's configure_application)
+        # makes this code path run in the shipped app at all - previously
+        # it was dead weight either way.
         pixmap = svg_to_pixmap(ICONS[icon_name], size=size, color=color)
         if rotation:
             pixmap = pixmap.transformed(QTransform().rotate(rotation), Qt.SmoothTransformation)
@@ -993,6 +1005,7 @@ def gradient_text_pixmap(
     start_color_key: str = "accent",
     end_color_key: str = "accent_hover",
     padding: int = 4,
+    dpr: float = 1.0,
 ) -> QPixmap:
     """
     Render text filled with a vertical linear gradient, as a QPixmap.
@@ -1001,22 +1014,52 @@ def gradient_text_pixmap(
     background-color), so this paints the text as an alpha mask and
     composites a gradient-filled pixmap into it. Used for the header title
     only - a deliberate one-off brand accent, not the general theme.
+
+    dpr: devicePixelRatio of the screen/widget this will be shown on
+    (typically the MainWindow's - pass window.devicePixelRatioF()). The
+    backing stores are allocated at (logical size) * dpr, rounded up, and
+    tagged with setDevicePixelRatio(dpr) so the QLabel that displays this
+    draws it 1:1 instead of Qt (or Windows, pre-high-DPI-awareness)
+    stretching a 1x raster - this was the one hand-rasterized pixmap in the
+    app and the only one that looked visibly soft, since every other
+    control is drawn from vector QSS or painted directly (see
+    IconTextButton.paintEvent, which was already correct and untouched).
     """
-    metrics = QFontMetrics(font)
+    # A device-aware QFontMetrics, not the bare single-argument form: the
+    # single-argument form resolves metrics against the application's
+    # default font database, which has no idea this pixmap is destined for
+    # a higher-dpr screen and under-measures accordingly - the same
+    # under-measurement that caused an earlier, unrelated clipped-title
+    # bug on this exact line. A throwaway 1x1 QPixmap carrying the real
+    # dpr gives QFontMetrics a paint device to measure against that
+    # matches what will actually be rendered below.
+    device = QPixmap(1, 1)
+    device.setDevicePixelRatio(dpr)
+    metrics = QFontMetrics(font, device)
     width = metrics.horizontalAdvance(text) + padding * 2
     height = metrics.height() + padding * 2
+    # Logical (device-independent) drawing rect - painting on a QPixmap
+    # that has setDevicePixelRatio() applied happens in these coordinates,
+    # not in the pixmap's raw pixel dimensions, so this is reused for both
+    # painters below instead of each mask/result's own .rect().
+    logical_rect = QRect(0, 0, width, height)
 
-    mask = QPixmap(width, height)
+    pixel_width = math.ceil(width * dpr)
+    pixel_height = math.ceil(height * dpr)
+
+    mask = QPixmap(pixel_width, pixel_height)
+    mask.setDevicePixelRatio(dpr)
     mask.fill(Qt.transparent)
     painter = QPainter(mask)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setRenderHint(QPainter.TextAntialiasing)
     painter.setFont(font)
     painter.setPen(QColor("white"))
-    painter.drawText(mask.rect(), Qt.AlignCenter, text)
+    painter.drawText(logical_rect, Qt.AlignCenter, text)
     painter.end()
 
-    result = QPixmap(width, height)
+    result = QPixmap(pixel_width, pixel_height)
+    result.setDevicePixelRatio(dpr)
     result.fill(Qt.transparent)
     result_painter = QPainter(result)
     result_painter.drawPixmap(0, 0, mask)
@@ -1024,7 +1067,7 @@ def gradient_text_pixmap(
     gradient = QLinearGradient(0, 0, 0, height)
     gradient.setColorAt(0, QColor(COLORS[start_color_key]))
     gradient.setColorAt(1, QColor(COLORS[end_color_key]))
-    result_painter.fillRect(result.rect(), gradient)
+    result_painter.fillRect(logical_rect, gradient)
     result_painter.end()
 
     return result
