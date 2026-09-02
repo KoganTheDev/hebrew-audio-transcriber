@@ -490,6 +490,32 @@ class TestDataPayload:
         assert payload(out)["strings"]["search"] == "חיפוש"
         assert "חיפוש" in out
 
+    def test_search_input_dir_follows_the_chrome_language_not_the_document(self):
+        """
+        The document itself is always dir="rtl" (it's a Hebrew transcript -
+        see _render_head_html()), but the #search input's OWN dir has to
+        track whichever language ui_strings actually carries: an English
+        run's placeholder anchored to an inherited RTL input used to overflow
+        off the START of the field (the unreadable end) once the toolbar's
+        "release valve" (#search's own comment in 16-toolbar.css) squeezed
+        it below its content's width - see chrome.py's _input_dir().
+
+        English chrome -> dir="ltr", so a squeezed placeholder clips at its
+        own end ("Search transc...", legible as a truncation). Hebrew chrome
+        -> dir="rtl", unchanged from the document's own direction.
+        """
+        en = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={"search": "Search transcript"})
+        he = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={"search": "חיפוש בתמלול"})
+        assert '<input id="search" type="search" dir="ltr"' in en
+        assert '<input id="search" type="search" dir="rtl"' in he
+
+        # No ui_strings at all: the renderer's own fallback ("Search
+        # transcript", English) still has to resolve to dir="ltr" - the
+        # document's dir="rtl" must never leak in just because nothing was
+        # passed down from the GUI.
+        default = render_html([doc("a.wav", [seg(0, 1)])])
+        assert '<input id="search" type="search" dir="ltr"' in default
+
 
 class TestEditableDocument:
 

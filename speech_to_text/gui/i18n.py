@@ -240,6 +240,18 @@ STRINGS = {
     # core/assets/the page script (core/assets/js/) and core/formatting look up.
     "doc_toolbar": {"en": "Transcript tools", "he": "כלי תמלול"},
     "doc_search": {"en": "Search transcript", "he": "חיפוש בתמלול"},
+    # The #search input's visible placeholder - shorter than doc_search on
+    # purpose. #search is the toolbar's deliberate "release valve" (see
+    # #search's own comment in core/assets/css/16-toolbar.css): it is allowed
+    # to shrink below its placeholder's natural width so the row holds one
+    # line down to the stacking breakpoint, and a shorter placeholder means
+    # that shrinking has to go a lot further before anything clips at all.
+    # doc_search itself stays the full phrase for the input's aria-label and
+    # the toolbar's own accessible name (chrome.py:239's markup sets both
+    # from the same translated string on purpose, but they don't have to be
+    # the same string) - a screen reader has no width constraint to economise
+    # against, so there is nothing to gain by shortening what it announces.
+    "doc_search_placeholder": {"en": "Search", "he": "חיפוש"},
     "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
     "doc_search_next": {"en": "Next match", "he": "התאמה הבאה"},
     "doc_no_results": {"en": "No results", "he": "אין תוצאות"},

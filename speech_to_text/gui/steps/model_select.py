@@ -5,6 +5,7 @@ import os
 
 from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QButtonGroup,
     QCheckBox,
@@ -278,67 +279,63 @@ class ModelSelectStep(QFrame):
         # identify_speakers_check's QCheckBox(text) does, so without this a
         # screen reader would announce it as an unlabelled number field.
         self.speaker_count_spin.setAccessibleName(t("speaker_count"))
+        # Stepper buttons removed: the row reads as clutter next to an
+        # otherwise clean checkbox+label, and 2-10 is a range typed faster
+        # than clicked up to. NoButtons only hides the ::up-button/
+        # ::down-button subcontrols - QAbstractSpinBox still owns Up/Down,
+        # PageUp/PageDown, direct typing and the scroll wheel regardless of
+        # setButtonSymbols, so nothing about how the value can be changed is
+        # lost. Chosen over zeroing ::up-button/::down-button in QSS because
+        # this is a per-widget behavioural setting, not a shared theme rule:
+        # it doesn't touch app_stylesheet()'s QSpinBox block (which stays
+        # correct for any spin box added later that DOES want buttons), and
+        # it sidesteps re-balancing the field's padding by hand where a
+        # subcontrol used to reserve space - Qt simply stops reserving it.
+        #
+        # This is also why the RTL button-mirroring fix that used to live
+        # here as _apply_spin_button_direction() was deleted rather than
+        # kept dormant: with no buttons, there is nothing left to mirror.
+        # The Qt finding it recorded is still worth having on file, in case
+        # a future spin box on this row (or elsewhere) brings buttons back
+        # and hits the same bug fresh:
+        #
+        #   app_stylesheet()'s QSpinBox::up-button/::down-button rules never
+        #   set subcontrol-position, so Qt falls back to its built-in default
+        #   of "top right"/"bottom right" - and that default is NEVER
+        #   logically re-resolved against the widget's layoutDirection, so
+        #   the buttons stay physically right even under RTL. The tempting
+        #   fix - branch on is_rtl() and hand the widget an explicit "top
+        #   left"/"bottom left" for RTL - does NOT work: Qt mirrors an
+        #   EXPLICITLY-declared subcontrol-position a SECOND time for RTL
+        #   widgets (the same visualPos()/visualRect() logic a style uses for
+        #   RTL generally), so a literal "left" fed to RTL gets flipped back
+        #   to physical right, cancelling the fix against itself. Mirroring
+        #   only engages once a value is actually declared - the undeclared
+        #   built-in default never goes through it at all, which is the
+        #   actual root cause. The correct fix is therefore simpler than the
+        #   tempting one: declare the plain LTR-correct position ("top
+        #   right"/"bottom right") unconditionally, once, per widget (an
+        #   object-name-scoped stylesheet, since app_stylesheet() is shared
+        #   across every QSpinBox), and let Qt's own mirroring - which only
+        #   fires on a declared value - do the flip for RTL. No is_rtl()
+        #   branch needed, and no re-declaration on a language toggle either,
+        #   since the declared value itself never changes.
         layout.addWidget(self.speaker_count_spin)
-        self._apply_spin_button_direction()
+        self.speaker_count_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        # Centred because the field is wider than most of what it holds.
+        # QSpinBox sizes itself for its widest possible value ("10"), so a
+        # single-digit count - which is every value from 2 to 9, i.e. almost
+        # all of them - sat against the leading edge of a box with visible
+        # empty space beside it. That read as an unfinished control once the
+        # stepper buttons stopped filling that space. Centring is
+        # direction-neutral, so it needs no RTL counterpart.
+        self.speaker_count_spin.setAlignment(Qt.AlignCenter)
 
         layout.addStretch()
 
         self.identify_speakers_check.toggled.connect(self._on_identify_toggled)
         self._on_identify_toggled(True)
         return row
-
-    def _apply_spin_button_direction(self) -> None:
-        """
-        Mirror the speaker-count spin box's up/down buttons to the leading
-        edge in RTL, matching every other control on this row (the checkbox
-        sits on the trailing side of its own label, the label text itself
-        reflows RTL).
-
-        Investigated before changing anything, per this item's own brief -
-        the fix below is NOT what a first guess would write, and the actual
-        mechanism is worth recording so nobody "simplifies" this back to the
-        wrong guess later:
-
-        Root cause: app_stylesheet()'s QSpinBox::up-button/::down-button
-        rules never set subcontrol-position, so Qt falls back to its
-        built-in default of "top right"/"bottom right" - and that default is
-        NEVER logically re-resolved against the widget's layoutDirection,
-        which is the bug (buttons stay physically right in Hebrew too).
-
-        The first guess was to branch on is_rtl() and hand the widget an
-        explicit "top left"/"bottom left" for RTL, "top right"/"bottom
-        right" for LTR - the obviously "direction-aware" fix. Screenshotted
-        (tabtest/shoot harness) and it did NOT move the buttons at all in
-        Hebrew: they stayed on the physical right, identical to English.
-
-        The reason, found by then screenshotting an explicit "top right" in
-        BOTH directions instead of branching: Qt's QStyleSheetStyle DOES
-        apply logical-to-physical mirroring to an EXPLICITLY-declared
-        subcontrol-position, via the same visualPos()/visualRect() logic a
-        style uses for RTL in general - but only once a value is actually
-        declared. The undeclared, built-in default a style computes
-        internally never goes through that mirroring step at all, which is
-        exactly why leaving subcontrol-position unset (the pre-fix state)
-        produced the bug in the first place, and why the branching first
-        guess was self-defeating: it fed RTL a literal "left", which Qt then
-        mirrored a SECOND time back to physical right, cancelling the fix
-        against itself.
-
-        So the actual fix is simpler than the first guess, not more
-        elaborate: declare the plain LTR-correct position ("top right" /
-        "bottom right") unconditionally, once, and let Qt's own mirroring -
-        which only engages when a value is declared - do the flip for RTL.
-        No is_rtl() branch, and (unlike the first guess) no need to call
-        this again from retranslate() on a language toggle either, since the
-        declared value never changes; the call there and at construction
-        time is kept anyway as cheap insurance against a future Qt version
-        changing that mirroring behaviour, not because this code depends on
-        being re-run per direction today.
-        """
-        self.speaker_count_spin.setStyleSheet("""
-            QSpinBox#speakerCountSpin::up-button { subcontrol-position: top right; }
-            QSpinBox#speakerCountSpin::down-button { subcontrol-position: bottom right; }
-        """)
 
     def _on_identify_toggled(self, enabled: bool) -> None:
         """Speaker count is meaningless when identification is off."""
@@ -711,10 +708,6 @@ class ModelSelectStep(QFrame):
         self.identify_speakers_check.setText(t("identify_speakers"))
         self.speaker_count_label.setText(t("speaker_count"))
         self.speaker_count_spin.setAccessibleName(t("speaker_count"))
-        # Direction can change mid-session (the header language toggle), and
-        # this control's button placement is direction-dependent - see
-        # _apply_spin_button_direction's docstring.
-        self._apply_spin_button_direction()
         self._refresh_desc_labels()
         if self._calibration_note_key is not None:
             self.calibration_note.setText(t(self._calibration_note_key))
