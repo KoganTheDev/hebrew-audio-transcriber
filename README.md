@@ -14,7 +14,7 @@ Point it at one or more audio/video files (or drop a whole folder), and it walks
 - **Hebrew-specialised models**: defaults to [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper rather than stock Whisper, which is trained overwhelmingly on English. The generic Whisper sizes remain available for mixed-language audio.
 - **Timestamped speaker turns**: each block of the transcript carries its position in the audio and, where speakers can be identified, who is talking.
 - **Batch transcription**: select several files, or drop a folder, and get back one combined document - each source file gets its own titled section, transcribed in a single model load instead of one run per file.
-- **Bilingual interface (English / עברית)**: starts in English; the עב/EN button in the header switches the whole UI to a fully mirrored right-to-left Hebrew layout, and the choice is remembered between runs.
+- **Bilingual interface (English / עברית)**: starts in English; the עב/EN button in the header (or `Ctrl+Shift+L` from anywhere in the wizard) switches the whole UI to a fully mirrored right-to-left Hebrew layout, and the choice is remembered between runs.
 - **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the total duration of everything you've selected.
 - **Output saving location:** The output is saved automatically next to the audio - beside the file itself for a single run, or beside the first file for a batch (see "Output format" below).
 
@@ -122,10 +122,12 @@ python -m speech_to_text.main
 ```
 
 
+The window is resizable, and a step indicator across the top of the wizard always shows which of the three steps you're on.
+
 **Workflow:**
-1. **Select Audio File(s)**: drag one or more files into the drop zone (or click to browse, or drop a whole folder). Your CPU/RAM/GPU are shown alongside the total duration of everything selected; each file can be removed individually before continuing.
-2. **Choose Model**: pick from the models below, and set whether to identify speakers. The app pre-selects the highest-accuracy model that will still finish within a reasonable time on your hardware, based on the total duration of the batch.
-3. **Transcribe**: watch live progress - including which file of the batch is currently running - or cancel and return to model selection at any point. Progress and status messages follow the selected UI language, even if you switch mid-run. On completion, the combined transcript is saved next to the source file(s), with an **Open transcript** button that launches it in your browser.
+1. **Select Audio File(s)**: drag one or more files into the drop zone (or click to browse, or `Ctrl+O`, or drop a whole folder). Your CPU/RAM/GPU are shown alongside the total duration of everything selected; each file can be removed individually before continuing. Anything dropped in a format the app doesn't support is rejected rather than silently accepted and left to fail later - the drop zone reports how many files were skipped.
+2. **Choose Model**: pick from the models below, and set whether to identify speakers. Each card shows the model's RAM requirement and, for anything not already sitting in your local model cache, its first-use download size - so the download warning only appears when a download will actually happen. The app pre-selects the highest-accuracy model that will still finish within a reasonable time on your hardware, based on the total duration of the batch; while the one-time hardware benchmark behind that estimate is still running, the screen says so, and says so if the benchmark failed instead. `Enter` moves on and `Escape` goes back to file selection.
+3. **Transcribe**: watch live progress - including, for a batch, a "3 / 10" readout and a segment per file showing which one is currently running. Progress and status messages follow the selected UI language, even if you switch mid-run. Cancelling takes two presses: the first arms the Cancel button and shows an inline confirmation that times out on its own, and a second press (or `Escape`) actually cancels and returns you to model selection. On completion, the combined transcript is saved next to the source file(s), with an **Open transcript** button that launches it in your browser and a second button that opens its containing folder.
 
 ### Models
 
@@ -147,32 +149,39 @@ Actual processing time isn't fixed: it's estimated from a one-time benchmark run
 
 ```
 speech_to_text/
-├── main.py                    # Entry point: logging setup, dependency checks, launches the GUI
-├── config.py                  # Model definitions and app-wide constants
-├── hardware_detection.py      # CPU/RAM/GPU probing, model recommendation, time estimation
+├── main.py                     # Entry point: logging setup, dependency checks, launches the GUI
+├── config.py                   # Model definitions and app-wide constants
+├── hardware_detection.py       # CPU/RAM/GPU probing, model recommendation, time estimation
 ├── core/
-│   ├── transcriber.py         # Wraps faster_whisper.WhisperModel
-│   ├── segments.py            # Structured transcript: timings, per-word confidence, speaker
-│   ├── progress_scale.py      # Named boundaries for the progress bar's 3 coordinate systems
-│   ├── formatting/            # Turn merging & self-contained RTL HTML rendering (package: timecode/turns/assets/chrome/document)
-│   ├── assets/                # css/ and js/ fragment directories, numbered and concatenated at render time, inlined into the output
-│   ├── options.py             # Settings for one run, passed to the worker process
-│   ├── audio_source.py        # PyAV decoding and one-speaker-per-channel detection
-│   ├── diarization.py         # sherpa-onnx speaker identification and span assignment
-│   ├── hebrew_correct.py      # Confidence-gated correction against a user term list
-│   ├── hebrew_text.py         # Shared Hebrew normalization (nikud, final forms, clitics)
-│   ├── worker.py              # Runs transcription in a separate OS process
-│   ├── calibration.py         # One-time hardware benchmark (also runs out-of-process)
-│   └── dependencies.py        # Installs missing runtime dependencies on first launch
+│   ├── transcriber.py          # Wraps faster_whisper.WhisperModel
+│   ├── segments.py             # Structured transcript: timings, per-word confidence, speaker
+│   ├── progress_scale.py       # Named boundaries for the progress bar's 3 coordinate systems
+│   ├── formatting/             # Turn merging & self-contained RTL HTML rendering (package: timecode/turns/assets/chrome/document)
+│   ├── assets/                 # css/ and js/ fragment directories, numbered and concatenated at render time, inlined into the output
+│   ├── options.py              # Settings for one run, passed to the worker process
+│   ├── audio_source.py         # PyAV decoding and one-speaker-per-channel detection
+│   ├── diarization.py          # sherpa-onnx speaker identification and span assignment
+│   ├── diarization_powerset.py # Diarization on our own powerset decode (the "powerset" engine)
+│   ├── segmentation.py         # Powerset decoding of the pyannote segmentation-3.0 ONNX model
+│   ├── hebrew_correct.py       # Confidence-gated correction against a user term list
+│   ├── hebrew_text.py          # Shared Hebrew normalization (nikud, final forms, clitics)
+│   ├── log_bidi.py             # Visual-order console logging for Hebrew log lines
+│   ├── power.py                # Keeps the machine awake for the length of a transcription run
+│   ├── worker.py               # Runs transcription in a separate OS process
+│   ├── calibration.py          # One-time hardware benchmark (also runs out-of-process)
+│   └── dependencies.py         # Installs missing runtime dependencies on first launch
 └── gui/
-    ├── main_window.py         # Main window, wizard navigation, transcription lifecycle
-    ├── i18n.py                # English/Hebrew string table, language state, persistence
-    ├── widgets.py             # IconTextButton: direction-independent icon+text nav button
-    ├── threads.py             # QThread bridge between the GUI and the background process
-    ├── steps/                 # One module per wizard step (file select / model select / transcribe)
-    ├── theme.py               # Colors, fonts, QSS stylesheet builders
-    ├── icons.py               # Tabler icon SVGs, rendered to QPixmap
-    └── audio_utils.py         # Real audio/video duration probing (via PyAV)
+    ├── main_window.py          # Main window, wizard navigation, transcription lifecycle
+    ├── i18n.py                 # English/Hebrew string table, language state, persistence
+    ├── widgets.py              # IconTextButton: direction-independent icon+text nav button
+    ├── threads.py              # QThread bridge between the GUI and the background process
+    ├── steps/                  # One module per wizard step (file select / model select / transcribe)
+    ├── stepper.py              # 3-step wizard indicator shown above the stacked widget
+    ├── theme.py                # Colors, fonts, QSS stylesheet builders
+    ├── checkbox_style.py       # QProxyStyle that paints the checkbox indicator (replaces a QSS raster tick)
+    ├── focus.py                # Keyboard-vs-pointer focus-ring gate
+    ├── icons.py                # Tabler icon SVGs, rendered to QPixmap
+    └── audio_utils.py          # Real audio/video duration probing (via PyAV)
 
 tests/                          # pytest suite covering config, hardware detection, transcriber, and integration
 docs/
