@@ -1325,6 +1325,43 @@ class TestModelSelectStepCardWidth:
             step.deleteLater()
 
 
+class TestModelSelectStepEstimateLanguage:
+    """
+    A model card's time estimate has to be rendered in the language the UI
+    is in right now, not the one it was in when the estimate was computed.
+
+    The estimate used to be cached as a finished string from
+    hardware_detection's English-only formatter, so a Hebrew reader saw
+    "1 דק' 35 שנ'" for a file's length on step 1 and "משוער: 1m 46s" for the
+    estimate on step 2 - two notations for the same unit, two screens apart.
+    retranslate() deliberately re-renders text WITHOUT recomputing estimates
+    (recomputing would re-run and re-log the hardware estimator on a mere
+    language toggle), so the cache has to hold seconds and the units have to
+    come from the string table at render time.
+    """
+
+    def test_toggling_the_language_re_renders_the_estimate(self, qapp, model_hardware_stub):
+        from speech_to_text.gui import i18n
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        original = i18n.get_language()
+        try:
+            i18n.set_language("en", save=False)
+            step = ModelSelectStep(model_hardware_stub)
+            english = step._desc_labels["tiny"].text()
+
+            i18n.set_language("he", save=False)
+            step.retranslate()
+            hebrew = step._desc_labels["tiny"].text()
+
+            # The stub estimates 60s, which elides to a bare minute.
+            assert "1m" in english, english
+            assert "דק'" in hebrew, hebrew
+            assert "1m" not in hebrew, hebrew
+        finally:
+            i18n.set_language(original, save=False)
+
+
 class TestModelSelectStepCalibrationNote:
     """
     Every time estimate on this step is a placeholder (config.SPEED_FACTORS'

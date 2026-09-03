@@ -28,6 +28,24 @@ SUPPORTED_LANGUAGES = ("en", "he")
 # so they still lay out right-to-left as a whole in the Hebrew UI.
 _RLM = "‏"
 
+# LRI/PDI (U+2066/U+2069) fence a Latin quantity - "145 MB", "1 GB" - that
+# sits inside a Hebrew sentence.
+#
+# Without them the pair comes out backwards, reading "MB 145". The Unicode
+# bidi algorithm has European numbers influence neighbouring neutrals as if
+# they were right-to-left (rule N1), so the ordinary space between "145" and
+# "MB" is flanked by an R-acting number on one side and a real L letter on
+# the other, matches neither, and falls back to the paragraph direction -
+# RTL. That single RTL space splits what should be one left-to-right run in
+# two and swaps them. A non-breaking space does not help: it is the same
+# bidi class as a normal one. An isolate is what fixes it, and it has to be
+# an isolate rather than the older LRE/PDF embedding, which leaks: an
+# embedding pulls whatever Latin text happens to sit next to it into the
+# same run, so a neighbouring "|" or unit word drifts to the wrong side.
+# Both were rendered side by side before choosing.
+_LRI = "⁦"
+_PDI = "⁩"
+
 STRINGS = {
     # --- Main window ---
     "app_title": {"en": "Hebrew Audio Transcriber", "he": "מתמלל אודיו בעברית"},
@@ -98,7 +116,7 @@ STRINGS = {
     "remove_file": {"en": "Remove {filename}", "he": "הסרת {filename}"},
     "file_info": {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",
-        "he": _RLM + "{filename} | {minutes} דק' {seconds} שנ' | {size} MB",
+        "he": _RLM + _LRI + "{filename}" + _PDI + " | {minutes} דק' {seconds} שנ' | " + _LRI + "{size} MB" + _PDI,
     },
     # Summary line above the file list. Unlike file_info, this doesn't open
     # with a filename - it opens with the count - so it needs no RLM anchor
@@ -141,12 +159,25 @@ STRINGS = {
     "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
     "transcription_failed": {"en": "Transcription failed: {message}", "he": "התמלול נכשל: {message}"},
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
+    # Duration units, for format_duration() below. The model cards' time
+    # estimates used to come out of hardware_detection._format_duration,
+    # which hard-codes "m"/"s"/"h" - so a Hebrew user read "1 דק' 35 שנ'"
+    # for a file's length on step 1 and "משוער: 1m 46s" for the estimate on
+    # step 2, two different notations for the same unit two screens apart.
+    # The unit abbreviations match file_info/files_summary above, which are
+    # the strings those two screens are being compared against.
+    "dur_s": {"en": "{seconds}s", "he": "{seconds} שנ'"},
+    "dur_m": {"en": "{minutes}m", "he": "{minutes} דק'"},
+    "dur_ms": {"en": "{minutes}m {seconds}s", "he": "{minutes} דק' {seconds} שנ'"},
+    "dur_h": {"en": "{hours}h", "he": "{hours} שע'"},
+    "dur_hm": {"en": "{hours}h {minutes}m", "he": "{hours} שע' {minutes} דק'"},
     # RAM required, shown on the model card's tooltip and folded into its
     # radio's accessible description - not inline in the caption text (see
     # ModelSelectStep._desc_text): it applies to every card, always, and the
     # caption doesn't have room to say so for all seven without overflowing
     # in Hebrew on the RECOMMENDED card specifically (measured).
-    "model_ram_tooltip": {"en": "Requires {ram} RAM", "he": "דורש {ram} זיכרון RAM"},
+    "model_ram_tooltip": {"en": "Requires {ram} RAM",
+                          "he": "דורש " + _LRI + "{ram}" + _PDI + " זיכרון RAM"},
     # Appended to a card's caption ONLY for a model not yet present in the
     # local download cache (see model_select.py's _model_is_downloaded) -
     # the one fact that changes a decision right now, for the one or two
@@ -162,14 +193,15 @@ STRINGS = {
     # for fitting at all; model_download_tooltip below (on the card and the
     # radio's accessible description) carries the full sentence for anyone
     # who needs it spelled out.
-    "model_download_pending": {"en": "| ↓ {size}", "he": "| ↓ {size}"},
+    "model_download_pending": {"en": "| ↓ " + _LRI + "{size}" + _PDI,
+                               "he": "| ↓ " + _LRI + "{size}" + _PDI},
     # Full sentence version of the note above, for the card's tooltip and
     # the radio's accessible description - a screen reader or a hovering
     # mouse gets the words a screen glance at "↓ 1.6 GB" doesn't have room
     # to spell out.
     "model_download_tooltip": {
         "en": "Not downloaded yet - {size} on first use",
-        "he": "טרם הורד - {size} בשימוש הראשון",
+        "he": "טרם הורד - " + _LRI + "{size}" + _PDI + " בשימוש הראשון",
     },
     # Calibration note (ModelSelectStep.calibration_note) - see
     # HardwareDetector.tiny_seconds_per_audio_second and CalibrationThread.
@@ -509,7 +541,7 @@ STRINGS = {
     "w_identifying_speakers": {"en": "Identifying speakers...", "he": "מזהה דוברים..."},
     "w_downloading_diarization": {
         "en": "Downloading speaker models (one time, ~36 MB)...",
-        "he": "מוריד מודלים לזיהוי דוברים (חד-פעמי, כ-36 MB)...",
+        "he": "מוריד מודלים לזיהוי דוברים (חד-פעמי, כ-" + _LRI + "36 MB" + _PDI + ")...",
     },
     # Shown when diarization failed. The transcript itself is fine, so this is
     # phrased as a missing extra rather than an error.
@@ -521,7 +553,8 @@ STRINGS = {
     # Per-file status during a batch run. Opens with a Hebrew word in both
     # languages, so - like w_loading_model above - it needs no RLM anchor
     # even though {name} at the end is a filename.
-    "w_file_progress": {"en": "File {i}/{n}: {name}", "he": "קובץ {i} מתוך {n}: {name}"},
+    "w_file_progress": {"en": "File {i}/{n}: {name}",
+                        "he": "קובץ {i} מתוך {n}: " + _LRI + "{name}" + _PDI},
     "w_formatting": {"en": "Formatting output...", "he": "מעצב את הפלט..."},
     "w_saving": {"en": "Saving output file...", "he": "שומר את קובץ הפלט..."},
     "w_complete": {"en": "Complete!", "he": "הושלם!"},
@@ -778,6 +811,33 @@ def document_strings() -> dict:
         for key in STRINGS
         if key.startswith(_DOC_PREFIX)
     }
+
+
+def format_duration(seconds: int, elide_zero: bool = True) -> str:
+    """
+    A duration in the current language: "1m 46s" / "1 דק' 46 שנ'".
+
+    The same <60s / <1h / else ladder as
+    hardware_detection._format_duration, and the same elide_zero meaning -
+    drop a trailing zero component ("5m", not "5m 0s") when the string is
+    going in front of a user. That function stays where it is and keeps its
+    English output: it also builds the debug "reason" line that goes to the
+    log, which should not follow the UI language. This is the display half,
+    and it lives here because the unit words are string-table data like any
+    other.
+    """
+    if seconds < 60:
+        return t("dur_s", seconds=seconds)
+    if seconds < 3600:
+        minutes, secs = divmod(seconds, 60)
+        if elide_zero and secs == 0:
+            return t("dur_m", minutes=minutes)
+        return t("dur_ms", minutes=minutes, seconds=secs)
+    hours, remainder = divmod(seconds, 3600)
+    minutes = remainder // 60
+    if elide_zero and minutes == 0:
+        return t("dur_h", hours=hours)
+    return t("dur_hm", hours=hours, minutes=minutes)
 
 
 def model_text(model: str, field: str, index: int = None) -> str:

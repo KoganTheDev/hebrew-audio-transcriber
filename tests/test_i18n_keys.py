@@ -149,3 +149,56 @@ def test_every_emitted_params_dict_matches_the_english_placeholders():
                 detail.append(f"extra {sorted(extra)}")
             mismatches.append(f"{module}:{lineno} key {key!r}: {', '.join(detail)}")
     assert not mismatches, "\n".join(mismatches)
+
+
+# --- Latin quantities inside Hebrew sentences -------------------------------
+
+_LRI = "\u2066"
+_PDI = "\u2069"
+
+# Hebrew strings that embed a Latin number+unit pair, and the substring in
+# each that has to be fenced. Keyed by the i18n key so a failure names the
+# string rather than an index.
+_ISOLATED_HEBREW_QUANTITIES = {
+    "file_info": "{size} MB",
+    "model_ram_tooltip": "{ram}",
+    "model_download_pending": "{size}",
+    "model_download_tooltip": "{size}",
+    "w_downloading_diarization": "36 MB",
+}
+
+
+def test_latin_quantities_in_hebrew_strings_are_bidi_isolated():
+    """
+    "145 MB" inside a Hebrew sentence has to be fenced in LRI/PDI or it
+    renders as "MB 145".
+
+    The Unicode bidi algorithm has European numbers act as right-to-left for
+    the purpose of resolving neighbouring neutrals (rule N1), so the space
+    between "145" and "MB" matches neither side, falls back to the RTL
+    paragraph direction, and splits one left-to-right run into two reversed
+    ones. This shipped in the file list, on every model card's download note
+    and in the diarization download message. A non-breaking space does not
+    help (same bidi class); an LRE/PDF embedding does, but leaks into
+    adjacent Latin text, so isolates are what these strings use.
+    """
+    for key, quantity in _ISOLATED_HEBREW_QUANTITIES.items():
+        hebrew = STRINGS[key]["he"]
+        assert _LRI + quantity + _PDI in hebrew, (
+            f"{key}: {quantity!r} is not wrapped in LRI/PDI - it will render reversed "
+            f"in the Hebrew UI. Got: {hebrew!r}"
+        )
+
+
+def test_filenames_in_hebrew_strings_are_bidi_isolated():
+    """
+    Same rule, one step further out: a Latin filename followed by " | " and
+    a number gets split by the very same neutral-resolution rule, which put
+    the minute count to the RIGHT of the filename - i.e. read first - in
+    every row of the Hebrew file list.
+    """
+    for key, placeholder in (("file_info", "{filename}"), ("w_file_progress", "{name}")):
+        hebrew = STRINGS[key]["he"]
+        assert _LRI + placeholder + _PDI in hebrew, (
+            f"{key}: {placeholder} is not wrapped in LRI/PDI. Got: {hebrew!r}"
+        )

@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
 from speech_to_text import config
 from speech_to_text.gui import theme
 from speech_to_text.gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
-from speech_to_text.gui.i18n import is_rtl, model_text, t
+from speech_to_text.gui.i18n import format_duration, is_rtl, model_text, t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.hardware_detection import HardwareDetector
@@ -86,7 +86,12 @@ class ModelSelectStep(QFrame):
         self.hardware = hardware
         self.audio_duration = 0
         self._desc_labels = {}  # model_name -> QLabel showing "description | Est: ..."
-        self._time_strs = {}    # model_name -> last computed time-estimate display string
+        # model_name -> last computed estimate, in SECONDS. Seconds, not the
+        # rendered string: the units are translated (see i18n.format_duration),
+        # so a cached string would survive a language toggle - retranslate()
+        # deliberately re-renders text without recomputing estimates, and
+        # would have left every card reading "Est: 1m 46s" in a Hebrew UI.
+        self._time_secs = {}
         self._name_labels = {}  # model_name -> QLabel showing the model name
         self._cards = {}        # model_name -> QFrame card
         self._radio_cards = {}  # QRadioButton -> its own QFrame card, for
@@ -696,14 +701,14 @@ class ModelSelectStep(QFrame):
         re-renders text, so it must not re-run (and re-log) the hardware
         estimator - only update_audio_duration recomputes.
         """
-        time_str = self._time_strs.get(name)
-        if time_str is None:
-            time_est, _ = self.hardware.estimate_transcription_time(
+        seconds = self._time_secs.get(name)
+        if seconds is None:
+            seconds, _ = self.hardware.estimate_transcription_time(
                 self.audio_duration, name, identify_speakers=self.identify_speakers
             )
-            time_str = self.hardware.get_time_estimate_display(time_est)
-            self._time_strs[name] = time_str
-        text = t("model_desc_est", desc=model_text(name, "description"), time=time_str)
+            self._time_secs[name] = seconds
+        text = t("model_desc_est", desc=model_text(name, "description"),
+                 time=format_duration(seconds))
         if not self._downloaded[name]:
             # Direct dict access, not .get() - a model added to config.MODELS
             # without a download_size should raise here at card-build time,
@@ -722,7 +727,7 @@ class ModelSelectStep(QFrame):
 
     def _refresh_desc_labels(self, recompute: bool = False) -> None:
         if recompute:
-            self._time_strs.clear()
+            self._time_secs.clear()
         for name, label in self._desc_labels.items():
             label.setText(self._desc_text(name))
 
