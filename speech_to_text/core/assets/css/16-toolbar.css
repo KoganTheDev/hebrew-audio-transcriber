@@ -75,15 +75,35 @@
    returns below the stacking breakpoint, where there genuinely is not room
    for one line and two rows are the right answer. */
 .tb-group { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--tb-gap); }
-/* flex: 0 1 auto, not the shipped flex: 1 1 15rem - see .tb-row's own
-   comment above for why a growing search box defeated the row's
-   justify-content: center. min-width: 0 lets it actually give up width
-   (a flex item's default min-width is auto, i.e. its content's natural
-   width, which would otherwise stop it shrinking at all) - it is the one
-   control in the row that can lose width without losing anything, since it
-   is a text box: narrower just means fewer visible characters, where a
-   button that shrinks starts wrapping or clipping its label instead. */
-.tb-search { flex: 0 1 auto; min-width: 0; }
+/* flex: 0 1 20rem, not the shipped flex: 1 1 15rem, and not a flex-grow of
+   0 with an auto basis either (which this rule shipped as for a while - see
+   the "release valve" history in #search's own comment below). The
+   shipped 1 1 15rem grew to eat the row's free space, defeating .tb-row's
+   justify-content: center outright (a flex item with flex-grow does not
+   leave anything for the container's justify-content to distribute - see
+   .tb-row's own comment above), which is why grow was dropped to 0. But
+   auto-basis-plus-no-grow overcorrected: with no grow AND a basis no wider
+   than the placeholder's own intrinsic width, the search box rendered as a
+   small control huddled at content width while the row's real slack sat as
+   invisible padding to either side of the centred block - "centred" but
+   visually tiny and off-balance, not spanning the section the way the
+   search box used to.
+   20rem is a basis, not a grow factor: it is what the box asks for BEFORE
+   shrinking, wide enough that "Search transcript" (this input's own
+   longest placeholder, in English) sits inside it with room to spare at
+   every width this row is ever laid out at above the stacking breakpoint -
+   which is what actually fixes the clipping bug this comment used to
+   entirely rely on min-width and dir="ltr" for (see chrome.py's
+   _input_dir() for the belt-and-suspenders half of that fix, still needed
+   for the narrow end below). Below the breakpoint, flex-shrink: 1 still
+   lets the box give back exactly as much width as an overflowing row
+   needs - with .tb-search the only shrinkable sibling in .tb-row, the
+   final rendered width when the row overflows is `available space minus
+   every flex:none sibling's width`, a number the shrink algorithm derives
+   from the *available* space, not from this basis - so raising the basis
+   changes nothing about how far the box can still be squeezed at 819px,
+   only how much of the row it claims when there is space to spare. */
+.tb-search { flex: 0 1 20rem; min-width: 0; }
 /* flex: none so the squeeze at narrow widths lands on .tb-search alone
    rather than being shared proportionally with the action buttons - see
    .tb-btn/.icon-btn's own flex: none below for why a button is the wrong

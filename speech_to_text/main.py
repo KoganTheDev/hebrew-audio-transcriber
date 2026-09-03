@@ -100,7 +100,7 @@ def main():
     try:
         from PyQt5.QtWidgets import QApplication, QMessageBox
         from PyQt5.QtGui import QIcon
-        from speech_to_text.gui.main_window import MainWindow
+        from speech_to_text.gui.main_window import MainWindow, configure_application
         logger.debug("PyQt5 imports successful")
     except ImportError as e:
         logger.error(f"Failed to import PyQt5: {e}", exc_info=True)
@@ -125,11 +125,15 @@ def main():
         app.setWindowIcon(QIcon(config.ICON_PATH))
         logger.debug("QApplication created successfully")
 
-        # Apply the persisted UI language (English on first-ever launch)
-        # before MainWindow is built, so every widget renders in the right
-        # language and layout direction from the start.
-        from speech_to_text.gui import i18n
-        i18n.apply_saved_language(app)
+        # Apply the app stylesheet and the persisted UI language (English on
+        # first-ever launch) before MainWindow is built, so every widget
+        # renders themed and in the right language/layout direction from the
+        # start. See configure_application's own docstring for why this is
+        # a shared call rather than inlined here: this was previously two
+        # lines that only set the language, with the stylesheet call missing
+        # entirely - the app ran fully unstyled through this, the only entry
+        # point actually shipped, while looking correct everywhere else.
+        configure_application(app)
 
         logger.debug("Creating MainWindow...")
         window = MainWindow()

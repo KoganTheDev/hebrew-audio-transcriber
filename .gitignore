@@ -103,3 +103,6 @@ node_modules/
 # both files are third-party artifacts with their own licences (CC BY 4.0 and
 # MIT). The DER harness skips cleanly when they are absent.
 tests/eval/fixtures/
+
+# Local UI mockups and review renders - never committed.
+.mockups/

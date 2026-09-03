@@ -35,10 +35,42 @@ STRINGS = {
     # here, the icons and their visual side are handled by the widget.
     "nav_back": {"en": "Back", "he": "חזרה"},
     "nav_cancel": {"en": "Cancel", "he": "ביטול"},
+    # Shown beside Cancel once it's armed (first press) during step 3 - see
+    # MainWindow._on_cancel_clicked. The button's own label deliberately
+    # stays "Cancel" (every longer phrase measured too wide for the fixed
+    # 130x36 nav button in one or both languages - see button_danger_qss),
+    # so the actual explanation lives here instead, where there's real room
+    # for a sentence.
+    "cancel_confirm_hint": {
+        "en": "Click Cancel again to stop",
+        "he": "לחצו שוב על ביטול כדי לעצור",
+    },
     "nav_next": {"en": "Next", "he": "הבא"},
     "nav_new_file": {"en": "New File", "he": "קובץ חדש"},
     "no_model_title": {"en": "No Model", "he": "לא נבחר מודל"},
     "no_model_body": {"en": "Please select a model", "he": "אנא בחרו מודל"},
+    # Header language toggle - accessible name/tooltip. The button's own
+    # visible text already shows the TARGET language ("EN"/"עב" - see
+    # MainWindow._retranslate_chrome), which reads fine visually next to
+    # the app's current language, but says nothing about what the control
+    # DOES to a screen reader with no visual context, so this names the
+    # action instead. Static across both languages' target rather than
+    # re-derived per toggle - "switches the interface language" is true
+    # regardless of which direction it's about to switch.
+    "toggle_language_name": {"en": "Toggle interface language", "he": "החלפת שפת הממשק"},
+    "toggle_language_tooltip": {
+        "en": "Switch interface language (Ctrl+Shift+L)",
+        "he": "החלפת שפת הממשק (Ctrl+Shift+L)",
+    },
+    # Wizard step indicator (gui/stepper.py) - per-segment accessible-name
+    # suffixes. The badge/label color already carries this distinction for
+    # sighted users (peach fill, a check glyph, dimmed text - see
+    # StepIndicator's _paint_* methods), but a screen reader has no way to
+    # read a border color or an icon shape, so each segment's state is
+    # spelled out in words here too.
+    "step_status_current": {"en": "Current step", "he": "השלב הנוכחי"},
+    "step_status_done": {"en": "Completed", "he": "הושלם"},
+    "step_status_pending": {"en": "Not started", "he": "טרם התחיל"},
 
     # --- Step 1: file selection ---
     "specs_title": {"en": "Specs", "he": "מפרט מערכת"},
@@ -47,6 +79,23 @@ STRINGS = {
     "drop_formats": {"en": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV", "he": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV"},
     "drop_alt": {"en": "or click anywhere here to browse", "he": "או לחצו כאן כדי לבחור קובץ"},
     "no_file_selected": {"en": "No file selected", "he": "לא נבחר קובץ"},
+    # Drop zone accessibility. Read together by a screen reader (name then
+    # description) when the zone receives focus, so the description spells
+    # out both input paths (keyboard AND drag/drop) even though only the
+    # keyboard one is reachable without a mouse - a sighted keyboard user
+    # scanning past this control by ear should still learn drag-and-drop
+    # exists.
+    "drop_zone_name": {"en": "Audio file drop zone", "he": "אזור גרירת קובץ אודיו"},
+    "drop_zone_desc": {
+        "en": "Press Enter or Space to browse for a file, or drag and drop a file or folder here.",
+        "he": "לחצו Enter או Space כדי לבחור קובץ, או גררו לכאן קובץ או תיקייה.",
+    },
+    # Per-file remove button in the selected-files list (file_select.py) -
+    # a bare 20px "x" with no label of any kind before this step. {filename}
+    # disambiguates which row's button this is once more than one file is
+    # queued; a generic "Remove" would be indistinguishable across rows to
+    # a screen reader jumping between controls rather than reading linearly.
+    "remove_file": {"en": "Remove {filename}", "he": "הסרת {filename}"},
     "file_info": {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",
         "he": _RLM + "{filename} | {minutes} דק' {seconds} שנ' | {size} MB",
@@ -58,6 +107,23 @@ STRINGS = {
         "en": "{count} files selected | Total: {minutes}m {seconds}s",
         "he": "נבחרו {count} קבצים | סה\"כ: {minutes} דק' {seconds} שנ'",
     },
+    # Singular counterparts. Worth the extra keys rather than a bare "{count}
+    # files": a single dropped file is an ordinary case, not an edge one, and
+    # "1 files selected" is the kind of detail that makes an interface feel
+    # unfinished. Hebrew is not simply the same string with a different
+    # number either - the verb and the noun both change (נבחרו/נבחר,
+    # קבצים/קובץ), so a count-agnostic template could not have been right in
+    # both languages anyway.
+    "files_summary_one": {
+        "en": "1 file selected | Total: {minutes}m {seconds}s",
+        "he": "נבחר קובץ אחד | סה\"כ: {minutes} דק' {seconds} שנ'",
+    },
+    # Appended to the line above (or to no_file_selected) when a direct file
+    # drop skipped something outside config.SUPPORTED_FORMATS - see
+    # FileSelectStep._drop. Count only, no filenames: this line has little
+    # width to spare (see file_select.py's layout comments).
+    "files_skipped": {"en": "({count} skipped)", "he": "({count} דולגו)"},
+    "files_skipped_one": {"en": "(1 skipped)", "he": "(קובץ אחד דולג)"},
     # Short "N files" label - used as the filename slot of file_model_info
     # (step 3's header) when a batch, rather than a single file, is running.
     "files_count_label": {"en": "{count} files", "he": "{count} קבצים"},
@@ -75,6 +141,49 @@ STRINGS = {
     "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
     "transcription_failed": {"en": "Transcription failed: {message}", "he": "התמלול נכשל: {message}"},
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
+    # RAM required, shown on the model card's tooltip and folded into its
+    # radio's accessible description - not inline in the caption text (see
+    # ModelSelectStep._desc_text): it applies to every card, always, and the
+    # caption doesn't have room to say so for all seven without overflowing
+    # in Hebrew on the RECOMMENDED card specifically (measured).
+    "model_ram_tooltip": {"en": "Requires {ram} RAM", "he": "דורש {ram} זיכרון RAM"},
+    # Appended to a card's caption ONLY for a model not yet present in the
+    # local download cache (see model_select.py's _model_is_downloaded) -
+    # the one fact that changes a decision right now, for the one or two
+    # models that actually need it. Most cards carry no extra text at all.
+    #
+    # Deliberately terse (a bare down-arrow, not the word "download"/"הורדה"):
+    # measured against the RECOMMENDED card - the one this note is most
+    # likely to land on, since the app's own default recommendation is
+    # usually the least-downloaded model - the full word pushed the caption
+    # past the scroll area's actual viewport width (was 539px against a
+    # ~514px budget once the vertical scrollbar is showing; the word alone
+    # cost ~45 of those px). The arrow trades a few px of self-explanation
+    # for fitting at all; model_download_tooltip below (on the card and the
+    # radio's accessible description) carries the full sentence for anyone
+    # who needs it spelled out.
+    "model_download_pending": {"en": "| ↓ {size}", "he": "| ↓ {size}"},
+    # Full sentence version of the note above, for the card's tooltip and
+    # the radio's accessible description - a screen reader or a hovering
+    # mouse gets the words a screen glance at "↓ 1.6 GB" doesn't have room
+    # to spell out.
+    "model_download_tooltip": {
+        "en": "Not downloaded yet - {size} on first use",
+        "he": "טרם הורד - {size} בשימוש הראשון",
+    },
+    # Calibration note (ModelSelectStep.calibration_note) - see
+    # HardwareDetector.tiny_seconds_per_audio_second and CalibrationThread.
+    # "_pending" is the transient state while the background benchmark is
+    # still running; "_unmeasured" is the permanent resting state once it's
+    # known to have failed outright (see MainWindow._on_calibration_failed).
+    "calibration_pending": {
+        "en": "Measuring this machine's speed - estimates below are provisional",
+        "he": "מודד את מהירות המחשב - האומדנים למטה זמניים",
+    },
+    "calibration_unmeasured": {
+        "en": "Couldn't measure this machine's speed - estimates below are rough guesses",
+        "he": "לא ניתן היה למדוד את מהירות המחשב - האומדנים למטה משוערים בגסות",
+    },
 
     # --- Step 3: transcription ---
     "transcribing_title": {"en": "Transcribing", "he": "מתמלל"},
@@ -86,8 +195,25 @@ STRINGS = {
     },
     "calculating": {"en": "calculating...", "he": "בחישוב..."},
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
+    # Caption shown above the (now single-line, middle-elided) path label -
+    # see TranscriptionStep._render_result_path for why the path stopped
+    # being part of this same string. "saved_to" below is kept as the full,
+    # untruncated "Saved to:\n<path>" text for the tooltip and accessible
+    # description, where there is no width to elide against and the whole
+    # point is to hand back what the on-screen ellipsis hid.
+    "saved_to_caption": {"en": "Saved to:", "he": "נשמר אל:"},
     "saved_to": {"en": "Saved to:\n{path}", "he": "נשמר אל:\n" + _RLM + "{path}"},
     "open_transcript": {"en": "Open transcript", "he": "פתיחת התמלול"},
+    # Secondary action beside "Open transcript" - reveals the containing
+    # folder instead of the transcript itself (see
+    # TranscriptionStep._open_folder).
+    "show_in_folder": {"en": "Show in folder", "he": "הצגה בתיקייה"},
+    # Batch progress strip (only shown for n > 1 - see
+    # TranscriptionStep.set_batch_files). Pure digits and a slash, so -
+    # unlike file_model_info/saved_to above - it needs no RLM anchor even
+    # though it sits in the Hebrew UI: there's no Latin filename inside it
+    # to anchor.
+    "batch_progress_readout": {"en": "{i} / {n}", "he": "{i} / {n}"},
 
     # Speaker name template written into the transcript file itself, not shown
     # in the GUI. Rendered here and passed to the worker as data: core/ has no
@@ -114,6 +240,18 @@ STRINGS = {
     # core/assets/the page script (core/assets/js/) and core/formatting look up.
     "doc_toolbar": {"en": "Transcript tools", "he": "כלי תמלול"},
     "doc_search": {"en": "Search transcript", "he": "חיפוש בתמלול"},
+    # The #search input's visible placeholder - shorter than doc_search on
+    # purpose. #search is the toolbar's deliberate "release valve" (see
+    # #search's own comment in core/assets/css/16-toolbar.css): it is allowed
+    # to shrink below its placeholder's natural width so the row holds one
+    # line down to the stacking breakpoint, and a shorter placeholder means
+    # that shrinking has to go a lot further before anything clips at all.
+    # doc_search itself stays the full phrase for the input's aria-label and
+    # the toolbar's own accessible name (chrome.py:239's markup sets both
+    # from the same translated string on purpose, but they don't have to be
+    # the same string) - a screen reader has no width constraint to economise
+    # against, so there is nothing to gain by shortening what it announces.
+    "doc_search_placeholder": {"en": "Search", "he": "חיפוש"},
     "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
     "doc_search_next": {"en": "Next match", "he": "התאמה הבאה"},
     "doc_no_results": {"en": "No results", "he": "אין תוצאות"},

@@ -21,7 +21,21 @@ from typing import List
 #
 # Entries are ordered by ascending accuracy_score - the GUI renders the cards in
 # this order, and tests assert the ordering holds.
-
+#
+# "download_size" is the one-time HuggingFace download for a model faster-
+# whisper hasn't cached locally yet (figures from this repo's own README
+# table). It exists ONLY as this static, structured number - there is no
+# download PROGRESS signal anywhere in this app. core/transcriber.py's
+# load_model() emits "w_loading_model" once and then calls WhisperModel(...)
+# directly; that call downloads internally (via huggingface_hub) with no
+# callback wired back through progress_callback, so the GUI has nothing to
+# show while a multi-GB download is actually in flight - "Loading model..."
+# covers both "downloading it for the first time" and "reading it off disk",
+# indistinguishably. Faking a percentage here would be worse than saying
+# nothing: a bar that doesn't move with the real download is a second,
+# actively misleading kind of silence. gui/steps/model_select.py uses this
+# field to warn about the download BEFORE the model is picked, which is the
+# one place in the download's lifecycle this app can currently be honest.
 MODELS = {
     "tiny": {
         "repo": "tiny",
@@ -39,6 +53,7 @@ MODELS = {
         ],
         "time_estimate": "~30 minutes",
         "ram_required": "1 GB",
+        "download_size": "76 MB",
         "accuracy_score": 2,
         "best_for": "Quick testing only",
         "recommended": False,
@@ -59,6 +74,7 @@ MODELS = {
         ],
         "time_estimate": "~3-5 hours",
         "ram_required": "2 GB",
+        "download_size": "145 MB",
         "accuracy_score": 3,
         "best_for": "Casual transcription",
         "recommended": False,
@@ -79,6 +95,7 @@ MODELS = {
         ],
         "time_estimate": "~8-10 hours",
         "ram_required": "3 GB",
+        "download_size": "484 MB",
         "accuracy_score": 3.5,
         "best_for": "Good quality transcription",
         "recommended": False,
@@ -99,6 +116,7 @@ MODELS = {
         ],
         "time_estimate": "~20-24 hours",
         "ram_required": "5 GB",
+        "download_size": "1.5 GB",
         "accuracy_score": 4,
         "best_for": "General-purpose transcription",
         "recommended": False,
@@ -123,6 +141,7 @@ MODELS = {
         ],
         "time_estimate": "~40+ hours",
         "ram_required": "8 GB",
+        "download_size": "3.1 GB",
         "accuracy_score": 4.5,
         "best_for": "Mixed-language or non-Hebrew content",
         "recommended": False,
@@ -154,6 +173,7 @@ MODELS = {
         ],
         "time_estimate": "~8-12 hours",
         "ram_required": "3 GB",
+        "download_size": "1.6 GB",
         "accuracy_score": 5,
         "best_for": "Hebrew transcription (RECOMMENDED)",
         "recommended": True,
@@ -174,6 +194,7 @@ MODELS = {
         ],
         "time_estimate": "~40+ hours",
         "ram_required": "8 GB",
+        "download_size": "3.1 GB",
         "accuracy_score": 5.5,
         "best_for": "Critical Hebrew content",
         "recommended": False,
@@ -195,6 +216,89 @@ WINDOW_WIDTH = 950
 WINDOW_HEIGHT = 800
 
 ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")
+
+# ============================================================================
+# Model Download Location
+# ============================================================================
+#
+# WhisperModel's download_root controls both where faster-whisper looks for
+# an already-cached model AND where it writes a new download. This used to
+# be the literal "./whisper_models" passed straight into the WhisperModel(...)
+# call in core/transcriber.py - relative to the process's CURRENT WORKING
+# DIRECTORY, not to this package or the repo. That was invisible for as long
+# as the app was only ever launched from the repo root, but pyproject.toml
+# installs a `speech-to-text` console script (see [project.scripts]) that can
+# be run from anywhere, and a relative download_root resolves against
+# wherever the process happened to start - so a launch from a different
+# working directory couldn't find the existing cache and silently
+# re-downloaded the whole thing from scratch. There is no download-progress
+# signal anywhere in this app (see MODELS' "download_size" comment above), so
+# the only symptom was "Loading model..." taking twenty unexplained minutes -
+# and on this machine that re-download is 5.9 GB.
+#
+# gui/steps/model_select.py used to hand-mirror the same literal in
+# _WHISPER_DOWNLOAD_ROOT (with a comment admitting there was no shared
+# constant to import instead) just to decide whether a model card should
+# warn about a pending download. Two independent copies of the same path
+# meant they could only be changed in lockstep by hand, and a mismatch would
+# make the card's download note lie about what the downloader will actually
+# do. MODEL_DOWNLOAD_ROOT is that shared constant - both call sites read it.
+#
+# Resolved once, at import time, to an ABSOLUTE path - so the value cannot
+# change with the working directory - in this order:
+#
+#   1. SPEECH_TO_TEXT_MODEL_DIR, if set. An explicit escape hatch for anyone
+#      who wants models on a different drive (they run multiple GB each).
+#   2. An existing "whisper_models" directory already sitting next to this
+#      package (one level up from speech_to_text/ - the repo root in a
+#      source checkout, or the directory the package was installed beside).
+#      Checked before the per-user fallback below, on purpose: this is the
+#      branch that finds the 5.9 GB already on disk, and it has to win over
+#      inventing a new, empty location that would look - from
+#      gui/steps/model_select.py's _model_is_downloaded's point of view -
+#      exactly like nothing had ever been downloaded.
+#   3. Otherwise, a per-user data directory: %LOCALAPPDATA% on Windows, or
+#      $XDG_DATA_HOME / ~/.local/share elsewhere. A fresh install still needs
+#      somewhere sensible to put models rather than writing into whatever
+#      directory the process happened to start in.
+#
+# core/ must never import PyQt5 (see core/__init__.py's module docstring for
+# why - faster-whisper/ctranslate2 and PyQt5 bundle conflicting DLLs on
+# Windows), which rules out QStandardPaths for step 3 even though
+# gui/theme.py's glyph cache uses exactly that API for the same kind of
+# per-user-directory question. This has to stay plain os / os.path so
+# core/transcriber.py can import it too.
+def _default_model_download_root() -> str:
+    """Where to put models when SPEECH_TO_TEXT_MODEL_DIR isn't set - see above."""
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+    beside_package = os.path.join(os.path.dirname(package_dir), "whisper_models")
+    if os.path.isdir(beside_package):
+        return beside_package
+
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "speech-to-text", "whisper_models")
+
+
+def resolve_model_download_root() -> str:
+    """
+    Compute MODEL_DOWNLOAD_ROOT's value. A function, not just a module-level
+    expression, so tests can re-run the resolution under monkeypatched
+    environment variables / cwd without reimporting the module.
+    """
+    override = os.environ.get("SPEECH_TO_TEXT_MODEL_DIR")
+    root = override if override else _default_model_download_root()
+    # abspath, not just relying on the pieces above already being absolute:
+    # a user-supplied SPEECH_TO_TEXT_MODEL_DIR could itself be relative, and
+    # this is the one place that guarantee has to hold no matter the input.
+    root = os.path.abspath(root)
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+MODEL_DOWNLOAD_ROOT = resolve_model_download_root()
 
 # ============================================================================
 # Transcription Settings
@@ -280,18 +384,67 @@ REQUIRED_PACKAGES = {
 # ============================================================================
 # Window sizing optimized for 1080p displays. Centered on screen.
 # Minimal size ensures content is not cramped on smaller displays.
+#
+# The window used to be setFixedSize'd at 650x600, with the maximize hint
+# stripped - no resize logic anywhere had to cope with a size other than
+# exactly this one. That hid a real shortfall rather than avoiding it, and
+# the window became resizable with a real floor to fix it (see
+# MainWindow.__init__). Re-measured with minsize.py after stepper.py's
+# badge strip gained Spacing.SM (8px) of top/bottom padding (see that
+# module's __init__ comment - the strip used to butt directly against the
+# header's accent-colored bottom border with zero px of air), the chrome
+# (header 50 + step indicator 36 + nav bar 79) is 165px, and the worst
+# step - transcription, once show_result() has populated the completion
+# panel - needs 448px on its own. 165 + 448 = 613px. Step 1 fares better
+# (418 + 165 = 583px). Both numbers were measured with the app stylesheet
+# and high-DPI scaling actually applied (see gui/main_window.py's
+# configure_application and its module-level AA_EnableHighDpiScaling /
+# AA_UseHighDpiPixmaps calls) - a bare, unstyled QApplication resolves
+# different font metrics, so a number measured against one does not carry
+# over to the other. Anyone re-measuring this after a further font/spacing
+# change should do the same: run minsize.py through the real entry point's
+# setup (configure_application), not a hand-rolled QApplication.
+#
+# GUI_WINDOW_MIN_HEIGHT is the floor this drives: it has to sit at or above
+# 613px or the same clipping comes back the moment the window is resized
+# down to it. 656 gives 43px of deliberate margin above that measured
+# minimum rather than pinning the floor exactly on it, so the completion
+# panel doesn't start touching the window edge the instant someone drags to
+# the smallest allowed size. It was raised from 640 (which carried its own
+# margin above the pre-padding 628px floor measured before this stepper
+# fix) specifically to keep covering the new 16px the badge strip's padding
+# added - a floor computed before that padding landed would have been a
+# stale, and now wrong, promise.
+#
+# GUI_WINDOW_HEIGHT (the default, initial size) stays clearly above the
+# minimum rather than sitting on it, for the same reason step 3's own
+# comments give for widening its margins: a size that exactly matches the
+# content floor reads as cramped even when nothing is technically clipped.
+# 720 leaves the completion panel - the tallest state of any step - about
+# 107px of breathing room by default, while remaining well short of forcing
+# a scroll on a 1080p display.
+#
+# GUI_WINDOW_MIN_WIDTH is unchanged at 600: the model card caption (the
+# tightest element width-wise) has 57px of slack at 600px and only starts
+# clipping below roughly 545px, so 600 was already a safe floor and this
+# step's overflow was purely a height problem.
 
-GUI_WINDOW_WIDTH = 650          # Main window width (px)
-GUI_WINDOW_HEIGHT = 600         # Main window height (px)
+GUI_WINDOW_WIDTH = 650          # Main window default width (px)
+GUI_WINDOW_HEIGHT = 720         # Main window default height (px) - see note above
 GUI_WINDOW_MIN_WIDTH = 600      # Minimum resizable width (px)
-GUI_WINDOW_MIN_HEIGHT = 550     # Minimum resizable height (px)
+GUI_WINDOW_MIN_HEIGHT = 656     # Minimum resizable height (px) - measured content floor is 613px
 
 # ============================================================================
 # GUI Configuration - Drag-Drop Zone
 # ============================================================================
 # File selection zone styling and spacing
 
-GUI_DROP_ZONE_HEIGHT = 210      # Drop zone height (px) - shrunk to make room for the system info table above it
+GUI_DROP_ZONE_HEIGHT = 170      # Drop zone MINIMUM height (px). Its own content (icon +
+                                # three lines) floors at ~172px, so a larger value here is a
+                                # floor the layout cannot compress below, not a target it can
+                                # give back - which is what overflowed the fixed window. The
+                                # zone grows well past this via its layout stretch factor
+                                # whenever the step has slack; see file_select.py.
 GUI_DROP_ZONE_PADDING = 20      # Internal padding in drop zone (px) - reduced to fit the shorter zone
 GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) - reduced to fit the shorter zone
 

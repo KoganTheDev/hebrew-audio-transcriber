@@ -16,9 +16,52 @@ here; chrome.py never imports from document.py, so there is no cycle.
 """
 
 import html
+import re
 from typing import Dict, Optional
 
 from .timecode import LRI, PDI
+
+# Matches any letter in the Hebrew Unicode block. Used to tell which way an
+# already-translated UI string reads, without this module (or anything else
+# under speech_to_text/core) importing gui.i18n to ask it directly - see
+# _input_dir()'s own docstring for why that has to be the case.
+_HEBREW_LETTER = re.compile(r"[֐-׿]")
+
+
+def _input_dir(text: str) -> str:
+    """
+    "ltr" or "rtl", guessed from whether `text` itself contains a Hebrew
+    letter - the only signal this module has for which way a translated UI
+    string reads.
+
+    The document this renders into is always dir="rtl" (see
+    core/formatting/__init__.py's _render_head_html()): it is the transcript
+    itself, and the transcript's own content - turns, timestamps, speaker
+    names - is Hebrew speech, regardless of which language the surrounding
+    app chrome happens to be in. But the chrome strings (this function exists
+    for their sake, not the transcript's) are the app's own UI language,
+    which an English-language run makes English text sitting inside that
+    RTL document. An <input> given no dir of its own inherits dir="rtl" from
+    the document, and an English placeholder inside an RTL-direction field
+    anchors to the right and overflows to the left - so when the field is too
+    narrow to show it whole (see #search's own "release valve" comment in
+    core/assets/css/16-toolbar.css), the clipped fragment is the START of the
+    string, which is the unreadable half. Giving the field its own dir,
+    matching the language actually inside it, fixes where the clip lands: an
+    LTR field overflows at its own end, so a clipped "Search transc..." still
+    reads as a truncated but legible word, not a stray fragment.
+    speech_to_text.core cannot import gui.i18n to just ask it what language
+    is active (see the package docstring on that hard constraint), and
+    ui_strings already arrives here as plain translated data with no
+    language tag riding along - threading one through render_html(),
+    _build_payload(), _render_toolbar_html() and this function only to reach
+    a single call site would be a lot of new plumbing for what the string
+    already answers for free: every string in STRINGS is either recognisably
+    Hebrew or recognisably not, so asking the string itself is both correct
+    and the smaller change.
+    """
+    return "rtl" if _HEBREW_LETTER.search(text) else "ltr"
+
 
 # Eight swatches, verified in tests/test_transcript_styles.py against the
 # composited panel background. Not a soft limit picked for symmetry - it's
@@ -222,6 +265,14 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
     s = lambda key, fallback: _t(strings, key, fallback)
 
     search = s("search", "Search transcript")
+    search_placeholder = s("search_placeholder", "Search")
+    # dir="{search_dir}" on #search itself, not left to inherit the document's
+    # own dir="rtl": see _input_dir()'s docstring for why an English-chrome
+    # run needs this field to be dir="ltr" specifically, so a placeholder
+    # that outgrows the field's width (a deliberate possibility - see
+    # #search's own comment in core/assets/css/16-toolbar.css) clips at its
+    # own end rather than its start.
+    search_dir = _input_dir(search)
     return "\n".join([
         f'<header class="toolbar" role="toolbar"'
         f' aria-label="{s("toolbar", "Transcript tools")}">',
@@ -236,7 +287,8 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
         '<div class="tb-row">',
         '<div class="tb-group tb-search">',
         _icon("search"),
-        f'<input id="search" type="search" placeholder="{search}" aria-label="{search}">',
+        f'<input id="search" type="search" dir="{search_dir}"'
+        f' placeholder="{search_placeholder}" aria-label="{search}">',
         '<span id="search-count" class="count" aria-live="polite"></span>',
         _button(None, id_attr="search-prev", css_class="icon-btn", icon="up",
                 aria_label=s("search_prev", "Previous match")),
