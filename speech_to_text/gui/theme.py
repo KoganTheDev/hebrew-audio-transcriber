@@ -30,10 +30,8 @@ per-widget call - app_stylesheet() is not the place to fight it.
 """
 
 import math
-import os
-import tempfile
 
-from PyQt5.QtCore import QRect, QStandardPaths, Qt
+from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtGui import QFont, QFontMetrics, QLinearGradient, QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect
 
@@ -592,120 +590,6 @@ def result_panel_qss(object_name: str) -> str:
     """
 
 
-def _glyph_cache_dir() -> str:
-    """
-    A per-user, app-owned directory for the generated glyphs.
-
-    GenericCacheLocation rather than CacheLocation because the latter is
-    derived from QCoreApplication's organization/application names, which
-    this app never sets (its QSettings identity is passed explicitly - see
-    gui/i18n.py), so it would resolve off the host executable's name and
-    differ between a normal run and a frozen build. This is
-    %LOCALAPPDATA%\cache on Windows and ~/.cache elsewhere, both per-user,
-    with our own subdirectory under it.
-
-    The mode is only honoured on POSIX; Windows already scopes
-    LOCALAPPDATA to the user, so it is belt and braces rather than the
-    primary control.
-    """
-    base = QStandardPaths.writableLocation(QStandardPaths.GenericCacheLocation)
-    if not base:
-        base = tempfile.gettempdir()
-    cache_dir = os.path.join(base, "HebrewAudioTranscriber", "glyphs")
-    os.makedirs(cache_dir, mode=0o700, exist_ok=True)
-    return cache_dir
-
-
-def _glyph_image_url(icon_name: str, size: int, color: str, rotation: int = 0) -> str:
-    """
-    Rasterize an ICONS[...] entry (see gui/icons.py) to a cached temp PNG
-    and return a QSS 'image: url(...)' fragment pointing at it - or "" if
-    that fails for any reason. Shared by every QSS rule in this module that
-    needs a glyph QSS can't draw from borders/background alone: the
-    checkbox tick and the spin box up/down arrows.
-
-    QSS can draw a control's fill and border from plain
-    background-color/border rules, but not an arbitrary glyph on top of
-    it - 'image:' needs a real raster asset. svg_to_pixmap() needs a
-    QPainter, which needs a QApplication to already exist, so this is only
-    ever called lazily from app_stylesheet() (applied to the QApplication
-    after it's constructed), never at module import time, when no
-    QApplication is guaranteed to exist yet (e.g. under pytest collection).
-
-    The filename encodes every input that changes the pixel content - icon,
-    size, color, rotation - rather than just the glyph's role, so a palette
-    change lands on a different name instead of quietly reusing yesterday's
-    color forever.
-
-    It is written to a per-user cache directory of our own, NOT the shared
-    temp dir, and it is regenerated on every run rather than reused when a
-    file already happens to be sitting at that path. Both halves of that
-    matter, and the second is the important one: a predictable name in a
-    shared directory plus a bare os.path.exists check means any process
-    that can write there can pre-create the file, and this function would
-    then hand Qt an image nobody here produced. The glyphs in question are
-    a checkbox tick and the spin box arrows - the tick sits on the control
-    that decides whether diarization runs at all, so a spoofed "checked"
-    state is a real misrepresentation, and either way it feeds unvetted
-    bytes to an image decoder. Regenerating unconditionally removes the
-    trust-on-existence entirely, and costs three small rasterizations once
-    per process.
-
-    Deliberately swallows every exception: this is a cosmetic asset, not
-    something that should be able to crash stylesheet construction. On
-    failure the caller's control still works via its plain background/
-    border rules - it just loses the glyph on top, which is a fallback
-    worth having rather than a half-built pipeline that silently ships a
-    blank box (checkbox) or an unlabeled button (spin box arrows).
-    """
-    color_tag = color.lstrip("#")
-    cache_name = f"glyph_{icon_name}_{size}_{color_tag}_{rotation}.png"
-    try:
-        cache_path = os.path.join(_glyph_cache_dir(), cache_name)
-
-        from PyQt5.QtGui import QTransform
-
-        from speech_to_text.gui.icons import ICONS, svg_to_pixmap
-
-        # Deliberately NOT passed a dpr here (stays at svg_to_pixmap's 1.0
-        # default): the result is saved to a plain PNG and handed to QSS as
-        # a flat 'image: url(...)' rule, which has no devicePixelRatio
-        # concept at all - QSS would need Qt's multi-resolution
-        # 'image: url(a); image: url(b)' syntax (one URL per ratio, chosen
-        # by Qt at paint time) to benefit from a higher-res source here, and
-        # nothing in app_stylesheet() generates that today. This only starts
-        # being worth doing now that fixing the "stylesheet never reaches
-        # the real app" bug (see gui/main_window.py's configure_application)
-        # makes this code path run in the shipped app at all - previously
-        # it was dead weight either way.
-        pixmap = svg_to_pixmap(ICONS[icon_name], size=size, color=color)
-        if rotation:
-            pixmap = pixmap.transformed(QTransform().rotate(rotation), Qt.SmoothTransformation)
-
-        # Rendered to a fresh O_EXCL file and moved into place, rather than
-        # saved straight onto the final name. Writing to the destination
-        # directly would follow anything already sitting there, and would
-        # also let a second instance starting at the same moment read a
-        # half-written PNG; os.replace is atomic and swaps the name itself.
-        handle, staging = tempfile.mkstemp(prefix=cache_name, suffix=".part",
-                                           dir=os.path.dirname(cache_path))
-        os.close(handle)
-        try:
-            if not pixmap.save(staging, "PNG"):
-                os.unlink(staging)
-                return ""
-            os.replace(staging, cache_path)
-        except Exception:
-            if os.path.exists(staging):
-                os.unlink(staging)
-            raise
-    except Exception:
-        return ""
-    # QSS's url() wants forward slashes even on Windows; a raw Windows path
-    # with backslashes is silently ignored by Qt's stylesheet parser.
-    return f"image: url({cache_path.replace(chr(92), '/')});"
-
-
 def app_stylesheet() -> str:
     """
     Application-wide QSS, applied once on the QApplication instance. Holds
@@ -726,7 +610,10 @@ def app_stylesheet() -> str:
         without a rule here they render as light-blue Windows controls on
         top of the Catppuccin Mocha ground the rest of the app now uses.
         They belong here rather than per-widget because every instance of
-        each control should look the same everywhere they appear.
+        each control should look the same everywhere they appear. The
+        QCheckBox entry is deliberately label-only, though: its indicator
+        is painted by PaintedCheckboxStyle instead, not by QSS - see the
+        QCheckBox comment further down for why the two can't coexist.
       - a [kbdFocus="true"] rule as the keyboard-focus ring, scoped to that
         dynamic property rather than the native :focus pseudo-state. Native
         :focus paints for default and mouse-click focus too - which is what
@@ -737,13 +624,6 @@ def app_stylesheet() -> str:
         transcript already uses via data-kbd (see
         core/assets/js/94-layout.js's bindKeyboardModality()).
     """
-    tick_image = _glyph_image_url("check", size=14, color=COLORS["accent_text"])
-    # arrow_right rotated -90/+90 becomes an up/down chevron. Tinted
-    # text_secondary rather than text_primary so the arrows read as quieter
-    # than the spin box's own value text, the way a native spinner's arrows
-    # usually sit a notch below the field's foreground in visual weight.
-    up_arrow_image = _glyph_image_url("arrow_right", size=10, color=COLORS["text_secondary"], rotation=-90)
-    down_arrow_image = _glyph_image_url("arrow_right", size=10, color=COLORS["text_secondary"], rotation=90)
     return f"""
     QMainWindow {{
         background-color: {COLORS['bg_primary']};
@@ -819,62 +699,46 @@ def app_stylesheet() -> str:
         border-color: {COLORS['focus']};
     }}
 
-    /* QCheckBox. Same "own every state" rule as the radio indicator above.
-       The checked fill is a plain accent-filled rounded square - that
-       alone already reads unambiguously as "on" next to its label - with a
-       tick glyph layered on top via 'image:' when the rasterized icon is
-       available (see _checkbox_tick_image_url). QSS can't draw a tick from
-       borders/background the way the radio dot is faked with a gradient,
-       so the glyph has to come from an actual asset; the fill alone is the
-       deliberate fallback if that asset ever fails to generate. */
+    /* QCheckBox. Deliberately NO ::indicator rule of any kind here -
+       unlike QRadioButton/QSpinBox above, whose indicators/arrows are
+       still drawn by plain QSS. The checkbox indicator is painted by
+       PaintedCheckboxStyle (gui/checkbox_style.py), a QProxyStyle
+       installed on the QApplication in main_window.configure_application,
+       because Qt's stylesheet 'image:' mechanism has no
+       devicePixelRatio concept - see that module's docstring for the full
+       reasoning. This is not merely "no rule needed": setting even ONE
+       QCheckBox::indicator{...} property here (border, background,
+       anything) makes Qt's internal QStyleSheetStyle claim the whole
+       indicator subcontrol and paint it itself from the CSS box model,
+       which pre-empts PaintedCheckboxStyle.drawPrimitive() before it ever
+       runs. So the QSS and the painted style are mutually exclusive for
+       this control, and the QSS side has to stay completely silent on
+       ::indicator - including hover/disabled/kbdFocus - for the painted
+       one to take effect at all. The bare QCheckBox{...} rule below still
+       applies (it styles the label text, a different selector Qt's CSS
+       capture doesn't extend to). */
     QCheckBox {{
         color: {COLORS['text_primary']};
         background: transparent;
         spacing: {Spacing.SM}px;
     }}
-    QCheckBox::indicator {{
-        width: 18px;
-        height: 18px;
-        border-radius: {Radius.CHECKBOX}px;
-        border: {Border.CONTROL}px solid {COLORS['control_border']};
-        background-color: {COLORS['bg_tertiary']};
-    }}
-    QCheckBox::indicator:hover {{
-        border-color: {COLORS['accent_hover']};
-    }}
-    QCheckBox::indicator:checked {{
-        border-color: {COLORS['accent']};
-        background-color: {COLORS['accent']};
-        {tick_image}
-    }}
-    QCheckBox::indicator:checked:hover {{
-        border-color: {COLORS['accent_hover']};
-        background-color: {COLORS['accent_hover']};
-        {tick_image}
-    }}
-    QCheckBox::indicator:disabled {{
-        border-color: {COLORS['border']};
-        background-color: {COLORS['bg_tertiary']};
-    }}
-    QCheckBox::indicator:checked:disabled {{
-        border-color: {COLORS['text_disabled']};
-        background-color: {COLORS['text_disabled']};
-        {tick_image}
-    }}
-    QCheckBox[kbdFocus="true"]::indicator {{
-        border-color: {COLORS['focus']};
-    }}
 
-    /* QSpinBox. Styling ::up-button/::down-button at all makes Qt stop
-       drawing its native arrow glyph on top of them - the same
-       "own every state" trap documented above for ::indicator, just for
-       a subcontrol's decoration instead of the whole control. The first
-       version of this rule styled the button backgrounds without
-       supplying ::up-arrow/::down-arrow, which left two blank dark
-       rectangles - worse than the native look, because it reads as a
-       broken control rather than an unstyled one. ::up-arrow/::down-arrow
-       need an explicit width/height or Qt reserves no space for the
-       image and it silently doesn't paint, so both are set here. */
+    /* QSpinBox. ::up-button/::down-button are styled here even though the
+       app's one QSpinBox (speaker count, model_select.py) currently ships
+       with setButtonSymbols(NoButtons) and never shows them - see that
+       widget's own comment for why the buttons were dropped and why this
+       block was deliberately kept rather than deleted alongside them, so a
+       future spin box that DOES want buttons finds them already themed.
+       ::up-arrow/::down-arrow are NOT styled: an earlier version of this
+       rule drew arrow glyphs on top via the same rasterize-to-QSS-image:
+       mechanism the checkbox tick used to (see git history /
+       checkbox_style.py's docstring for why that mechanism was retired
+       wholesale, not just for the tick) - styling ::up-button/::down-button
+       without also supplying ::up-arrow/::down-arrow leaves two blank dark
+       rectangles rather than the native arrow, so if a future widget
+       re-enables the buttons, drawing the arrows again needs solving fresh
+       (a painted QProxyStyle primitive, following checkbox_style.py's
+       pattern, rather than resurrecting the raster path). */
     QSpinBox {{
         background-color: {COLORS['bg_tertiary']};
         color: {COLORS['text_primary']};
@@ -900,16 +764,6 @@ def app_stylesheet() -> str:
     }}
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
         background-color: {COLORS['control_border']};
-    }}
-    QSpinBox::up-arrow {{
-        {up_arrow_image}
-        width: 10px;
-        height: 10px;
-    }}
-    QSpinBox::down-arrow {{
-        {down_arrow_image}
-        width: 10px;
-        height: 10px;
     }}
 
     /* QScrollBar. Slim and flat, no arrow buttons - the model list on the

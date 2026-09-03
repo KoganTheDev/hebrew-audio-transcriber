@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
 from speech_to_text import config
 from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.gui import i18n, theme
+from speech_to_text.gui.checkbox_style import PaintedCheckboxStyle
 from speech_to_text.gui.focus import KeyboardFocusTracker
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
@@ -938,8 +939,18 @@ def configure_application(app: QApplication) -> None:
     (TestHighDpiEntryPointOrdering): that constraint is about *importing*
     this module before QApplication() runs, not about when this function is
     called relative to it.
+
+    Also installs PaintedCheckboxStyle, wrapping whatever style the
+    QApplication resolved on its own (the platform default unless
+    overridden). This lives here rather than being folded into
+    app_stylesheet() because it is not QSS at all - see
+    checkbox_style.py's module docstring for why the checkbox tick moved
+    off the QSS `image:` mechanism entirely - and this is the one place
+    that already owns "everything a freshly-built QApplication needs before
+    any window exists".
     """
     app.setStyleSheet(theme.app_stylesheet())
+    app.setStyle(PaintedCheckboxStyle(app.style()))
     i18n.apply_saved_language(app)
 
 
