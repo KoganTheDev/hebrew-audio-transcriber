@@ -148,16 +148,6 @@ class MainWindow(QMainWindow):
         # Build UI
         self._init_ui()
 
-        # Keyboard-vs-mouse focus-ring gate (see gui/focus.py). One tracker
-        # per QApplication, not per window - installing a second one on a
-        # hypothetical second MainWindow would double-stamp every focus
-        # change, which is harmless but wasteful, so this is guarded by
-        # checking whether the application already carries one rather than
-        # assuming MainWindow.__init__ only ever runs once.
-        app = QApplication.instance()
-        if getattr(app, "_kbd_focus_tracker", None) is None:
-            app._kbd_focus_tracker = KeyboardFocusTracker(app)
-
         self._init_shortcuts()
 
         # Center on screen
@@ -952,6 +942,22 @@ def configure_application(app: QApplication) -> None:
     app.setStyleSheet(theme.app_stylesheet())
     app.setStyle(PaintedCheckboxStyle(app.style()))
     i18n.apply_saved_language(app)
+
+    # One tracker per QApplication, not per window. It used to be installed
+    # by MainWindow.__init__, which worked only because this app happens to
+    # build exactly one window: anything else standing up a widget against
+    # this QApplication - a second window, a dialog, a diagnostic script -
+    # got no tracker and therefore no focus ring, with nothing reporting it.
+    # That is the same shape of drift that left the stylesheet unapplied in
+    # the shipped entry point for the whole redesign, so it belongs here
+    # with the rest of the process-wide setup rather than inside a widget's
+    # constructor. Guarded rather than assumed to run once, since calling
+    # this twice on one QApplication should be harmless.
+    if getattr(app, "_kbd_focus_tracker", None) is None:
+        # Attribute name is a contract, not an implementation detail:
+        # ModelSelectStep._sync_card_focus_ring reads it back off the
+        # application to decide whether a model card should show its ring.
+        app._kbd_focus_tracker = KeyboardFocusTracker(app)
 
 
 def main():
