@@ -68,6 +68,30 @@ class KeyboardFocusTracker(QObject):
         self._keyboard_active = False
         app.installEventFilter(self)
         app.focusChanged.connect(self._on_focus_changed)
+        # Detach before the widgets go away. QApplication keeps emitting
+        # focusChanged while it tears its widget tree down at the end of a
+        # run, and the "old" widget it hands over there is one already on
+        # its way out - calling unpolish()/polish() on it (which is exactly
+        # what _on_focus_changed does) reaches into a half-destroyed C++
+        # object and takes the process down with an access violation AFTER
+        # exec_() has returned. It looked like a crash on exit with no
+        # Python frame in it, and it only showed up once a QProxyStyle was
+        # in the chain for unpolish to route through - i.e. once the
+        # painted checkbox landed. aboutToQuit fires while everything is
+        # still alive, so unhooking there sidesteps the whole window.
+        app.aboutToQuit.connect(self._detach)
+
+    def _detach(self) -> None:
+        """Stop observing, on the way out. Safe to call more than once."""
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.removeEventFilter(self)
+        try:
+            app.focusChanged.disconnect(self._on_focus_changed)
+        except TypeError:
+            # Already disconnected - _detach ran twice, which is fine.
+            pass
 
     def eventFilter(self, obj, event):
         event_type = event.type()

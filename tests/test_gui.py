@@ -779,6 +779,50 @@ class TestKeyboardFocusTracker:
             tracker.deleteLater()
 
 
+    def test_the_tracker_stops_stamping_once_the_application_is_quitting(self, qapp):
+        """
+        The tracker must let go of focusChanged before QApplication starts
+        destroying widgets.
+
+        QApplication keeps emitting focusChanged while it tears its widget
+        tree down at the end of a run, handing over an "old" widget that is
+        already on its way out - and _on_focus_changed answers that by
+        calling unpolish()/polish() on it, i.e. by reaching into a
+        half-destroyed C++ object. That took the process down with an access
+        violation after exec_() had already returned: a crash on exit with no
+        Python frame anywhere in it. Measured at 7 of 8 runs on the real
+        windowing system, 2 of 6 offscreen, which is why this pins the
+        mechanism (the tracker detaches on aboutToQuit) rather than trying to
+        catch an intermittent segfault in a subprocess.
+        """
+        from PyQt5.QtWidgets import QPushButton
+
+        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+
+        tracker = KeyboardFocusTracker(qapp)
+        btn = QPushButton()
+        btn.show()
+        try:
+            tracker._keyboard_active = True
+            qapp.aboutToQuit.emit()
+
+            # focusChanged still fires during teardown; the tracker must no
+            # longer be listening to it.
+            btn.setFocus()
+            qapp.processEvents()
+            assert not btn.property(PROPERTY), (
+                "tracker was still stamping focus after aboutToQuit"
+            )
+
+            # Idempotent: aboutToQuit can reach it more than once (and
+            # nothing should raise on the second pass).
+            tracker._detach()
+        finally:
+            btn.setParent(None)
+            btn.deleteLater()
+            tracker.deleteLater()
+
+
 class TestMainWindowKeyboardGuards:
     """
     MainWindow._on_advance_shortcut: Enter is wired at the window level to
