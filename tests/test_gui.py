@@ -1267,6 +1267,64 @@ def model_hardware_stub():
     return hw
 
 
+class TestModelSelectStepCardWidth:
+    """
+    The model cards must never be wider than what the scroll area actually
+    shows, or their right border is clipped and each card reads as a box
+    left open on one side.
+
+    setWidgetResizable(True) re-fits the scrolled widget from QScrollArea's
+    own resizeEvent - which fires when the scroll area changes size, not
+    when the viewport alone narrows because the vertical scrollbar has just
+    appeared. Content growing (the common trigger: MainWindow's
+    _on_calibration_done rewrites every estimate once the benchmark lands)
+    brings the bar in without any resize reaching the scroll area, so the
+    container keeps its old, now-too-wide width. Qt's own updateScrollBars()
+    also re-widens the widget to the full scroll area during its first pass
+    before deciding a bar is needed, which is why the fix is a maximum
+    width - a constraint Qt honours inside that pass - rather than a
+    resize() that the next layout undoes.
+    """
+
+    def test_container_is_clamped_to_the_viewport_on_a_viewport_resize(
+        self, qapp, model_hardware_stub
+    ):
+        from PyQt5.QtGui import QResizeEvent
+        from PyQt5.QtWidgets import QWIDGETSIZE_MAX
+
+        from speech_to_text.gui.steps.model_select import ModelSelectStep
+
+        step = ModelSelectStep(model_hardware_stub)
+        step.resize(600, 320)
+        step.show()
+        qapp.processEvents()
+        try:
+            scroll = step._scroll_area
+            viewport = scroll.viewport()
+            container = scroll.widget()
+
+            # Stand in for the state Qt leaves behind: the container is
+            # wider than the strip of it that is actually visible. The
+            # ceiling has to be lifted first - showing the step already
+            # applied one, which is the fix under test doing its job.
+            container.setMaximumWidth(QWIDGETSIZE_MAX)
+            container.resize(viewport.width() + 40, container.height())
+            assert container.width() > viewport.width()
+
+            qapp.sendEvent(viewport, QResizeEvent(viewport.size(), viewport.size()))
+
+            assert container.maximumWidth() == viewport.width()
+            assert container.width() <= viewport.width()
+            for name, card in step._cards.items():
+                assert card.width() <= viewport.width(), (
+                    f"card {name!r} is {card.width()}px inside a "
+                    f"{viewport.width()}px viewport - its right border is clipped"
+                )
+        finally:
+            step.hide()
+            step.deleteLater()
+
+
 class TestModelSelectStepCalibrationNote:
     """
     Every time estimate on this step is a placeholder (config.SPEED_FACTORS'

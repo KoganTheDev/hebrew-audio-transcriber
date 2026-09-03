@@ -199,6 +199,20 @@ class ModelSelectStep(QFrame):
         models_scroll.setFrameShape(QFrame.NoFrame)
         models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         models_scroll.setStyleSheet("background: transparent;")
+        # setWidgetResizable(True) re-fits the scrolled widget from
+        # QScrollArea's OWN resizeEvent, which fires when the scroll area
+        # changes size - not when the viewport alone shrinks because the
+        # vertical scrollbar just appeared. So a bar that shows up because
+        # the CONTENT grew (the common case here: _on_calibration_done
+        # rewrites every card's estimate once the background benchmark
+        # lands, and a longer line can wrap a card to a second row) narrows
+        # the viewport by the bar's 10px while leaving the container at its
+        # old width. The cards are then 10px wider than what's visible and,
+        # with horizontal scrolling off, their right border is simply
+        # clipped away - the card reads as an unfinished box open on one
+        # side. Watching the viewport's own resize closes that gap; see
+        # _sync_container_width.
+        models_scroll.viewport().installEventFilter(self)
 
         # Model selection
         self.model_group = QButtonGroup()
@@ -531,7 +545,42 @@ class ModelSelectStep(QFrame):
         card = self._radio_cards.get(obj)
         if card is not None and event.type() in (QEvent.FocusIn, QEvent.FocusOut):
             self._sync_card_focus_ring(card, focused_in=event.type() == QEvent.FocusIn)
+        elif event.type() == QEvent.Resize:
+            scroll = getattr(self, "_scroll_area", None)
+            # getattr, not a plain attribute: the filter is installed while
+            # the scroll area is still a local in __init__, so the first
+            # viewport resize can arrive before _scroll_area is bound.
+            if scroll is not None and obj is scroll.viewport():
+                self._sync_container_width()
         return super().eventFilter(obj, event)
+
+    def _sync_container_width(self) -> None:
+        """
+        Keep the scrolled card container exactly as wide as the viewport.
+
+        Only the width: the height stays whatever the container's own layout
+        asked for, so this never fights setWidgetResizable's vertical half.
+        Narrowing can make a description wrap and the container grow taller,
+        which QScrollArea picks up through the layout request it already
+        listens for. The widths converge in one step, so the
+        resize -> scrollbar -> resize path cannot cycle.
+        """
+        container = self._scroll_area.widget()
+        viewport = self._scroll_area.viewport()
+        if container is None:
+            return
+        # A ceiling, not just a resize. QScrollArea's own updateScrollBars()
+        # sizes the scrolled widget to the scroll area first and only then
+        # decides a bar is needed, and it does not go back and re-size the
+        # widget once that decision narrows the viewport - so a plain
+        # resize() here is undone again on the very next layout pass, and
+        # resizing back in a loop just trades the clipping for a fight with
+        # Qt. A maximum width is a constraint Qt honours inside its own
+        # pass, so the widget can never come back wider than what is
+        # actually visible.
+        container.setMaximumWidth(viewport.width())
+        if container.width() > viewport.width():
+            container.resize(viewport.width(), container.height())
 
     @staticmethod
     def _sync_card_focus_ring(card: QFrame, focused_in: bool) -> None:
