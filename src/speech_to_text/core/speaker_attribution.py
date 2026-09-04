@@ -48,24 +48,15 @@ def assign_speakers(
     so a straddling segment is cut into two (or more) at the word boundary
     where the speaker actually changed, rather than losing that boundary.
 
-    Segment(start, end, text, speaker, words) is fully reconstructible (see
-    core/segments.py), so a split rebuilds new Segment objects rather than
-    mutating the input. A segment that does not need splitting is returned
-    unchanged - same object, not a copy - so callers that compare identity
-    (or just want the common case to be cheap) see that.
-
     Segments with no word timings (or no overlapping span at all) fall back to
     matching on the segment's own span, and stay None if even that fails.
-    Leaving a segment unattributed is better than guessing: the renderer
-    simply omits the label.
+    Leaving a segment unattributed is better than guessing: the renderer simply
+    omits the label.
 
-    The returned list is new: `segments` itself is never reordered, extended
-    or shortened, and a split segment's pieces are new Segment objects. But a
-    segment that is not split IS mutated - its `.speaker` is set in place
-    (in the no-split and fallback branches above) and that same object,
-    not a copy, is what comes back in the result. So `segments is not
-    assign_speakers(segments, spans)` always holds, but
-    `segments[i] is result[j]` can still be true for an unsplit segment.
+    Mutation contract: the returned list is always new, and a split segment's
+    pieces are new Segment objects, but an UNSPLIT segment has its `.speaker`
+    set in place and is returned as the same object. So `segments is not
+    result` always holds while `segments[i] is result[j]` may still be true.
     """
     if not spans:
         return list(segments)
@@ -99,9 +90,8 @@ def _split_segment(
         return [segment]
 
     # A word with no overlap of its own (a rounding gap at a span boundary,
-    # or a span dropped by min_duration_on) does not get to start a run or a
-    # None-labelled sub-segment - it is filled in from its neighbours, the
-    # same way it would have simply not voted under the old majority scheme.
+    # or a span dropped by min_duration_on) must not start a run or a
+    # None-labelled sub-segment; it is filled in from its neighbours instead.
     filled = _fill_unmatched(labels, segment.words)
     runs = _coalesce_adjacent(_merge_short_runs(_runs(filled), min_run_words, segment.words, spans))
 
@@ -113,15 +103,12 @@ def _split_segment(
     last_index = len(runs) - 1
     for i, (start_idx, end_idx, label) in enumerate(runs):
         run_words = segment.words[start_idx:end_idx]
-        # Rejoining word texts and stripping mirrors exactly how the original
-        # segment text itself was produced: faster-whisper decodes the whole
-        # token run and strips it once, and each word's own decoded text
-        # already carries whatever leading space separates it from its
-        # neighbour (verified against the installed faster-whisper: word
-        # text comes from tokenizer.decode() on that word's token slice, so
-        # concatenating word texts reproduces the segment text exactly).
-        # Stripping only the ends - not collapsing internal whitespace -
-        # keeps inter-word spacing exactly as the model produced it.
+        # Concatenating word texts reproduces the segment text exactly:
+        # faster-whisper builds each word's text from tokenizer.decode() on
+        # that word's token slice, so it already carries the leading space
+        # separating it from its neighbour (verified against the installed
+        # version). Strip the ends only - collapsing internal whitespace would
+        # change spacing the model chose.
         text = "".join(word.text for word in run_words).strip()
         # Endpoints: the first piece keeps the segment's own start (which can
         # lead the first word, e.g. VAD padding) and the last piece keeps its
@@ -148,23 +135,19 @@ def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> l
     """Carry a real label over words that overlap no span, from whichever
     labelled neighbour is nearer IN TIME - and only across a short gap.
 
-    This used to forward-fill: a gap word simply took the label of whoever
-    spoke last, and a leading run of gap words took the first real label
-    found. Both are the same bias, and it is the one that makes a transcript
-    read as though one speaker is doing all the talking. A word sitting in
-    silence 40ms after speaker A stopped and 900ms before speaker B starts
-    belongs with A; the same word 900ms after A and 40ms before B belongs
-    with B, and forward-fill got that case backwards every time.
+    Distance, not direction. Forward-filling from whoever spoke last is the
+    obvious implementation and it is biased: it makes a transcript read as
+    though one speaker does all the talking. A word 40ms after A stopped and
+    900ms before B starts belongs with A; the same word 900ms after A and 40ms
+    before B belongs with B, which forward-fill gets backwards every time.
 
-    Neighbours are read from the ORIGINAL labels, never from labels this
-    function has already filled in, so one borrowed label cannot chain across
-    a whole run of gap words - each is decided on its own distance to real
-    evidence.
+    Neighbours are read from the ORIGINAL labels, never from ones this function
+    has already filled in, so a borrowed label cannot chain across a run of gap
+    words - each is decided on its own distance to real evidence.
 
-    Beyond config.DIARIZATION_MAX_FILL_GAP_SECONDS the word keeps no label at
-    all. Inventing an attribution across a two-second silence is guessing, and
-    an unattributed word renders without a speaker rather than under the wrong
-    one - see assign_speakers' docstring on why that is the honest failure.
+    Beyond config.DIARIZATION_MAX_FILL_GAP_SECONDS the word keeps no label.
+    Attributing across a two-second silence is guessing, and an unattributed
+    word renders without a speaker rather than under the wrong one.
     """
     filled: list[Optional[int]] = list(labels)
 
@@ -200,9 +183,7 @@ def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> l
 
         if min(gap_left, gap_right) > config.DIARIZATION_MAX_FILL_GAP_SECONDS:
             continue
-        # <= so an exact tie prefers the left, which is what this function
-        # did unconditionally before - the change is which cases reach the
-        # tie, not how a genuine tie breaks.
+        # <= so an exact tie prefers the left.
         nearer = li if gap_left <= gap_right else ri
         if nearer is None:
             # Only reachable if the chosen side had no labelled neighbour at
@@ -230,15 +211,15 @@ def _is_real_interjection(
     """Whether a too-short run is a genuine short turn rather than a boundary slip.
 
     The run-length floor exists because one stray word usually means the
-    diarizer clipped a span boundary by a few tens of milliseconds. But a real
+    diarizer clipped a span boundary by a few tens of milliseconds. But real
     conversation is full of one-word turns - "כן", "לא", "נכון" - and folding
-    every one of them into the previous speaker is the single most visible way
-    this app got attribution wrong: the interjecting speaker simply disappears.
+    every one into the previous speaker is the most visible way attribution
+    goes wrong: the interjecting speaker simply disappears.
 
-    A run earns its own place when the diarizer is positively asserting a
-    different speaker across essentially the whole word, not merely clipping
-    its edge: the word is long enough to carry a real utterance, and that
-    speaker's spans cover nearly all of it.
+    So a run keeps its place when the diarizer is positively asserting a
+    different speaker across essentially the whole word rather than clipping
+    its edge: long enough to carry a real utterance, and that speaker's spans
+    cover nearly all of it.
     """
     start_idx, end_idx, label = run[0], run[1], run[2]
     if label is None:
@@ -277,9 +258,9 @@ def _weakest_mergeable(
 ) -> Optional[int]:
     """Index of the shortest run that is too short to stand on its own, if any.
 
-    Shortest first, ties by position: the order is driven by how weak the
-    evidence is rather than by where the run happens to sit in the segment.
-    A left-to-right scan instead makes the outcome depend on position.
+    Shortest first, ties by position, so which run gets absorbed is driven by
+    how weak the evidence is rather than by where it sits in the segment - a
+    left-to-right scan makes the outcome depend on position.
     """
     candidates = [
         i
@@ -299,15 +280,15 @@ def _fold_left(
     words: Sequence[Word],
     spans: Sequence["SpeakerSpan"],
 ) -> Optional[bool]:
-    """Which neighbour run at `index` should be folded into: True left, False right.
+    """Which neighbour run at `index` to fold into: True left, False right.
 
-    None means neither neighbour is eligible - both are absent or None-labelled -
-    so the run stays put rather than being forced onto a None run.
+    None means neither neighbour is eligible - absent or None-labelled - so the
+    run stays put rather than being forced onto a None run.
 
     The run's own words are re-scored against each neighbour's label by real
-    span overlap, and the better-supported side wins; a tie goes to the longer
-    neighbour, then to the left. Always folding left (the obvious
-    implementation) biases every decision toward the earlier speaker.
+    span overlap and the better-supported side wins; a tie goes to the longer
+    neighbour, then to the left. Always folding left, the obvious
+    implementation, biases every decision toward the earlier speaker.
     """
     left = runs[index - 1] if index > 0 else None
     right = runs[index + 1] if index + 1 < len(runs) else None
@@ -327,7 +308,7 @@ def _fold_left(
     right_score = _run_support(runs[index], right[2], words, spans)
     if left_score != right_score:
         return left_score > right_score
-    return (left[1] - left[0]) >= (right[1] - right[0])
+    return bool((left[1] - left[0]) >= (right[1] - right[0]))
 
 
 def _merge_short_runs(
@@ -345,10 +326,9 @@ def _merge_short_runs(
     and quietly merging them into a labelled neighbour would reinstate exactly
     the guess it refused to make.
 
-    words/spans default to empty so a caller with neither (and older tests
-    that call this with two arguments) still gets the length-based behaviour;
-    without them no run can qualify as an interjection and overlap scoring
-    falls back to the neighbour-length tie-break.
+    words/spans default to empty so a caller with neither still gets the
+    length-based behaviour: no run can then qualify as an interjection, and
+    overlap scoring falls back to the neighbour-length tie-break.
     """
     if len(runs) <= 1:
         return runs
@@ -374,7 +354,7 @@ def _merge_short_runs(
 
 
 def _coalesce_adjacent(runs: list[list]) -> list[list]:
-    """Merge neighbouring runs that ended up with the same label after merging short ones."""
+    """Merge neighbouring runs that ended up with the same label."""
     if not runs:
         return runs
     out = [list(runs[0])]

@@ -1,35 +1,27 @@
 """Diarization built on our own powerset decode, for the "powerset" engine.
 
-Why this exists rather than just calling sherpa-onnx: see
-config.DIARIZATION_ENGINE. In short, sherpa runs the whole pipeline behind
-one call and its decode is a fixed argmax operating point, so the two things
-that measurement said actually matter here are both out of reach through it -
-choosing where to threshold, and choosing what audio the speaker embeddings
-are computed over.
+sherpa runs the whole pipeline behind one call with a fixed argmax decode, so
+the two things measurement says matter here are both out of reach through it:
+where to threshold, and what audio the speaker embeddings are computed over.
+This module owns exactly that middle. The embedding extractor and the
+clustering are still sherpa's (SpeakerEmbeddingExtractor, FastClustering, both
+usable standalone) - hand-writing an 80-dim Kaldi filterbank or an
+agglomerative clustering would be delicate code with no measurement behind it.
 
-What is NOT rewritten: the embedding extractor and the clustering are still
-sherpa's (SpeakerEmbeddingExtractor and FastClustering, both usable
-standalone from Python). Hand-writing an 80-dim Kaldi filterbank with the
-right normalisation, or an agglomerative clustering, would be a lot of
-delicate code with no measurement saying it would be any better. What this
-module owns is the middle: which frames belong to whom, and which audio each
-speaker's embedding is computed from.
-
-The shape of the pipeline, and why it is this shape:
+The pipeline, and why it is this shape:
 
     1. Decode each 10s window into per-speaker marginals (core/segmentation).
     2. Binarise each window ON ITS OWN. Window-local speaker indices are not
-       comparable across windows, and pyannote 3.1 does not try to make them
-       comparable by aligning neighbours - a single bad alignment early in a
-       file would propagate through everything after it.
-    3. Embed each (window, local speaker) that has enough CLEAN speech.
+       comparable across windows, and aligning neighbours would let one bad
+       alignment early in a file propagate through everything after it.
+    3. Embed each (window, local speaker) with enough speech.
     4. Cluster those embeddings into the requested number of speakers.
-       Alignment falls out of this: two windows' local speakers end up in the
-       same cluster precisely when they sound like the same person.
+       Alignment falls out of it: two windows' local speakers land in the same
+       cluster precisely when they sound like the same person.
     5. Reconstruct one global track per cluster and cut it into spans.
 
 Overlapping spans are a normal output, not an error - the same as sherpa
-already returns, and what SpeakerSpan and the DER metric both already handle.
+returns, and what SpeakerSpan and the DER metric both already handle.
 
 MEASURED, including one result that went the wrong way. On 300s of AMI at
 num_speakers=4, against sherpa's DER 0.4646 (missed 16.29, false alarm 9.40,
@@ -38,21 +30,18 @@ confusion 46.51):
     embeddings from clean frames only   DER 0.4085  miss 14.36  FA 13.43  conf 35.68
     embeddings from all active frames   DER 0.4011  miss 14.83  FA 13.21  conf 34.29
 
-Confusion - the error that dominates this pipeline and the one a user sees as
-"one speaker got all the sentences" - falls by about a quarter. But masking
-overlap out of the embeddings, which was the stated reason to expect that
-fall, is very slightly WORSE than not masking. So the improvement comes from
-owning the decode and its threshold, not from clean embeddings, and
-mask_overlap defaults to False accordingly. The idea is recorded here rather
-than deleted so nobody re-derives it from first principles and re-adds it.
+Confusion - the error that dominates here, and what a user sees as "one
+speaker got all the sentences" - falls by about a quarter. But masking overlap
+out of the embeddings, the stated reason to expect that fall, is very slightly
+WORSE than not masking: the gain comes from owning the decode and its
+threshold, so mask_overlap defaults to False. Recorded rather than deleted so
+nobody re-derives the idea from first principles and re-adds it.
 
-Both runs above returned 3 speakers for a requested 4, which looked like a
-merge bug and is not one: the first 300s of ES2004a has only THREE speakers
-in it (MEE014 does not talk until later in the file), so 3 was the right
-answer and those runs were forcing a fourth cluster onto audio with no fourth
-speaker. Worth stating because the reconstruction below DOES have a rule that
-can erase a real speaker - see _reconstruct - and it would be easy to misread
-one as evidence of the other.
+Both runs returned 3 speakers for a requested 4, which is not a merge bug: the
+first 300s of ES2004a has only THREE speakers (MEE014 does not talk until
+later), so those runs were forcing a fourth cluster onto audio with no fourth
+speaker. Worth stating because _reconstruct DOES have a rule that can erase a
+real speaker, and it would be easy to misread one as evidence of the other.
 """
 
 import logging
@@ -83,16 +72,15 @@ def diarize_powerset(
     Same contract as core.diarization.diarize: float32 mono audio in,
     speaker-labelled spans sorted by start time out.
 
-    mask_overlap exists for measurement, and it defaults to False because the
-    measurement went against it - see the module docstring. True computes each
-    speaker's embedding only from frames where they are the sole active
-    speaker; False uses every frame they are active in, overlap included.
-    Kept switchable so the A/B stays reproducible, not because it is a knob
-    worth turning in production.
+    mask_overlap: True computes each speaker's embedding only from frames
+    where they are the sole active speaker, False from every frame they are
+    active in. It defaults to False because the measurement went against it
+    (see the module docstring), and stays switchable so that A/B remains
+    reproducible - not because it is worth turning in production.
     """
-    # Imported here, not at module scope: core/ is imported by the GUI
-    # process too, and sherpa-onnx must not be a hard import for code paths
-    # that never diarize (see core/diarization.py's own local import).
+    # Imported here, not at module scope: core/ is imported by the GUI process
+    # too, and sherpa-onnx must not be a hard import for paths that never
+    # diarize.
     from speech_to_text.core.diarization import (
         _EMBEDDING_MODEL,
         _SEGMENTATION_MODEL,
@@ -155,9 +143,8 @@ def _infer_with_progress(
 ) -> tuple[np.ndarray, list[int]]:
     """infer_marginals, reporting progress per window.
 
-    Reimplemented here rather than adding a callback to segmentation.py, so
-    that module stays free of anything but arithmetic and remains testable
-    without a model or a progress sink.
+    Duplicated rather than adding a callback to segmentation.py, so that
+    module stays free of anything but arithmetic.
     """
     starts = seg.window_starts(len(samples))
     matrix = seg.powerset_matrix()
@@ -189,17 +176,16 @@ def _embed_windows(
 ) -> tuple[list[np.ndarray], list[tuple[int, int]]]:
     """One embedding per (window, local speaker) that has enough usable speech.
 
-    Returns the embeddings and, alongside them, the (window, speaker) each one
-    came from - `owners` is what lets the cluster labels be mapped back onto
-    the right slice of the activity tensor afterwards.
+    Returns the embeddings and the (window, speaker) each came from; `owners`
+    is what maps cluster labels back onto the right slice of the activity
+    tensor afterwards.
 
     The audio fed to the extractor is the CONCATENATION of that speaker's
-    frames, not a full window with everything else zeroed out. Both give the
-    extractor only that speaker's voice; concatenating gives it 1-3s of audio
-    instead of a 10s window that is mostly silence, which is where the speed
-    difference in this pipeline comes from. The cost is a splice discontinuity
-    at each joint, which the filterbank sees as a transient - one reason
-    mask_overlap is switchable rather than assumed.
+    frames, not a full window with everything else zeroed. Both give the
+    extractor only that speaker's voice, but concatenating gives it 1-3s
+    instead of a 10s window that is mostly silence, which is where this
+    pipeline's speed comes from. The cost is a splice discontinuity at each
+    joint, which the filterbank sees as a transient.
     """
     extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
         sherpa_onnx.SpeakerEmbeddingExtractorConfig(
@@ -224,11 +210,10 @@ def _embed_windows(
 
             audio = _gather(samples, start, usable)
             if len(audio) < minimum:
-                # Not enough evidence to say who this is. Leaving it out is
-                # not the same as dropping the speech: roughly ten windows
-                # cover every moment, so a frame skipped here is almost
-                # always claimed by a neighbouring window that did have a
-                # confident view of it.
+                # Not enough evidence to say who this is. Not the same as
+                # dropping the speech: about ten windows cover every moment,
+                # so a frame skipped here is almost always claimed by a
+                # neighbour that did have a confident view of it.
                 continue
 
             stream = extractor.create_stream()
@@ -265,9 +250,8 @@ def _mask_runs(mask: np.ndarray) -> list[tuple[int, int]]:
 def _cluster(sherpa_onnx: Any, embeddings: list[np.ndarray], num_speakers: int) -> list[int]:
     """Group (window, speaker) embeddings into speakers.
 
-    num_speakers <= 0 means "infer", which hands the decision to the
-    threshold. The GUI never sends that today (its spin box is 2-10), so in
-    practice this is an exact count.
+    num_speakers <= 0 means "infer", handing the decision to the threshold.
+    The GUI's spin box is 2-10, so in practice this is an exact count.
     """
     matrix = np.ascontiguousarray(np.vstack(embeddings).astype(np.float32))
     clustering = sherpa_onnx.FastClustering(
@@ -288,21 +272,18 @@ def _reconstruct(
 ) -> np.ndarray:
     """Fold every window's local speakers into global per-cluster activity.
 
-    This is where cross-window alignment finally happens, and it happens by
-    cluster membership rather than by comparing neighbouring windows to each
-    other. Each covering window casts a vote for "is cluster c talking here",
-    and a moment is called active for c when more than half of them say so -
-    so one window's mistake is outvoted rather than propagated.
+    Cross-window alignment happens here, by cluster membership rather than by
+    comparing neighbouring windows to each other. Each covering window votes on
+    "is cluster c talking here", and a moment is active for c when at least
+    half say so - one window's mistake is outvoted rather than propagated.
 
-    The majority rule has a real cost, measured rather than assumed: a speaker
-    that few windows ever resolve as their own local speaker can never reach
-    half the votes, so they are erased entirely rather than merely
-    under-detected. Lowering the bar does recover them, and cuts confusion
-    with it, but at a price not worth paying on this audio - measured on 300s
-    of AMI, share 0.50 gives DER 0.4011 at false alarm 13.21, while share 0.25
-    gives DER 0.5412 at false alarm 51.85. Half stays, and the trade-off is
-    written down here so the next person does not have to rediscover which
-    direction it runs.
+    The majority rule has a measured cost: a speaker few windows ever resolve
+    as their own local speaker can never reach half the votes, so they are
+    erased entirely rather than merely under-detected. Lowering the bar
+    recovers them and cuts confusion, but on 300s of AMI share 0.50 gives DER
+    0.4011 at false alarm 13.21 while share 0.25 gives DER 0.5412 at false
+    alarm 51.85. Half stays; the direction the trade-off runs is written down
+    so nobody has to rediscover it.
     """
     num_clusters = max(labels) + 1
     grid = seg._grid_size(starts, num_samples)
@@ -335,10 +316,9 @@ def _reconstruct(
 def _tracks_to_spans(span_type: type["SpeakerSpan"], tracks: np.ndarray) -> list["SpeakerSpan"]:
     """Cut each cluster's boolean track into spans, applying the duration floors.
 
-    min_duration_off is applied before min_duration_on deliberately: bridging
-    a short pause first means a turn briefly interrupted by a breath is judged
-    on its whole length, rather than being split into two fragments that each
-    then look too short to keep.
+    min_duration_off is applied first deliberately: bridging a short pause
+    means a turn interrupted by a breath is judged on its whole length rather
+    than as two fragments that each look too short to keep.
     """
     spans: list[SpeakerSpan] = []
     for speaker in range(tracks.shape[1]):

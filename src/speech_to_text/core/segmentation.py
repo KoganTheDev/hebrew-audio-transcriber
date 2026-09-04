@@ -1,34 +1,28 @@
 """Powerset decoding of the pyannote segmentation-3.0 ONNX model.
 
-Why this exists at all, given core/diarization.py already runs the same model
-through sherpa-onnx: sherpa's OfflineSpeakerDiarization takes the model's
-7-class powerset output and hands back speaker-labelled spans, with the
-decode itself sealed inside compiled C++. That decode takes an argmax over
-the 7 classes, which is a fixed operating point. Measured against the AMI
-reference on 300s, argmax finds 138.7s of the 150.0s of reference speech and
-1.6s of its 5.4s of overlap. Thresholding the per-speaker MARGINAL instead,
-at 0.40, finds 148.0s of speech and 4.5s of overlap - for the same forward
-pass and the same model. That knob is the entire reason to own the decode;
-re-implementing it to reproduce argmax would buy nothing, and a from-scratch
-decode was measured reproducing sherpa's spans to within 0.4s over 60s.
+Why own the decode when core/diarization.py already runs this model through
+sherpa-onnx: sherpa's decode is sealed in C++ and takes an argmax over the 7
+powerset classes, which is a fixed operating point. On 300s of AMI, argmax
+finds 138.7s of the 150.0s of reference speech and 1.6s of its 5.4s of
+overlap; thresholding the per-speaker MARGINAL at 0.40 instead finds 148.0s
+of speech and 4.5s of overlap, from the same forward pass and the same model.
+That threshold is the entire reason this file exists - a from-scratch decode
+reproducing argmax was measured within 0.4s of sherpa's spans over 60s.
 
-Deliberately narrow: numpy and onnxruntime only, no sherpa_onnx import, no
-application state, and no clustering. Every function here is pure, so the
-decode math is unit-testable on synthetic logits with no model file present -
-which matters because this is arithmetic with several off-by-one traps in it
-(see _window_starts and the grid identity in aggregate_invariants).
+Numpy and onnxruntime only: no sherpa_onnx, no application state, no
+clustering. Every function is pure, so the decode is testable on synthetic
+logits with no model file - which matters because it is arithmetic with
+several off-by-one traps in it (window_starts, and the grid identity in
+aggregate_invariants).
 
-What this module deliberately does NOT do: decide global speaker identity.
-The model emits at most 3 speakers per 10s window and its speaker indices are
-LOCAL to each window - "speaker 1" in one window has no relationship to
-"speaker 1" in the next. Stitching those into global identities is a
-clustering problem, not a decoding one, and pyannote 3.1 itself does not try
-to solve it by aligning neighbouring windows (its pipeline runs with
-skip_aggregation=True and lets clustering settle identity instead). So the
-per-speaker marginals are returned per window, unaggregated, for a caller
-that knows how to cluster them; and the quantities this module DOES aggregate
-across windows are only the ones that survive an unknown permutation:
-"is anyone speaking" and "how many people are speaking".
+What it deliberately does NOT do is decide global speaker identity. The model
+emits at most 3 speakers per 10s window and those indices are LOCAL - one
+window's "speaker 1" has no relationship to the next window's. Aligning them
+is a clustering problem, and pyannote 3.1 does not try to solve it by
+comparing neighbouring windows either (skip_aggregation=True, identity left
+to clustering). So marginals are returned per window, unaggregated, and the
+only quantities aggregated across windows here are the two that survive an
+unknown permutation: "is anyone speaking" and "how many".
 """
 
 from collections.abc import Sequence
@@ -66,22 +60,7 @@ WINDOW_HOP_SAMPLES = WINDOW_HOP_FRAMES * FRAME_SHIFT_SAMPLES  # 15930
 
 
 def powerset_matrix() -> np.ndarray:
-    """The (7, 3) indicator mapping each powerset class to the speakers it means.
-
-    pyannote builds its powerset classes with itertools.combinations over set
-    sizes 0..max_set_size, which for 3 speakers and at most 2 at once gives
-    this exact order - silence, then the singletons in speaker order, then the
-    pairs in lexicographic order:
-
-        0 -> {}       1 -> {0}     2 -> {1}     3 -> {2}
-        4 -> {0,1}    5 -> {0,2}   6 -> {1,2}
-
-    Written out as a literal rather than regenerated with itertools, because
-    the ordering is a wire format shared with a model file we do not build:
-    if pyannote ever changed it, silently regenerating a different order here
-    would mislabel every speaker while still "working". A test asserts this
-    matrix against the itertools construction, so a mismatch fails loudly.
-    """
+    """The (7, 3) indicator mapping each powerset class to the speakers it means."""
     matrix = np.zeros((NUM_CLASSES, NUM_LOCAL_SPEAKERS), dtype=np.float32)
     for class_index, speakers in enumerate(powerset_classes()):
         for speaker in speakers:
@@ -90,16 +69,27 @@ def powerset_matrix() -> np.ndarray:
 
 
 def powerset_classes() -> list[tuple[int, ...]]:
-    """The speaker set each of the 7 classes stands for, in model order."""
+    """The speaker set each of the 7 classes stands for, in model order.
+
+    Silence, the singletons in speaker order, then the pairs lexicographically:
+
+        0 -> {}       1 -> {0}     2 -> {1}     3 -> {2}
+        4 -> {0,1}    5 -> {0,2}   6 -> {1,2}
+
+    A literal rather than the itertools.combinations construction pyannote
+    uses, because the ordering is a wire format shared with a model file we do
+    not build: silently regenerating a changed order would mislabel every
+    speaker while still "working". A test asserts the two agree.
+    """
     return [(), (0,), (1,), (2,), (0, 1), (0, 2), (1, 2)]
 
 
 def softmax(logits: np.ndarray) -> np.ndarray:
     """Row-wise softmax over the last axis.
 
-    The model emits LOGITS, not probabilities - verified on a live run, where
-    a single frame's 7 values summed to -105.77. Feeding those straight into
-    a threshold would be meaningless, so this is not optional.
+    The model emits LOGITS, not probabilities - a single frame's 7 values were
+    measured summing to -105.77 on a live run - so thresholding without this
+    would be meaningless.
     """
     shifted = logits - logits.max(axis=-1, keepdims=True)
     exp = np.exp(shifted)
@@ -110,13 +100,13 @@ def softmax(logits: np.ndarray) -> np.ndarray:
 def window_starts(num_samples: int) -> list[int]:
     """Start sample of every analysis window covering num_samples of audio.
 
-    Always returns at least one window. Audio shorter than one window, and
-    the tail left over after the last whole hop, are both handled by the
-    caller zero-padding up to WINDOW_SAMPLES rather than by feeding the model
-    a short input: the ONNX graph accepts a dynamic length, but the model was
-    trained on 10s windows and a shorter one is off-distribution. Frames whose
-    receptive field falls entirely past the true end of the audio are dropped
-    afterwards (see frame_times), so the padding cannot invent speech.
+    Always at least one window. Short audio, and the tail after the last whole
+    hop, are both handled by the caller zero-padding to WINDOW_SAMPLES rather
+    than feeding the model a short input: the ONNX graph accepts a dynamic
+    length, but the model was trained on 10s windows and anything shorter is
+    off-distribution. Frames whose receptive field falls entirely past the real
+    end of the audio are dropped later (see _grid_size), so padding cannot
+    invent speech.
     """
     if num_samples <= WINDOW_SAMPLES:
         return [0]
@@ -133,12 +123,10 @@ def window_starts(num_samples: int) -> list[int]:
 def frame_center_time(window_start: int, frame_index: int) -> float:
     """Time in seconds at the centre of one frame's receptive field.
 
-    Frame i of a window starting at sample a sees samples
-    [a + i*SHIFT, a + i*SHIFT + SIZE), so its centre is half a receptive field
-    in from the left edge. Using the centre rather than the left edge matters
-    at boundaries: the model's opinion at frame i is about the middle of what
-    it can see, and anchoring to the edge would shift every span half a
-    receptive field (about 31ms) early.
+    Frame i of a window starting at sample a sees [a + i*SHIFT, +SIZE). The
+    centre, not the left edge: the model's opinion at frame i is about the
+    middle of what it can see, and anchoring to the edge would shift every span
+    about 31ms early.
     """
     center_sample = window_start + frame_index * FRAME_SHIFT_SAMPLES
     return (center_sample + (RECEPTIVE_FIELD_SAMPLES - 1) / 2.0) / SAMPLE_RATE
@@ -147,15 +135,13 @@ def frame_center_time(window_start: int, frame_index: int) -> float:
 def infer_marginals(session: Any, samples: np.ndarray) -> tuple[np.ndarray, list[int]]:
     """Run the model over every window and return per-speaker marginals.
 
-    Returns (marginals, starts) where marginals has shape
-    (num_windows, FRAMES_PER_WINDOW, NUM_LOCAL_SPEAKERS) and each value is the
-    probability that that local speaker is talking in that frame - the sum of
-    the probabilities of every powerset class containing them.
+    Returns (marginals, starts), marginals shaped
+    (num_windows, FRAMES_PER_WINDOW, NUM_LOCAL_SPEAKERS): the probability that
+    a local speaker is talking in a frame, summed over every powerset class
+    containing them.
 
-    Speaker indices are LOCAL to each window; see the module docstring. This
-    function deliberately stops here rather than stitching them, so the part
-    that needs clustering to be correct is not hidden inside the part that is
-    just arithmetic.
+    Stops before stitching windows together, so the part that needs clustering
+    to be correct is not buried inside the part that is just arithmetic.
     """
     starts = window_starts(len(samples))
     matrix = powerset_matrix()
@@ -178,25 +164,21 @@ def aggregate_invariants(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Fold overlapping windows into two global tracks that survive permutation.
 
-    Returns (speech, count) over a global frame grid, where speech[g] is the
-    fraction of windows covering g that saw ANY speaker active, and count[g]
-    is the mean number of speakers they saw. Both are computed from each
-    window's own binarised opinion at `onset`.
+    Returns (speech, count) over a global frame grid: speech[g] is the
+    fraction of windows covering g that saw ANY speaker active, count[g] the
+    mean number they saw, both from each window's own binarised opinion at
+    `onset`.
 
-    Only these two quantities are aggregated, and the reason is the whole
-    reason this function is named the way it is: the model's speaker indices
-    are local to a window, so summing marginals[..., k] across windows would
-    be adding one window's "speaker 1" to another window's unrelated
-    "speaker 1". "Someone is talking" and "two people are talking" mean the
-    same thing whatever order the local speakers happen to be in, so they can
-    be pooled without knowing the permutation - which is what lets Stage 3 be
-    measured at all before any clustering exists.
+    Only these two, and the name says why: speaker indices are local to a
+    window, so summing marginals[..., k] across windows would add one window's
+    "speaker 1" to another's unrelated one. "Someone is talking" and "two
+    people are talking" mean the same thing under any permutation of the local
+    speakers, so they pool without knowing it.
 
-    The grid identity is exact: window j's frame i is global index
-    WINDOW_HOP_FRAMES*j + i, with no rounding, because the hop is a whole
-    number of frame shifts (see WINDOW_HOP_FRAMES). That holds only for the
-    evenly spaced windows; the final catch-up window that window_starts may
-    append is placed from its own sample offset instead.
+    The grid identity is exact - window j's frame i is global index
+    WINDOW_HOP_FRAMES*j + i, no rounding, because the hop is a whole number of
+    frame shifts. That holds for the evenly spaced windows only; the catch-up
+    window window_starts may append is placed from its own sample offset.
     """
     active = marginals >= onset  # (W, F, K)
     any_active = np.asarray(active.any(axis=2))  # (W, F)
@@ -226,11 +208,12 @@ def aggregate_invariants(
 
 
 def _grid_base(window_start: int) -> int:
-    """Global grid index of a window's first frame."""
-    # Exact for every evenly spaced window (hop is a whole number of frame
-    # shifts). The catch-up window window_starts appends is not on that
-    # lattice, so it is rounded to the nearest frame - a sub-17ms placement
-    # error on one window at the very end of the file.
+    """Global grid index of a window's first frame.
+
+    Exact for every evenly spaced window. The catch-up window window_starts
+    appends is off that lattice, so it rounds to the nearest frame - a sub-17ms
+    placement error on one window at the very end of the file.
+    """
     return int(round(window_start / FRAME_SHIFT_SAMPLES))
 
 
@@ -254,9 +237,9 @@ def grid_times(grid_size: int) -> np.ndarray:
 def runs_to_intervals(mask: np.ndarray, min_duration: float = 0.0) -> list[tuple[float, float]]:
     """Contiguous True stretches of a per-frame mask, as (start, end) seconds.
 
-    Interval edges are frame centres, so a single-frame run has zero width
-    unless it is widened; this returns it as [t, t + frame_shift) so a lone
-    frame still carries the duration it represents rather than vanishing.
+    Edges are frame centres, so a single-frame run would have zero width; it
+    is returned as [t, t + frame_shift) instead, so a lone frame carries the
+    duration it represents rather than vanishing.
     """
     if mask.size == 0:
         return []

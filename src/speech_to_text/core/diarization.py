@@ -10,10 +10,11 @@ family of models through onnxruntime instead: ~36 MB of weights, no login, no
 torch, and it exposes the one knob that matters most here - clustering into a
 known number of speakers.
 
-Accuracy note: fixing the speaker count is the single largest lever available.
-Threshold-based clustering has to infer how many people are present, and it
-gets that wrong often enough to fragment one speaker into several. If the user
-knows there are two people, saying so removes the hardest part of the problem.
+Fixing the speaker count is the single largest lever available: threshold-based
+clustering has to infer how many people are present, and gets it wrong often
+enough to fragment one speaker into several.
+
+Word-to-speaker attribution lives in core/speaker_attribution.py.
 """
 
 import logging
@@ -74,10 +75,9 @@ def models_present() -> bool:
 def ensure_models(progress: Optional[Callable[[int, int], None]] = None) -> None:
     """Download the ONNX models on first use.
 
-    sherpa-onnx ships no weights of its own, so this has to happen once. Both
-    files are small enough (~36 MB total) that a progress callback is a
-    courtesy rather than a necessity, but a silent multi-second stall in a
-    desktop app reads as a freeze.
+    sherpa-onnx ships no weights of its own, so this has to happen once. ~36 MB
+    total, so the progress callback is a courtesy - but a silent multi-second
+    stall in a desktop app reads as a freeze.
     """
     if models_present():
         return
@@ -92,9 +92,8 @@ def ensure_models(progress: Optional[Callable[[int, int], None]] = None) -> None
         _download(_SEGMENTATION_ARCHIVE, archive, progress)
         try:
             with tarfile.open(archive, "r:bz2") as tar:
-                # Guard against path traversal in archive members. These come
-                # from a trusted release, but extracting archives without
-                # checking member paths is the kind of thing that stays wrong
+                # Path-traversal guard. The release is trusted, but an
+                # unchecked extractall is the kind of thing that stays wrong
                 # forever once copied elsewhere.
                 _safe_extract(tar, MODELS_DIR)
         finally:
@@ -130,8 +129,8 @@ def _download(url: str, destination: str, progress: Optional[Callable[[int, int]
                     done += len(chunk)
                     if progress:
                         progress(done, total)
-        # Move into place only once complete, so an interrupted download can't
-        # leave a truncated file that looks cached on the next run.
+        # Renamed only once complete, so an interrupted download cannot leave
+        # a truncated file that looks cached on the next run.
         shutil.move(partial, destination)
     except Exception as e:
         if os.path.exists(partial):
@@ -152,14 +151,12 @@ def diarize(
         num_speakers: Exact speaker count if known, or -1 to infer it.
         progress: Called with (processed_chunks, total_chunks).
 
-    Returns speaker-labelled time spans, sorted by start time. Spans of
-    different speakers may overlap - that is simultaneous speech, not an
-    error, and both callers (assign_speakers and the DER metric) handle it.
+    Returns speaker-labelled time spans sorted by start time. Spans of
+    different speakers may overlap - that is simultaneous speech, not an error,
+    and both callers (assign_speakers and the DER metric) handle it. Raises
+    DiarizationUnavailable if the engine or models are missing.
 
-    Raises DiarizationUnavailable if the engine or models are missing.
-
-    Which pipeline runs is config.DIARIZATION_ENGINE; see that constant for
-    the measurements behind having two. This function keeps the same contract
+    config.DIARIZATION_ENGINE picks the pipeline, and the contract is the same
     either way, so nothing downstream needs to know which one ran.
 
     """
@@ -183,25 +180,19 @@ def diarize(
 
     ensure_models(progress=None)
 
-    # Named diar_config, not config: this module imports the application's
-    # own settings module as `config` at the top, and a local of that name
-    # shadows it for the whole function body - including the right-hand side
-    # of this very assignment, where the min_duration_* values below are read.
-    # That shadowing turned every diarization run into an UnboundLocalError,
-    # which worker.py's deliberately non-fatal except swallowed into
-    # "Speaker identification skipped", so the feature failed silently rather
-    # than loudly. diarize() has no unit test - it needs real models and real
-    # audio - so nothing caught it but an end-to-end run.
+    # Named diar_config, not config: a local named `config` shadows the
+    # settings module for the whole function body, including the right-hand
+    # side of this very assignment where the min_duration_* values are read.
+    # The resulting UnboundLocalError is swallowed by worker.py's non-fatal
+    # except, so the feature fails silently. See TestDiarizeBuildsSherpaConfig.
     diar_config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
         segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
                 model=_SEGMENTATION_MODEL
             ),
-            # num_threads/provider were never passed here either, so both
-            # models ran on onnxruntime's defaults. See the constants in
-            # config.py for why the thread count is a small capped number
-            # rather than os.cpu_count() - more threads measured SLOWER for
-            # this model's one-window-at-a-time inference.
+            # The thread count is a small cap, not os.cpu_count(): more
+            # threads measured SLOWER for this model's one-window-at-a-time
+            # inference. See config.py.
             num_threads=config.DIARIZATION_NUM_THREADS,
             provider=config.DIARIZATION_PROVIDER,
         ),
@@ -216,9 +207,8 @@ def diarize(
             num_clusters=num_speakers if num_speakers and num_speakers > 0 else -1,
             threshold=0.5,
         ),
-        # Named constants in config.py, kept equal to sherpa-onnx's own
-        # defaults - see the comment there for why they are stated explicitly
-        # rather than left to the library.
+        # Equal to sherpa-onnx's own defaults, but stated explicitly - see
+        # config.py.
         min_duration_on=config.DIARIZATION_MIN_DURATION_ON,
         min_duration_off=config.DIARIZATION_MIN_DURATION_OFF,
     )
