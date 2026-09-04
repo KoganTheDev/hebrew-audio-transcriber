@@ -1,9 +1,8 @@
 """Turn merging: grouping raw Whisper segments into readable speaker turns.
 
-Kept apart from timecode.py and the HTML renderer because it is a distinct
-job with its own inputs (Segment/Word) and no knowledge of how a turn ends up
-formatted - render_html() and format_plain() both consume Turn objects
-without either being able to influence how they were grouped.
+Knows nothing about how a turn ends up formatted: render_html() and
+format_plain() both consume Turn objects without either being able to
+influence how they were grouped.
 """
 
 import logging
@@ -15,18 +14,15 @@ from .timecode import split_sentences
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Turn merging
-# ---------------------------------------------------------------------------
 # Whisper emits a segment every few seconds - a decoder-sized unit, not a
 # human-sized one. One timestamped line per segment produces a transcript
 # that's technically correct and unreadable, so consecutive segments are merged
 # into a "turn" until the speaker changes, the pause gets long enough to read as
 # a break, or the turn simply grows too long to stay scannable.
 TURN_GAP_SECONDS = 2.0
-# 60s -> 30s: a 60-second block of unbroken Hebrew is exactly the "wall of
-# text with a timestamp buried somewhere in the middle" shape that motivated
-# this whole rewrite. Halving the cap keeps every block short enough to
+# 30s, not the 60s it is halved from: a 60-second block of unbroken Hebrew is
+# exactly the "wall of text with a timestamp buried somewhere in the middle"
+# shape this renderer exists to avoid. 30 keeps every block short enough to
 # scan even before the sentence-per-<p> layout gets involved.
 TURN_MAX_SECONDS = 30.0
 
@@ -36,12 +32,9 @@ class Sentence:
     """One sentence within a Turn, with its own time span.
 
     Exists because the bubble layout needs a click target and a playback
-    range per sentence, not just per turn - split_sentences() already cuts
-    a turn's text into sentences for the <p>-per-sentence body, but a
-    string has no timing of its own. `words` carries the slice of the
-    turn's Word list this sentence consumed, the same per-word confidence
-    data Turn.low_confidence() reads, in case a future caller wants
-    per-sentence flags instead of per-turn ones.
+    range per sentence, not just per turn - split_sentences() already cuts a
+    turn's text into sentences, but a string has no timing of its own.
+    `words` carries the slice of the turn's Word list this sentence consumed.
     """
 
     text: str
@@ -59,10 +52,9 @@ class Turn:
         self.speaker = segment.speaker
         self._parts = [segment.text.strip()]
         # Per-word confidences are carried through rather than dropped: they
-        # are what lets the reader see which words the model itself doubted,
-        # which is the difference between proofreading the whole transcript
-        # and proofreading the parts that need it. Same data hebrew_correct
-        # already uses to decide what it is allowed to touch.
+        # are what lets the reader see which words the model itself doubted -
+        # the difference between proofreading the whole transcript and
+        # proofreading the parts that need it.
         self.words: list[Word] = list(segment.words or [])
 
     def append(self, segment: Segment) -> None:
@@ -83,10 +75,9 @@ class Turn:
         The occurrence index counts how many times that exact token has
         already appeared in this turn, so a word that shows up twice with
         different confidences only gets flagged where it was actually
-        uncertain. It is computed over the word list rather than over the
-        rendered text; the two agree because the text is built from these
-        same segments, and a rare disagreement costs at most a neighbouring
-        duplicate being highlighted instead.
+        uncertain. Counted over the word list rather than the rendered text;
+        a rare disagreement costs at most a neighbouring duplicate being
+        highlighted instead.
         """
         seen: dict = {}
         flagged: list[list] = []
@@ -107,11 +98,11 @@ class Turn:
 
         split_sentences() already produces the text of each sentence; this
         walks self.words in order, consuming words until the collapsed
-        (whitespace-stripped) text consumed matches the collapsed sentence
-        text's length. word.text carries leading spaces from faster-whisper,
-        so comparing lengths after collapsing whitespace is what makes this
-        robust to that - matching on exact concatenation would require every
-        space to line up exactly, which the words list gives no guarantee of.
+        (whitespace-stripped) length consumed matches the collapsed sentence
+        text's. word.text carries leading spaces from faster-whisper, so
+        matching on exact concatenation would require every space to line up,
+        which the words list gives no guarantee of; comparing collapsed
+        lengths is what makes this robust to that.
 
         REQUIRED FALLBACK, matching split_sentences' own degrade-on-failure
         shape: no words at all (word timestamps absent, or a segment from the
