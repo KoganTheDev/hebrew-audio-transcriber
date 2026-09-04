@@ -32,7 +32,7 @@ across windows are only the ones that survive an unknown permutation:
 """
 
 from collections.abc import Sequence
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -103,7 +103,8 @@ def softmax(logits: np.ndarray) -> np.ndarray:
     """
     shifted = logits - logits.max(axis=-1, keepdims=True)
     exp = np.exp(shifted)
-    return exp / exp.sum(axis=-1, keepdims=True)
+    normalised: np.ndarray = exp / exp.sum(axis=-1, keepdims=True)
+    return normalised
 
 
 def window_starts(num_samples: int) -> list[int]:
@@ -140,11 +141,10 @@ def frame_center_time(window_start: int, frame_index: int) -> float:
     receptive field (about 31ms) early.
     """
     center_sample = window_start + frame_index * FRAME_SHIFT_SAMPLES
-    center_sample += (RECEPTIVE_FIELD_SAMPLES - 1) / 2.0
-    return center_sample / SAMPLE_RATE
+    return (center_sample + (RECEPTIVE_FIELD_SAMPLES - 1) / 2.0) / SAMPLE_RATE
 
 
-def infer_marginals(session, samples: np.ndarray) -> tuple[np.ndarray, list[int]]:
+def infer_marginals(session: Any, samples: np.ndarray) -> tuple[np.ndarray, list[int]]:
     """Run the model over every window and return per-speaker marginals.
 
     Returns (marginals, starts) where marginals has shape
@@ -199,7 +199,7 @@ def aggregate_invariants(
     append is placed from its own sample offset instead.
     """
     active = marginals >= onset  # (W, F, K)
-    any_active = active.any(axis=2)  # (W, F)
+    any_active = np.asarray(active.any(axis=2))  # (W, F)
     how_many = active.sum(axis=2)  # (W, F)
 
     grid_size = _grid_size(starts, num_samples)

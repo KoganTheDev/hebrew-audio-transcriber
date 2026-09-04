@@ -57,12 +57,15 @@ one as evidence of the other.
 
 import logging
 from collections.abc import Sequence
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import numpy as np
 
 from speech_to_text import config
 from speech_to_text.core import segmentation as seg
+
+if TYPE_CHECKING:
+    from speech_to_text.core.diarization import SpeakerSpan
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +77,7 @@ def diarize_powerset(
     progress: Optional[Callable[[int, int], None]] = None,
     onset: Optional[float] = None,
     mask_overlap: bool = False,
-) -> list:
+) -> list["SpeakerSpan"]:
     """Label who is speaking, decoding the segmentation model directly.
 
     Same contract as core.diarization.diarize: float32 mono audio in,
@@ -145,7 +148,11 @@ def _providers(name: str) -> list[str]:
     return [available.get(name.lower(), "CPUExecutionProvider")]
 
 
-def _infer_with_progress(session, samples, progress):
+def _infer_with_progress(
+    session: Any,
+    samples: np.ndarray,
+    progress: Optional[Callable[[int, int], None]],
+) -> tuple[np.ndarray, list[int]]:
     """infer_marginals, reporting progress per window.
 
     Reimplemented here rather than adding a callback to segmentation.py, so
@@ -173,7 +180,7 @@ def _frame_samples(window_start: int, frame_index: int) -> tuple[int, int]:
 
 
 def _embed_windows(
-    sherpa_onnx,
+    sherpa_onnx: Any,
     model_path: str,
     samples: np.ndarray,
     active: np.ndarray,
@@ -255,7 +262,7 @@ def _mask_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(edges[0::2].tolist(), edges[1::2].tolist()))
 
 
-def _cluster(sherpa_onnx, embeddings: list[np.ndarray], num_speakers: int) -> list[int]:
+def _cluster(sherpa_onnx: Any, embeddings: list[np.ndarray], num_speakers: int) -> list[int]:
     """Group (window, speaker) embeddings into speakers.
 
     num_speakers <= 0 means "infer", which hands the decision to the
@@ -325,7 +332,7 @@ def _reconstruct(
     return share >= 0.5
 
 
-def _tracks_to_spans(span_type, tracks: np.ndarray) -> list:
+def _tracks_to_spans(span_type: type["SpeakerSpan"], tracks: np.ndarray) -> list["SpeakerSpan"]:
     """Cut each cluster's boolean track into spans, applying the duration floors.
 
     min_duration_off is applied before min_duration_on deliberately: bridging
@@ -333,7 +340,7 @@ def _tracks_to_spans(span_type, tracks: np.ndarray) -> list:
     on its whole length, rather than being split into two fragments that each
     then look too short to keep.
     """
-    spans = []
+    spans: list[SpeakerSpan] = []
     for speaker in range(tracks.shape[1]):
         intervals = seg.runs_to_intervals(tracks[:, speaker])
         intervals = _bridge(intervals, config.DIARIZATION_MIN_DURATION_OFF)
