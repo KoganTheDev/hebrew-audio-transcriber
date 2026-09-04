@@ -3,7 +3,7 @@ Handles the actual transcription process.
 """
 
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from speech_to_text import config
 from speech_to_text.core.formatting import format_mmss
@@ -42,7 +42,10 @@ class Transcriber:
         self.device = device
         self.language = language
         self.progress_callback = progress_callback or self._default_callback
-        self.model = None
+        # Any, not Optional[WhisperModel]: WhisperModel is itself None when
+        # faster-whisper is not installed (see the import guard above), so
+        # there is no static type here to be Optional of.
+        self.model: Any = None
         # All four default to None so production behaviour (worker.py's call
         # site, which never passes them) is unchanged from before these
         # existed: compute_type resolves from config.compute_type_for_device
@@ -70,10 +73,12 @@ class Transcriber:
         evaluation harness, which benchmarks models that have no GUI card.
         """
         entry = config.MODELS.get(self.model_size)
-        return entry["repo"] if entry else self.model_size
+        # cast, not str(): config.MODELS holds heterogeneous per-model values,
+        # so "repo" types as object even though every entry's is a str.
+        return cast(str, entry["repo"]) if entry else self.model_size
 
     @staticmethod
-    def _default_callback(message, progress: int):
+    def _default_callback(message: tuple[str, dict[str, Any]], progress: int) -> None:
         """Default progress callback."""
         pass
 
@@ -159,13 +164,12 @@ class Transcriber:
         eval harness can still sweep them.
         """
         compute_type = self.compute_type or config.compute_type_for_device(device)
-        kwargs = dict(
+        kwargs: dict[str, Any] = dict(
             device=device,
             compute_type=compute_type,
-            # Absolute, resolved once at import time - see
-            # config.MODEL_DOWNLOAD_ROOT's own comment for why this used to
-            # be the relative literal "./whisper_models" and what that broke
-            # once the console script could be launched from anywhere.
+            # Absolute, resolved once at import time: a relative path would
+            # resolve against the working directory, and the console script
+            # can be launched from anywhere. See config.MODEL_DOWNLOAD_ROOT.
             download_root=config.MODEL_DOWNLOAD_ROOT,
         )
         if self.cpu_threads is not None:
@@ -175,7 +179,9 @@ class Transcriber:
 
         self.model = WhisperModel(self.model_repo, **kwargs)
 
-    def transcribe(self, audio_file, total_duration_seconds: float = 0) -> Optional[list[Segment]]:
+    def transcribe(
+        self, audio_file: Any, total_duration_seconds: float = 0
+    ) -> Optional[list[Segment]]:
         """Transcribe audio to structured segments.
 
         Args:
@@ -251,6 +257,7 @@ class Transcriber:
                     collected.append(_to_segment(segment))
 
                 segment_end = getattr(segment, "end", None)
+                message: tuple[str, dict[str, Any]]
                 if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
                     # Real progress: how far into the audio this segment ends.
                     fraction = min(segment_end / total_duration_seconds, 1.0)
@@ -285,7 +292,7 @@ class Transcriber:
             return None
 
 
-def _to_segment(raw) -> Segment:
+def _to_segment(raw: Any) -> Segment:
     """Convert one faster-whisper Segment into our own Segment.
 
     Every attribute is read defensively. faster-whisper's segment type has
@@ -319,7 +326,7 @@ def _to_segment(raw) -> Segment:
     )
 
 
-def _as_float(value, default: float) -> float:
+def _as_float(value: Any, default: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):

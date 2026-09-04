@@ -1,21 +1,16 @@
 """Structured transcript data.
 
-Until this module existed, the transcript was a bare `str`: Transcriber
-concatenated every segment's text and threw the rest away. faster-whisper
-actually hands back far more per segment - start/end times, per-word
-timings, per-word confidence - and all of it was discarded one line after
-being received.
+faster-whisper hands back start/end times, per-word timings and per-word
+confidence alongside the text. Timestamps, speaker attribution and
+confidence-driven correction each need that structure, so the pipeline
+carries Segment objects from transcription all the way to the renderer and
+only flattens to text in core.formatting, as the last step.
 
-Timestamps, speaker attribution and confidence-driven correction each need
-that discarded structure, so the pipeline now carries `Segment` objects from
-transcription all the way to the renderer, and only flattens to text in
-core.formatting as the very last step.
-
-Deliberately dependency-free (stdlib only): this is imported by the worker
-process (see core/__init__.py for why core/ must never pull in PyQt5) and by
-the GUI process, which must never pull in faster-whisper for the same
-MSVCP140.dll reason from the other direction. A shared vocabulary type can't
-belong to either side.
+Deliberately stdlib-only: it is imported by the worker process (which must
+never pull in PyQt5) and by the GUI process (which must never pull in
+faster-whisper), because PyQt5 and ctranslate2 bundle conflicting copies of
+MSVCP140.dll on Windows and loading both crashes intermittently. A shared
+vocabulary type cannot belong to either side.
 """
 
 from dataclasses import dataclass, field
@@ -26,11 +21,10 @@ from typing import Optional
 class Word:
     """A single word with its timing and the model's confidence in it.
 
-    `probability` is what makes targeted correction possible: it lets the
-    Hebrew correction pass look only at words Whisper itself was unsure
-    about, instead of second-guessing the entire transcript (see
-    core/hebrew_correct.py for why that distinction matters so much in
-    Hebrew).
+    `probability` is what makes targeted correction possible: the Hebrew pass
+    looks only at words Whisper itself was unsure about instead of
+    second-guessing the whole transcript (see core/hebrew_correct.py for why
+    that distinction matters so much in Hebrew).
     """
 
     start: float
@@ -65,15 +59,8 @@ class Segment:
 
 @dataclass
 class TranscriptDocument:
-    """One source file's transcript, as a unit the renderer can place under its
+    """One source file's transcript, as a unit the renderer places under its
     own heading.
-
-    Exists so a batch run has a shared vocabulary type for "one file's
-    output" the same way Segment is the shared vocabulary type for "one
-    chunk of transcript" - see the module docstring for why that type has to
-    live here rather than in core.worker or core.formatting: both the worker
-    process and the GUI process need it, and it must stay stdlib-only either
-    way.
     """
 
     source_name: str  # basename of the audio file
@@ -84,10 +71,10 @@ class TranscriptDocument:
 def plain_text(segments: list[Segment]) -> str:
     """Flatten segments back into one unpunctuated-by-us blob.
 
-    This reproduces exactly what Transcriber.transcribe used to return, and
-    exists so the pre-refactor output remains reproducible: format_output's
-    sentence splitting is defined in terms of this string, and the Step 0
-    regression check compares against it.
+    No production caller: it is the regression baseline that tests/eval's
+    model sweep and the integration test both compare transcripts against,
+    and it has to produce the exact string the pipeline did before segments
+    carried structure, so it belongs beside the type it flattens.
     """
     text = ""
     for segment in segments:

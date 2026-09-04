@@ -1,56 +1,42 @@
 """Keep the machine awake for the length of a transcription run.
 
-Why this exists
----------------
-A 15-minute recording was reported as taking ~100 minutes end to end. The
-app's own phase log agreed: transcribe 6000s, diarize 818s. Measured again
-later in exactly the same configuration, the same file took 1003s and 214s
-and produced byte-identical output (the same 133 speaker spans, the same
-214 segments). Nothing about the code was slow.
+The symptom: a 15-minute recording taking ~100 minutes (transcribe 6000s,
+diarize 818s), then the same file in the same configuration taking 1003s and
+214s with byte-identical output. Nothing about the code was slow. This class
+of machine enters Modern Standby (S0ix) when it looks idle, and a long
+transcription looks extremely idle - no keyboard, no mouse, no window
+activity, just a background process burning CPU. Modern Standby does not stop
+that process the way real sleep would: the Desktop Activity Moderator
+throttles the CPU and suspends background work while time.perf_counter()
+keeps counting, so the wall clock detaches from the actual compute. An
+overnight run made it plain - ten hours elapsed against 1235 seconds of
+process CPU time.
 
-The Windows event log had the answer. This class of machine enters Modern
-Standby (S0ix) when it looks idle, and a long transcription looks extremely
-idle: no keyboard, no mouse, no window activity, just a background process
-burning CPU. Modern Standby does not stop that process the way real sleep
-would. The Desktop Activity Moderator throttles the CPU hard and suspends
-background work while time.perf_counter() keeps counting, so every stage
-slows down together, the output is unchanged, and the wall clock silently
-detaches from the actual compute. An overnight run made the gap obvious:
-ten hours of elapsed time against 1235 seconds of process CPU time.
+ES_SYSTEM_REQUIRED tells Windows the system is in use; ES_CONTINUOUS makes
+that assertion stick until cleared rather than lapsing after one idle-timer
+tick. Together they prevent IDLING into sleep or Modern Standby.
 
-So the honest fix is not a faster decoder setting. It is to tell the OS
-that this process is doing real work and the system must not idle out from
-under it.
+They do NOT prevent sleep the user asks for - a lid close, choosing Sleep, a
+critically low battery, a policy - and deliberately do not try: an app that
+could refuse a lid close would be a worse app. Anyone running a long batch on
+a laptop should still leave the lid open.
 
-What SetThreadExecutionState does and does not do
-------------------------------------------------
-ES_SYSTEM_REQUIRED tells Windows the system is in use, and ES_CONTINUOUS
-makes that assertion stick until it is explicitly cleared rather than
-resetting after one idle-timer tick. Together they prevent the machine from
-IDLING into sleep or Modern Standby.
+ES_DISPLAY_REQUIRED is deliberately NOT set: an hour of lit screen to
+transcribe a file wastes power for nothing. The display sleeping is fine, the
+SYSTEM sleeping is not.
 
-They do NOT prevent sleep the user asks for: closing the lid, choosing
-Sleep, a critically low battery, or a policy that forces it. That is
-correct behaviour and deliberately not fought here - an app that could
-refuse a lid close would be a worse app. Anyone running a long batch on a
-laptop should still leave the lid open.
+The flags are per-thread state, so this must be held on the thread that stays
+alive for the whole run (see core/worker.py's entry point), not on a
+short-lived helper.
 
-ES_DISPLAY_REQUIRED is deliberately NOT set. Keeping the screen lit for an
-hour to transcribe a file would waste power and annoy the user; the display
-sleeping is fine, the SYSTEM sleeping is not.
-
-The flags are per-thread state, so this must be entered on the thread that
-stays alive for the whole run (see core/worker.py's entry point), not on a
-short-lived helper thread.
-
-Everything here degrades to a no-op rather than raising. Failing to prevent
-sleep must never fail a transcription: the worst case is the slow run that
-was already happening before this module existed.
+Everything here degrades to a no-op rather than raising: failing to prevent
+sleep must never fail a transcription.
 """
 
 import contextlib
 import logging
 import sys
+from collections.abc import Iterator
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -65,15 +51,14 @@ ES_SYSTEM_REQUIRED = 0x00000001
 def _set_thread_execution_state(flags: int) -> Optional[int]:
     """Call SetThreadExecutionState, or return None where that is impossible.
 
-    Split out from the context manager below purely so the failure paths are
-    testable without a Windows kernel: tests patch this one function to
-    simulate a non-Windows host, a missing API and a rejected call.
+    Split out so the failure paths are testable without a Windows kernel:
+    tests patch this one function to simulate a non-Windows host, a missing
+    API and a rejected call.
 
-    Returns the previous execution state on success, or None if the call is
-    unavailable or failed. Windows signals failure by returning NULL, which
-    is indistinguishable from a legitimate previous state of 0, so a 0 is
-    treated as failure here - the only cost of being wrong is one debug log
-    line, whereas treating a real failure as success would leave a run
+    Returns the previous execution state, or None if the call was unavailable
+    or failed. Windows signals failure with NULL, indistinguishable from a
+    legitimate previous state of 0, so 0 counts as failure: being wrong that
+    way costs one debug line, while the other way would leave a run
     unprotected while claiming otherwise.
     """
     if not sys.platform.startswith("win"):
@@ -94,12 +79,9 @@ def _set_thread_execution_state(flags: int) -> Optional[int]:
 def acquire(reason: str = "transcription") -> bool:
     """Assert that the system is in use. Returns whether the request took.
 
-    Paired with release() below. This lower-level pair exists alongside the
-    context manager because core/worker.py's entry point is one long
-    try/except whose body would have to be reindented wholesale to sit
-    inside a `with` - a diff that would bury a four-line behaviour change in
-    two hundred lines of whitespace. The context manager is still the right
-    choice for any caller that can use it.
+    Paired with release(). Callers should reach for keep_system_awake()
+    instead; this pair is what it is built from, and what a caller whose
+    hold does not nest inside one block would need.
     """
     acquired = _set_thread_execution_state(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) is not None
     if acquired:
@@ -114,10 +96,9 @@ def acquire(reason: str = "transcription") -> bool:
 def release(reason: str = "transcription", acquired: bool = True) -> None:
     """Drop a previous acquire(). Safe to call when acquire() returned False.
 
-    Clearing with ES_CONTINUOUS alone is the documented way to drop a
-    continuous assertion. Callers must run this from a finally so an
-    exception mid-run cannot leave sleep suppressed for the lifetime of the
-    process.
+    ES_CONTINUOUS alone is the documented way to clear a continuous
+    assertion. Callers must run this from a finally: an exception mid-run
+    must not leave sleep suppressed for the lifetime of the process.
     """
     if not acquired:
         return
@@ -126,7 +107,7 @@ def release(reason: str = "transcription", acquired: bool = True) -> None:
 
 
 @contextlib.contextmanager
-def keep_system_awake(reason: str = "transcription"):
+def keep_system_awake(reason: str = "transcription") -> Iterator[bool]:
     """Prevent the system idling into sleep for the duration of the block.
 
     Always yields, whether or not the request was granted, so callers never

@@ -1,10 +1,9 @@
 """Decoding audio into arrays, and deciding whether a file already separates its
 speakers by channel.
 
-This project never used to open audio at all - the file path went straight to
-faster-whisper, which decodes and downmixes to mono internally. That is fine
-until you want to know who is speaking: any per-channel information is gone
-before this code sees it, and some of the recordings this app handles (phone
+Handing faster-whisper a path is enough until you want to know who is
+speaking: it downmixes to mono internally, so per-channel information is gone
+before anything can look at it. Some of the recordings this app handles (phone
 and VoIP call recorders) put each party on their own channel, which is the one
 case where speaker attribution can be exact rather than inferred.
 
@@ -68,7 +67,9 @@ def decode_channels(path: str) -> tuple[list[np.ndarray], int]:
         if stream is None:
             raise ValueError(f"No audio stream in {path}")
 
-        channels = stream.codec_context.channels or 1
+        # PyAV declares `channels` on AudioCodecContext, but streams() types
+        # the attribute as the CodecContext base, so the check cannot see it.
+        channels = stream.codec_context.channels or 1  # type: ignore[attr-defined]
 
         resampler = av.audio.resampler.AudioResampler(
             format="fltp",  # planar float, so channels come out separated
@@ -78,7 +79,9 @@ def decode_channels(path: str) -> tuple[list[np.ndarray], int]:
 
         buffers: list[list[np.ndarray]] = []
         for frame in container.decode(stream):
-            for resampled in resampler.resample(frame):
+            # decode() is typed as yielding any frame kind; `stream` was
+            # picked for type == "audio", so these are all AudioFrames.
+            for resampled in resampler.resample(frame):  # type: ignore[arg-type]
                 planes = resampled.to_ndarray()
                 # to_ndarray gives (channels, samples) for planar formats, but
                 # collapses to (1, samples) or (samples,) for mono depending on
@@ -101,7 +104,8 @@ def to_mono(channels: list[np.ndarray]) -> np.ndarray:
     if len(channels) == 1:
         return channels[0]
     length = min(len(c) for c in channels)
-    return np.mean([c[:length] for c in channels], axis=0).astype(np.float32)
+    mixed: np.ndarray = np.mean([c[:length] for c in channels], axis=0)
+    return mixed.astype(np.float32)
 
 
 def _frame_energies(channel: np.ndarray, frame_length: int) -> np.ndarray:
@@ -110,7 +114,8 @@ def _frame_energies(channel: np.ndarray, frame_length: int) -> np.ndarray:
     if usable <= 0:
         return np.zeros(0, dtype=np.float32)
     frames = channel[:usable].reshape(-1, frame_length)
-    return np.mean(np.square(frames), axis=1)
+    energies: np.ndarray = np.mean(np.square(frames), axis=1)
+    return energies
 
 
 def is_true_stereo(channels: list[np.ndarray], sample_rate: int = SAMPLE_RATE) -> bool:
