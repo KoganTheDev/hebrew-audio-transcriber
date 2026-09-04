@@ -1,10 +1,7 @@
-"""Bidi control characters and time formatting.
+"""Bidi control characters and pure time/string formatting.
 
-Split out first because it is the part of the old core/formatting with no
-dependency on segments, turns or HTML at all - just characters and pure
-string formatting, shared by both the plain-text and HTML renderers (see
-split_sentences() below) and by the live-progress UI (format_mmss(), used
-outside this package entirely).
+Depends on nothing else in the package, so both renderers and the
+live-progress UI outside it can use these.
 """
 
 import logging
@@ -12,49 +9,35 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Bidi control characters
-# ---------------------------------------------------------------------------
-# Writing "[00:01:23]" into a Hebrew line does not render as typed. Under the
-# Unicode Bidirectional Algorithm, "[" and "]" are *neutral* characters with
-# the Bidi_Mirrored property: in an RTL paragraph they resolve to RTL and the
-# renderer substitutes the mirrored glyph, so the text displays as
-# "]00:01:23[" - and the whole bracketed group can land on the wrong side of
-# the line, because the digits inside it form an LTR run embedded in RTL text.
+# A timestamp range, "0:32 - 1:05", sits inside otherwise-Hebrew text. Under
+# the Unicode Bidirectional Algorithm the hyphen separating the two times is a
+# *neutral* character: between two LTR digit runs in an RTL paragraph it can
+# resolve either direction, and the two ends of the range can swap sides, so
+# the line displays as "1:05 - 0:32".
 #
-# The brackets are gone now - timestamps render as a range, "0:32 - 1:05" -
-# but the isolate mechanism below is not optional decoration left over from
-# them. The hyphen separating the two times is itself a neutral character,
-# exactly like "[" and "]" were: sitting between two LTR digit runs inside an
-# RTL paragraph, it can resolve either direction, and the two ends of the
-# range can swap sides the same way the brackets used to. Wrapping the whole
-# "M:SS - M:SS" span in one LRI/PDI pair - not each half separately - is what
-# keeps "start - end" reading as start-then-end regardless of the Hebrew
-# around it.
-#
-# Typing the brackets (or the hyphen's operands) in the opposite order "fixes"
-# this in whichever program you happen to test, and breaks it in the next one,
-# because it treats a rendering rule as if it were a character-order rule. It
-# also corrupts the file for anything that parses timestamps. The actual fix
-# is to tell the bidi algorithm what this run is:
+# Typing the operands in the opposite order "fixes" this in whichever program
+# you happen to test and breaks it in the next one, because it treats a
+# rendering rule as if it were a character-order rule. It also corrupts the
+# file for anything that parses timestamps. The actual fix is to tell the bidi
+# algorithm what this run is:
 #
 #   LRI ... PDI  (U+2066 / U+2069) - Left-to-Right Isolate. Forces the enclosed
 #       run to lay out LTR *and* isolates it, so it neither inherits direction
 #       from the Hebrew around it nor leaks direction into it. Isolates are the
 #       modern replacement for the older embedding controls precisely because
-#       they don't leak.
+#       they don't leak. One pair around the whole "M:SS - M:SS" span, not one
+#       per half, is what keeps the hyphen inside a single LTR run.
 #   RLM (U+200F) - Right-to-Left Mark. A zero-width strong RTL character. Placed
 #       at the start of a line it pins the paragraph direction to RTL, so a line
-#       that happens to begin with a digit or bracket doesn't flip its whole
-#       layout. gui/i18n.py already uses this same trick for path lines.
+#       that happens to begin with a digit doesn't flip its whole layout. It
+#       cannot fix a range on its own: it steers the paragraph, not the neutral
+#       hyphen between two LTR runs inside it.
 LRI = "⁦"
 PDI = "⁩"
-# Retained deliberately even though the HTML renderer no longer emits it: the
-# document declares dir="rtl", which settles paragraph direction outright, so
-# there is nothing left for a strong-character hint to steer. It stays as the
-# documented counterpart to the explanation above - and gui/i18n.py still uses
-# the same character to anchor path lines inside the Qt UI, where there is no
-# document direction to declare.
+# Unused by the HTML renderer, whose document declares dir="rtl" and so settles
+# paragraph direction outright. Kept as the counterpart to the note above, and
+# gui/i18n.py uses the same character to anchor path lines in the Qt UI, where
+# there is no document direction to declare.
 RLM = "‏"
 
 
@@ -78,10 +61,8 @@ def split_sentences(text: str) -> list[str]:
 def format_plain(text: str) -> str:
     """Format a transcript blob with one sentence per line.
 
-    This is the original pre-timestamps output format, kept so the app can
-    still produce exactly what it produced before (see render_html(), which
-    falls back to bare, unlabelled <p> sentences when there is nothing
-    structural to show).
+    The unstructured output format, for when there is nothing to label: the
+    plain-text counterpart of render_html()'s bare <p> fallback.
     """
     return "\n".join(split_sentences(text))
 
@@ -115,16 +96,11 @@ def format_hhmmss(seconds: float) -> str:
 def format_range(start: float, end: float) -> str:
     """Format a turn's timing as "M:SS - M:SS", isolated for RTL embedding.
 
-    A single instant told the reader *when* a turn began; it did not tell them
-    where it ended, so playing it ran on past the turn into whatever came
-    next. A range says exactly what will play.
-
     Both ends promote to H:MM:SS together, never just one, once either passes
     an hour - "0:05:00 - 1:12:15" is legible, but the unpromoted
-    "5:00 - 72:15" reads as a wrong number, not as an hour boundary. See the
-    module docstring for why the whole range, not just each half, sits inside
-    one LRI/PDI pair: the hyphen between the two LTR digit runs is a neutral
-    character and can reorder the same way the old mirrored brackets did.
+    "5:00 - 72:15" reads as a wrong number, not as an hour boundary. The whole
+    range sits inside one LRI/PDI pair rather than each half separately; see
+    the LRI comment above for why.
     """
     promote = _total_seconds(start) >= 3600 or _total_seconds(end) >= 3600
     fmt = format_hhmmss if promote else format_mmss
