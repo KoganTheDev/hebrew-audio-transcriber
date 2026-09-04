@@ -18,7 +18,8 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from speech_to_text.core import power
 from speech_to_text.core.progress_scale import (
@@ -41,10 +42,18 @@ from speech_to_text.core.progress_scale import (
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
     from speech_to_text.core.options import TranscriptionOptions
-    from speech_to_text.core.segments import Segment
+    from speech_to_text.core.segments import Segment, TranscriptDocument
     from speech_to_text.core.transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
+
+# One progress report: an i18n key and its params, never rendered text (this
+# process does not know the UI language - see run_transcription_process).
+_Message = tuple[str, dict[str, Any]]
+# What every progress-reporting step in this module is handed. Which scale
+# the percent is on depends on where the callback came from: batch-wide from
+# _progress_emitter, file-local from _batch_scale_emitter.
+_Emitter = Callable[[_Message, int], None]
 
 
 def _log_phase(phase: str, start: float) -> None:
@@ -143,7 +152,264 @@ def _atomic_write_html(path: str, content: str) -> None:
         raise
 
 
-def run_transcription_process(  # noqa: C901 - scheduled for extraction into batch-setup / per-file loop / render
+@dataclass
+class _BatchRender:
+    """Everything the checkpoint render and the final render both need.
+
+    documents/doc_id/vista are the three things that vary between the two
+    render sites; none of the eight OTHER render_html arguments do - both
+    calls render the same batch under the same options, just at different
+    points in the run. Holding that fixed set in one object means a ninth
+    render option is one edit, not two kept in sync by hand.
+    """
+
+    output_file: str
+    options: "TranscriptionOptions"
+    doc_id: str
+    vista: Optional[str]
+    documents: list["TranscriptDocument"] = field(default_factory=list)
+
+    def render(self) -> str:
+        from speech_to_text.core import formatting
+
+        return formatting.render_html(
+            self.documents,
+            speaker_label=self.options.speaker_label,
+            timestamps=self.options.timestamps,
+            failed_label=self.options.failed_label,
+            title=os.path.splitext(os.path.basename(self.output_file))[0],
+            ui_strings=self.options.ui_strings,
+            doc_id=self.doc_id,
+            vista=self.vista,
+        )
+
+
+def _new_batch(options: "TranscriptionOptions", output_file: str) -> _BatchRender:
+    """Pin this run's render identity, before the first checkpoint write.
+
+    doc_id: render_html() mints a fresh uuid4 on every call, which is right
+    for a one-shot render but wrong for a document rewritten repeatedly
+    during one run - a changing doc_id would change the browser's
+    localStorage autosave key on every checkpoint, orphaning any edits the
+    user made against the previous doc_id. It must stay exactly what it was
+    on the first write through to the last.
+
+    vista: same reasoning. Without a pin the backdrop photo would change on
+    every per-file checkpoint rewrite and flicker to a different image
+    mid-batch - a document is one document, not a slide show. _vista_names()
+    can be empty (no vistas/ directory, e.g. an installed copy that lost its
+    package data); None then, and render_html() already treats vista=None as
+    "no backdrop" the same way it treats an empty vistas/ directory.
+    """
+    from speech_to_text.core import formatting
+
+    vista_names = formatting._vista_names()
+    return _BatchRender(
+        output_file=output_file,
+        options=options,
+        doc_id=uuid.uuid4().hex,
+        vista=random.choice(vista_names) if vista_names else None,
+    )
+
+
+def _progress_emitter(progress_queue: "multiprocessing.Queue") -> _Emitter:
+    """Adapt the (message, percent) callback shape onto progress_queue."""
+
+    def emit_progress(message: _Message, percent: int) -> None:
+        key, params = message
+        progress_queue.put(("progress", key, params, percent))
+
+    return emit_progress
+
+
+def _batch_scale_emitter(
+    progress_queue: "multiprocessing.Queue",
+    done_before: float,
+    file_duration: float,
+    total_duration: float,
+) -> _Emitter:
+    """Rescale one file's own 0-100 progress into its slice of the batch band.
+
+    The slice is sized by this file's share of total audio duration rather
+    than its share of the file count, so a 2-hour recording among ten
+    1-minute ones doesn't make the bar sit at "90% of files done" while most
+    of the actual work remains.
+    """
+
+    def emit_local(message: _Message, local_percent: int) -> None:
+        key, params = message
+        if total_duration > 0:
+            done = done_before + (local_percent / 100.0) * file_duration
+            global_percent = BATCH_TRANSCRIBE_START + int(
+                BATCH_TRANSCRIBE_SPAN * done / total_duration
+            )
+        else:
+            # Durations unknown (the GUI always probes them, but a direct
+            # caller need not): pin to the start of the band rather than
+            # divide by zero. The bar stalls, which is honest - there is
+            # nothing to measure progress against.
+            global_percent = BATCH_TRANSCRIBE_START
+        global_percent = max(BATCH_TRANSCRIBE_START, min(BATCH_TRANSCRIBE_END, global_percent))
+        progress_queue.put(("progress", key, params, global_percent))
+
+    return emit_local
+
+
+def _transcribe_to_document(
+    audio_file: str,
+    transcriber: "Transcriber",
+    options: "TranscriptionOptions",
+    file_duration: float,
+    emit_local: _Emitter,
+    progress_queue: "multiprocessing.Queue",
+) -> "TranscriptDocument":
+    """Transcribe one file into a document, turning any failure into a marked one.
+
+    One file failing does not fail the batch: it is logged, marked on that
+    file's TranscriptDocument, and the caller carries on. This mirrors the
+    decision already made for diarization and Hebrew correction: an optional
+    or partial failure costs only itself.
+    """
+    from speech_to_text.core.segments import TranscriptDocument
+
+    source_name = os.path.basename(audio_file)
+    try:
+        segments = _transcribe_one(
+            audio_file, transcriber, options, file_duration, emit_local, progress_queue
+        )
+    except Exception as e:
+        logger.error(f"Transcription failed for {audio_file}: {e}", exc_info=True)
+        segments = None
+
+    if segments is None:
+        return TranscriptDocument(source_name=source_name, failed=True)
+    return TranscriptDocument(source_name=source_name, segments=segments)
+
+
+def _write_checkpoint(batch: _BatchRender, audio_file: str) -> None:
+    """Render and atomically rewrite the output after one file.
+
+    Transcription is by far the most expensive step in this pipeline, so the
+    combined HTML is re-rendered and rewritten after EVERY file, not only
+    once at the very end. A crash, a forced reboot or a kill at file 9 of 10
+    must not cost the nine files that already finished. Re-rendering the
+    whole document per file is O(n^2) in render cost, but render+write is
+    negligible next to decoding and transcribing audio, so this trade is not
+    close.
+
+    A checkpoint is a safety net, not the main event: if rendering or writing
+    it raises, that must not take down a batch that is otherwise succeeding.
+    Log it and keep transcribing - the next checkpoint, or the final write,
+    gets another chance.
+
+    Silent to the caller by design: it touches neither progress_queue
+    (w_formatting/w_saving stay attached to the one final write only) nor
+    result_queue (still exactly one "finished"/"error" at the end) - the
+    GUI's completion path does not need to know intermediate writes happened
+    at all.
+    """
+    try:
+        render_start = time.perf_counter()
+        checkpoint_html = batch.render()
+        _log_phase("HTML render (checkpoint)", render_start)
+        _atomic_write_html(batch.output_file, checkpoint_html)
+    except Exception as e:
+        logger.warning(f"Checkpoint write failed after {audio_file}: {e}", exc_info=True)
+
+
+def _transcribe_all(
+    audio_files: list[str],
+    transcriber: "Transcriber",
+    options: "TranscriptionOptions",
+    batch: _BatchRender,
+    progress_queue: "multiprocessing.Queue",
+) -> int:
+    """Transcribe every file in turn, checkpointing as it goes.
+
+    Appends one TranscriptDocument per input file to `batch` and returns how
+    many of them succeeded. Occupies BATCH_TRANSCRIBE_START ..
+    BATCH_TRANSCRIBE_END of the overall bar, each file weighted by its share
+    of the total audio duration (see _batch_scale_emitter).
+    """
+    durations = options.audio_durations or [0.0] * len(audio_files)
+    total_duration = options.total_duration
+
+    # DEBUG is required for faster-whisper to even emit the "Processing
+    # segment at ..." line (it's gated by an isEnabledFor check internally);
+    # the retry-threshold messages are unconditional but only useful once
+    # we're already listening at this level.
+    fw_logger = logging.getLogger("faster_whisper")
+    fw_logger.setLevel(logging.DEBUG)
+    retry_handler = _RetryStatusLogHandler(progress_queue)
+    fw_logger.addHandler(retry_handler)
+
+    done_duration = 0.0
+    succeeded = 0
+    try:
+        for index, audio_file in enumerate(audio_files):
+            file_duration = durations[index] if index < len(durations) else 0.0
+            progress_queue.put(
+                (
+                    "status",
+                    "w_file_progress",
+                    {
+                        "i": index + 1,
+                        "n": len(audio_files),
+                        "name": os.path.basename(audio_file),
+                    },
+                )
+            )
+
+            emit_local = _batch_scale_emitter(
+                progress_queue, done_duration, file_duration, total_duration
+            )
+            document = _transcribe_to_document(
+                audio_file, transcriber, options, file_duration, emit_local, progress_queue
+            )
+            batch.documents.append(document)
+            if not document.failed:
+                succeeded += 1
+
+            # Gated on succeeded > 0 rather than firing unconditionally: if
+            # every file so far has failed there is nothing worth writing yet
+            # (only failure-notice placeholders), and if the whole batch goes
+            # on to fail, the caller's "every file failed" path must behave
+            # exactly as it always has - error reported, no output file left
+            # on disk. Once at least one file has succeeded, every subsequent
+            # checkpoint (successful or not) rewrites the full picture so far.
+            if succeeded > 0:
+                _write_checkpoint(batch, audio_file)
+
+            done_duration += file_duration
+    finally:
+        fw_logger.removeHandler(retry_handler)
+
+    return succeeded
+
+
+def _write_final_document(batch: _BatchRender, emit_progress: _Emitter) -> None:
+    """Render the combined document once more and write it for the last time.
+
+    Unlike the per-file checkpoints, this write is not allowed to fail
+    silently: it's the last chance to persist the batch, so a failure here
+    must surface as the "error" result the way it always has (the caller's
+    except still catches it). Still routed through the same atomic helper as
+    the checkpoints - there is no reason the final write should be less safe
+    than the ones before it; a crash during this write must not be able to
+    destroy the last good checkpoint on disk.
+    """
+    emit_progress(("w_formatting", {}), BATCH_FORMATTING_PERCENT)
+    render_start = time.perf_counter()
+    rendered = batch.render()
+    _log_phase("HTML render (final)", render_start)
+
+    emit_progress(("w_saving", {}), BATCH_SAVING_PERCENT)
+    _atomic_write_html(batch.output_file, rendered)
+
+    emit_progress(("w_complete", {}), BATCH_COMPLETE_PERCENT)
+
+
+def run_transcription_process(
     audio_files: list[str],
     output_file: str,
     options: "TranscriptionOptions",
@@ -179,33 +445,14 @@ def run_transcription_process(  # noqa: C901 - scheduled for extraction into bat
           real cost, not worth paying N times)
       BATCH_TRANSCRIBE_START .. BATCH_TRANSCRIBE_END
           transcribing every file in turn - decode, transcribe, identify
-          speakers, correct Hebrew terms - each file's share of this band is
-          weighted by its share of total audio duration (see emit_local
-          below), so one long recording among several short ones doesn't
-          make the bar crawl through the short ones and then stall
+          speakers, correct Hebrew terms - each file's share of this band
+          weighted by its share of total audio duration (see _transcribe_all)
       BATCH_TRANSCRIBE_END .. BATCH_COMPLETE_PERCENT
           rendering the one combined HTML document and writing it once
 
-    One file failing does not fail the batch: it's logged, marked on that
-    file's TranscriptDocument, and the loop continues (see _transcribe_one's
-    caller below). Only every file failing is treated as an overall error -
-    losing a batch's worth of finished transcripts to one bad file would be
-    indefensible given how long transcription takes. This mirrors the
-    decision already made for diarization and Hebrew correction: an optional
-    or partial failure costs only itself.
-
-    Transcription is by far the most expensive step in this pipeline, so the
-    combined HTML is re-rendered and atomically rewritten (see
-    _atomic_write_html) after EVERY file, not only once at the very end. A
-    crash, a forced reboot or a kill at file 9 of 10 must not cost the nine
-    files that already finished. Re-rendering the whole document per file is
-    O(n^2) in render cost, but render+write is negligible next to decoding
-    and transcribing audio, so this trade is not close. These per-file
-    checkpoint writes are silent to the caller: they do not touch
-    progress_queue (w_formatting/w_saving stay attached to the one final
-    write only) or result_queue (still exactly one "finished"/"error" at the
-    end) - the GUI's completion path does not need to know intermediate
-    writes happened at all.
+    Only every file failing is treated as an overall error - losing a
+    batch's worth of finished transcripts to one bad file would be
+    indefensible given how long transcription takes.
     """
     # Held for the whole batch, not per file: the gap between two files is
     # still this process working, and letting the machine stand by in that
@@ -215,33 +462,9 @@ def run_transcription_process(  # noqa: C901 - scheduled for extraction into bat
     try:
         progress_queue.put(("progress", "w_initializing", {}, BATCH_INIT_PERCENT))
 
-        from speech_to_text.core import formatting
-        from speech_to_text.core.segments import TranscriptDocument
         from speech_to_text.core.transcriber import Transcriber
 
-        def emit_progress(message, percent: int) -> None:
-            key, params = message
-            progress_queue.put(("progress", key, params, percent))
-
-        # documents/doc_id/vista are the three things the checkpoint render
-        # (below, once per file) and the final render (at the end of this
-        # function) both need but none of the eight OTHER render_html
-        # arguments vary between the two call sites - they're both rendering
-        # the same batch under the same options, just at different points in
-        # the run. Closing over that fixed set here means a ninth render
-        # option is one edit, not two kept in sync by hand.
-        def render_document() -> str:
-            return formatting.render_html(
-                documents,
-                speaker_label=options.speaker_label,
-                timestamps=options.timestamps,
-                failed_label=options.failed_label,
-                title=os.path.splitext(os.path.basename(output_file))[0],
-                ui_strings=options.ui_strings,
-                doc_id=doc_id,
-                vista=vista,
-            )
-
+        emit_progress = _progress_emitter(progress_queue)
         transcriber = Transcriber(
             model_size=options.model_size,
             device=options.device,
@@ -253,165 +476,14 @@ def run_transcription_process(  # noqa: C901 - scheduled for extraction into bat
             result_queue.put(("error", "err_load_model", {}))
             return
 
-        durations = options.audio_durations or [0.0] * len(audio_files)
-        total_duration = options.total_duration
-
-        # DEBUG is required for faster-whisper to even emit the
-        # "Processing segment at ..." line (it's gated by an isEnabledFor
-        # check internally); the retry-threshold messages are unconditional
-        # but only useful once we're already listening at this level.
-        fw_logger = logging.getLogger("faster_whisper")
-        fw_logger.setLevel(logging.DEBUG)
-        retry_handler = _RetryStatusLogHandler(progress_queue)
-        fw_logger.addHandler(retry_handler)
-
-        # Pinned once per run, before the first checkpoint write, rather than
-        # left to render_html()'s own default. render_html() mints a fresh
-        # uuid4 doc_id on every call, which is the right behaviour for a
-        # one-shot render but wrong for a document that gets rewritten
-        # repeatedly during one run: a changing doc_id would change the
-        # browser's localStorage autosave key on every checkpoint, orphaning
-        # any edits the user made against the previous doc_id. It must stay
-        # exactly what it was on the first write through to the last.
-        doc_id = uuid.uuid4().hex
-
-        # Same reasoning as doc_id just above, for the same reason: pinned
-        # once, before the first checkpoint write, not left to render_html()'s
-        # own per-call random.choice(). Without this, the backdrop photo
-        # would change on every per-file checkpoint rewrite and flicker to a
-        # different image mid-batch - a document is one document, not a slide
-        # show. vista_names() can be empty (no vistas/ directory, e.g. an
-        # installed copy that lost its package data); None then, and
-        # render_html() already treats vista=None as "no backdrop" the same
-        # way it treats an empty vistas/ directory.
-        vista_names = formatting._vista_names()
-        vista = random.choice(vista_names) if vista_names else None
-
-        documents = []
-        done_duration = 0.0
-        succeeded = 0
-        try:
-            for index, audio_file in enumerate(audio_files):
-                file_duration = durations[index] if index < len(durations) else 0.0
-                progress_queue.put(
-                    (
-                        "status",
-                        "w_file_progress",
-                        {
-                            "i": index + 1,
-                            "n": len(audio_files),
-                            "name": os.path.basename(audio_file),
-                        },
-                    )
-                )
-
-                # Weighted rescale: this file's own 0-100 local progress
-                # becomes its slice of the batch's 12-98% band, sized by its
-                # share of total audio duration rather than its share of the
-                # file count, so a 2-hour recording among ten 1-minute ones
-                # doesn't make the bar sit at "90% of files done" while most
-                # of the actual work remains.
-                done_before = done_duration
-
-                def emit_local(
-                    message,
-                    local_percent: int,
-                    _done_before=done_before,
-                    _file_duration=file_duration,
-                ) -> None:
-                    key, params = message
-                    if total_duration > 0:
-                        done = _done_before + (local_percent / 100.0) * _file_duration
-                        global_percent = BATCH_TRANSCRIBE_START + int(
-                            BATCH_TRANSCRIBE_SPAN * done / total_duration
-                        )
-                    else:
-                        # Durations unknown (the GUI always probes them, but a
-                        # direct caller need not): pin to the start of the band
-                        # rather than divide by zero. The bar stalls, which is
-                        # honest - there is nothing to measure progress against.
-                        global_percent = BATCH_TRANSCRIBE_START
-                    global_percent = max(
-                        BATCH_TRANSCRIBE_START, min(BATCH_TRANSCRIBE_END, global_percent)
-                    )
-                    progress_queue.put(("progress", key, params, global_percent))
-
-                try:
-                    segments = _transcribe_one(
-                        audio_file, transcriber, options, file_duration, emit_local, progress_queue
-                    )
-                except Exception as e:
-                    logger.error(f"Transcription failed for {audio_file}: {e}", exc_info=True)
-                    segments = None
-
-                if segments is None:
-                    documents.append(
-                        TranscriptDocument(
-                            source_name=os.path.basename(audio_file),
-                            failed=True,
-                        )
-                    )
-                else:
-                    documents.append(
-                        TranscriptDocument(
-                            source_name=os.path.basename(audio_file),
-                            segments=segments,
-                        )
-                    )
-                    succeeded += 1
-
-                # Checkpoint: render and atomically rewrite the output after
-                # this file, so it survives a crash before the batch ends.
-                # Gated on succeeded > 0 rather than firing unconditionally -
-                # if every file so far has failed there is nothing worth
-                # writing yet (only failure-notice placeholders), and if the
-                # whole batch goes on to fail we want the "every file
-                # failed" path below to behave exactly as it always has:
-                # error reported, no output file left on disk. Once at least
-                # one file has succeeded, every subsequent checkpoint
-                # (successful or not) rewrites the full picture so far.
-                #
-                # A checkpoint is a safety net, not the main event: if
-                # rendering or writing it raises, that must not take down a
-                # batch that is otherwise succeeding. Log it and keep
-                # transcribing - the next checkpoint, or the final write,
-                # gets another chance.
-                if succeeded > 0:
-                    try:
-                        render_start = time.perf_counter()
-                        checkpoint_html = render_document()
-                        _log_phase("HTML render (checkpoint)", render_start)
-                        _atomic_write_html(output_file, checkpoint_html)
-                    except Exception as e:
-                        logger.warning(
-                            f"Checkpoint write failed after {audio_file}: {e}", exc_info=True
-                        )
-
-                done_duration += file_duration
-        finally:
-            fw_logger.removeHandler(retry_handler)
+        batch = _new_batch(options, output_file)
+        succeeded = _transcribe_all(audio_files, transcriber, options, batch, progress_queue)
 
         if succeeded == 0:
             result_queue.put(("error", "err_transcription_failed", {}))
             return
 
-        emit_progress(("w_formatting", {}), BATCH_FORMATTING_PERCENT)
-        render_start = time.perf_counter()
-        rendered = render_document()
-        _log_phase("HTML render (final)", render_start)
-
-        # Unlike the per-file checkpoints above, this write is not allowed to
-        # fail silently: it's the last chance to persist the batch, so a
-        # failure here must surface as the "error" result the way it always
-        # has (the outer except below still catches it). Still routed
-        # through the same atomic helper as the checkpoints - there is no
-        # reason the final write should be less safe than the ones before
-        # it; a crash during this write must not be able to destroy the last
-        # good checkpoint on disk.
-        emit_progress(("w_saving", {}), BATCH_SAVING_PERCENT)
-        _atomic_write_html(output_file, rendered)
-
-        emit_progress(("w_complete", {}), BATCH_COMPLETE_PERCENT)
+        _write_final_document(batch, emit_progress)
         result_queue.put(("finished", output_file))
 
     except Exception as e:
