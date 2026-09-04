@@ -73,7 +73,11 @@ def measure(path: pathlib.Path) -> Counts:
         for tok in tokenize.generate_tokens(io.StringIO(source).readline)
         if tok.type == tokenize.COMMENT
     )
-    blank = sum(1 for line in lines if not line.strip())
+    # Blank lines are counted only OUTSIDE docstrings. A blank line between a
+    # summary and its body belongs to the docstring, and counting it in both
+    # tallies understates code - which then drifts upward as prose is removed,
+    # making a pure documentation edit look like it added statements.
+    blank = sum(1 for i, line in enumerate(lines, 1) if not line.strip() and i not in doc_lines)
     doc = len(doc_lines)
     # max(0, ...): a docstring line that also ends in a comment is counted by
     # both tallies, which can drive a docstring-only module below zero.
