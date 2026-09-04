@@ -1,33 +1,10 @@
 """Rendering structured segments into the output transcript file.
 
-Split out of Transcriber because formatting stopped being a model concern
-once segments carried timing and speaker data: the renderer needs to know
-about turn merging, bidi control characters and speaker label templates,
-none of which have anything to do with running a Whisper model.
-
-This used to be one ~1300-line module. It is a package now because
-render_html() had grown into four unrelated jobs - page chrome, per-document
-content, backdrop photo lookup, and time/bidi formatting - each with its own
-docstrings and test surface, and "core/formatting" stopped meaning any one
-thing. The split is purely structural: every name below is either defined
-here or re-exported, unchanged, from wherever it moved to, so nothing outside
-this package - callers, tests, worker.py - has to change how it imports.
-
-    timecode.py  - bidi control chars, M:SS/H:MM:SS formatting, sentence
-                   splitting. No dependency on segments, turns or HTML.
-    turns.py     - Turn, merge_turns(): grouping raw segments into
-                   readable speaker turns.
-    assets.py    - reading the inlined stylesheet, script and backdrop
-                   photos off disk.
-    chrome.py    - the icon sprite, toolbar, mini-player, toast and help
-                   panel - the parts of the page that don't vary by document.
-    document.py  - the file bar, every turn, the outline sidebar, and the
-                   plain-text panel - the parts that do.
-
-This module (the package's own __init__.py) is what remains uniquely its
-own: render_html() itself, broken into the assembly steps below, plus the
-JSON data-island helper and the re-exports that keep the public surface (and
-tests/test_core/formatting's imports, and worker.py's) unchanged.
+render_html() assembles the whole page from this package's parts: the JSON
+data island the transcript's own script reads, each document's content
+(document.py), the chrome that does not vary by document (chrome.py), and the
+inlined CSS, JS and backdrop photos (assets.py). The other names below are
+re-exported so callers keep importing them from one place.
 """
 
 import html
@@ -124,17 +101,15 @@ def _build_payload(
     title: Optional[str],
     ui_strings: Optional[dict[str, str]],
 ) -> tuple:
-    """Job 1 of render_html(): the page's data island, before any document has
-    rendered.
+    """The page's data island, before any document has rendered.
 
     Returns (payload, strings) rather than just payload: `strings` (the
     already-translated UI labels, defaulted to {}) is threaded through every
-    other rendering step below, not just this one, so callers get it back
-    alongside the dict it also lives inside of.
+    other rendering step, so callers get it back alongside the dict it also
+    lives inside of.
 
-    payload["low"] starts empty and is filled in as a side effect of
-    rendering each document's turns (_render_document_html appends to it) -
-    that mutation happens during body assembly, not here, because a turn's
+    payload["low"] starts empty and is filled in as a side effect of rendering
+    each document's turns (_render_document_html appends to it): a turn's
     flagged words aren't known until its own Turn object is walked.
     """
     strings = dict(ui_strings or {})
@@ -143,24 +118,21 @@ def _build_payload(
         "filename": title or "transcript",
         "strings": strings,
         "low": {},
-        # A speaker added client-side (there is no diarization run to invent
-        # one for it) still needs a translated "Speaker N" fallback text, and
-        # this module runs in the worker process - the page has no other way
-        # to reach the format string that produced every other speaker's
-        # fallback. None when speaker_label itself is None: no speaker UI
-        # renders at all in that case, so nothing will ever read this key.
+        # A speaker added client-side (no diarization run invents one for it)
+        # still needs a translated "Speaker N" fallback, and the page has no
+        # other way to reach the format string that produced every other
+        # speaker's fallback. None when speaker_label itself is None: no
+        # speaker UI renders then, so nothing ever reads this key.
         "speakerLabel": speaker_label,
     }
     return payload, strings
 
 
 def _render_head_html(doc_id: str, title: Optional[str]) -> list[str]:
-    """Job 2 of render_html(): the <!doctype> through the closing </head>.
+    """The <!doctype> through the closing </head>.
 
-    Kept to exactly this span - not through <body> - because the backdrop
-    <style> block (job 3) and the sprite are both things that get inserted
-    right after <body> opens, not inside <head>; splitting the boundary here
-    rather than after "<body>" keeps each job's job title literally true.
+    data-doc-id on <html> is the key the page script stores and reloads its
+    saved edits under, so it has to survive onto the root element.
     """
     return [
         "<!doctype html>",
@@ -175,25 +147,22 @@ def _render_head_html(doc_id: str, title: Optional[str]) -> list[str]:
 
 
 def _render_script_html() -> str:
-    """Job 3.5: The page script's inline <script>.
+    """The page script's inline <script>.
 
     The concatenated fragments under core/assets/js/ (see _asset_dir()'s own
-    docstring) are bare statement bodies, not a standalone script - they were
-    split out of what used to be one `(function () { 'use strict'; ... })();`
-    IIFE, and every fragment still assumes it is running inside that one
-    function scope (a bare `return` in the first fragment returns from the
-    IIFE; later fragments' functions/vars are only reachable because they all
-    hoist into the same scope). This is the one place that wrapper is
-    written, so it exists exactly once no matter how many fragments there
-    are - each fragment file itself must never carry its own copy of the
-    `(function () { 'use strict'; ... })();` wrapper.
+    docstring) are bare statement bodies, not standalone scripts: every one
+    assumes it runs inside this single IIFE scope (a bare `return` in the
+    first fragment returns from the IIFE; later fragments' functions and vars
+    are only reachable because they all hoist into the same scope). This is
+    the one place the wrapper is written, so no fragment file may carry a copy
+    of its own.
     """
     return "<script>(function () {\n  'use strict';\n\n" + _asset_dir("js") + "\n})();</script>"
 
 
 def _render_backdrop_html(vista: Optional[str]) -> list[str]:
-    """Job 3 of render_html(): this render's photographic backdrop, as a
-    per-document <style> block plus the <div> it paints onto.
+    """The photographic backdrop for this render: a per-document <style> block
+    plus the <div> it paints onto.
 
     Returns [] - not a blank string, so the caller can extend() it straight
     into the parts list without an "if" at the call site - when there is no
@@ -205,15 +174,13 @@ def _render_backdrop_html(vista: Optional[str]) -> list[str]:
         return []
 
     landscape_uri, portrait_uri = vista_uris
-    # A <style> element, not the old style="background-image:url(...)"
-    # attribute: an inline style attribute can only ever set ONE rule, but
-    # picking the right crop per viewport needs a media query (see
-    # PORTRAIT_W's comment in tools/build_vistas.py for why one crop
-    # cannot serve both desktop and phone), and a media query can only
-    # live inside a <style> block, not an attribute. The rule is still
-    # per-document, not part of the shared the stylesheet (core/assets/css/) - like the old
-    # inline style, it changes with which photo this render picked, while
-    # the stylesheet does not.
+    # A <style> element, not a style="background-image:url(...)" attribute:
+    # an inline style attribute can only ever set ONE rule, but picking the
+    # right crop per viewport needs a media query (see PORTRAIT_W's comment
+    # in tools/build_vistas.py for why one crop cannot serve both desktop
+    # and phone), and a media query can only live inside a <style> block.
+    # The rule stays per-document rather than joining the shared stylesheet
+    # (core/assets/css/): it changes with which photo this render picked.
     #
     # "<" is escaped in both URIs (the data: payload is base64, which
     # cannot itself contain "<", but escaping unconditionally rather than
@@ -235,13 +202,13 @@ def _render_backdrop_html(vista: Optional[str]) -> list[str]:
         )
     return [
         f"<style>{''.join(style_rules)}</style>",
-        # Right after the sprite - the sprite paints nothing itself (zero
-        # size, position:absolute), so the backdrop is still effectively the
-        # first thing on the page to paint, ahead of any real content. See
-        # the .backdrop / isolation:isolate comments in the stylesheet (core/assets/css/) for
-        # why paint order here matters. No alt text and aria-hidden: it is
-        # decoration, and a screen reader announcing "image" before every
-        # transcript would be pure noise.
+        # Right after the sprite, which paints nothing itself (zero size,
+        # position:absolute), so the backdrop is still effectively the first
+        # thing on the page to paint. See the .backdrop / isolation:isolate
+        # comments in the stylesheet (core/assets/css/) for why paint order
+        # here matters. aria-hidden and no alt text: it is decoration, and a
+        # screen reader announcing "image" before every transcript would be
+        # pure noise.
         '<div class="backdrop" aria-hidden="true"></div>',
     ]
 
@@ -284,46 +251,21 @@ def render_html(
         vista: filename of the LANDSCAPE backdrop photo under
             core/assets/vistas/ to pin, e.g. "vista-07.webp" - always the
             bare landscape name, never a "-portrait" one; that variant is
-            looked up automatically from this same name (see
-            _vista_portrait_name()) so callers never have to know it exists.
-            None (the default) picks one at random - a fresh choice on every
-            render, which is what a person actually wants and what makes two
-            default renders differ in tests. Pin it when the caller needs a
-            specific, reproducible document - worker.py does this once per
-            batch so the photo does not change on every per-file checkpoint
-            rewrite.
-
-    Broken into four jobs, in the order this function performs them: build
-    the data payload (_build_payload), render each document's own content
-    (the loop below, via _render_document_html), assemble <head>
-    (_render_head_html) and the per-document backdrop CSS
-    (_render_backdrop_html), then stitch everything into the final page. The
-    last of those stays inline here rather than becoming a fifth helper: it
-    is the one step that actually needs every other step's output in hand,
-    so factoring it out would just move the same assembly code one call
-    deeper for no clarity gained.
+            looked up from this same name (see _vista_portrait_name()) so
+            callers never have to know it exists. None (the default) picks one
+            at random, a fresh choice on every render. Pin it when the caller
+            needs a reproducible document - worker.py does this once per batch
+            so the photo does not change on every per-file checkpoint rewrite.
 
     """
     doc_id = doc_id or uuid.uuid4().hex
     payload, strings = _build_payload(speaker_label, title, ui_strings)
 
-    # The file list used to render as a <nav class="toc"> inline at the top
-    # of the reading column - the same column every file's turns scroll
-    # through, so it scrolled out of reach after the first file. It is now
-    # part of the outline sidebar instead of a second copy alongside it: see
-    # _render_outline_html(), which also absorbs the per-file speakers strip
-    # that _render_document_html used to render inline (same reasoning -
-    # speaker management is navigation-adjacent, not reading content).
     body: list[str] = []
 
-    # Computed once, here, rather than inside _render_document_html: the
-    # outline sidebar used to need each document's turns too, to show a
-    # per-speaker turn count next to the (now-removed) locate button, so this
-    # stayed a single list threaded to both call sites rather than have
-    # merge_turns() - which is not free, it walks every segment - group the
-    # same document's segments into turns twice. The outline no longer reads
-    # turns at all, but _render_document_html still does, so the single-call
-    # structure (and its spy test) stays.
+    # Computed once here and threaded into _render_document_html rather than
+    # recomputed there: merge_turns() is not free, it walks every segment. A
+    # spy test pins the single call.
     turns_by_doc = [merge_turns(document.segments) for document in documents]
 
     total = len(documents)
@@ -360,10 +302,10 @@ def render_html(
             # .layout is the grid that puts <aside> on the visual left of the
             # RTL document by pure source order (grid-template-columns's first
             # track maps to the inline-start edge, which is the right in RTL) -
-            # see the .layout comment in the stylesheet (core/assets/css/). <main> stays first so a
-            # screen reader or a JS-disabled reader hits the actual transcript
-            # before the navigation/speaker-management aside, matching normal
-            # reading order regardless of which side either lands on visually.
+            # see the .layout comment in the stylesheet (core/assets/css/).
+            # <main> stays first so a screen reader or a JS-disabled reader
+            # hits the transcript before the navigation aside, whichever side
+            # each lands on visually.
             '<div class="layout">',
             "<main>",
         ]
