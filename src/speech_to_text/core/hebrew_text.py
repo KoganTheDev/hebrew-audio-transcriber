@@ -142,7 +142,7 @@ def _is_ltr_or_digit(ch: str) -> bool:
     return unicodedata.bidirectional(ch) in ("L", "EN", "AN")
 
 
-def _find_rtl_runs(text):
+def _find_rtl_runs(text: str) -> list[tuple[int, int]]:
     """Locate maximal RTL runs in `text` under an LTR paragraph - UBA rules
     N1/N2: a neutral run flanked by strong RTL on both sides resolves to
     RTL, but a neutral run touching LTR text or a line boundary resolves to
