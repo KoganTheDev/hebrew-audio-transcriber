@@ -17,6 +17,11 @@ for /f "tokens=2 delims=:" %%p in ('chcp') do set "_prev_codepage=%%p"
 set "_prev_codepage=%_prev_codepage: =%"
 chcp 65001 >nul
 
+REM src-layout: the package lives in src/, which is not on sys.path just
+REM because the repo root is the working directory. Pointing PYTHONPATH at
+REM it keeps this launcher a double-click affair with no install step.
+set "PYTHONPATH=%~dp0src"
+
 REM Prefer the Windows "py" launcher: on machines where PATH's "python" is
 REM the Microsoft Store alias, "python -m ..." fails instantly.
 where py >nul 2>nul

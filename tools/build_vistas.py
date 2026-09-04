@@ -35,7 +35,7 @@ from PIL import Image
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIR = _REPO_ROOT / "vistas_source"
-OUTPUT_DIR = _REPO_ROOT / "speech_to_text" / "core" / "assets" / "vistas"
+OUTPUT_DIR = _REPO_ROOT / "src" / "speech_to_text" / "core" / "assets" / "vistas"
 
 SOURCE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 

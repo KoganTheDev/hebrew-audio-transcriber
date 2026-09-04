@@ -26,7 +26,10 @@ except ModuleNotFoundError:  # pragma: no cover - depends on interpreter
 
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
-PACKAGE = ROOT / "speech_to_text"
+# src-layout: package-data globs are relative to the package root setuptools is
+# pointed at, so paths are compared against SRC, not the repo root.
+SRC = ROOT / "src"
+PACKAGE = SRC / "speech_to_text"
 
 # Everything that ships but is never imported. Extensions, not paths: the
 # point of the check below is to catch a *new* asset of a known kind landing
@@ -104,9 +107,9 @@ class TestPackageData:
         assert assets, "no assets found - the discovery glob itself is wrong"
 
         uncovered = sorted(
-            str(p.relative_to(ROOT))
+            str(p.relative_to(SRC))
             for p in assets
-            if not _covered(p.relative_to(ROOT))
+            if not _covered(p.relative_to(SRC))
         )
         assert not uncovered, (
             "these files ship at render time but no package-data glob in "
@@ -130,7 +133,7 @@ class TestEntryPointAndDiscovery:
         script = _config()["project"]["scripts"]["speech-to-text"]
         module_path, _, attr = script.partition(":")
 
-        module = ROOT / Path(*module_path.split(".")).with_suffix(".py")
+        module = SRC / Path(*module_path.split(".")).with_suffix(".py")
         assert module.exists(), f"{script} names a module that does not exist"
         assert f"def {attr}(" in module.read_text(encoding="utf-8"), (
             f"{script} names a callable that does not exist in {module_path}"

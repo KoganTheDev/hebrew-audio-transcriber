@@ -271,9 +271,15 @@ ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "
 def _default_model_download_root() -> str:
     """Where to put models when SPEECH_TO_TEXT_MODEL_DIR isn't set - see above."""
     package_dir = os.path.dirname(os.path.abspath(__file__))
-    beside_package = os.path.join(os.path.dirname(package_dir), "whisper_models")
-    if os.path.isdir(beside_package):
-        return beside_package
+    # Two levels, not one. Under the src-layout the package sits at
+    # <repo>/src/speech_to_text/, so its immediate parent is src/ - while the
+    # 5.9 GB of already-downloaded models live at <repo>/whisper_models, one
+    # level further up. Checking only the immediate parent would silently miss
+    # them and re-download everything into src/.
+    for ancestor in (os.path.dirname(package_dir), os.path.dirname(os.path.dirname(package_dir))):
+        beside = os.path.join(ancestor, "whisper_models")
+        if os.path.isdir(beside):
+            return beside
 
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")

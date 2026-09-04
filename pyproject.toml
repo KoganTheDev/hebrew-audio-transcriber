@@ -56,7 +56,15 @@ Homepage = "https://github.com/example/speech-to-text"
 Repository = "https://github.com/example/speech-to-text.git"
 Issues = "https://github.com/example/speech-to-text/issues"
 
+[tool.setuptools]
+# src-layout (PyPA's current recommendation): the package is not importable
+# from the repo root, so an editable install is the only way to import it.
+# That makes a broken packaging config fail immediately instead of at the
+# point a user installs the wheel.
+package-dir = {"" = "src"}
+
 [tool.setuptools.packages.find]
+where = ["src"]
 # Explicit include, not just an exclude list: with a flat layout, setuptools
 # discovers every top-level directory holding an __init__.py, which on a
 # working checkout would sweep in tests/ (and tests/eval/) alongside the real

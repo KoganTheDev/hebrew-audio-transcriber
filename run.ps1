@@ -70,6 +70,11 @@ try {
     # out to chcp.com or its "Active code page: ..." echo. Restored in
     # finally so the launcher doesn't leave the user's console in a
     # different state than it found it.
+    # src-layout: the package lives in src/, which is not on sys.path just
+    # because the repo root is the working directory. Pointing PYTHONPATH at
+    # it keeps this launcher a double-click affair with no install step.
+    $env:PYTHONPATH = Join-Path $PSScriptRoot 'src'
+
     $prevOutputEncoding = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

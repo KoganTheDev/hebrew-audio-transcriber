@@ -50,7 +50,7 @@ random.choice() has nothing to do with anything these tests check.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from speech_to_text.core.formatting import render_html  # noqa: E402
 from speech_to_text.core.segments import Segment, TranscriptDocument, Word  # noqa: E402

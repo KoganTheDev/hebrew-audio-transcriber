@@ -80,7 +80,7 @@ function sourceKey() {
   // a fixed pair of paths would have gone stale silently the moment the
   // split happened - the fixture would keep being served from cache while
   // the code under test changed underneath it.
-  const assets = path.join(REPO_ROOT, 'speech_to_text', 'core', 'assets');
+  const assets = path.join(REPO_ROOT, 'src', 'speech_to_text', 'core', 'assets');
   const watched = [path.join(__dirname, 'render_fixture.py')];
   for (const kind of ['js', 'css']) {
     for (const name of readdirSync(path.join(assets, kind))) {

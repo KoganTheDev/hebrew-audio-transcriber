@@ -151,6 +151,9 @@ class TestHighDpiRendering:
         # Headless platform plugin - no real display needed just to
         # construct a QApplication and read its attributes back.
         env["QT_QPA_PLATFORM"] = "offscreen"
+        # src-layout: cwd=repo_root no longer puts the package on the child's
+        # sys.path, so name it explicitly.
+        env["PYTHONPATH"] = str(repo_root / "src")
         result = subprocess.run(
             [sys.executable, "-c", script],
             cwd=repo_root,
@@ -216,6 +219,9 @@ class TestShippedEntryPointAppliesStylesheet:
         # MainWindow and calls show() on it; offscreen lets that happen
         # without a real display, same as TestHighDpiRendering above.
         env["QT_QPA_PLATFORM"] = "offscreen"
+        # src-layout: cwd=repo_root no longer puts the package on the child's
+        # sys.path, so name it explicitly.
+        env["PYTHONPATH"] = str(repo_root / "src")
         result = subprocess.run(
             [sys.executable, "-c", script],
             cwd=repo_root,
