@@ -46,9 +46,6 @@ from speech_to_text.core.segments import Segment, Word
 
 logger = logging.getLogger(__name__)
 
-# Default location of the user's term list, alongside the model caches.
-TERMS_FILENAME = "hebrew_terms.txt"
-
 # Only words the model scored below this are candidates. This gate is what
 # makes the pass safe rather than reckless: it is the difference between
 # "correct what the model doubted" and "second-guess the whole transcript".
