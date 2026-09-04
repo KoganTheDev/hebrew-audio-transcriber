@@ -676,7 +676,10 @@ def _transcribe_one(
 
 
 def _prepare_audio(
-    audio_file: str, options, file_duration: float, emit_progress
+    audio_file: str,
+    options: "TranscriptionOptions",
+    file_duration: float,
+    emit_progress: _Emitter,
 ) -> tuple[Optional[list], bool]:
     """Decode the file and decide which speaker-separation path applies.
 
@@ -698,7 +701,9 @@ def _prepare_audio(
     return channels, two_party
 
 
-def _transcribe_per_channel(transcriber, channels, file_duration: float):
+def _transcribe_per_channel(
+    transcriber: "Transcriber", channels: Any, file_duration: float
+) -> list["Segment"]:
     """Transcribe each channel separately - the exact path.
 
     When a recording genuinely has one speaker per channel, attribution needs
@@ -706,7 +711,7 @@ def _transcribe_per_channel(transcriber, channels, file_duration: float):
     cost is that transcription runs once per channel, roughly doubling the
     wall-clock time, which the GUI's estimate accounts for.
     """
-    collected = []
+    collected: list[Segment] = []
     for index, channel in enumerate(channels[:2]):
         segments = transcriber.transcribe(channel, total_duration_seconds=file_duration)
         if not segments:
@@ -721,7 +726,10 @@ def _transcribe_per_channel(transcriber, channels, file_duration: float):
 
 
 def _start_diarization(
-    mono, options, progress_queue: "multiprocessing.Queue", result: dict
+    mono: Any,
+    options: "TranscriptionOptions",
+    progress_queue: "multiprocessing.Queue",
+    result: dict,
 ) -> Optional["threading.Thread"]:
     """Kick off diarization on a background thread, overlapping it with
     transcription (see the comment above this function's call site in
@@ -785,7 +793,9 @@ def _start_diarization(
     return thread
 
 
-def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
+def _finish_identify_speakers(
+    segments: list["Segment"], result: dict, emit_progress: _Emitter
+) -> None:
     """Attach speakers once both transcription and the overlapped diarization
     thread (see _start_diarization) have finished. assign_speakers is the one
     piece of speaker identification that genuinely needs the transcript, so
@@ -852,7 +862,11 @@ def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
         emit_progress(("w_speakers_unavailable", {}), FILE_LOCAL_SPEAKER_ID_END)
 
 
-def _correct_hebrew(segments, options, emit_progress):
+def _correct_hebrew(
+    segments: Optional[list["Segment"]],
+    options: "TranscriptionOptions",
+    emit_progress: _Emitter,
+) -> None:
     """Fix misrecognised domain terms, in place.
 
     A no-op unless the user has written a term list. Like diarization, any

@@ -51,6 +51,7 @@ was already happening before this module existed.
 import contextlib
 import logging
 import sys
+from collections.abc import Iterator
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ def release(reason: str = "transcription", acquired: bool = True) -> None:
 
 
 @contextlib.contextmanager
-def keep_system_awake(reason: str = "transcription"):
+def keep_system_awake(reason: str = "transcription") -> Iterator[bool]:
     """Prevent the system idling into sleep for the duration of the block.
 
     Always yields, whether or not the request was granted, so callers never
