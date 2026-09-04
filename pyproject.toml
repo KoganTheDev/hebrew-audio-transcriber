@@ -149,7 +149,15 @@ max-complexity = 10
 docstring-code-format = true
 
 [tool.mypy]
-python_version = "3.9"
+# 3.10, not the 3.9 in requires-python: mypy 2.x refuses to analyse anything
+# below 3.10 outright ("Python 3.9 is not supported"), so the old value meant
+# the type checker degraded rather than ran. See requires-python - the two
+# genuinely disagree, and 3.9 has been end-of-life since October 2025.
+python_version = "3.10"
+# src-layout: without this mypy cannot find the package at all and stops with
+# "Can't find package 'speech_to_text'" before checking a single file. CI's
+# continue-on-error was masking a step that never ran.
+mypy_path = "src"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
