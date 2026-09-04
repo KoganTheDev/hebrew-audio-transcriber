@@ -1,10 +1,9 @@
 """Decoding audio into arrays, and deciding whether a file already separates its
 speakers by channel.
 
-This project never used to open audio at all - the file path went straight to
-faster-whisper, which decodes and downmixes to mono internally. That is fine
-until you want to know who is speaking: any per-channel information is gone
-before this code sees it, and some of the recordings this app handles (phone
+Handing faster-whisper a path is enough until you want to know who is
+speaking: it downmixes to mono internally, so per-channel information is gone
+before anything can look at it. Some of the recordings this app handles (phone
 and VoIP call recorders) put each party on their own channel, which is the one
 case where speaker attribution can be exact rather than inferred.
 

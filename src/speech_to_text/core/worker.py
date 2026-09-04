@@ -59,14 +59,13 @@ _Emitter = Callable[[_Message, int], None]
 def _log_phase(phase: str, start: float) -> None:
     """Emit one phase's wall-clock cost at DEBUG.
 
-    This module had zero timing instrumentation before this: decode,
-    transcribe, diarize, assign_speakers, Hebrew correction and HTML render
-    were indistinguishable in the log, which made "what's actually slow"
-    guesswork instead of measurement. time.perf_counter() (monotonic,
-    sub-millisecond resolution) rather than time.time() (wall clock, can
-    jump backward on an NTP correction) - deliberately not the choice
-    tests/eval/compare_models.py and core/calibration.py already make for
-    their own reasons.
+    Without this, decode, transcribe, diarize, assign_speakers, Hebrew
+    correction and HTML render are indistinguishable in the log, and "what's
+    actually slow" is guesswork rather than measurement. perf_counter
+    (monotonic, sub-millisecond) rather than time.time, which can jump
+    backwards on an NTP correction - deliberately not the choice
+    tests/eval/compare_models.py and core/calibration.py make for their own
+    reasons.
     """
     logger.debug(f"phase timing: {phase} took {time.perf_counter() - start:.3f}s")
 
@@ -434,8 +433,7 @@ def run_transcription_process(
     percentages are on this single 0-100 scale, so they only ever move
     forward). The boundaries below are named constants in
     core/progress_scale.py, not numbers retyped here - a bare integer in a
-    docstring cannot be checked against the code it describes, and this
-    table used to drift from the actual boundaries for exactly that reason.
+    docstring cannot be checked against the code it describes.
       0 .. BATCH_INIT_PERCENT
           initializing this process
       BATCH_INIT_PERCENT .. TRANSCRIBER_MODEL_LOADED_PERCENT
@@ -498,14 +496,12 @@ def _file_local_emitter(emit_progress: _Emitter) -> _Emitter:
 
     Transcriber emits TRANSCRIBER_MODEL_LOADED_PERCENT at the start of
     transcribe() and climbs to TRANSCRIBER_TRANSCRIBE_END_PERCENT as segments
-    complete; that fixed range was written back when a worker run only ever
-    handled one file. Remapping it here onto
-    FILE_LOCAL_TRANSCRIBE_START..FILE_LOCAL_TRANSCRIBE_END (leaving
-    0..FILE_LOCAL_TRANSCRIBE_START for decoding and
+    complete, on a scale that knows nothing about batches. Remapping that
+    fixed range onto FILE_LOCAL_TRANSCRIBE_START..FILE_LOCAL_TRANSCRIBE_END
+    (leaving 0..FILE_LOCAL_TRANSCRIBE_START for decoding and
     FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_MAX for speakers and correction) is
-    what lets a single already-loaded Transcriber be reused, unmodified,
-    across every file in a batch instead of paying the model-load cost again
-    per file.
+    what lets one already-loaded Transcriber serve every file in a batch
+    instead of paying the model-load cost again per file.
     """
 
     def from_transcriber_scale(message: _Message, percent: int) -> None:
@@ -749,8 +745,7 @@ def _start_diarization(
     Returns None without starting a thread when diarization isn't wanted or
     there's no audio to diarize - callers only need to check the return value
     for whether there's something to join later, not for whether it "worked":
-    that's the non-fatal contract _finish_identify_speakers still owns,
-    exactly as the old sequential _identify_speakers did.
+    that's the non-fatal contract _finish_identify_speakers owns.
 
     Catches every exception here rather than letting one escape into a
     background thread where nothing would ever see it - diarization staying
@@ -775,10 +770,9 @@ def _start_diarization(
                 mono,
                 sample_rate=audio_source.SAMPLE_RATE,
                 num_speakers=options.num_speakers,
-                # No per-chunk percentage callback here (the old sequential
-                # code had one) - a percentage with nowhere honest to go on
-                # the file-local scale while transcription is still running
-                # concurrently is worse than no percentage at all. The
+                # No per-chunk percentage callback: a percentage with nowhere
+                # honest to go on the file-local scale while transcription is
+                # still running concurrently is worse than none at all. The
                 # "w_identifying_speakers" status message above already told
                 # the user this phase is under way.
                 progress=None,
@@ -801,10 +795,9 @@ def _finish_identify_speakers(
     piece of speaker identification that genuinely needs the transcript, so
     it can never start any earlier than this, overlap or not.
 
-    Same non-fatal contract as the old sequential _identify_speakers: a
-    missing model, an absent dependency, or any other failure costs speaker
-    labels and nothing else - the transcript this function receives is
-    already complete.
+    Non-fatal throughout: a missing model, an absent dependency, or any other
+    failure costs speaker labels and nothing else - the transcript this
+    function receives is already complete.
     """
     if "error" in result:
         logger.warning(
@@ -822,25 +815,20 @@ def _finish_identify_speakers(
     # never ran (options.identify_speakers off, or no mono audio at all,
     # see _start_diarization). assign_speakers already treats an empty
     # spans list as a safe no-op (returns segments unchanged - see its own
-    # `if not spans` guard in core/diarization.py), so it's called
-    # unconditionally below rather than special-cased here, matching what
-    # the old sequential _identify_speakers did (it never checked spans
-    # before calling assign_speakers either) - including still reporting
-    # real progress in that case, which a bare `if not spans: return` would
-    # have silently skipped.
+    # `if not spans` guard in core/diarization.py), so it is called
+    # unconditionally below rather than special-cased here - which also keeps
+    # the progress report a bare `if not spans: return` would have skipped.
     spans = result.get("spans", [])
 
     try:
         from speech_to_text.core import diarization
 
-        # assign_speakers now returns a new list - a segment whose words
-        # cross a speaker boundary is split into consecutive sub-segments
-        # instead of being labelled by majority vote (see its docstring in
-        # core/diarization.py). Assigning into the caller's list in place
-        # (segments[:] = ..., not rebinding the local `segments` name) keeps
-        # this change contained to this function: the caller in
-        # _transcribe_one still holds and returns the same list object, now
-        # with any splits reflected in its contents.
+        # assign_speakers returns a NEW list - a segment whose words cross a
+        # speaker boundary is split into consecutive sub-segments rather than
+        # labelled by majority vote (see core/diarization.py). Assigning into
+        # the caller's list in place (segments[:] = ..., not rebinding the
+        # local name) is what lets _transcribe_one keep and return the same
+        # list object with those splits in it.
         assign_start = time.perf_counter()
         segments[:] = diarization.assign_speakers(segments, spans)
         _log_phase("assign_speakers", assign_start)

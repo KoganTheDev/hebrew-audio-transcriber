@@ -167,10 +167,9 @@ class Transcriber:
         kwargs: dict[str, Any] = dict(
             device=device,
             compute_type=compute_type,
-            # Absolute, resolved once at import time - see
-            # config.MODEL_DOWNLOAD_ROOT's own comment for why this used to
-            # be the relative literal "./whisper_models" and what that broke
-            # once the console script could be launched from anywhere.
+            # Absolute, resolved once at import time: a relative path would
+            # resolve against the working directory, and the console script
+            # can be launched from anywhere. See config.MODEL_DOWNLOAD_ROOT.
             download_root=config.MODEL_DOWNLOAD_ROOT,
         )
         if self.cpu_threads is not None:
