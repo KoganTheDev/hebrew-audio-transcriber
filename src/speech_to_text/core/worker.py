@@ -1,5 +1,4 @@
-"""
-Standalone transcription worker, run in a separate OS process.
+"""Standalone transcription worker, run in a separate OS process.
 
 faster-whisper (ctranslate2) and PyQt5 each bundle their own copy of
 MSVCP140.dll on Windows. Loading both into the same process causes an
@@ -23,10 +22,10 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from speech_to_text.core import power
 from speech_to_text.core.progress_scale import (
+    BATCH_COMPLETE_PERCENT,
     BATCH_FORMATTING_PERCENT,
     BATCH_INIT_PERCENT,
     BATCH_SAVING_PERCENT,
-    BATCH_COMPLETE_PERCENT,
     BATCH_TRANSCRIBE_END,
     BATCH_TRANSCRIBE_SPAN,
     BATCH_TRANSCRIBE_START,
@@ -34,8 +33,6 @@ from speech_to_text.core.progress_scale import (
     FILE_LOCAL_CORRECTING_PERCENT,
     FILE_LOCAL_MAX,
     FILE_LOCAL_SPEAKER_ID_END,
-    FILE_LOCAL_SPEAKER_ID_SPAN,
-    FILE_LOCAL_TRANSCRIBE_END,
     FILE_LOCAL_TRANSCRIBE_SPAN,
     FILE_LOCAL_TRANSCRIBE_START,
     TRANSCRIBER_MODEL_LOADED_PERCENT,
@@ -51,8 +48,7 @@ logger = logging.getLogger(__name__)
 
 
 def _log_phase(phase: str, start: float) -> None:
-    """
-    Emit one phase's wall-clock cost at DEBUG.
+    """Emit one phase's wall-clock cost at DEBUG.
 
     This module had zero timing instrumentation before this: decode,
     transcribe, diarize, assign_speakers, Hebrew correction and HTML render
@@ -76,18 +72,23 @@ def _log_phase(phase: str, start: float) -> None:
 # "faster_whisper" logger) - _RETRY_LOG_PATTERNS turns them into live,
 # human-readable status messages instead of leaving the UI silent.
 _RETRY_LOG_PATTERNS = [
-    (re.compile(r"^Processing segment at (.+)$"),
-     lambda m: ("status_analyzing", {"time": m.group(1)})),
-    (re.compile(r"^Compression ratio threshold is not met with temperature ([\d.]+)"),
-     lambda m: ("status_retry_compression", {"temp": m.group(1)})),
-    (re.compile(r"^Log probability threshold is not met with temperature ([\d.]+)"),
-     lambda m: ("status_retry_logprob", {"temp": m.group(1)})),
+    (
+        re.compile(r"^Processing segment at (.+)$"),
+        lambda m: ("status_analyzing", {"time": m.group(1)}),
+    ),
+    (
+        re.compile(r"^Compression ratio threshold is not met with temperature ([\d.]+)"),
+        lambda m: ("status_retry_compression", {"temp": m.group(1)}),
+    ),
+    (
+        re.compile(r"^Log probability threshold is not met with temperature ([\d.]+)"),
+        lambda m: ("status_retry_logprob", {"temp": m.group(1)}),
+    ),
 ]
 
 
 class _RetryStatusLogHandler(logging.Handler):
-    """
-    Forwards faster-whisper's own internal decode-retry log lines onto
+    """Forwards faster-whisper's own internal decode-retry log lines onto
     progress_queue as status-only updates (kind="status" - text changes,
     percentage does not), so the user sees what's actually happening during
     a stalled window instead of a silent, seemingly-frozen bar.
@@ -110,8 +111,7 @@ class _RetryStatusLogHandler(logging.Handler):
 
 
 def _atomic_write_html(path: str, content: str) -> None:
-    """
-    Write content to `path` without ever leaving a half-written file behind.
+    """Write content to `path` without ever leaving a half-written file behind.
 
     A plain `open(path, "w")` truncates the target immediately, so a crash
     partway through the write destroys whatever good output was already
@@ -150,8 +150,7 @@ def run_transcription_process(
     progress_queue: "multiprocessing.Queue",
     result_queue: "multiprocessing.Queue",
 ) -> None:
-    """
-    Entry point for the child process. Must stay import-light (no PyQt5).
+    """Entry point for the child process. Must stay import-light (no PyQt5).
 
     All human-readable text crosses the process boundary as (i18n key,
     params) pairs, never rendered strings - this process doesn't know the
@@ -294,10 +293,17 @@ def run_transcription_process(
         try:
             for index, audio_file in enumerate(audio_files):
                 file_duration = durations[index] if index < len(durations) else 0.0
-                progress_queue.put((
-                    "status", "w_file_progress",
-                    {"i": index + 1, "n": len(audio_files), "name": os.path.basename(audio_file)},
-                ))
+                progress_queue.put(
+                    (
+                        "status",
+                        "w_file_progress",
+                        {
+                            "i": index + 1,
+                            "n": len(audio_files),
+                            "name": os.path.basename(audio_file),
+                        },
+                    )
+                )
 
                 # Weighted rescale: this file's own 0-100 local progress
                 # becomes its slice of the batch's 12-98% band, sized by its
@@ -325,7 +331,9 @@ def run_transcription_process(
                         # rather than divide by zero. The bar stalls, which is
                         # honest - there is nothing to measure progress against.
                         global_percent = BATCH_TRANSCRIBE_START
-                    global_percent = max(BATCH_TRANSCRIBE_START, min(BATCH_TRANSCRIBE_END, global_percent))
+                    global_percent = max(
+                        BATCH_TRANSCRIBE_START, min(BATCH_TRANSCRIBE_END, global_percent)
+                    )
                     progress_queue.put(("progress", key, params, global_percent))
 
                 try:
@@ -337,13 +345,19 @@ def run_transcription_process(
                     segments = None
 
                 if segments is None:
-                    documents.append(TranscriptDocument(
-                        source_name=os.path.basename(audio_file), failed=True,
-                    ))
+                    documents.append(
+                        TranscriptDocument(
+                            source_name=os.path.basename(audio_file),
+                            failed=True,
+                        )
+                    )
                 else:
-                    documents.append(TranscriptDocument(
-                        source_name=os.path.basename(audio_file), segments=segments,
-                    ))
+                    documents.append(
+                        TranscriptDocument(
+                            source_name=os.path.basename(audio_file),
+                            segments=segments,
+                        )
+                    )
                     succeeded += 1
 
                 # Checkpoint: render and atomically rewrite the output after
@@ -418,8 +432,7 @@ def _transcribe_one(
     emit_progress,
     progress_queue: "multiprocessing.Queue",
 ) -> Optional[List["Segment"]]:
-    """
-    Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
+    """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
 
     emit_progress here is already file-local (0-100 covering just this
     file's own work) - the caller in run_transcription_process does the
@@ -441,6 +454,7 @@ def _transcribe_one(
     failed, so one bad file can be caught and skipped by the caller without
     losing the rest of the batch.
     """
+
     def from_transcriber_scale(message, percent: int) -> None:
         # Transcriber emits TRANSCRIBER_MODEL_LOADED_PERCENT at the start of
         # transcribe() and climbs to TRANSCRIBER_TRANSCRIBE_END_PERCENT as
@@ -451,11 +465,18 @@ def _transcribe_one(
         # below). A stray 0 (Transcriber's own error sentinel) clamps to 0
         # rather than going negative - the file is about to be marked
         # failed regardless of the exact number shown at that instant.
-        local = max(0, min(FILE_LOCAL_MAX, round(
-            FILE_LOCAL_TRANSCRIBE_START
-            + (percent - TRANSCRIBER_MODEL_LOADED_PERCENT)
-            / TRANSCRIBER_TRANSCRIBE_SPAN * FILE_LOCAL_TRANSCRIBE_SPAN
-        )))
+        local = max(
+            0,
+            min(
+                FILE_LOCAL_MAX,
+                round(
+                    FILE_LOCAL_TRANSCRIBE_START
+                    + (percent - TRANSCRIBER_MODEL_LOADED_PERCENT)
+                    / TRANSCRIBER_TRANSCRIBE_SPAN
+                    * FILE_LOCAL_TRANSCRIBE_SPAN
+                ),
+            ),
+        )
         emit_progress(message, local)
 
     transcriber.progress_callback = from_transcriber_scale
@@ -498,6 +519,7 @@ def _transcribe_one(
     diarization_result: dict = {}
     if channels is not None and not two_party:
         from speech_to_text.core import audio_source
+
         mono = audio_source.to_mono(channels)
         diarization_thread = _start_diarization(mono, options, progress_queue, diarization_result)
 
@@ -539,8 +561,7 @@ def _transcribe_one(
 def _prepare_audio(
     audio_file: str, options, file_duration: float, emit_progress
 ) -> Tuple[Optional[list], bool]:
-    """
-    Decode the file and decide which speaker-separation path applies.
+    """Decode the file and decide which speaker-separation path applies.
 
     Returns (channels, two_party). Decoding is skipped entirely when speaker
     identification is off, since then nothing needs the samples and
@@ -561,8 +582,7 @@ def _prepare_audio(
 
 
 def _transcribe_per_channel(transcriber, channels, file_duration: float):
-    """
-    Transcribe each channel separately - the exact path.
+    """Transcribe each channel separately - the exact path.
 
     When a recording genuinely has one speaker per channel, attribution needs
     no model and carries no error: whoever is on channel 0 is speaker 0. The
@@ -571,9 +591,7 @@ def _transcribe_per_channel(transcriber, channels, file_duration: float):
     """
     collected = []
     for index, channel in enumerate(channels[:2]):
-        segments = transcriber.transcribe(
-            channel, total_duration_seconds=file_duration
-        )
+        segments = transcriber.transcribe(channel, total_duration_seconds=file_duration)
         if not segments:
             continue
         for segment in segments:
@@ -588,8 +606,7 @@ def _transcribe_per_channel(transcriber, channels, file_duration: float):
 def _start_diarization(
     mono, options, progress_queue: "multiprocessing.Queue", result: dict
 ) -> Optional["threading.Thread"]:
-    """
-    Kick off diarization on a background thread, overlapping it with
+    """Kick off diarization on a background thread, overlapping it with
     transcription (see the comment above this function's call site in
     _transcribe_one). Runs everything that does NOT need the transcript -
     downloading models on first use, then diarize() itself - and leaves the
@@ -652,8 +669,7 @@ def _start_diarization(
 
 
 def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
-    """
-    Attach speakers once both transcription and the overlapped diarization
+    """Attach speakers once both transcription and the overlapped diarization
     thread (see _start_diarization) have finished. assign_speakers is the one
     piece of speaker identification that genuinely needs the transcript, so
     it can never start any earlier than this, overlap or not.
@@ -664,7 +680,9 @@ def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
     already complete.
     """
     if "error" in result:
-        logger.warning(f"Speaker identification skipped: {result['error']}", exc_info=result["error"])
+        logger.warning(
+            f"Speaker identification skipped: {result['error']}", exc_info=result["error"]
+        )
         emit_progress(("w_speakers_unavailable", {}), FILE_LOCAL_SPEAKER_ID_END)
         return
 
@@ -718,8 +736,7 @@ def _finish_identify_speakers(segments, result: dict, emit_progress) -> None:
 
 
 def _correct_hebrew(segments, options, emit_progress):
-    """
-    Fix misrecognised domain terms, in place.
+    """Fix misrecognised domain terms, in place.
 
     A no-op unless the user has written a term list. Like diarization, any
     failure here costs the correction and nothing else - the transcript is

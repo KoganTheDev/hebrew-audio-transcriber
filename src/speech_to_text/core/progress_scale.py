@@ -1,5 +1,4 @@
-"""
-Named boundaries for the transcription progress bar.
+"""Named boundaries for the transcription progress bar.
 
 The bar's percentage crosses three different coordinate systems on its way
 from a faster-whisper callback to the number Qt actually paints, and every
@@ -56,9 +55,9 @@ TRANSCRIBER_TRANSCRIBE_SPAN = (
 # ---------------------------------------------------------------------------
 # 2. File-local scale (one file, 0-100, independent of the batch)
 # ---------------------------------------------------------------------------
-FILE_LOCAL_TRANSCRIBE_START = 5   # 0-5: decoding / stereo detection
-FILE_LOCAL_TRANSCRIBE_END = 90    # 5-90: transcription, remapped from (1)
-FILE_LOCAL_MAX = 100              # 90-100: speaker id + Hebrew correction
+FILE_LOCAL_TRANSCRIBE_START = 5  # 0-5: decoding / stereo detection
+FILE_LOCAL_TRANSCRIBE_END = 90  # 5-90: transcription, remapped from (1)
+FILE_LOCAL_MAX = 100  # 90-100: speaker id + Hebrew correction
 
 FILE_LOCAL_TRANSCRIBE_SPAN = FILE_LOCAL_TRANSCRIBE_END - FILE_LOCAL_TRANSCRIBE_START  # 85
 
@@ -67,10 +66,10 @@ FILE_LOCAL_TRANSCRIBE_SPAN = FILE_LOCAL_TRANSCRIBE_END - FILE_LOCAL_TRANSCRIBE_S
 # own timeline that a status message reports progress at. Named anyway
 # (rather than left as bare integers at their call sites) so every number
 # that means "this file's own progress" lives in one module, boundary or not.
-FILE_LOCAL_ANALYZING_PERCENT = 2       # decoding has started
-FILE_LOCAL_SPEAKER_ID_END = 97         # diarization's own sub-band ends here
+FILE_LOCAL_ANALYZING_PERCENT = 2  # decoding has started
+FILE_LOCAL_SPEAKER_ID_END = 97  # diarization's own sub-band ends here
 FILE_LOCAL_SPEAKER_ID_SPAN = FILE_LOCAL_SPEAKER_ID_END - FILE_LOCAL_TRANSCRIBE_END  # 7
-FILE_LOCAL_CORRECTING_PERCENT = 98     # Hebrew term correction has started
+FILE_LOCAL_CORRECTING_PERCENT = 98  # Hebrew term correction has started
 
 # ---------------------------------------------------------------------------
 # 3. Batch-wide scale (what the GUI's progress bar actually shows)
@@ -78,10 +77,10 @@ FILE_LOCAL_CORRECTING_PERCENT = 98     # Hebrew term correction has started
 BATCH_INIT_PERCENT = 2
 BATCH_TRANSCRIBE_START = 12
 BATCH_TRANSCRIBE_END = 98
-BATCH_FORMATTING_PERCENT = 98   # numerically == BATCH_TRANSCRIBE_END: rendering
-                                 # begins exactly where per-file transcription
-                                 # left off, it is not a coincidence worth a
-                                 # second constant.
+BATCH_FORMATTING_PERCENT = 98  # numerically == BATCH_TRANSCRIBE_END: rendering
+# begins exactly where per-file transcription
+# left off, it is not a coincidence worth a
+# second constant.
 BATCH_SAVING_PERCENT = 99
 BATCH_COMPLETE_PERCENT = 100
 

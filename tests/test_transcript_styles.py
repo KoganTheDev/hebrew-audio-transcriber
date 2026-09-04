@@ -33,6 +33,7 @@ def _css_source() -> str:
     """
     return _asset_dir("css")
 
+
 # Minimums from WCAG 2.1: 4.5:1 for normal-size text, 3:1 for non-text UI that
 # still has to be seen (borders that signal state, the focus ring).
 TEXT_MIN = 4.5
@@ -116,7 +117,7 @@ PAIRS = [
 def _relative_luminance(hex_colour):
     """WCAG 2.1 relative luminance."""
     raw = hex_colour.lstrip("#")
-    channels = [int(raw[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    channels = [int(raw[i : i + 2], 16) / 255 for i in (0, 2, 4)]
     linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
@@ -193,7 +194,7 @@ def _rgb(hex_or_triplet):
     """Accept either "#rrggbb" or a "r, g, b" custom-property value as (r, g, b) ints."""
     value = hex_or_triplet.strip()
     if value.startswith("#"):
-        return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+        return tuple(int(value[i : i + 2], 16) for i in (1, 3, 5))
     return tuple(int(part.strip()) for part in value.split(","))
 
 
@@ -442,9 +443,7 @@ def test_two_column_layout_is_the_unconditional_default():
     """
     source = re.sub(r"/\*.*?\*/", "", _css_source(), flags=re.S)
     root_block = _rule_block(source, ":root")
-    assert _property(root_block, "--layout-columns") == (
-        "minmax(0, var(--measure)) var(--rail)"
-    )
+    assert _property(root_block, "--layout-columns") == ("minmax(0, var(--measure)) var(--rail)")
     assert "@media (min-width:" not in source
 
 
@@ -472,7 +471,7 @@ def test_toolbar_fluid_tokens_top_out_at_the_shipped_values():
         assert value.startswith("clamp(") and value.endswith(")"), (
             f"{token} is no longer a clamp(): {value!r}"
         )
-        args = [part.strip() for part in value[len("clamp("):-1].split(",")]
+        args = [part.strip() for part in value[len("clamp(") : -1].split(",")]
         assert len(args) == 3, f"{token} clamp() does not have three arguments: {value!r}"
         assert args[2] == top, f"{token} tops out at {args[2]!r}, expected {top!r}"
 
@@ -549,12 +548,8 @@ def test_speaker_row_reacts_to_hover_and_focus():
     grouping cue a mouse user hovering the row already gets.
     """
     source = _css_source()
-    match = re.search(
-        r"\.speaker-row:hover,\s*\.speaker-row:focus-within\s*\{([^}]*)\}", source
-    )
-    assert match, (
-        ".speaker-row:hover, .speaker-row:focus-within rule not found in transcript.css"
-    )
+    match = re.search(r"\.speaker-row:hover,\s*\.speaker-row:focus-within\s*\{([^}]*)\}", source)
+    assert match, ".speaker-row:hover, .speaker-row:focus-within rule not found in transcript.css"
     assert re.search(r"background\s*:", match.group(1)), (
         ".speaker-row's hover/focus-within rule must set a background"
     )
@@ -736,9 +731,7 @@ def test_high_contrast_overrides_are_all_present():
     themselves.
     """
     source = _css_source()
-    blocks = re.findall(
-        r"@media \(prefers-contrast: more\)\s*\{(.*?)^\}", source, re.S | re.M
-    )
+    blocks = re.findall(r"@media \(prefers-contrast: more\)\s*\{(.*?)^\}", source, re.S | re.M)
     assert blocks, "no prefers-contrast: more block found at all"
     combined = "\n".join(blocks)
 
@@ -798,16 +791,13 @@ def test_bubble_is_a_full_width_flat_card_not_a_messaging_bubble():
     source = _css_source()
     block = _rule_block(source, ".bubble")
     assert "width: fit-content" not in block, (
-        "fit-content sizing is the messaging-bubble shape this card no "
-        "longer wears"
+        "fit-content sizing is the messaging-bubble shape this card no longer wears"
     )
     assert "max-width" not in block, (
-        "a reading-measure cap belongs to a short chat message, not a "
-        "full-width card"
+        "a reading-measure cap belongs to a short chat message, not a full-width card"
     )
     assert "border-start-start-radius" not in block, (
-        "the squared-off corner tied a bubble to a cluster header that no "
-        "longer exists"
+        "the squared-off corner tied a bubble to a cluster header that no longer exists"
     )
     # The colour stripe that replaces the old cluster .turn's own
     # border-inline-start-color - see 52-bubble.css's own comment.

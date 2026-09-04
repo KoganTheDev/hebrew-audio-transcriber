@@ -1,5 +1,4 @@
-"""
-Powerset decoding of the pyannote segmentation-3.0 ONNX model.
+"""Powerset decoding of the pyannote segmentation-3.0 ONNX model.
 
 Why this exists at all, given core/diarization.py already runs the same model
 through sherpa-onnx: sherpa's OfflineSpeakerDiarization takes the model's
@@ -32,7 +31,8 @@ across windows are only the ones that survive an unknown permutation:
 "is anyone speaking" and "how many people are speaking".
 """
 
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -43,10 +43,10 @@ import numpy as np
 # num_classes 7, powerset_max_classes 2, receptive_field_shift 270 and
 # receptive_field_size 991.
 SAMPLE_RATE = 16000
-WINDOW_SAMPLES = 160000          # 10.0s
-FRAME_SHIFT_SAMPLES = 270        # 0.016875s
+WINDOW_SAMPLES = 160000  # 10.0s
+FRAME_SHIFT_SAMPLES = 270  # 0.016875s
 RECEPTIVE_FIELD_SAMPLES = 991
-FRAMES_PER_WINDOW = 589          # confirmed live: y.shape == (N, 589, 7)
+FRAMES_PER_WINDOW = 589  # confirmed live: y.shape == (N, 589, 7)
 NUM_LOCAL_SPEAKERS = 3
 NUM_CLASSES = 7
 
@@ -66,8 +66,7 @@ WINDOW_HOP_SAMPLES = WINDOW_HOP_FRAMES * FRAME_SHIFT_SAMPLES  # 15930
 
 
 def powerset_matrix() -> np.ndarray:
-    """
-    The (7, 3) indicator mapping each powerset class to the speakers it means.
+    """The (7, 3) indicator mapping each powerset class to the speakers it means.
 
     pyannote builds its powerset classes with itertools.combinations over set
     sizes 0..max_set_size, which for 3 speakers and at most 2 at once gives
@@ -96,8 +95,7 @@ def powerset_classes() -> List[Tuple[int, ...]]:
 
 
 def softmax(logits: np.ndarray) -> np.ndarray:
-    """
-    Row-wise softmax over the last axis.
+    """Row-wise softmax over the last axis.
 
     The model emits LOGITS, not probabilities - verified on a live run, where
     a single frame's 7 values summed to -105.77. Feeding those straight into
@@ -109,8 +107,7 @@ def softmax(logits: np.ndarray) -> np.ndarray:
 
 
 def window_starts(num_samples: int) -> List[int]:
-    """
-    Start sample of every analysis window covering num_samples of audio.
+    """Start sample of every analysis window covering num_samples of audio.
 
     Always returns at least one window. Audio shorter than one window, and
     the tail left over after the last whole hop, are both handled by the
@@ -133,8 +130,7 @@ def window_starts(num_samples: int) -> List[int]:
 
 
 def frame_center_time(window_start: int, frame_index: int) -> float:
-    """
-    Time in seconds at the centre of one frame's receptive field.
+    """Time in seconds at the centre of one frame's receptive field.
 
     Frame i of a window starting at sample a sees samples
     [a + i*SHIFT, a + i*SHIFT + SIZE), so its centre is half a receptive field
@@ -149,8 +145,7 @@ def frame_center_time(window_start: int, frame_index: int) -> float:
 
 
 def infer_marginals(session, samples: np.ndarray) -> Tuple[np.ndarray, List[int]]:
-    """
-    Run the model over every window and return per-speaker marginals.
+    """Run the model over every window and return per-speaker marginals.
 
     Returns (marginals, starts) where marginals has shape
     (num_windows, FRAMES_PER_WINDOW, NUM_LOCAL_SPEAKERS) and each value is the
@@ -165,16 +160,12 @@ def infer_marginals(session, samples: np.ndarray) -> Tuple[np.ndarray, List[int]
     starts = window_starts(len(samples))
     matrix = powerset_matrix()
 
-    out = np.empty(
-        (len(starts), FRAMES_PER_WINDOW, NUM_LOCAL_SPEAKERS), dtype=np.float32
-    )
+    out = np.empty((len(starts), FRAMES_PER_WINDOW, NUM_LOCAL_SPEAKERS), dtype=np.float32)
     for index, start in enumerate(starts):
-        window = samples[start:start + WINDOW_SAMPLES]
+        window = samples[start : start + WINDOW_SAMPLES]
         if len(window) < WINDOW_SAMPLES:
             window = np.pad(window, (0, WINDOW_SAMPLES - len(window)))
-        logits = session.run(
-            None, {"x": window.reshape(1, 1, -1).astype(np.float32)}
-        )[0]
+        logits = session.run(None, {"x": window.reshape(1, 1, -1).astype(np.float32)})[0]
         out[index] = softmax(logits[0]) @ matrix
     return out, starts
 
@@ -185,8 +176,7 @@ def aggregate_invariants(
     onset: float,
     num_samples: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Fold overlapping windows into two global tracks that survive permutation.
+    """Fold overlapping windows into two global tracks that survive permutation.
 
     Returns (speech, count) over a global frame grid, where speech[g] is the
     fraction of windows covering g that saw ANY speaker active, and count[g]
@@ -208,9 +198,9 @@ def aggregate_invariants(
     evenly spaced windows; the final catch-up window that window_starts may
     append is placed from its own sample offset instead.
     """
-    active = marginals >= onset                      # (W, F, K)
-    any_active = active.any(axis=2)                  # (W, F)
-    how_many = active.sum(axis=2)                    # (W, F)
+    active = marginals >= onset  # (W, F, K)
+    any_active = active.any(axis=2)  # (W, F)
+    how_many = active.sum(axis=2)  # (W, F)
 
     grid_size = _grid_size(starts, num_samples)
     speech_sum = np.zeros(grid_size, dtype=np.float64)
@@ -261,11 +251,8 @@ def grid_times(grid_size: int) -> np.ndarray:
     return center / SAMPLE_RATE
 
 
-def runs_to_intervals(
-    mask: np.ndarray, min_duration: float = 0.0
-) -> List[Tuple[float, float]]:
-    """
-    Contiguous True stretches of a per-frame mask, as (start, end) seconds.
+def runs_to_intervals(mask: np.ndarray, min_duration: float = 0.0) -> List[Tuple[float, float]]:
+    """Contiguous True stretches of a per-frame mask, as (start, end) seconds.
 
     Interval edges are frame centres, so a single-frame run has zero width
     unless it is widened; this returns it as [t, t + frame_shift) so a lone

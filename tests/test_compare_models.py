@@ -41,8 +41,12 @@ class TestBuildConfigs:
         default here would be a second place for the two to drift apart.
         """
         configs = compare_models.build_configs(
-            models=["tiny"], compute_types=[None], beam_sizes=[None],
-            cpu_threads_list=[None], num_workers_list=[None], devices=["cpu"],
+            models=["tiny"],
+            compute_types=[None],
+            beam_sizes=[None],
+            cpu_threads_list=[None],
+            num_workers_list=[None],
+            devices=["cpu"],
         )
         assert len(configs) == 1
         assert configs[0]["compute_type"] is None
@@ -54,15 +58,23 @@ class TestBuildConfigs:
 class TestConfigLabel:
     def test_label_omits_unset_axes(self):
         cfg = {
-            "model": "tiny", "device": "cpu", "compute_type": None,
-            "beam_size": None, "cpu_threads": None, "num_workers": None,
+            "model": "tiny",
+            "device": "cpu",
+            "compute_type": None,
+            "beam_size": None,
+            "cpu_threads": None,
+            "num_workers": None,
         }
         assert compare_models._config_label(cfg) == "tiny/cpu"
 
     def test_label_includes_every_set_axis(self):
         cfg = {
-            "model": "tiny", "device": "cpu", "compute_type": "float32",
-            "beam_size": 1, "cpu_threads": 4, "num_workers": 2,
+            "model": "tiny",
+            "device": "cpu",
+            "compute_type": "float32",
+            "beam_size": 1,
+            "cpu_threads": 4,
+            "num_workers": 2,
         }
         label = compare_models._config_label(cfg)
         assert label == "tiny/cpu/float32/beam1/threads4/workers2"
@@ -77,8 +89,12 @@ class TestRunConfig:
 
     def _cfg(self, **overrides):
         cfg = {
-            "model": "tiny", "device": "cpu", "compute_type": None,
-            "beam_size": None, "cpu_threads": None, "num_workers": None,
+            "model": "tiny",
+            "device": "cpu",
+            "compute_type": None,
+            "beam_size": None,
+            "cpu_threads": None,
+            "num_workers": None,
         }
         cfg.update(overrides)
         return cfg
@@ -93,12 +109,22 @@ class TestRunConfig:
 
         cfg = self._cfg(compute_type="float32", beam_size=1, cpu_threads=4, num_workers=2)
         compare_models.run_config(
-            cfg, samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=1, language="en",
+            cfg,
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=False,
+            repeats=1,
+            language="en",
         )
 
         mock_transcriber_class.assert_called_once_with(
-            model_size="tiny", device="cpu", language="en", compute_type="float32",
-            beam_size=1, cpu_threads=4, num_workers=2,
+            model_size="tiny",
+            device="cpu",
+            language="en",
+            compute_type="float32",
+            beam_size=1,
+            cpu_threads=4,
+            num_workers=2,
         )
 
     @patch("speech_to_text.core.transcriber.Transcriber")
@@ -117,7 +143,11 @@ class TestRunConfig:
         mock_transcriber_class.return_value = mock_transcriber
 
         compare_models.run_config(
-            self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=1,
+            self._cfg(),
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=False,
+            repeats=1,
         )
 
         assert mock_transcriber_class.call_args.kwargs["language"] == compare_models.config.LANGUAGE
@@ -131,7 +161,11 @@ class TestRunConfig:
         mock_transcriber_class.return_value = mock_transcriber
 
         result = compare_models.run_config(
-            self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=True, repeats=3,
+            self._cfg(),
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=True,
+            repeats=3,
         )
 
         # 1 warm-up + 3 timed repeats = 4 calls total, but only 3 in "runs".
@@ -152,7 +186,11 @@ class TestRunConfig:
 
         with patch("tests.eval.compare_models.time.time", lambda: next(fake_times)):
             result = compare_models.run_config(
-                self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=3,
+                self._cfg(),
+                samples=[0.0] * 16000,
+                duration=1.0,
+                warmup=False,
+                repeats=3,
             )
 
         assert result["runs"] == [1.0, 0.0, 5.0]
@@ -168,7 +206,11 @@ class TestRunConfig:
         mock_transcriber_class.return_value = mock_transcriber
 
         result = compare_models.run_config(
-            self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=1,
+            self._cfg(),
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=False,
+            repeats=1,
         )
         assert result["spread_seconds"] == 0.0
         assert result["cv"] == 0.0
@@ -188,7 +230,11 @@ class TestRunConfig:
         mock_transcriber_class.return_value = mock_transcriber
 
         result = compare_models.run_config(
-            self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=3,
+            self._cfg(),
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=False,
+            repeats=3,
         )
         assert result["iqr_seconds"] is None
 
@@ -213,7 +259,11 @@ class TestRunConfig:
 
         with patch("tests.eval.compare_models.time.time", lambda: next(fake_times)):
             result = compare_models.run_config(
-                self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=2,
+                self._cfg(),
+                samples=[0.0] * 16000,
+                duration=1.0,
+                warmup=False,
+                repeats=2,
             )
 
         assert result["cv"] > compare_models.NOISE_CV_THRESHOLD
@@ -226,7 +276,11 @@ class TestRunConfig:
         mock_transcriber_class.return_value = mock_transcriber
 
         result = compare_models.run_config(
-            self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=1,
+            self._cfg(),
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=False,
+            repeats=1,
         )
         assert result["error"] == "model failed to load"
 
@@ -239,7 +293,11 @@ class TestRunConfig:
         mock_transcriber_class.return_value = mock_transcriber
 
         result = compare_models.run_config(
-            self._cfg(), samples=[0.0] * 16000, duration=1.0, warmup=False, repeats=1,
+            self._cfg(),
+            samples=[0.0] * 16000,
+            duration=1.0,
+            warmup=False,
+            repeats=1,
         )
         assert result["error"] == "transcription failed"
 
@@ -267,15 +325,18 @@ class TestSweepRequested:
     def test_no_new_flags_means_no_sweep(self):
         assert compare_models._sweep_requested(self._args()) is False
 
-    @pytest.mark.parametrize("field,value", [
-        ("compute_types", ["int8"]),
-        ("beam_sizes", [1]),
-        ("cpu_threads", [4]),
-        ("num_workers", [2]),
-        ("devices", ["cuda"]),
-        ("repeats", 3),
-        ("warmup", True),
-    ])
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("compute_types", ["int8"]),
+            ("beam_sizes", [1]),
+            ("cpu_threads", [4]),
+            ("num_workers", [2]),
+            ("devices", ["cuda"]),
+            ("repeats", 3),
+            ("warmup", True),
+        ],
+    )
     def test_any_single_phase_b_flag_triggers_the_sweep(self, field, value):
         assert compare_models._sweep_requested(self._args(**{field: value})) is True
 
@@ -286,12 +347,17 @@ class TestPrintSweepTable:
         assert "No config produced a transcript." in capsys.readouterr().out
 
     def test_prints_a_row_per_successful_config(self, capsys):
-        compare_models.print_sweep_table([
-            {
-                "label": "tiny/cpu", "median_seconds": 1.23, "spread_seconds": 0.1,
-                "median_realtime_factor": 0.5, "load_seconds": 2.0,
-            },
-        ])
+        compare_models.print_sweep_table(
+            [
+                {
+                    "label": "tiny/cpu",
+                    "median_seconds": 1.23,
+                    "spread_seconds": 0.1,
+                    "median_realtime_factor": 0.5,
+                    "load_seconds": 2.0,
+                },
+            ]
+        )
         out = capsys.readouterr().out
         assert "tiny/cpu" in out
         assert "1.23" in out

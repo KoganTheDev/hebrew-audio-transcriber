@@ -1,5 +1,4 @@
-"""
-Allow running the package as a module: python -m speech_to_text
+"""Allow running the package as a module: python -m speech_to_text
 This delegates to the main.py entry point.
 """
 

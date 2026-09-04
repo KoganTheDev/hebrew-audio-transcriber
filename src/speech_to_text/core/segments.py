@@ -1,5 +1,4 @@
-"""
-Structured transcript data.
+"""Structured transcript data.
 
 Until this module existed, the transcript was a bare `str`: Transcriber
 concatenated every segment's text and threw the rest away. faster-whisper
@@ -25,8 +24,7 @@ from typing import List, Optional
 
 @dataclass
 class Word:
-    """
-    A single word with its timing and the model's confidence in it.
+    """A single word with its timing and the model's confidence in it.
 
     `probability` is what makes targeted correction possible: it lets the
     Hebrew correction pass look only at words Whisper itself was unsure
@@ -43,8 +41,7 @@ class Word:
 
 @dataclass
 class Segment:
-    """
-    One chunk of transcript as emitted by the ASR model.
+    """One chunk of transcript as emitted by the ASR model.
 
     A segment is a decoder-sized unit, not a human-sized one - typically a
     few seconds. Rendering one line per segment produces an unreadably choppy
@@ -68,8 +65,7 @@ class Segment:
 
 @dataclass
 class TranscriptDocument:
-    """
-    One source file's transcript, as a unit the renderer can place under its
+    """One source file's transcript, as a unit the renderer can place under its
     own heading.
 
     Exists so a batch run has a shared vocabulary type for "one file's
@@ -80,14 +76,13 @@ class TranscriptDocument:
     way.
     """
 
-    source_name: str            # basename of the audio file
+    source_name: str  # basename of the audio file
     segments: List[Segment] = field(default_factory=list)
-    failed: bool = False        # transcription of this one file did not complete
+    failed: bool = False  # transcription of this one file did not complete
 
 
 def plain_text(segments: List[Segment]) -> str:
-    """
-    Flatten segments back into one unpunctuated-by-us blob.
+    """Flatten segments back into one unpunctuated-by-us blob.
 
     This reproduces exactly what Transcriber.transcribe used to return, and
     exists so the pre-refactor output remains reproducible: format_output's

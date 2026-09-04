@@ -1,5 +1,4 @@
-"""
-Bidi control characters and time formatting.
+"""Bidi control characters and time formatting.
 
 Split out first because it is the part of the old core/formatting with no
 dependency on segments, turns or HTML at all - just characters and pure
@@ -61,8 +60,7 @@ RLM = "‏"
 
 
 def split_sentences(text: str) -> List[str]:
-    """
-    Split a transcript blob into one entry per sentence.
+    """Split a transcript blob into one entry per sentence.
 
     Shared by format_plain (one sentence per text line) and render_html (one
     sentence per <p>) so the two output formats can't quietly drift apart on
@@ -71,7 +69,7 @@ def split_sentences(text: str) -> List[str]:
     if not text:
         return []
     try:
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
         return [s.strip() for s in sentences if s.strip()]
     except Exception as e:
         logger.warning(f"Could not split sentences: {e}")
@@ -79,8 +77,7 @@ def split_sentences(text: str) -> List[str]:
 
 
 def format_plain(text: str) -> str:
-    """
-    Format a transcript blob with one sentence per line.
+    """Format a transcript blob with one sentence per line.
 
     This is the original pre-timestamps output format, kept so the app can
     still produce exactly what it produced before (see render_html(), which
@@ -105,8 +102,7 @@ def format_mmss(seconds: float) -> str:
 
 
 def format_hhmmss(seconds: float) -> str:
-    """
-    Format as H:MM:SS - used for transcript timestamps.
+    """Format as H:MM:SS - used for transcript timestamps.
 
     Always includes the hour, unlike format_mmss: a transcript timestamp is a
     position someone will scrub to, and "72:15" is harder to act on than
@@ -118,8 +114,7 @@ def format_hhmmss(seconds: float) -> str:
 
 
 def format_instant(seconds: float) -> str:
-    """
-    Format one moment as "M:SS", isolated for RTL embedding.
+    """Format one moment as "M:SS", isolated for RTL embedding.
 
     format_range() below argues that a turn needs a range rather than a
     single instant, because an instant does not say where playback stops.
@@ -141,8 +136,7 @@ def format_instant(seconds: float) -> str:
 
 
 def format_range(start: float, end: float) -> str:
-    """
-    Format a turn's timing as "M:SS - M:SS", isolated for RTL embedding.
+    """Format a turn's timing as "M:SS - M:SS", isolated for RTL embedding.
 
     A single instant told the reader *when* a turn began; it did not tell them
     where it ended, so playing it ran on past the turn into whatever came

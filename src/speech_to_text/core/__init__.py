@@ -1,5 +1,4 @@
-"""
-Core transcription module.
+"""Core transcription module.
 
 Runs in the worker process (see core/worker.py for why: PyQt5 and
 faster-whisper/ctranslate2 each bundle a conflicting copy of MSVCP140.dll on

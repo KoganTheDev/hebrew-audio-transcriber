@@ -1,5 +1,4 @@
-"""
-Speech-to-Text Application - Configuration Module
+"""Speech-to-Text Application - Configuration Module
 Centralized configuration for the application.
 """
 
@@ -217,6 +216,7 @@ WINDOW_HEIGHT = 800
 
 ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")
 
+
 # ============================================================================
 # Model Download Location
 # ============================================================================
@@ -289,8 +289,7 @@ def _default_model_download_root() -> str:
 
 
 def resolve_model_download_root() -> str:
-    """
-    Compute MODEL_DOWNLOAD_ROOT's value. A function, not just a module-level
+    """Compute MODEL_DOWNLOAD_ROOT's value. A function, not just a module-level
     expression, so tests can re-run the resolution under monkeypatched
     environment variables / cwd without reimporting the module.
     """
@@ -317,6 +316,7 @@ VAD_FILTER = True
 FORMAT_OUTPUT = True
 SENTENCE_ENDINGS = r"[.!?]"
 
+
 # ctranslate2's get_supported_compute_types("cpu") on this development
 # machine (no NVIDIA GPU, Intel Iris Xe only) is {int8, int8_float32, int16,
 # float32} - float16 is not in that set on CPU, only on CUDA. COMPUTE_TYPE
@@ -329,6 +329,7 @@ SENTENCE_ENDINGS = r"[.!?]"
 def compute_type_for_device(device: str) -> str:
     """The right ctranslate2 compute_type for a given faster-whisper device."""
     return "float16" if device == "cuda" else COMPUTE_TYPE
+
 
 # ============================================================================
 # File Configuration
@@ -345,8 +346,7 @@ OUTPUT_FILENAME_TEMPLATE = "{stem}_transcription.html"
 
 
 def output_path_for(audio_files: List[str]) -> str:
-    """
-    Decide the output path for a transcription run.
+    """Decide the output path for a transcription run.
 
     One file -> named after it (so two different recordings never collide).
     Several files -> named after their shared folder. Always written beside
@@ -435,24 +435,26 @@ REQUIRED_PACKAGES = {
 # clipping below roughly 545px, so 600 was already a safe floor and this
 # step's overflow was purely a height problem.
 
-GUI_WINDOW_WIDTH = 650          # Main window default width (px)
-GUI_WINDOW_HEIGHT = 720         # Main window default height (px) - see note above
-GUI_WINDOW_MIN_WIDTH = 600      # Minimum resizable width (px)
-GUI_WINDOW_MIN_HEIGHT = 656     # Minimum resizable height (px) - measured content floor is 613px
+GUI_WINDOW_WIDTH = 650  # Main window default width (px)
+GUI_WINDOW_HEIGHT = 720  # Main window default height (px) - see note above
+GUI_WINDOW_MIN_WIDTH = 600  # Minimum resizable width (px)
+GUI_WINDOW_MIN_HEIGHT = 656  # Minimum resizable height (px) - measured content floor is 613px
 
 # ============================================================================
 # GUI Configuration - Drag-Drop Zone
 # ============================================================================
 # File selection zone styling and spacing
 
-GUI_DROP_ZONE_HEIGHT = 170      # Drop zone MINIMUM height (px). Its own content (icon +
-                                # three lines) floors at ~172px, so a larger value here is a
-                                # floor the layout cannot compress below, not a target it can
-                                # give back - which is what overflowed the fixed window. The
-                                # zone grows well past this via its layout stretch factor
-                                # whenever the step has slack; see file_select.py.
-GUI_DROP_ZONE_PADDING = 20      # Internal padding in drop zone (px) - reduced to fit the shorter zone
-GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) - reduced to fit the shorter zone
+GUI_DROP_ZONE_HEIGHT = 170  # Drop zone MINIMUM height (px). Its own content (icon +
+# three lines) floors at ~172px, so a larger value here is a
+# floor the layout cannot compress below, not a target it can
+# give back - which is what overflowed the fixed window. The
+# zone grows well past this via its layout stretch factor
+# whenever the step has slack; see file_select.py.
+GUI_DROP_ZONE_PADDING = 20  # Internal padding in drop zone (px) - reduced to fit the shorter zone
+GUI_DROP_ZONE_SPACING = (
+    10  # Space between elements inside drop zone (px) - reduced to fit the shorter zone
+)
 
 # ============================================================================
 # Hardware Detection Configuration
@@ -464,16 +466,16 @@ GUI_DROP_ZONE_SPACING = 10      # Space between elements inside drop zone (px) -
 # run - see HardwareDetector.estimate_transcription_time. Not used once a
 # real measurement is available.
 SPEED_FACTORS = {
-    "tiny": 2.5,      # 2.5x real-time (10 min audio = ~4 min processing)
-    "small": 1.8,     # 1.8x real-time
-    "base": 1.0,      # 1x real-time (baseline)
-    "medium": 0.65,   # 0.65x real-time (slower than real-time)
-    "large": 0.35,    # 0.35x real-time (very slow)
+    "tiny": 2.5,  # 2.5x real-time (10 min audio = ~4 min processing)
+    "small": 1.8,  # 1.8x real-time
+    "base": 1.0,  # 1x real-time (baseline)
+    "medium": 0.65,  # 0.65x real-time (slower than real-time)
+    "large": 0.35,  # 0.35x real-time (very slow)
 }
 
 # CPU baseline for normalization
 # Used to scale time estimates across different CPU core counts
-BASELINE_CPU_CORES = 4          # Normalize timing estimates to 4-core baseline
+BASELINE_CPU_CORES = 4  # Normalize timing estimates to 4-core baseline
 
 # Audio duration estimation when file info not available
 # Fallback formula: file_size_mb * 60 * AUDIO_MINUTES_PER_100MB = estimated_seconds
@@ -629,4 +631,4 @@ DIARIZATION_EMBED_MIN_CLEAN_SECONDS = 0.5
 # ============================================================================
 # Timeout for package installation to prevent hanging
 
-INSTALL_TIMEOUT_SECONDS = 120   # 2 minutes per package installation
+INSTALL_TIMEOUT_SECONDS = 120  # 2 minutes per package installation

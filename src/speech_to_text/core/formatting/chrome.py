@@ -1,5 +1,4 @@
-"""
-Page chrome: the icon sprite, toolbar, mini-player, toast and help panel.
+"""Page chrome: the icon sprite, toolbar, mini-player, toast and help panel.
 
 These are the parts of the document that are the same no matter which file or
 turn is being read - "the frame around the transcript" rather than the
@@ -29,8 +28,7 @@ _HEBREW_LETTER = re.compile(r"[֐-׿]")
 
 
 def _input_dir(text: str) -> str:
-    """
-    "ltr" or "rtl", guessed from whether `text` itself contains a Hebrew
+    """ "ltr" or "rtl", guessed from whether `text` itself contains a Hebrew
     letter - the only signal this module has for which way a translated UI
     string reads.
 
@@ -74,8 +72,7 @@ SPEAKER_PALETTE_SIZE = 8
 
 
 def _t(strings: Dict[str, str], key: str, fallback: str) -> str:
-    """
-    An already-translated, HTML-escaped UI string, or its English fallback.
+    """An already-translated, HTML-escaped UI string, or its English fallback.
 
     The single choke point for `html.escape(strings.get(key, fallback))`,
     which used to be written out by hand at every call site that needed a
@@ -88,8 +85,7 @@ def _t(strings: Dict[str, str], key: str, fallback: str) -> str:
 
 
 def _palette_index(n: int) -> int:
-    """
-    A speaker's (or a file's) slot in the verified 8-swatch palette.
+    """A speaker's (or a file's) slot in the verified 8-swatch palette.
 
     Same `n % SPEAKER_PALETTE_SIZE` used for a turn's speaker colour, a
     speaker row's colour, and a file's accent stripe - three different
@@ -101,8 +97,7 @@ def _palette_index(n: int) -> int:
 
 
 def _speaker_fallback(speaker_label: str, speaker: int) -> str:
-    """
-    A speaker's human-facing label: 0-based internally, 1-based to a reader.
+    """A speaker's human-facing label: 0-based internally, 1-based to a reader.
 
     Returns unescaped text on purpose. Every call site html.escape()s this
     itself, right where it lands in an attribute or a text node - including
@@ -124,8 +119,7 @@ def _button(
     extra: str = "",
     wrap_label: bool = True,
 ) -> str:
-    """
-    One <button>, assembled from the parts every toolbar/help/plain-panel
+    """One <button>, assembled from the parts every toolbar/help/plain-panel
     control shares: an id, a class, an optional icon glyph (via _icon()), an
     optional visible label, and an optional aria-label. This idiom was
     hand-written at twelve call sites before this helper existed.
@@ -159,7 +153,7 @@ def _button(
         label_html = f"<span>{label}</span>"
     else:
         label_html = label
-    return f'<button {" ".join(attrs)}>{icon_html}{label_html}</button>'
+    return f"<button {' '.join(attrs)}>{icon_html}{label_html}</button>"
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +201,7 @@ _ICON_DEFS: Dict[str, str] = {
     # so the dot stays purely stroked like every other glyph in this sprite
     # instead of being the one shape here with an actual fill.
     "help": '<circle cx="12" cy="12" r="9"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 2.5-3 4.5"/>'
-            '<path d="M12 17.5v.01"/>',
+    '<path d="M12 17.5v.01"/>',
     # The help panel's own close control. No glyph like it existed anywhere
     # else in the sprite (the panel is the first modal-shaped thing this
     # page has ever needed to dismiss), so it's new here rather than reused.
@@ -229,8 +223,7 @@ _ICON_DEFS: Dict[str, str] = {
 
 
 def _render_sprite_html() -> str:
-    """
-    The one copy of every icon body, as <symbol> definitions.
+    """The one copy of every icon body, as <symbol> definitions.
 
     position:absolute + zero size (rather than display:none) is the
     standard sprite-hiding technique: some engines skip <use> resolution
@@ -246,7 +239,7 @@ def _render_sprite_html() -> str:
     return (
         '<svg aria-hidden="true" focusable="false" '
         'style="position:absolute;width:0;height:0;overflow:hidden">'
-        f'{symbols}</svg>'
+        f"{symbols}</svg>"
     )
 
 
@@ -273,90 +266,115 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
     # #search's own comment in core/assets/css/16-toolbar.css) clips at its
     # own end rather than its start.
     search_dir = _input_dir(search)
-    return "\n".join([
-        f'<header class="toolbar" role="toolbar"'
-        f' aria-label="{s("toolbar", "Transcript tools")}">',
-        # The toolbar's controls sit inside their own grid-column: 1 / -1
-        # wrapper (see .tb-row in the stylesheet (core/assets/css/), which spans both tracks
-        # rather than sitting in a single one) rather than being grid items
-        # of .toolbar directly - .tb-group is a flex row (a search box, a
-        # cluster of action buttons), and a bare display: flex on the grid
-        # items would fight the grid's own column placement instead of just
-        # occupying it. This is what ties the toolbar's controls to the
-        # same track boundaries main and the sidebar sit within.
-        '<div class="tb-row">',
-        '<div class="tb-group tb-search">',
-        _icon("search"),
-        f'<input id="search" type="search" dir="{search_dir}"'
-        f' placeholder="{search_placeholder}" aria-label="{search}">',
-        '<span id="search-count" class="count" aria-live="polite"></span>',
-        _button(None, id_attr="search-prev", css_class="icon-btn", icon="up",
-                aria_label=s("search_prev", "Previous match")),
-        _button(None, id_attr="search-next", css_class="icon-btn", icon="down",
-                aria_label=s("search_next", "Next match")),
-        "</div>",
-        '<div class="tb-group tb-actions">',
-        _button(s("show_uncertain", "Show uncertain words"), id_attr="toggle-flags",
-                icon="flag", extra='aria-pressed="false"'),
-        # Server-rendered assuming the light scheme, since that is this
-        # element's state before any script runs; the page script (core/assets/js/) corrects the
-        # label on init if the system/browser is actually already in dark
-        # mode (see bindChrome()'s theme handling), and swaps it again on
-        # every click. The label names the action ("switch to dark"), not
-        # the current state - "Theme" told the reader nothing about what
-        # clicking it would do.
-        _button(
-            s("theme_dark", "Dark mode"), id_attr="toggle-theme", icon="theme",
-            aria_label=s("toggle_theme", "Switch colour scheme"),
-            extra=(
-                f'data-label-dark="{s("theme_dark", "Dark mode")}" '
-                f'data-label-light="{s("theme_light", "Light mode")}"'
+    return "\n".join(
+        [
+            f'<header class="toolbar" role="toolbar"'
+            f' aria-label="{s("toolbar", "Transcript tools")}">',
+            # The toolbar's controls sit inside their own grid-column: 1 / -1
+            # wrapper (see .tb-row in the stylesheet (core/assets/css/), which spans both tracks
+            # rather than sitting in a single one) rather than being grid items
+            # of .toolbar directly - .tb-group is a flex row (a search box, a
+            # cluster of action buttons), and a bare display: flex on the grid
+            # items would fight the grid's own column placement instead of just
+            # occupying it. This is what ties the toolbar's controls to the
+            # same track boundaries main and the sidebar sit within.
+            '<div class="tb-row">',
+            '<div class="tb-group tb-search">',
+            _icon("search"),
+            f'<input id="search" type="search" dir="{search_dir}"'
+            f' placeholder="{search_placeholder}" aria-label="{search}">',
+            '<span id="search-count" class="count" aria-live="polite"></span>',
+            _button(
+                None,
+                id_attr="search-prev",
+                css_class="icon-btn",
+                icon="up",
+                aria_label=s("search_prev", "Previous match"),
             ),
-        ),
-        _button(s("save_copy", "Save a copy"), id_attr="export", css_class="tb-btn primary",
-                icon="save"),
-        # Last BUTTON in the group, not first - it opens a panel that explains
-        # every OTHER control in this row, so it reads as "more about the
-        # above" rather than as the first thing a reader's eye lands on. Plain
-        # .tb-btn, not .primary: help is not the action this session builds
-        # toward the way #export is (see the "Tier 1" comment on
-        # .tb-btn.primary in the stylesheet (core/assets/css/) for what IS in that tier and
-        # why #help isn't one of them). Only #status comes after it, and that
-        # is a label rather than a control competing for the same attention.
-        _button(s("help", "Help"), id_attr="help", icon="help",
-                extra='aria-expanded="false" aria-controls="help-panel"'),
-        # Last in the group, so in this dir="rtl" document it renders at the
-        # physical LEFT end of the whole toolbar row - out of the run of
-        # buttons rather than wedged between two of them.
-        #
-        # All four state labels are rendered up front and the stylesheet
-        # (core/assets/css/) shows exactly one of them, keyed off data-kind;
-        # the page script (core/assets/js/) only ever flips that attribute and
-        # never writes text here. That is what fixes the width: stacked in one
-        # grid cell, the box measures the WIDEST of the four and stops
-        # resizing as the state changes. Measured before this: the span went
-        # 33px -> 78px across the four states and dragged .tb-actions from
-        # 424px to 469px, so every button in the row slid sideways on every
-        # debounced save (see .status in the stylesheet for why a tuned
-        # min-inline-size was not the fix). data-kind is seeded to "saved"
-        # here because that is the state a freshly written file is in;
-        # bindChrome()'s init corrects it if this browser holds local edits.
-        f'<span id="status" class="status" role="status" aria-live="polite"'
-        f' data-kind="saved"><span class="status-labels">'
-        f'<span data-for="saved">{s("status_saved", "Saved")}</span>'
-        f'<span data-for="saving">{s("status_saving", "Saving…")}</span>'
-        f'<span data-for="local">{s("status_local", "Saved in browser")}</span>'
-        f'<span data-for="error">{s("status_error", "Could not save")}</span>'
-        f'</span></span>',
-        "</div>",
-        "</div>",
-        "</header>",
-    ])
+            _button(
+                None,
+                id_attr="search-next",
+                css_class="icon-btn",
+                icon="down",
+                aria_label=s("search_next", "Next match"),
+            ),
+            "</div>",
+            '<div class="tb-group tb-actions">',
+            _button(
+                s("show_uncertain", "Show uncertain words"),
+                id_attr="toggle-flags",
+                icon="flag",
+                extra='aria-pressed="false"',
+            ),
+            # Server-rendered assuming the light scheme, since that is this
+            # element's state before any script runs; the page script (core/assets/js/) corrects the
+            # label on init if the system/browser is actually already in dark
+            # mode (see bindChrome()'s theme handling), and swaps it again on
+            # every click. The label names the action ("switch to dark"), not
+            # the current state - "Theme" told the reader nothing about what
+            # clicking it would do.
+            _button(
+                s("theme_dark", "Dark mode"),
+                id_attr="toggle-theme",
+                icon="theme",
+                aria_label=s("toggle_theme", "Switch colour scheme"),
+                extra=(
+                    f'data-label-dark="{s("theme_dark", "Dark mode")}" '
+                    f'data-label-light="{s("theme_light", "Light mode")}"'
+                ),
+            ),
+            _button(
+                s("save_copy", "Save a copy"),
+                id_attr="export",
+                css_class="tb-btn primary",
+                icon="save",
+            ),
+            # Last BUTTON in the group, not first - it opens a panel that explains
+            # every OTHER control in this row, so it reads as "more about the
+            # above" rather than as the first thing a reader's eye lands on. Plain
+            # .tb-btn, not .primary: help is not the action this session builds
+            # toward the way #export is (see the "Tier 1" comment on
+            # .tb-btn.primary in the stylesheet (core/assets/css/) for what IS in that tier and
+            # why #help isn't one of them). Only #status comes after it, and that
+            # is a label rather than a control competing for the same attention.
+            _button(
+                s("help", "Help"),
+                id_attr="help",
+                icon="help",
+                extra='aria-expanded="false" aria-controls="help-panel"',
+            ),
+            # Last in the group, so in this dir="rtl" document it renders at the
+            # physical LEFT end of the whole toolbar row - out of the run of
+            # buttons rather than wedged between two of them.
+            #
+            # All four state labels are rendered up front and the stylesheet
+            # (core/assets/css/) shows exactly one of them, keyed off data-kind;
+            # the page script (core/assets/js/) only ever flips that attribute and
+            # never writes text here. That is what fixes the width: stacked in one
+            # grid cell, the box measures the WIDEST of the four and stops
+            # resizing as the state changes. Measured before this: the span went
+            # 33px -> 78px across the four states and dragged .tb-actions from
+            # 424px to 469px, so every button in the row slid sideways on every
+            # debounced save (see .status in the stylesheet for why a tuned
+            # min-inline-size was not the fix). data-kind is seeded to "saved"
+            # here because that is the state a freshly written file is in;
+            # bindChrome()'s init corrects it if this browser holds local edits.
+            f'<span id="status" class="status" role="status" aria-live="polite"'
+            f' data-kind="saved"><span class="status-labels">'
+            f'<span data-for="saved">{s("status_saved", "Saved")}</span>'
+            f'<span data-for="saving">{s("status_saving", "Saving…")}</span>'
+            f'<span data-for="local">{s("status_local", "Saved in browser")}</span>'
+            f'<span data-for="error">{s("status_error", "Could not save")}</span>'
+            f"</span></span>",
+            "</div>",
+            "</div>",
+            "</header>",
+        ]
+    )
 
 
 def _render_player_html(strings: Dict[str, str]) -> str:
-    """
-    A single mini-player for the whole document.
+    """A single mini-player for the whole document.
 
     The transcript is written beside its audio, so a relative src resolves.
     It starts hidden and stays hidden unless a timestamp is actually clicked -
@@ -382,8 +400,9 @@ def _render_player_html(strings: Dict[str, str]) -> str:
     # LRI/PDI isolate around the whole thing - same bidi shape as
     # format_range()'s "M:SS - M:SS", a neutral "/" between two LTR digit
     # runs inside an RTL document (see timecode.py's module docstring).
-    toggle_button = _button(None, id_attr="player-toggle", css_class="icon-btn",
-                             icon="play", aria_label=label)
+    toggle_button = _button(
+        None, id_attr="player-toggle", css_class="icon-btn", icon="play", aria_label=label
+    )
     return f"""<div id="player" class="player" hidden>
 {toggle_button}
 <span id="player-file" class="player-file"></span>
@@ -395,8 +414,7 @@ def _render_player_html(strings: Dict[str, str]) -> str:
 
 
 def _render_toast_html() -> str:
-    """
-    A transient status announcement (currently just "copied"), driven by
+    """A transient status announcement (currently just "copied"), driven by
     the page script (core/assets/js/) hooking into copy()'s one shared success path.
 
     Empty and hidden at render time: its text is set per event from the
@@ -410,8 +428,7 @@ def _render_toast_html() -> str:
 
 
 def _render_help_html(strings: Dict[str, str]) -> str:
-    """
-    What every toolbar control and reading-column affordance actually does,
+    """What every toolbar control and reading-column affordance actually does,
     plus the one hook (#tour-start) a separate guided-tour feature binds to.
 
     Server-rendered and hidden, never built by the page script (core/assets/js/) from nothing -
@@ -439,53 +456,98 @@ def _render_help_html(strings: Dict[str, str]) -> str:
     # bottom), so the panel reads as a walkthrough of the page rather than
     # an alphabetised reference.
     entries = [
-        ("search", s("help_search_title", "Search"),
-         s("help_search_desc",
-           "Type to search every turn in this recording. The chevrons - or "
-           "Enter and Shift+Enter - jump to the next or previous match.")),
-        ("flag", s("help_flags_title", "Show uncertain words"),
-         s("help_flags_desc",
-           "Highlights the words the model itself was least sure about, "
-           "with a tinted, dotted underline - worth a second look before "
-           "you trust them.")),
-        ("theme", s("help_theme_title", "Light / dark mode"),
-         s("help_theme_desc",
-           "Switches this page's colour scheme and remembers your choice "
-           "in this browser, independent of your system's own setting.")),
-        ("save", s("help_save_title", "Save a copy"),
-         s("help_save_desc",
-           "Downloads a fresh copy of this page with every edit baked in. "
-           "Opened from a file, the page can only save your edits to this "
-           "browser automatically - this is what actually writes them to "
-           "a file on disk.")),
-        ("list", s("help_outline_title", "Files and speakers"),
-         s("help_outline_desc",
-           "Lists every file in this batch and, for each one, the "
-           "speakers detected in it. Click a filename to jump straight to "
-           "it.")),
-        ("plus", s("help_speakers_title", "Speaker names and colours"),
-         s("help_speakers_desc",
-           "Rename a speaker by typing over their name in this list, and "
-           "recolour them from the swatch beside it. Every sentence carries "
-           "its own speaker chip - click it to reassign just that sentence, "
-           "or the whole block of sentences around it, to someone else.")),
-        ("play", s("help_playback_title", "Play a moment"),
-         s("help_playback_desc",
-           "Click a sentence's own timestamp to play just that sentence; "
-           "playback stops again at its end.")),
-        ("edit", s("help_editing_title", "Editing the transcript"),
-         s("help_editing_desc",
-           "Click into any turn's text to correct it directly, the same "
-           "way you would edit a document. Changes save automatically to "
-           "this browser as you type - use \"Save a copy\" to write "
-           "them into a file you can keep or share.")),
-        ("copy", s("help_plain_title", "Plain text"),
-         s("help_plain_desc",
-           "Every sentence has its own copy button too, for just that one "
-           "sentence. A copy-friendly version of the whole recording sits "
-           "at the bottom of the page, with its own toggles for timestamps "
-           "and speaker names - edit it there directly, or copy it out with one "
-           "click.")),
+        (
+            "search",
+            s("help_search_title", "Search"),
+            s(
+                "help_search_desc",
+                "Type to search every turn in this recording. The chevrons - or "
+                "Enter and Shift+Enter - jump to the next or previous match.",
+            ),
+        ),
+        (
+            "flag",
+            s("help_flags_title", "Show uncertain words"),
+            s(
+                "help_flags_desc",
+                "Highlights the words the model itself was least sure about, "
+                "with a tinted, dotted underline - worth a second look before "
+                "you trust them.",
+            ),
+        ),
+        (
+            "theme",
+            s("help_theme_title", "Light / dark mode"),
+            s(
+                "help_theme_desc",
+                "Switches this page's colour scheme and remembers your choice "
+                "in this browser, independent of your system's own setting.",
+            ),
+        ),
+        (
+            "save",
+            s("help_save_title", "Save a copy"),
+            s(
+                "help_save_desc",
+                "Downloads a fresh copy of this page with every edit baked in. "
+                "Opened from a file, the page can only save your edits to this "
+                "browser automatically - this is what actually writes them to "
+                "a file on disk.",
+            ),
+        ),
+        (
+            "list",
+            s("help_outline_title", "Files and speakers"),
+            s(
+                "help_outline_desc",
+                "Lists every file in this batch and, for each one, the "
+                "speakers detected in it. Click a filename to jump straight to "
+                "it.",
+            ),
+        ),
+        (
+            "plus",
+            s("help_speakers_title", "Speaker names and colours"),
+            s(
+                "help_speakers_desc",
+                "Rename a speaker by typing over their name in this list, and "
+                "recolour them from the swatch beside it. Every sentence carries "
+                "its own speaker chip - click it to reassign just that sentence, "
+                "or the whole block of sentences around it, to someone else.",
+            ),
+        ),
+        (
+            "play",
+            s("help_playback_title", "Play a moment"),
+            s(
+                "help_playback_desc",
+                "Click a sentence's own timestamp to play just that sentence; "
+                "playback stops again at its end.",
+            ),
+        ),
+        (
+            "edit",
+            s("help_editing_title", "Editing the transcript"),
+            s(
+                "help_editing_desc",
+                "Click into any turn's text to correct it directly, the same "
+                "way you would edit a document. Changes save automatically to "
+                'this browser as you type - use "Save a copy" to write '
+                "them into a file you can keep or share.",
+            ),
+        ),
+        (
+            "copy",
+            s("help_plain_title", "Plain text"),
+            s(
+                "help_plain_desc",
+                "Every sentence has its own copy button too, for just that one "
+                "sentence. A copy-friendly version of the whole recording sits "
+                "at the bottom of the page, with its own toggles for timestamps "
+                "and speaker names - edit it there directly, or copy it out with one "
+                "click.",
+            ),
+        ),
     ]
     items = "".join(
         f"<dt>{_icon(icon)}<span>{title}</span></dt><dd>{desc}</dd>"
@@ -498,15 +560,24 @@ def _render_help_html(strings: Dict[str, str]) -> str:
         '<div class="help-sheet">'
         '<div class="help-head">'
         f'<h2 id="help-title">{s("help_title", "Help")}</h2>'
-        + _button(None, id_attr="help-close", css_class="icon-btn", icon="close",
-                  aria_label=s("help_close", "Close help"))
+        + _button(
+            None,
+            id_attr="help-close",
+            css_class="icon-btn",
+            icon="close",
+            aria_label=s("help_close", "Close help"),
+        )
         + "</div>"
         # wrap_label=False: this button's label was never wrapped in a
         # <span> (unlike every other _button() site) - see _button()'s
         # docstring for why that one difference is preserved rather than
         # normalised away.
-        + _button(s("tour_start", "Start guided tour"), id_attr="tour-start",
-                  css_class="tb-btn primary", wrap_label=False)
+        + _button(
+            s("tour_start", "Start guided tour"),
+            id_attr="tour-start",
+            css_class="tb-btn primary",
+            wrap_label=False,
+        )
         + f'<dl class="help-list">{items}</dl>'
         "</div>"
         "</div>"
@@ -514,8 +585,7 @@ def _render_help_html(strings: Dict[str, str]) -> str:
 
 
 def _swatch_trigger_html(strings: Dict[str, str]) -> str:
-    """
-    The one always-visible colour control per speaker row.
+    """The one always-visible colour control per speaker row.
 
     Earlier this rendered all eight palette slots expanded inline - with just
     two speakers that was sixteen 44px circles stacked above the transcript,

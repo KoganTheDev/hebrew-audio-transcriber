@@ -15,7 +15,6 @@ from tests.eval.diarization_metrics import (
 
 
 class TestReadRttm:
-
     def test_parses_speaker_lines(self, tmp_path):
         path = tmp_path / "ref.rttm"
         path.write_text(
@@ -52,9 +51,9 @@ class TestReadRttm:
 
 
 class TestComputeDer:
-
     def test_empty_reference_raises(self):
         import pytest
+
         with pytest.raises(ValueError):
             compute_der([], [(0.0, 1.0, "x")])
 

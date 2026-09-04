@@ -1,5 +1,4 @@
-"""
-Turn merging: grouping raw Whisper segments into readable speaker turns.
+"""Turn merging: grouping raw Whisper segments into readable speaker turns.
 
 Kept apart from timecode.py and the HTML renderer because it is a distinct
 job with its own inputs (Segment/Word) and no knowledge of how a turn ends up
@@ -12,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from speech_to_text.core.segments import Segment, Word
+
 from .timecode import split_sentences
 
 logger = logging.getLogger(__name__)
@@ -34,8 +34,7 @@ TURN_MAX_SECONDS = 30.0
 
 @dataclass
 class Sentence:
-    """
-    One sentence within a Turn, with its own time span.
+    """One sentence within a Turn, with its own time span.
 
     Exists because the bubble layout needs a click target and a playback
     range per sentence, not just per turn - split_sentences() already cuts
@@ -80,8 +79,7 @@ class Turn:
         return " ".join(part for part in self._parts if part)
 
     def low_confidence(self, threshold: float) -> List[list]:
-        """
-        Words the model was unsure about, as [text, probability, occurrence].
+        """Words the model was unsure about, as [text, probability, occurrence].
 
         The occurrence index counts how many times that exact token has
         already appeared in this turn, so a word that shows up twice with
@@ -106,8 +104,7 @@ class Turn:
         return flagged
 
     def sentences(self) -> List[Sentence]:
-        """
-        Split this turn's text into Sentence objects, each with its own span.
+        """Split this turn's text into Sentence objects, each with its own span.
 
         split_sentences() already produces the text of each sentence; this
         walks self.words in order, consuming words until the collapsed

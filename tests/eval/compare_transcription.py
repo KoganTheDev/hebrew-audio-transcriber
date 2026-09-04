@@ -1,4 +1,4 @@
-"""
+r"""
 Sweep faster-whisper decode knobs that transcriber.py never exposes, and
 measure what each one costs or buys on real Hebrew audio.
 
@@ -338,8 +338,14 @@ PRODUCTION_DEFAULTS = {
 # applies when routed through BatchedInferencePipeline.transcribe().
 _LOAD_KEYS = ("device", "compute_type", "download_root", "cpu_threads", "num_workers")
 _TRANSCRIBE_KEYS = (
-    "language", "beam_size", "word_timestamps", "vad_filter", "vad_parameters",
-    "compression_ratio_threshold", "no_repeat_ngram_size", "condition_on_previous_text",
+    "language",
+    "beam_size",
+    "word_timestamps",
+    "vad_filter",
+    "vad_parameters",
+    "compression_ratio_threshold",
+    "no_repeat_ngram_size",
+    "condition_on_previous_text",
 )
 
 # =============================================================================
@@ -383,6 +389,7 @@ CONFIGS: Dict[str, Dict] = {
     "beam_1": {"beam_size": 1},
 }
 
+
 # One-line "what changed" per config, used in the printed table so a reader
 # doesn't have to cross-reference CONFIGS by hand.
 def _override_summary(overrides: Dict) -> str:
@@ -424,17 +431,21 @@ class _RetryCollector(logging.Handler):
             key, params = to_key_params(match)
             if key == "status_retry_compression":
                 detail = _COMPRESSION_RATIO_DETAIL.search(raw)
-                self.events.append({
-                    "cause": "compression",
-                    "temperature": float(params["temp"]),
-                    "observed_ratio": float(detail.group(1)) if detail else None,
-                    "threshold": float(detail.group(2)) if detail else None,
-                })
+                self.events.append(
+                    {
+                        "cause": "compression",
+                        "temperature": float(params["temp"]),
+                        "observed_ratio": float(detail.group(1)) if detail else None,
+                        "threshold": float(detail.group(2)) if detail else None,
+                    }
+                )
             elif key == "status_retry_logprob":
-                self.events.append({
-                    "cause": "logprob",
-                    "temperature": float(params["temp"]),
-                })
+                self.events.append(
+                    {
+                        "cause": "logprob",
+                        "temperature": float(params["temp"]),
+                    }
+                )
             # "status_analyzing" (Processing segment at ...) is not a retry -
             # ignored here, matched only so the loop below doesn't keep
             # trying the remaining patterns against a line one already
@@ -457,11 +468,15 @@ def _sample_cpu_performance_once() -> Optional[float]:
     try:
         proc = subprocess.run(
             [
-                "powershell", "-NoProfile", "-Command",
+                "powershell",
+                "-NoProfile",
+                "-Command",
                 "(Get-Counter '\\Processor Information(_Total)\\% Processor Performance')"
                 ".CounterSamples.CookedValue",
             ],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if proc.returncode != 0:
             return None
@@ -504,8 +519,10 @@ class _CpuSampler(threading.Thread):
             self.join(timeout=self.interval + 5)
         if not self.samples:
             return {
-                "cpu_pct_mean": None, "cpu_pct_min": None,
-                "cpu_pct_final": None, "cpu_samples": 0,
+                "cpu_pct_mean": None,
+                "cpu_pct_min": None,
+                "cpu_pct_final": None,
+                "cpu_samples": 0,
             }
         return {
             "cpu_pct_mean": round(statistics.fmean(self.samples), 1),
@@ -515,7 +532,9 @@ class _CpuSampler(threading.Thread):
         }
 
 
-def compute_normalized_seconds(wall_seconds: Optional[float], mean_pct: Optional[float]) -> Optional[float]:
+def compute_normalized_seconds(
+    wall_seconds: Optional[float], mean_pct: Optional[float]
+) -> Optional[float]:
     """
     ESTIMATE, not a measurement - see module docstring item 5. Scales
     observed wall time by the mean clock-performance reading during that
@@ -544,7 +563,11 @@ def cooldown_wait(
     checked", distinct from False ("checked and did not recover in time").
     """
     if cap_seconds <= 0:
-        return {"cooldown_seconds_used": 0.0, "cooldown_recovered": None, "cooldown_final_pct": None}
+        return {
+            "cooldown_seconds_used": 0.0,
+            "cooldown_recovered": None,
+            "cooldown_final_pct": None,
+        }
 
     print(
         f"  cooling down (cap {cap_seconds:.0f}s, target >= {recovery_threshold:.0f}% "
@@ -565,7 +588,10 @@ def cooldown_wait(
             }
         if elapsed >= cap_seconds:
             reading = f"{last_pct:.0f}%" if last_pct is not None else "no CPU readings available"
-            print(f"  cooldown cap reached ({cap_seconds:.0f}s) without recovering ({reading})", flush=True)
+            print(
+                f"  cooldown cap reached ({cap_seconds:.0f}s) without recovering ({reading})",
+                flush=True,
+            )
             return {
                 "cooldown_seconds_used": round(elapsed, 1),
                 "cooldown_recovered": False,
@@ -575,7 +601,9 @@ def cooldown_wait(
 
 
 def compute_baseline_drift(
-    first: Dict, last: Dict, threshold: float = BASELINE_DRIFT_WARN_THRESHOLD,
+    first: Dict,
+    last: Dict,
+    threshold: float = BASELINE_DRIFT_WARN_THRESHOLD,
 ) -> Dict:
     """
     Diffs the FIRST and LAST baseline run of an A-B-A sweep (--repeat > 1)
@@ -587,6 +615,7 @@ def compute_baseline_drift(
     Pure function over two already-computed result dicts, so it's directly
     unit-testable without spawning a subprocess or a model.
     """
+
     def pct_delta(a: Optional[float], b: Optional[float]) -> Optional[float]:
         if not a or b is None:
             return None
@@ -697,7 +726,9 @@ def run_config(
     transcribe_start = time.time()
     try:
         if batch_size is not None:
-            raw_segments, info = model.transcribe(samples, batch_size=batch_size, **transcribe_kwargs)
+            raw_segments, info = model.transcribe(
+                samples, batch_size=batch_size, **transcribe_kwargs
+            )
         else:
             raw_segments, info = model.transcribe(samples, **transcribe_kwargs)
         # Materialize now (inside the timed+handler-attached block) - the
@@ -717,7 +748,9 @@ def run_config(
 
     compression_events = [e for e in collector.events if e["cause"] == "compression"]
     logprob_events = [e for e in collector.events if e["cause"] == "logprob"]
-    observed_ratios = [e["observed_ratio"] for e in compression_events if e["observed_ratio"] is not None]
+    observed_ratios = [
+        e["observed_ratio"] for e in compression_events if e["observed_ratio"] is not None
+    ]
 
     result = {
         "config_name": name,
@@ -729,16 +762,25 @@ def run_config(
         "cpu_pct_min": cpu_summary["cpu_pct_min"],
         "cpu_pct_final": cpu_summary["cpu_pct_final"],
         "cpu_samples": cpu_summary["cpu_samples"],
-        "transcribe_seconds_normalized": compute_normalized_seconds(transcribe_elapsed, cpu_summary["cpu_pct_mean"]),
-        "duration_after_vad": round(info.duration_after_vad, 1) if getattr(info, "duration_after_vad", None) is not None else None,
+        "transcribe_seconds_normalized": compute_normalized_seconds(
+            transcribe_elapsed, cpu_summary["cpu_pct_mean"]
+        ),
+        "duration_after_vad": round(info.duration_after_vad, 1)
+        if getattr(info, "duration_after_vad", None) is not None
+        else None,
         "segments": len(segments),
         "words": len(probabilities),
         "characters": len(text),
-        "mean_word_confidence": round(statistics.fmean(probabilities), 4) if probabilities else None,
-        "median_word_confidence": round(statistics.median(probabilities), 4) if probabilities else None,
+        "mean_word_confidence": round(statistics.fmean(probabilities), 4)
+        if probabilities
+        else None,
+        "median_word_confidence": round(statistics.median(probabilities), 4)
+        if probabilities
+        else None,
         "low_confidence_share": (
             round(sum(1 for p in probabilities if p < LOW_CONFIDENCE) / len(probabilities), 4)
-            if probabilities else None
+            if probabilities
+            else None
         ),
         "repeated_segments": repeats,
         "temperature_fallback_events": len(collector.events),
@@ -753,11 +795,13 @@ def run_config(
 
     if reference is not None:
         from tests.eval.hebrew_metrics import character_error_rate, word_error_rate
+
         result["wer"] = round(word_error_rate(reference, text), 4)
         result["cer"] = round(character_error_rate(reference, text), 4)
 
     if baseline_text is not None:
         from tests.eval.hebrew_metrics import word_error_rate
+
         # Divergence, NOT accuracy: baseline_text is this same clip's
         # production-baseline decode, used only as the reference sequence a
         # word-error-rate diff is computed against. A high number here means
@@ -767,7 +811,8 @@ def run_config(
 
     cpu_note = (
         f"cpu% mean/min/final {cpu_summary['cpu_pct_mean']}/{cpu_summary['cpu_pct_min']}/{cpu_summary['cpu_pct_final']}"
-        if cpu_summary["cpu_pct_mean"] is not None else "cpu% unavailable"
+        if cpu_summary["cpu_pct_mean"] is not None
+        else "cpu% unavailable"
     )
     print(
         f"  {transcribe_elapsed:.0f}s ({result['realtime_factor']}x realtime), {cpu_note}, "
@@ -838,9 +883,11 @@ def print_table(results: List[Dict], has_reference: bool) -> None:
                 f"! baseline drifted {meta.get('transcribe_seconds_delta_pct')}% in transcribe_seconds "
                 f"and {meta.get('realtime_factor_delta_pct')}% in realtime_factor"
             )
-            print(f"! between its first run ({meta.get('baseline_first_transcribe_seconds')}s) "
-                  f"and its last run ({meta.get('baseline_last_transcribe_seconds')}s), "
-                  f"exceeding the {meta.get('threshold_pct')}% threshold.")
+            print(
+                f"! between its first run ({meta.get('baseline_first_transcribe_seconds')}s) "
+                f"and its last run ({meta.get('baseline_last_transcribe_seconds')}s), "
+                f"exceeding the {meta.get('threshold_pct')}% threshold."
+            )
             print("! Every delta between configs in THIS sweep is UNRELIABLE - the chip's clock")
             print("! state moved more than the threshold across the sweep. Re-run with a longer")
             print("! --cooldown, or trust nothing here beyond which retries fired.")
@@ -910,7 +957,11 @@ def run_single_config_subprocess(args: argparse.Namespace) -> int:
         result = run_config(name, overrides, samples, duration, reference, baseline_text)
     except Exception as e:
         logger.exception("Config %s failed", name)
-        result = {"config_name": name, "override": overrides if overrides else None, "error": str(e)}
+        result = {
+            "config_name": name,
+            "override": overrides if overrides else None,
+            "error": str(e),
+        }
 
     with open(args.result_file, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False)
@@ -942,12 +993,19 @@ def _spawn_single_config(
     comes back via --result-file, read by the caller after this returns.
     """
     cmd = [
-        sys.executable, "-m", "tests.eval.compare_transcription",
-        "--single-config", name,
-        "--audio", audio_path,
-        "--start", str(start),
-        "--seconds", str(seconds),
-        "--result-file", result_file,
+        sys.executable,
+        "-m",
+        "tests.eval.compare_transcription",
+        "--single-config",
+        name,
+        "--audio",
+        audio_path,
+        "--start",
+        str(start),
+        "--seconds",
+        str(seconds),
+        "--result-file",
+        result_file,
     ]
     if reference_path:
         cmd += ["--reference", reference_path]
@@ -976,9 +1034,11 @@ def run_target(
         reference_path = None
 
     if reference_path is None:
-        print(f"\n{label}: no reference transcript - WER not available. "
-              f"Reporting speed and label-free proxies only, plus divergence "
-              f"from this run's own baseline decode (see module docstring).")
+        print(
+            f"\n{label}: no reference transcript - WER not available. "
+            f"Reporting speed and label-free proxies only, plus divergence "
+            f"from this run's own baseline decode (see module docstring)."
+        )
 
     # Run plan: baseline first (if requested) so every other config can be
     # scored for divergence against it, same as before subprocessing was
@@ -997,8 +1057,10 @@ def run_target(
     else:
         run_plan = [(n, "other") for n in sorted(config_names)]
         if repeat > 1:
-            print(f"{label}: --repeat > 1 requested but 'baseline' isn't in --config; "
-                  f"the A-B-A drift check needs a baseline run and will be skipped.")
+            print(
+                f"{label}: --repeat > 1 requested but 'baseline' isn't in --config; "
+                f"the A-B-A drift check needs a baseline run and will be skipped."
+            )
 
     results: List[Dict] = []
     baseline_first_result: Optional[Dict] = None
@@ -1010,19 +1072,27 @@ def run_target(
                 cooldown_info = cooldown_wait(cooldown)
             else:
                 cooldown_info = {
-                    "cooldown_seconds_used": 0.0, "cooldown_recovered": None, "cooldown_final_pct": None,
+                    "cooldown_seconds_used": 0.0,
+                    "cooldown_recovered": None,
+                    "cooldown_final_pct": None,
                 }
 
-            print(f"\n=== [{label}] {name} ({role}) - {_override_summary(CONFIGS[name])} ===", flush=True)
+            print(
+                f"\n=== [{label}] {name} ({role}) - {_override_summary(CONFIGS[name])} ===",
+                flush=True,
+            )
             result_file = os.path.join(tmp_dir, f"{label}_{idx}_{name}_{role}.json")
-            _spawn_single_config(name, audio_path, reference_path, start, seconds, baseline_text_file, result_file)
+            _spawn_single_config(
+                name, audio_path, reference_path, start, seconds, baseline_text_file, result_file
+            )
 
             if os.path.exists(result_file):
                 with open(result_file, encoding="utf-8") as handle:
                     result = json.load(handle)
             else:
                 result = {
-                    "config_name": name, "override": CONFIGS[name] or None,
+                    "config_name": name,
+                    "override": CONFIGS[name] or None,
                     "error": "subprocess produced no result file (see its stdout/stderr above)",
                 }
 
@@ -1036,7 +1106,9 @@ def run_target(
                 with open(baseline_text_file, "w", encoding="utf-8") as handle:
                     handle.write(result.get("text", "") or "")
 
-        baseline_last = [r for r in results if r.get("run_role") == "baseline_last" and "error" not in r]
+        baseline_last = [
+            r for r in results if r.get("run_role") == "baseline_last" and "error" not in r
+        ]
         if baseline_first_result is not None and baseline_last:
             results.append(compute_baseline_drift(baseline_first_result, baseline_last[-1]))
     finally:
@@ -1054,37 +1126,64 @@ def run_target(
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--which", choices=["podcast", "tesr1", "both"], default="both",
-                         help="Which fixture(s) to run (default: both)")
-    parser.add_argument("--config", nargs="+", default=["baseline"],
-                         choices=list(CONFIGS.keys()),
-                         help=f"Which named config(s) to run (default: baseline). "
-                              f"Available: {', '.join(CONFIGS.keys())}")
-    parser.add_argument("--start", type=float, default=None,
-                         help="Clip start, in seconds (default: 0 for podcast; "
-                              f"{DEFAULT_START_TESR1} for tesr1)")
-    parser.add_argument("--seconds", type=float, default=None,
-                         help="Clip length, in seconds, 0 = whole file (default: whole file "
-                              f"for podcast; {DEFAULT_SECONDS_TESR1} for tesr1, since the only "
-                              "retries need the context chain from offset 0 - see module docstring)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--which",
+        choices=["podcast", "tesr1", "both"],
+        default="both",
+        help="Which fixture(s) to run (default: both)",
+    )
+    parser.add_argument(
+        "--config",
+        nargs="+",
+        default=["baseline"],
+        choices=list(CONFIGS.keys()),
+        help=f"Which named config(s) to run (default: baseline). "
+        f"Available: {', '.join(CONFIGS.keys())}",
+    )
+    parser.add_argument(
+        "--start",
+        type=float,
+        default=None,
+        help=f"Clip start, in seconds (default: 0 for podcast; {DEFAULT_START_TESR1} for tesr1)",
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        default=None,
+        help="Clip length, in seconds, 0 = whole file (default: whole file "
+        f"for podcast; {DEFAULT_SECONDS_TESR1} for tesr1, since the only "
+        "retries need the context chain from offset 0 - see module docstring)",
+    )
     parser.add_argument("--audio", help="Override the podcast audio path")
     parser.add_argument("--reference", help="Override the podcast reference transcript path")
     parser.add_argument("--tesr1-audio", help="Override the tesr1 audio path")
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
-    parser.add_argument("--cooldown", type=float, default=DEFAULT_COOLDOWN,
-                         help=f"Max seconds to idle between subprocess configs, polling for the CPU "
-                              f"to recover above {COOLDOWN_RECOVERY_THRESHOLD:.0f}%% Processor "
-                              f"Performance before continuing (default: {DEFAULT_COOLDOWN}; 0 disables "
-                              f"waiting). See module docstring item 2.")
-    parser.add_argument("--repeat", type=int, default=1,
-                         help="Re-run 'baseline' N-1 additional times at the end of the sweep (A-B-A) "
-                              "to measure thermal drift across the sweep (default: 1, no extra "
-                              "reruns). Requires 'baseline' in --config. See module docstring item 4.")
+    parser.add_argument(
+        "--cooldown",
+        type=float,
+        default=DEFAULT_COOLDOWN,
+        help=f"Max seconds to idle between subprocess configs, polling for the CPU "
+        f"to recover above {COOLDOWN_RECOVERY_THRESHOLD:.0f}%% Processor "
+        f"Performance before continuing (default: {DEFAULT_COOLDOWN}; 0 disables "
+        f"waiting). See module docstring item 2.",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Re-run 'baseline' N-1 additional times at the end of the sweep (A-B-A) "
+        "to measure thermal drift across the sweep (default: 1, no extra "
+        "reruns). Requires 'baseline' in --config. See module docstring item 4.",
+    )
     # Internal child-process flags for --single-config mode (module
     # docstring item 1) - not meant to be typed by a person, only emitted by
     # _spawn_single_config(), hence SUPPRESS in --help.
-    parser.add_argument("--single-config", choices=list(CONFIGS.keys()), default=None, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--single-config", choices=list(CONFIGS.keys()), default=None, help=argparse.SUPPRESS
+    )
     parser.add_argument("--result-file", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--baseline-text-file", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -1098,23 +1197,40 @@ def main(argv=None) -> int:
     if args.which in ("podcast", "both"):
         podcast_start = args.start if args.start is not None else 0
         podcast_seconds = args.seconds if args.seconds is not None else 0
-        targets.append((
-            "podcast", args.audio or PODCAST_AUDIO, args.reference or PODCAST_REFERENCE,
-            podcast_start, podcast_seconds,
-        ))
+        targets.append(
+            (
+                "podcast",
+                args.audio or PODCAST_AUDIO,
+                args.reference or PODCAST_REFERENCE,
+                podcast_start,
+                podcast_seconds,
+            )
+        )
     if args.which in ("tesr1", "both"):
         tesr1_start = args.start if args.start is not None else DEFAULT_START_TESR1
         tesr1_seconds = args.seconds if args.seconds is not None else DEFAULT_SECONDS_TESR1
-        targets.append((
-            "tesr1", args.tesr1_audio or TESR1_AUDIO, None,
-            tesr1_start, tesr1_seconds,
-        ))
+        targets.append(
+            (
+                "tesr1",
+                args.tesr1_audio or TESR1_AUDIO,
+                None,
+                tesr1_start,
+                tesr1_seconds,
+            )
+        )
 
     all_results = {}
     for label, audio_path, reference_path, start, seconds in targets:
         all_results[label] = run_target(
-            label, audio_path, reference_path, args.config, start, seconds, args.output_dir,
-            args.cooldown, args.repeat,
+            label,
+            audio_path,
+            reference_path,
+            args.config,
+            start,
+            seconds,
+            args.output_dir,
+            args.cooldown,
+            args.repeat,
         )
 
     return 0

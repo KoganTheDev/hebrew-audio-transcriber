@@ -1,5 +1,4 @@
-"""
-Core Transcription Module
+"""Core Transcription Module
 Handles the actual transcription process.
 """
 
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class Transcriber:
     """Handles speech-to-text transcription."""
-    
+
     def __init__(
         self,
         model_size: str = config.DEFAULT_MODEL,
@@ -56,12 +55,13 @@ class Transcriber:
         self.beam_size = beam_size
         self.cpu_threads = cpu_threads
         self.num_workers = num_workers
-        logger.debug(f"Transcriber initialized: model={model_size}, device={device}, lang={language}")
+        logger.debug(
+            f"Transcriber initialized: model={model_size}, device={device}, lang={language}"
+        )
 
     @property
     def model_repo(self) -> str:
-        """
-        The identifier faster-whisper actually loads.
+        """The identifier faster-whisper actually loads.
 
         config.MODELS keys are this app's own stable names; "repo" is the
         upstream address (a bare Whisper size, or a HuggingFace repo holding
@@ -71,15 +71,14 @@ class Transcriber:
         """
         entry = config.MODELS.get(self.model_size)
         return entry["repo"] if entry else self.model_size
-        
+
     @staticmethod
     def _default_callback(message, progress: int):
         """Default progress callback."""
         pass
-        
+
     def load_model(self) -> bool:
-        """
-        Load the Whisper model.
+        """Load the Whisper model.
 
         device="cuda" is reachable once gui/main_window.py wires up
         get_device_recommendation() (see hardware_detection.py) - but a CUDA
@@ -130,9 +129,12 @@ class Transcriber:
                 try:
                     self.device = "cpu"
                     self._load_on(self.device)
-                    logger.info(f"✓ Model loaded successfully: {self.model_size} (cpu, after CUDA fallback)")
+                    logger.info(
+                        f"✓ Model loaded successfully: {self.model_size} (cpu, after CUDA fallback)"
+                    )
                     self.progress_callback(
-                        ("w_model_loaded", {"model": self.model_size}), TRANSCRIBER_MODEL_LOADED_PERCENT
+                        ("w_model_loaded", {"model": self.model_size}),
+                        TRANSCRIBER_MODEL_LOADED_PERCENT,
                     )
                     return True
                 except Exception as fallback_error:
@@ -143,8 +145,7 @@ class Transcriber:
             return False
 
     def _load_on(self, device: str) -> None:
-        """
-        Construct WhisperModel for the given device, resolving every knob
+        """Construct WhisperModel for the given device, resolving every knob
         that is None to its production default. Split out of load_model() so
         the CUDA-fails-fall-back-to-CPU retry (see load_model's docstring)
         can call it a second time with device swapped, without duplicating
@@ -173,12 +174,9 @@ class Transcriber:
             kwargs["num_workers"] = self.num_workers
 
         self.model = WhisperModel(self.model_repo, **kwargs)
-    
-    def transcribe(
-        self, audio_file, total_duration_seconds: float = 0
-    ) -> Optional[List[Segment]]:
-        """
-        Transcribe audio to structured segments.
+
+    def transcribe(self, audio_file, total_duration_seconds: float = 0) -> Optional[List[Segment]]:
+        """Transcribe audio to structured segments.
 
         Args:
             audio_file: Path to an audio/video file, or a float32 mono 16 kHz
@@ -196,6 +194,7 @@ class Transcriber:
             List of Segment (with per-word timings and confidences), or None
             if error. Callers that just want text use
             core.segments.plain_text.
+
         """
         if not self.model:
             logger.error("Model not loaded - call load_model() first")
@@ -221,7 +220,7 @@ class Transcriber:
                 # save time (see core/worker.py's module docstring).
                 word_timestamps=True,
                 vad_filter=config.VAD_FILTER,
-                vad_parameters=dict(min_silence_duration_ms=500)
+                vad_parameters=dict(min_silence_duration_ms=500),
             )
 
             logger.debug(f"Transcription info: {info}")
@@ -255,10 +254,13 @@ class Transcriber:
                 if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
                     # Real progress: how far into the audio this segment ends.
                     fraction = min(segment_end / total_duration_seconds, 1.0)
-                    message = ("w_transcribing_time", {
-                        "position": format_mmss(segment_end),
-                        "total": format_mmss(total_duration_seconds),
-                    })
+                    message = (
+                        "w_transcribing_time",
+                        {
+                            "position": format_mmss(segment_end),
+                            "total": format_mmss(total_duration_seconds),
+                        },
+                    )
                 else:
                     # No reliable duration to measure against (shouldn't
                     # normally happen - the GUI always probes the real
@@ -267,7 +269,9 @@ class Transcriber:
                     fraction = min(0.03 * segment_count, 0.95)
                     message = ("w_transcribing_seg", {"n": segment_count})
 
-                progress = TRANSCRIBER_MODEL_LOADED_PERCENT + int(fraction * TRANSCRIBER_TRANSCRIBE_SPAN)
+                progress = TRANSCRIBER_MODEL_LOADED_PERCENT + int(
+                    fraction * TRANSCRIBER_TRANSCRIBE_SPAN
+                )
                 self.progress_callback(message, progress)
 
             logger.info(f"✓ Transcription complete: {len(collected)} segments")
@@ -279,11 +283,10 @@ class Transcriber:
             logger.debug(f"Error details: {type(e).__name__}")
             self.progress_callback(("w_error", {"detail": str(e)}), 0)
             return None
-    
+
 
 def _to_segment(raw) -> Segment:
-    """
-    Convert one faster-whisper Segment into our own Segment.
+    """Convert one faster-whisper Segment into our own Segment.
 
     Every attribute is read defensively. faster-whisper's segment type has
     changed shape across releases, `words` is None whenever word_timestamps
@@ -299,12 +302,14 @@ def _to_segment(raw) -> Segment:
         word_text = getattr(raw_word, "word", None)
         if not isinstance(word_text, str):
             continue
-        words.append(Word(
-            start=_as_float(getattr(raw_word, "start", None), 0.0),
-            end=_as_float(getattr(raw_word, "end", None), 0.0),
-            text=word_text,
-            probability=_as_float(getattr(raw_word, "probability", None), 1.0),
-        ))
+        words.append(
+            Word(
+                start=_as_float(getattr(raw_word, "start", None), 0.0),
+                end=_as_float(getattr(raw_word, "end", None), 0.0),
+                text=word_text,
+                probability=_as_float(getattr(raw_word, "probability", None), 1.0),
+            )
+        )
 
     return Segment(
         start=_as_float(getattr(raw, "start", None), 0.0),

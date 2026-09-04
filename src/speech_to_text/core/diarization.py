@@ -1,5 +1,4 @@
-"""
-Speaker diarization: working out who spoke when, for single-microphone
+"""Speaker diarization: working out who spoke when, for single-microphone
 recordings where both parties share one channel.
 
 Engine choice. The obvious candidate is pyannote.audio, which is the accuracy
@@ -22,7 +21,8 @@ import os
 import shutil
 import tarfile
 import urllib.request
-from typing import Callable, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Callable, List, Optional
 
 import numpy as np
 
@@ -52,9 +52,7 @@ _EMBEDDING_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
     "speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
 )
-_EMBEDDING_MODEL = os.path.join(
-    MODELS_DIR, "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
-)
+_EMBEDDING_MODEL = os.path.join(MODELS_DIR, "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx")
 
 
 class DiarizationUnavailable(Exception):
@@ -66,8 +64,7 @@ def models_present() -> bool:
 
 
 def ensure_models(progress: Optional[Callable[[int, int], None]] = None) -> None:
-    """
-    Download the ONNX models on first use.
+    """Download the ONNX models on first use.
 
     sherpa-onnx ships no weights of its own, so this has to happen once. Both
     files are small enough (~36 MB total) that a progress callback is a
@@ -140,8 +137,7 @@ def diarize(
     num_speakers: int = 2,
     progress: Optional[Callable[[int, int], None]] = None,
 ) -> List["SpeakerSpan"]:
-    """
-    Label who is speaking across a mono recording.
+    """Label who is speaking across a mono recording.
 
     Args:
         samples: float32 mono audio.
@@ -157,6 +153,7 @@ def diarize(
     Which pipeline runs is config.DIARIZATION_ENGINE; see that constant for
     the measurements behind having two. This function keeps the same contract
     either way, so nothing downstream needs to know which one ran.
+
     """
     if config.DIARIZATION_ENGINE == "powerset":
         # Imported lazily so the sherpa path does not pay for onnxruntime
@@ -237,9 +234,7 @@ def diarize(
         SpeakerSpan(start=s.start, end=s.end, speaker=s.speaker)
         for s in result.sort_by_start_time()
     ]
-    logger.info(
-        f"Diarization found {result.num_speakers} speaker(s) across {len(spans)} spans"
-    )
+    logger.info(f"Diarization found {result.num_speakers} speaker(s) across {len(spans)} spans")
     return spans
 
 
@@ -272,8 +267,7 @@ def assign_speakers(
     spans: Sequence[SpeakerSpan],
     min_run_words: int = MIN_SPEAKER_RUN_WORDS,
 ) -> List[Segment]:
-    """
-    Attach a speaker to each transcript segment, splitting where the speaker
+    """Attach a speaker to each transcript segment, splitting where the speaker
     changes mid-segment.
 
     Works at word level, not segment level. Whisper's segment boundaries are
@@ -341,9 +335,7 @@ def _split_segment(
     # None-labelled sub-segment - it is filled in from its neighbours, the
     # same way it would have simply not voted under the old majority scheme.
     filled = _fill_unmatched(labels, segment.words)
-    runs = _coalesce_adjacent(
-        _merge_short_runs(_runs(filled), min_run_words, segment.words, spans)
-    )
+    runs = _coalesce_adjacent(_merge_short_runs(_runs(filled), min_run_words, segment.words, spans))
 
     if len(runs) == 1:
         segment.speaker = runs[0][2]
@@ -369,7 +361,9 @@ def _split_segment(
         # timings themselves, since that word boundary is the split point.
         start = segment.start if i == 0 else run_words[0].start
         end = segment.end if i == last_index else run_words[-1].end
-        pieces.append(Segment(start=start, end=end, text=text, words=list(run_words), speaker=label))
+        pieces.append(
+            Segment(start=start, end=end, text=text, words=list(run_words), speaker=label)
+        )
     return pieces
 
 
@@ -382,11 +376,8 @@ def _label_coverage(
     return sum(span.overlap(start, end) for span in spans if span.speaker == label)
 
 
-def _fill_unmatched(
-    labels: Sequence[Optional[int]], words: Sequence[Word]
-) -> List[Optional[int]]:
-    """
-    Carry a real label over words that overlap no span, from whichever
+def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> List[Optional[int]]:
+    """Carry a real label over words that overlap no span, from whichever
     labelled neighbour is nearer IN TIME - and only across a short gap.
 
     This used to forward-fill: a gap word simply took the label of whoever
@@ -463,8 +454,7 @@ def _runs(labels: Sequence[Optional[int]]) -> List[List]:
 def _is_real_interjection(
     run: Sequence, words: Sequence[Word], spans: Sequence[SpeakerSpan]
 ) -> bool:
-    """
-    Whether a too-short run is a genuine short turn rather than a boundary slip.
+    """Whether a too-short run is a genuine short turn rather than a boundary slip.
 
     The run-length floor exists because one stray word usually means the
     diarizer clipped a span boundary by a few tens of milliseconds. But a real
@@ -497,8 +487,7 @@ def _merge_short_runs(
     words: Sequence[Word] = (),
     spans: Sequence[SpeakerSpan] = (),
 ) -> List[List]:
-    """
-    Fold any run shorter than min_words into a neighbour so it cannot, on its
+    """Fold any run shorter than min_words into a neighbour so it cannot, on its
     own, split the segment (see MIN_SPEAKER_RUN_WORDS) - unless it is a real
     interjection, which keeps its own run.
 
@@ -533,7 +522,7 @@ def _merge_short_runs(
         """How much the run's own words support this label, in seconds."""
         if label is None or not words:
             return 0.0
-        run_words = words[run[0]:run[1]]
+        run_words = words[run[0] : run[1]]
         if not run_words:
             return 0.0
         return _label_coverage(spans, label, run_words[0].start, run_words[-1].end)

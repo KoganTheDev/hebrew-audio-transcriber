@@ -43,7 +43,6 @@ def logits_for(class_index, frames=seg.FRAMES_PER_WINDOW, confidence=20.0):
 
 
 class TestPowersetOrdering:
-
     def test_matches_pyannote_combinations_construction(self):
         """
         The class order is a wire format shared with a model file we do not
@@ -58,11 +57,11 @@ class TestPowersetOrdering:
     def test_matrix_marks_exactly_the_speakers_each_class_means(self):
         matrix = seg.powerset_matrix()
         assert matrix.shape == (seg.NUM_CLASSES, seg.NUM_LOCAL_SPEAKERS)
-        assert matrix[0].tolist() == [0, 0, 0]      # silence
-        assert matrix[1].tolist() == [1, 0, 0]      # {0}
-        assert matrix[3].tolist() == [0, 0, 1]      # {2}
-        assert matrix[4].tolist() == [1, 1, 0]      # {0,1}
-        assert matrix[6].tolist() == [0, 1, 1]      # {1,2}
+        assert matrix[0].tolist() == [0, 0, 0]  # silence
+        assert matrix[1].tolist() == [1, 0, 0]  # {0}
+        assert matrix[3].tolist() == [0, 0, 1]  # {2}
+        assert matrix[4].tolist() == [1, 1, 0]  # {0,1}
+        assert matrix[6].tolist() == [0, 1, 1]  # {1,2}
 
     def test_overlap_classes_mark_two_speakers_each(self):
         matrix = seg.powerset_matrix()
@@ -70,7 +69,6 @@ class TestPowersetOrdering:
 
 
 class TestSoftmax:
-
     def test_rows_sum_to_one(self):
         rng = np.random.default_rng(0)
         out = seg.softmax(rng.normal(size=(5, seg.NUM_CLASSES)).astype(np.float32))
@@ -88,7 +86,6 @@ class TestSoftmax:
 
 
 class TestWindowStarts:
-
     def test_audio_shorter_than_one_window_is_a_single_window(self):
         assert seg.window_starts(1000) == [0]
         assert seg.window_starts(seg.WINDOW_SAMPLES) == [0]
@@ -113,7 +110,6 @@ class TestWindowStarts:
 
 
 class TestFrameTiming:
-
     def test_first_frame_centres_half_a_receptive_field_in(self):
         expected = ((seg.RECEPTIVE_FIELD_SAMPLES - 1) / 2.0) / seg.SAMPLE_RATE
         assert seg.frame_center_time(0, 0) == pytest.approx(expected)
@@ -143,7 +139,6 @@ class TestFrameTiming:
 
 
 class TestInferMarginals:
-
     def test_silence_class_yields_no_active_speakers(self):
         session = FakeSession([logits_for(0)])
         marginals, starts = seg.infer_marginals(session, np.zeros(seg.WINDOW_SAMPLES, np.float32))
@@ -152,14 +147,14 @@ class TestInferMarginals:
         assert marginals.max() < 1e-3
 
     def test_single_speaker_class_activates_exactly_that_speaker(self):
-        session = FakeSession([logits_for(2)])          # class 2 == {1}
+        session = FakeSession([logits_for(2)])  # class 2 == {1}
         marginals, _ = seg.infer_marginals(session, np.zeros(seg.WINDOW_SAMPLES, np.float32))
         assert marginals[0, 0, 1] == pytest.approx(1.0, abs=1e-3)
         assert marginals[0, 0, 0] < 1e-3
         assert marginals[0, 0, 2] < 1e-3
 
     def test_overlap_class_activates_both_of_its_speakers(self):
-        session = FakeSession([logits_for(4)])          # class 4 == {0,1}
+        session = FakeSession([logits_for(4)])  # class 4 == {0,1}
         marginals, _ = seg.infer_marginals(session, np.zeros(seg.WINDOW_SAMPLES, np.float32))
         assert marginals[0, 0, 0] == pytest.approx(1.0, abs=1e-3)
         assert marginals[0, 0, 1] == pytest.approx(1.0, abs=1e-3)
@@ -172,19 +167,19 @@ class TestInferMarginals:
         adds up for speaker 0, even when neither class wins the argmax.
         """
         raw = np.zeros((seg.FRAMES_PER_WINDOW, seg.NUM_CLASSES), dtype=np.float32)
-        raw[:, 1] = 1.0      # {0}
-        raw[:, 4] = 1.0      # {0,1}
-        raw[:, 0] = 1.3      # silence wins the argmax
+        raw[:, 1] = 1.0  # {0}
+        raw[:, 4] = 1.0  # {0,1}
+        raw[:, 0] = 1.3  # silence wins the argmax
         session = FakeSession([raw])
         marginals, _ = seg.infer_marginals(session, np.zeros(seg.WINDOW_SAMPLES, np.float32))
 
         probs = seg.softmax(raw)
-        assert probs[0].argmax() == 0                       # argmax says silence
+        assert probs[0].argmax() == 0  # argmax says silence
         # Every class containing speaker 0 counts: {0}, {0,1} AND {0,2} - the
         # last one has a zero logit, not zero probability.
         expected = probs[0, 1] + probs[0, 4] + probs[0, 5]
         assert marginals[0, 0, 0] == pytest.approx(expected)
-        assert marginals[0, 0, 0] > 0.4                     # marginal says speaker 0
+        assert marginals[0, 0, 0] > 0.4  # marginal says speaker 0
 
     def test_short_audio_is_padded_to_a_full_window(self):
         session = FakeSession([logits_for(0)])
@@ -193,11 +188,10 @@ class TestInferMarginals:
 
 
 class TestAggregateInvariants:
-
     def test_single_window_reports_speech_and_count(self):
         marginals = np.zeros((1, seg.FRAMES_PER_WINDOW, seg.NUM_LOCAL_SPEAKERS), np.float32)
-        marginals[0, :100, 0] = 0.9                       # one speaker
-        marginals[0, 100:200, :2] = 0.9                   # two speakers
+        marginals[0, :100, 0] = 0.9  # one speaker
+        marginals[0, 100:200, :2] = 0.9  # two speakers
         speech, count = seg.aggregate_invariants(marginals, [0], onset=0.5)
 
         assert speech[50] == pytest.approx(1.0)
@@ -219,7 +213,9 @@ class TestAggregateInvariants:
         their local speakers differently; pooling must not care.
         """
         rng = np.random.default_rng(3)
-        marginals = rng.random((4, seg.FRAMES_PER_WINDOW, seg.NUM_LOCAL_SPEAKERS)).astype(np.float32)
+        marginals = rng.random((4, seg.FRAMES_PER_WINDOW, seg.NUM_LOCAL_SPEAKERS)).astype(
+            np.float32
+        )
         starts = [j * seg.WINDOW_HOP_SAMPLES for j in range(4)]
 
         shuffled = marginals.copy()
@@ -233,8 +229,8 @@ class TestAggregateInvariants:
 
     def test_overlapping_windows_average_their_votes(self):
         marginals = np.zeros((2, seg.FRAMES_PER_WINDOW, seg.NUM_LOCAL_SPEAKERS), np.float32)
-        marginals[0, :, 0] = 0.9        # window 0 hears speech everywhere
-        marginals[1, :, 0] = 0.0        # window 1 hears nothing
+        marginals[0, :, 0] = 0.9  # window 0 hears speech everywhere
+        marginals[1, :, 0] = 0.0  # window 1 hears nothing
         starts = [0, seg.WINDOW_HOP_SAMPLES]
         speech, _ = seg.aggregate_invariants(marginals, starts, onset=0.5)
 
@@ -252,7 +248,6 @@ class TestAggregateInvariants:
 
 
 class TestRunsToIntervals:
-
     def test_empty_mask_gives_no_intervals(self):
         assert seg.runs_to_intervals(np.zeros(10, dtype=bool)) == []
 
@@ -274,11 +269,11 @@ class TestRunsToIntervals:
     def test_single_frame_run_carries_one_frame_of_duration(self):
         mask = np.zeros(10, dtype=bool)
         mask[5] = True
-        (start, end), = seg.runs_to_intervals(mask)
+        ((start, end),) = seg.runs_to_intervals(mask)
         assert end - start == pytest.approx(seg.FRAME_SHIFT_SAMPLES / seg.SAMPLE_RATE)
 
     def test_min_duration_drops_short_runs(self):
         mask = np.zeros(200, dtype=bool)
-        mask[10] = True            # one frame, ~17ms
-        mask[100:150] = True       # ~840ms
+        mask[10] = True  # one frame, ~17ms
+        mask[100:150] = True  # ~840ms
         assert len(seg.runs_to_intervals(mask, min_duration=0.5)) == 1

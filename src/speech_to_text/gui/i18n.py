@@ -1,5 +1,4 @@
-"""
-UI internationalization: English/Hebrew string table and language state.
+"""UI internationalization: English/Hebrew string table and language state.
 
 Hand-rolled rather than Qt Linguist (.ts/.qm) on purpose: the two hard
 problems here are strings that originate in the transcription worker
@@ -89,12 +88,17 @@ STRINGS = {
     "step_status_current": {"en": "Current step", "he": "השלב הנוכחי"},
     "step_status_done": {"en": "Completed", "he": "הושלם"},
     "step_status_pending": {"en": "Not started", "he": "טרם התחיל"},
-
     # --- Step 1: file selection ---
     "specs_title": {"en": "Specs", "he": "מפרט מערכת"},
     "select_audio_file": {"en": "Select Audio File", "he": "בחירת קובץ אודיו"},
-    "drop_main": {"en": "Drag your audio or video file here", "he": "גררו לכאן קובץ אודיו או וידאו"},
-    "drop_formats": {"en": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV", "he": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV"},
+    "drop_main": {
+        "en": "Drag your audio or video file here",
+        "he": "גררו לכאן קובץ אודיו או וידאו",
+    },
+    "drop_formats": {
+        "en": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV",
+        "he": "MP3, WAV, M4A, FLAC, OGG, MP4, MKV",
+    },
     "drop_alt": {"en": "or click anywhere here to browse", "he": "או לחצו כאן כדי לבחור קובץ"},
     "no_file_selected": {"en": "No file selected", "he": "לא נבחר קובץ"},
     # Drop zone accessibility. Read together by a screen reader (name then
@@ -116,7 +120,14 @@ STRINGS = {
     "remove_file": {"en": "Remove {filename}", "he": "הסרת {filename}"},
     "file_info": {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",
-        "he": _RLM + _LRI + "{filename}" + _PDI + " | {minutes} דק' {seconds} שנ' | " + _LRI + "{size} MB" + _PDI,
+        "he": _RLM
+        + _LRI
+        + "{filename}"
+        + _PDI
+        + " | {minutes} דק' {seconds} שנ' | "
+        + _LRI
+        + "{size} MB"
+        + _PDI,
     },
     # Summary line above the file list. Unlike file_info, this doesn't open
     # with a filename - it opens with the count - so it needs no RLM anchor
@@ -151,13 +162,15 @@ STRINGS = {
     "hw_ram": {"en": "RAM", "he": "זיכרון RAM"},
     "hw_gpu": {"en": "GPU", "he": "כרטיס מסך"},
     "hw_no_gpu": {"en": "No GPU", "he": "ללא GPU"},
-
     # --- Step 2: model selection ---
     "choose_model": {"en": "Choose Model", "he": "בחירת מודל"},
     "recommended_badge": {"en": "RECOMMENDED", "he": "מומלץ"},
     "identify_speakers": {"en": "Identify speakers", "he": "זהה דוברים"},
     "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
-    "transcription_failed": {"en": "Transcription failed: {message}", "he": "התמלול נכשל: {message}"},
+    "transcription_failed": {
+        "en": "Transcription failed: {message}",
+        "he": "התמלול נכשל: {message}",
+    },
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
     # Duration units, for format_duration() below. The model cards' time
     # estimates used to come out of hardware_detection._format_duration,
@@ -176,8 +189,10 @@ STRINGS = {
     # ModelSelectStep._desc_text): it applies to every card, always, and the
     # caption doesn't have room to say so for all seven without overflowing
     # in Hebrew on the RECOMMENDED card specifically (measured).
-    "model_ram_tooltip": {"en": "Requires {ram} RAM",
-                          "he": "דורש " + _LRI + "{ram}" + _PDI + " זיכרון RAM"},
+    "model_ram_tooltip": {
+        "en": "Requires {ram} RAM",
+        "he": "דורש " + _LRI + "{ram}" + _PDI + " זיכרון RAM",
+    },
     # Appended to a card's caption ONLY for a model not yet present in the
     # local download cache (see model_select.py's _model_is_downloaded) -
     # the one fact that changes a decision right now, for the one or two
@@ -193,8 +208,10 @@ STRINGS = {
     # for fitting at all; model_download_tooltip below (on the card and the
     # radio's accessible description) carries the full sentence for anyone
     # who needs it spelled out.
-    "model_download_pending": {"en": "| ↓ " + _LRI + "{size}" + _PDI,
-                               "he": "| ↓ " + _LRI + "{size}" + _PDI},
+    "model_download_pending": {
+        "en": "| ↓ " + _LRI + "{size}" + _PDI,
+        "he": "| ↓ " + _LRI + "{size}" + _PDI,
+    },
     # Full sentence version of the note above, for the card's tooltip and
     # the radio's accessible description - a screen reader or a hovering
     # mouse gets the words a screen glance at "↓ 1.6 GB" doesn't have room
@@ -216,10 +233,12 @@ STRINGS = {
         "en": "Couldn't measure this machine's speed - estimates below are rough guesses",
         "he": "לא ניתן היה למדוד את מהירות המחשב - האומדנים למטה משוערים בגסות",
     },
-
     # --- Step 3: transcription ---
     "transcribing_title": {"en": "Transcribing", "he": "מתמלל"},
-    "file_model_info": {"en": "{filename} | Model: {model}", "he": _RLM + "{filename} | מודל: {model}"},
+    "file_model_info": {
+        "en": "{filename} | Model: {model}",
+        "he": _RLM + "{filename} | מודל: {model}",
+    },
     "elapsed": {"en": "Elapsed: {elapsed}", "he": "זמן שחלף: {elapsed}"},
     "elapsed_remaining": {
         "en": "Elapsed: {elapsed}  |  Est. remaining: {remaining}",
@@ -246,13 +265,11 @@ STRINGS = {
     # though it sits in the Hebrew UI: there's no Latin filename inside it
     # to anchor.
     "batch_progress_readout": {"en": "{i} / {n}", "he": "{i} / {n}"},
-
     # Speaker name template written into the transcript file itself, not shown
     # in the GUI. Rendered here and passed to the worker as data: core/ has no
     # access to this module (see core/worker.py) and cannot translate anything.
     # {n} is 1-based - "Speaker 0" reads like a bug to a non-programmer.
     "speaker_label": {"en": "Speaker {n}", "he": "דובר {n}"},
-
     # Notice rendered into the HTML output itself for a batch file whose
     # transcription failed - same "GUI renders, worker just embeds data"
     # pattern as speaker_label. Deliberately has no {message} placeholder:
@@ -263,7 +280,6 @@ STRINGS = {
         "en": "Transcription failed for this file.",
         "he": "התמלול עבור קובץ זה נכשל.",
     },
-
     # --- Transcript document chrome -----------------------------------------
     # The generated HTML is a small application with visible text of its own,
     # and it is rendered in the worker process, which cannot translate. These
@@ -348,7 +364,6 @@ STRINGS = {
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},
     "doc_reassign_line": {"en": "Reassign this sentence", "he": "שיוך המשפט הזה לדובר אחר"},
     "doc_file_position": {"en": "{i} / {n}", "he": "{i} / {n}"},
-
     # --- Help panel -----------------------------------------------------
     # The toolbar button and the panel it opens - see _render_help_html() in
     # core/formatting, which builds the panel server-side from these same
@@ -360,87 +375,84 @@ STRINGS = {
     "doc_help_search_title": {"en": "Search", "he": "חיפוש"},
     "doc_help_search_desc": {
         "en": "Type to search every turn in this recording. The chevrons - "
-              "or Enter and Shift+Enter - jump to the next or previous "
-              "match.",
+        "or Enter and Shift+Enter - jump to the next or previous "
+        "match.",
         "he": "הקלידו כדי לחפש בכל הפסקאות בהקלטה. החצים - או Enter ו-"
-              "Shift+Enter - עוברים להתאמה הבאה או הקודמת.",
+        "Shift+Enter - עוברים להתאמה הבאה או הקודמת.",
     },
     "doc_help_flags_title": {"en": "Show uncertain words", "he": "הצגת מילים לא ודאיות"},
     "doc_help_flags_desc": {
         "en": "Highlights the words the model itself was least sure about, "
-              "with a tinted, dotted underline - worth a second look before "
-              "you trust them.",
+        "with a tinted, dotted underline - worth a second look before "
+        "you trust them.",
         "he": "מדגיש את המילים שהמודל היה הכי פחות בטוח לגביהן, בקו תחתון "
-              "מנוקד וצבוע - כדאי לבדוק אותן שוב לפני שסומכים עליהן.",
+        "מנוקד וצבוע - כדאי לבדוק אותן שוב לפני שסומכים עליהן.",
     },
     "doc_help_theme_title": {"en": "Light / dark mode", "he": "מצב בהיר / כהה"},
     "doc_help_theme_desc": {
         "en": "Switches this page's colour scheme and remembers your choice "
-              "in this browser, independent of your system's own setting.",
-        "he": "מחליף את ערכת הצבעים של הדף וזוכר את הבחירה בדפדפן הזה, "
-              "בנפרד מהגדרת המערכת שלכם.",
+        "in this browser, independent of your system's own setting.",
+        "he": "מחליף את ערכת הצבעים של הדף וזוכר את הבחירה בדפדפן הזה, בנפרד מהגדרת המערכת שלכם.",
     },
     "doc_help_save_title": {"en": "Save a copy", "he": "שמירת עותק"},
     "doc_help_save_desc": {
         "en": "Downloads a fresh copy of this page with every edit baked "
-              "in. Opened from a file, the page can only save your edits "
-              "to this browser automatically - this is what actually "
-              "writes them to a file on disk.",
+        "in. Opened from a file, the page can only save your edits "
+        "to this browser automatically - this is what actually "
+        "writes them to a file on disk.",
         "he": "מוריד עותק חדש של הדף עם כל השינויים משולבים בו. כשהדף נפתח "
-              "מקובץ, הוא יכול לשמור את השינויים באופן אוטומטי רק בדפדפן "
-              "הזה - זו הפעולה שבאמת כותבת אותם לקובץ בדיסק.",
+        "מקובץ, הוא יכול לשמור את השינויים באופן אוטומטי רק בדפדפן "
+        "הזה - זו הפעולה שבאמת כותבת אותם לקובץ בדיסק.",
     },
     "doc_help_outline_title": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_help_outline_desc": {
         "en": "Lists every file in this batch and, for each one, the "
-              "speakers detected in it. Click a filename to jump straight "
-              "to it.",
+        "speakers detected in it. Click a filename to jump straight "
+        "to it.",
         "he": "מציג את כל הקבצים באצווה ואת הדוברים שזוהו בכל אחד מהם. "
-              "לחיצה על שם קובץ קופצת אליו ישירות.",
+        "לחיצה על שם קובץ קופצת אליו ישירות.",
     },
     "doc_help_speakers_title": {"en": "Speaker names and colours", "he": "שמות וצבעי דוברים"},
     "doc_help_speakers_desc": {
         "en": "Rename a speaker by typing over their name in this list, "
-              "and recolour them from the swatch beside it. Every sentence "
-              "carries its own speaker chip - click it to reassign just "
-              "that sentence, or the whole block of sentences around it, "
-              "to someone else.",
+        "and recolour them from the swatch beside it. Every sentence "
+        "carries its own speaker chip - click it to reassign just "
+        "that sentence, or the whole block of sentences around it, "
+        "to someone else.",
         "he": "שנו את שם הדובר על ידי הקלדה מעל השם ברשימה, והחליפו את "
-              "צבעו דרך העיגול הצבעוני שלצידו. לכל משפט יש תגית דובר "
-              "משלו - לחצו עליה כדי לשייך רק את המשפט הזה, או את כל הקטע "
-              "שסביבו, לדובר אחר.",
+        "צבעו דרך העיגול הצבעוני שלצידו. לכל משפט יש תגית דובר "
+        "משלו - לחצו עליה כדי לשייך רק את המשפט הזה, או את כל הקטע "
+        "שסביבו, לדובר אחר.",
     },
     "doc_help_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
     "doc_help_playback_desc": {
         "en": "Click a sentence's own timestamp to play just that "
-              "sentence; playback stops again at its end.",
-        "he": "לחצו על חותמת הזמן של משפט כדי להשמיע רק אותו; ההשמעה "
-              "נעצרת שוב בסופו.",
+        "sentence; playback stops again at its end.",
+        "he": "לחצו על חותמת הזמן של משפט כדי להשמיע רק אותו; ההשמעה נעצרת שוב בסופו.",
     },
     "doc_help_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
     "doc_help_editing_desc": {
         "en": "Click into any turn's text to correct it directly, the same "
-              "way you would edit a document. Changes save automatically "
-              "to this browser as you type - use \"Save a copy\" to write "
-              "them into a file you can keep or share.",
+        "way you would edit a document. Changes save automatically "
+        'to this browser as you type - use "Save a copy" to write '
+        "them into a file you can keep or share.",
         "he": "לחצו לתוך הטקסט של כל פסקה כדי לתקן אותו ישירות, כמו עריכת "
-              "מסמך רגיל. השינויים נשמרים אוטומטית בדפדפן תוך כדי ההקלדה - "
-              "השתמשו ב\"שמירת עותק\" כדי לכתוב אותם לקובץ שאפשר לשמור או "
-              "לשתף.",
+        "מסמך רגיל. השינויים נשמרים אוטומטית בדפדפן תוך כדי ההקלדה - "
+        'השתמשו ב"שמירת עותק" כדי לכתוב אותם לקובץ שאפשר לשמור או '
+        "לשתף.",
     },
     "doc_help_plain_title": {"en": "Plain text", "he": "טקסט רגיל"},
     "doc_help_plain_desc": {
         "en": "Every sentence has its own copy button too, for just that "
-              "one sentence. A copy-friendly version of the whole "
-              "recording sits at the bottom of the page, with its own "
-              "toggles for timestamps and speaker names - edit it there "
-              "directly, or copy it out with one click.",
+        "one sentence. A copy-friendly version of the whole "
+        "recording sits at the bottom of the page, with its own "
+        "toggles for timestamps and speaker names - edit it there "
+        "directly, or copy it out with one click.",
         "he": "לכל משפט יש גם כפתור העתקה משלו, רק בשבילו. גרסה נוחה "
-              "להעתקה של ההקלטה כולה נמצאת בתחתית הדף, עם מתגים משלה "
-              "לחותמות זמן ולשמות דוברים - אפשר לערוך אותה שם ישירות, או "
-              "להעתיק אותה בלחיצה אחת.",
+        "להעתקה של ההקלטה כולה נמצאת בתחתית הדף, עם מתגים משלה "
+        "לחותמות זמן ולשמות דוברים - אפשר לערוך אותה שם ישירות, או "
+        "להעתיק אותה בלחיצה אחת.",
     },
-
     # --- Guided tour ------------------------------------------------------
     # Bound entirely in the page script (core/assets/js/) (bindTour()) - #tour-start above is the
     # only server-rendered hook; every spotlight step, its caption card, and
@@ -457,81 +469,86 @@ STRINGS = {
     "doc_tour_file_title": {"en": "This recording", "he": "ההקלטה הזו"},
     "doc_tour_file_body": {
         "en": "This bar stays on screen and names the file you're reading - "
-              "in a batch, it also shows its position among the others.",
+        "in a batch, it also shows its position among the others.",
         "he": "הסרגל הזה נשאר צמוד למסך ומציג את שם הקובץ שבו אתם צופים "
-              "כרגע - באצווה, הוא גם מציג את מיקומו מבין שאר הקבצים.",
+        "כרגע - באצווה, הוא גם מציג את מיקומו מבין שאר הקבצים.",
     },
     "doc_tour_outline_title": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_tour_outline_body": {
         "en": "This sidebar lists every file in the batch and, for each "
-              "one, the speakers detected inside it. Click a filename to "
-              "jump straight to it.",
+        "one, the speakers detected inside it. Click a filename to "
+        "jump straight to it.",
         "he": "בסרגל הצד הזה רשומים כל הקבצים באצווה, ולכל אחד מהם - "
-              "הדוברים שזוהו בו. לחיצה על שם קובץ קופצת אליו ישירות.",
+        "הדוברים שזוהו בו. לחיצה על שם קובץ קופצת אליו ישירות.",
     },
     "doc_tour_search_title": {"en": "Search", "he": "חיפוש"},
     "doc_tour_search_body": {
         "en": "Type here to search every turn in this recording. The "
-              "chevrons - or Enter and Shift+Enter - jump to the next or "
-              "previous match.",
+        "chevrons - or Enter and Shift+Enter - jump to the next or "
+        "previous match.",
         "he": "הקלידו כאן כדי לחפש בכל הפסקאות בהקלטה. החצים - או Enter "
-              "ו-Shift+Enter - עוברים להתאמה הבאה או הקודמת.",
+        "ו-Shift+Enter - עוברים להתאמה הבאה או הקודמת.",
     },
     "doc_tour_speakers_title": {"en": "Speaker names and colours", "he": "שמות וצבעי דוברים"},
     "doc_tour_speakers_body": {
         "en": "Rename a speaker here, or recolour them from the swatch "
-              "beside their name. Clicking a sentence's own speaker chip "
-              "reassigns just that sentence, or the whole block around it, "
-              "to someone else.",
+        "beside their name. Clicking a sentence's own speaker chip "
+        "reassigns just that sentence, or the whole block around it, "
+        "to someone else.",
         "he": "כאן אפשר לשנות את שם הדובר, או להחליף את צבעו דרך העיגול "
-              "הצבעוני שלצידו. לחיצה על תגית הדובר של משפט משייכת רק "
-              "אותו, או את כל הקטע שסביבו, לדובר אחר.",
+        "הצבעוני שלצידו. לחיצה על תגית הדובר של משפט משייכת רק "
+        "אותו, או את כל הקטע שסביבו, לדובר אחר.",
     },
     "doc_tour_playback_title": {"en": "Play a moment", "he": "השמעת רגע"},
     "doc_tour_playback_body": {
         "en": "Click a sentence's own timestamp to play the recording from "
-              "there - a small player appears, and stops again at the "
-              "sentence's own end.",
+        "there - a small player appears, and stops again at the "
+        "sentence's own end.",
         "he": "לחיצה על חותמת הזמן של משפט משמיעה את ההקלטה משם - נגן קטן "
-              "מופיע, ועוצר שוב בסוף אותו משפט.",
+        "מופיע, ועוצר שוב בסוף אותו משפט.",
     },
     "doc_tour_editing_title": {"en": "Editing the transcript", "he": "עריכת התמלול"},
     "doc_tour_editing_body": {
         "en": "Click into any turn's text to correct it directly. Changes "
-              "save automatically to this browser as you type.",
+        "save automatically to this browser as you type.",
         "he": "לחצו לתוך הטקסט של כל פסקה כדי לתקן אותו ישירות. השינויים "
-              "נשמרים אוטומטית בדפדפן תוך כדי ההקלדה.",
+        "נשמרים אוטומטית בדפדפן תוך כדי ההקלדה.",
     },
     "doc_tour_flags_title": {"en": "Show uncertain words", "he": "הצגת מילים לא ודאיות"},
     "doc_tour_flags_body": {
         "en": "This button highlights the words the model itself was "
-              "least sure about, so you know what's worth a second look.",
+        "least sure about, so you know what's worth a second look.",
         "he": "הכפתור הזה מדגיש את המילים שהמודל היה הכי פחות בטוח "
-              "לגביהן, כך שתדעו מה כדאי לבדוק שוב.",
+        "לגביהן, כך שתדעו מה כדאי לבדוק שוב.",
     },
     "doc_tour_export_title": {"en": "Save a copy", "he": "שמירת עותק"},
     "doc_tour_export_body": {
         "en": "This page can only save your edits to this browser "
-              "automatically. \"Save a copy\" is what actually writes them "
-              "into a real file you can keep or share.",
+        'automatically. "Save a copy" is what actually writes them '
+        "into a real file you can keep or share.",
         "he": "הדף הזה יכול לשמור את השינויים באופן אוטומטי רק בדפדפן. "
-              "\"שמירת עותק\" היא הפעולה שבאמת כותבת אותם לקובץ אמיתי "
-              "שאפשר לשמור או לשתף.",
+        '"שמירת עותק" היא הפעולה שבאמת כותבת אותם לקובץ אמיתי '
+        "שאפשר לשמור או לשתף.",
     },
-
     # --- Worker / thread progress messages (keys cross the process boundary) ---
     "w_starting_thread": {"en": "Starting...", "he": "מתחיל..."},
     "w_initializing": {"en": "Initializing...", "he": "מאתחל..."},
     "w_loading_model": {"en": "Loading {model} model...", "he": "טוען מודל {model}..."},
     "w_model_loaded": {"en": "Model loaded: {model}", "he": "המודל {model} נטען"},
-    "w_error_loading": {"en": "Error loading model: {detail}", "he": "שגיאה בטעינת המודל: {detail}"},
+    "w_error_loading": {
+        "en": "Error loading model: {detail}",
+        "he": "שגיאה בטעינת המודל: {detail}",
+    },
     "w_model_not_loaded": {"en": "Model not loaded", "he": "המודל לא נטען"},
     "w_starting": {"en": "Starting transcription...", "he": "מתחיל תמלול..."},
     "w_transcribing_time": {
         "en": "Transcribing audio... {position} / {total}",
         "he": "מתמלל אודיו... {position} / {total}",
     },
-    "w_transcribing_seg": {"en": "Transcribing audio... segment {n}", "he": "מתמלל אודיו... מקטע {n}"},
+    "w_transcribing_seg": {
+        "en": "Transcribing audio... segment {n}",
+        "he": "מתמלל אודיו... מקטע {n}",
+    },
     "w_transcription_done": {"en": "Transcription complete", "he": "התמלול הסתיים"},
     "w_analyzing_audio": {"en": "Analyzing audio...", "he": "מנתח את האודיו..."},
     "w_stereo_detected": {
@@ -553,8 +570,10 @@ STRINGS = {
     # Per-file status during a batch run. Opens with a Hebrew word in both
     # languages, so - like w_loading_model above - it needs no RLM anchor
     # even though {name} at the end is a filename.
-    "w_file_progress": {"en": "File {i}/{n}: {name}",
-                        "he": "קובץ {i} מתוך {n}: " + _LRI + "{name}" + _PDI},
+    "w_file_progress": {
+        "en": "File {i}/{n}: {name}",
+        "he": "קובץ {i} מתוך {n}: " + _LRI + "{name}" + _PDI,
+    },
     "w_formatting": {"en": "Formatting output...", "he": "מעצב את הפלט..."},
     "w_saving": {"en": "Saving output file...", "he": "שומר את קובץ הפלט..."},
     "w_complete": {"en": "Complete!", "he": "הושלם!"},
@@ -568,7 +587,6 @@ STRINGS = {
         "en": "Low-confidence result - retrying at a higher decoding temperature ({temp})...",
         "he": "תוצאה בביטחון נמוך - מנסה שוב בטמפרטורת פענוח גבוהה יותר ({temp})...",
     },
-
     # --- Errors surfaced in the GUI ---
     "err_load_model": {"en": "Failed to load transcription model", "he": "טעינת מודל התמלול נכשלה"},
     "err_transcription_failed": {"en": "Transcription failed", "he": "התמלול נכשל"},
@@ -589,11 +607,20 @@ STRINGS = {
 MODEL_STRINGS = {
     "tiny": {
         "name": {"en": "Tiny", "he": "Tiny"},
-        "description": {"en": "Ultra-fast, lowest quality", "he": "מהיר במיוחד, האיכות הנמוכה ביותר"},
+        "description": {
+            "en": "Ultra-fast, lowest quality",
+            "he": "מהיר במיוחד, האיכות הנמוכה ביותר",
+        },
         "pros": [
-            {"en": "✓ Fastest option (~30 min for 60-min audio)", "he": "✓ האפשרות המהירה ביותר (כ-30 דק' לשעת אודיו)"},
+            {
+                "en": "✓ Fastest option (~30 min for 60-min audio)",
+                "he": "✓ האפשרות המהירה ביותר (כ-30 דק' לשעת אודיו)",
+            },
             {"en": "✓ Minimal RAM (1 GB)", "he": "✓ זיכרון מינימלי (1 GB)"},
-            {"en": "✓ Good for: Quick rough drafts, testing", "he": "✓ מתאים לטיוטות מהירות ובדיקות"},
+            {
+                "en": "✓ Good for: Quick rough drafts, testing",
+                "he": "✓ מתאים לטיוטות מהירות ובדיקות",
+            },
         ],
         "cons": [
             {"en": "✗ Lowest accuracy", "he": "✗ הדיוק הנמוך ביותר"},
@@ -605,16 +632,25 @@ MODEL_STRINGS = {
     },
     "base": {
         "name": {"en": "Base", "he": "Base"},
-        "description": {"en": "Good balance of speed and quality", "he": "איזון טוב בין מהירות לאיכות"},
+        "description": {
+            "en": "Good balance of speed and quality",
+            "he": "איזון טוב בין מהירות לאיכות",
+        },
         "pros": [
             {"en": "✓ Reasonable speed (3-5 hours)", "he": "✓ מהירות סבירה (3-5 שעות)"},
             {"en": "✓ Moderate RAM (2 GB)", "he": "✓ זיכרון בינוני (2 GB)"},
-            {"en": "✓ Better than tiny, acceptable for casual use", "he": "✓ טוב מ-Tiny, מספיק לשימוש יומיומי"},
+            {
+                "en": "✓ Better than tiny, acceptable for casual use",
+                "he": "✓ טוב מ-Tiny, מספיק לשימוש יומיומי",
+            },
         ],
         "cons": [
             {"en": "✗ Moderate accuracy (some errors)", "he": "✗ דיוק בינוני (מעט שגיאות)"},
             {"en": "✗ Not ideal for Hebrew", "he": "✗ לא אידיאלי לעברית"},
-            {"en": "✗ Professional users may notice mistakes", "he": "✗ משתמשים מקצועיים יבחינו בטעויות"},
+            {
+                "en": "✗ Professional users may notice mistakes",
+                "he": "✗ משתמשים מקצועיים יבחינו בטעויות",
+            },
         ],
         "time_estimate": {"en": "~3-5 hours", "he": "כ-3-5 שעות"},
         "best_for": {"en": "Casual transcription", "he": "תמלול יומיומי"},
@@ -646,70 +682,108 @@ MODEL_STRINGS = {
         "cons": [
             {"en": "✗ Longer processing (~20-24 hours)", "he": "✗ עיבוד ממושך (כ-20-24 שעות)"},
             {"en": "✗ Requires 5 GB RAM", "he": "✗ דורש 5 GB זיכרון"},
-            {"en": "✗ Slower and less accurate on Hebrew than Ivrit Turbo",
-             "he": "✗ איטי ופחות מדויק בעברית מ-Ivrit Turbo"},
+            {
+                "en": "✗ Slower and less accurate on Hebrew than Ivrit Turbo",
+                "he": "✗ איטי ופחות מדויק בעברית מ-Ivrit Turbo",
+            },
         ],
         "time_estimate": {"en": "~20-24 hours", "he": "כ-20-24 שעות"},
         "best_for": {"en": "General-purpose transcription", "he": "תמלול כללי"},
     },
     "large": {
         "name": {"en": "Large", "he": "Large"},
-        "description": {"en": "Best general-purpose model, very slow",
-                        "he": "המודל הכללי הטוב ביותר, איטי מאוד"},
+        "description": {
+            "en": "Best general-purpose model, very slow",
+            "he": "המודל הכללי הטוב ביותר, איטי מאוד",
+        },
         "pros": [
-            {"en": "✓ Highest accuracy of the general-purpose models",
-             "he": "✓ הדיוק הגבוה ביותר מבין המודלים הכלליים"},
+            {
+                "en": "✓ Highest accuracy of the general-purpose models",
+                "he": "✓ הדיוק הגבוה ביותר מבין המודלים הכלליים",
+            },
             {"en": "✓ Handles mixed-language audio well", "he": "✓ מתמודד היטב עם אודיו רב-לשוני"},
             {"en": "✓ Fewest errors outside Hebrew", "he": "✓ הכי מעט שגיאות מחוץ לעברית"},
         ],
         "cons": [
             {"en": "✗ Very slow (40+ hours)", "he": "✗ איטי מאוד (מעל 40 שעות)"},
             {"en": "✗ High RAM requirement (8 GB)", "he": "✗ דרישת זיכרון גבוהה (8 GB)"},
-            {"en": "✗ May run out of memory on limited systems", "he": "✗ הזיכרון עלול להיגמר במערכות מוגבלות"},
-            {"en": "✗ Still trained mostly on non-Hebrew speech",
-             "he": "✗ אומן בעיקר על דיבור שאינו עברית"},
+            {
+                "en": "✗ May run out of memory on limited systems",
+                "he": "✗ הזיכרון עלול להיגמר במערכות מוגבלות",
+            },
+            {
+                "en": "✗ Still trained mostly on non-Hebrew speech",
+                "he": "✗ אומן בעיקר על דיבור שאינו עברית",
+            },
         ],
         "time_estimate": {"en": "~40+ hours", "he": "מעל כ-40 שעות"},
-        "best_for": {"en": "Mixed-language or non-Hebrew content", "he": "תוכן רב-לשוני או שאינו עברית"},
+        "best_for": {
+            "en": "Mixed-language or non-Hebrew content",
+            "he": "תוכן רב-לשוני או שאינו עברית",
+        },
     },
     "ivrit-turbo": {
         "name": {"en": "Ivrit Turbo", "he": "Ivrit Turbo"},
-        "description": {"en": "Hebrew-tuned, fast and accurate (recommended)",
-                        "he": "מותאם לעברית, מהיר ומדויק (מומלץ)"},
+        "description": {
+            "en": "Hebrew-tuned, fast and accurate (recommended)",
+            "he": "מותאם לעברית, מהיר ומדויק (מומלץ)",
+        },
         "pros": [
-            {"en": "✓ Trained specifically on Hebrew speech", "he": "✓ אומן במיוחד על דיבור בעברית"},
-            {"en": "✓ Far fewer misheard Hebrew words than any model above",
-             "he": "✓ הרבה פחות מילים שגויות בעברית מכל מודל שמעליו"},
-            {"en": "✓ Turbo decoder: faster than Medium despite being larger",
-             "he": "✓ מפענח Turbo: מהיר מ-Medium למרות שהוא גדול יותר"},
+            {
+                "en": "✓ Trained specifically on Hebrew speech",
+                "he": "✓ אומן במיוחד על דיבור בעברית",
+            },
+            {
+                "en": "✓ Far fewer misheard Hebrew words than any model above",
+                "he": "✓ הרבה פחות מילים שגויות בעברית מכל מודל שמעליו",
+            },
+            {
+                "en": "✓ Turbo decoder: faster than Medium despite being larger",
+                "he": "✓ מפענח Turbo: מהיר מ-Medium למרות שהוא גדול יותר",
+            },
             {"en": "✓ Best choice for Hebrew content", "he": "✓ הבחירה הטובה ביותר לתוכן בעברית"},
         ],
         "cons": [
-            {"en": "✗ One-time 1.6 GB download on first use",
-             "he": "✗ הורדה חד-פעמית של 1.6 GB בשימוש הראשון"},
+            {
+                "en": "✗ One-time 1.6 GB download on first use",
+                "he": "✗ הורדה חד-פעמית של 1.6 GB בשימוש הראשון",
+            },
             {"en": "✗ Requires 3 GB RAM", "he": "✗ דורש 3 GB זיכרון"},
-            {"en": "✗ Hebrew only - weaker on other languages than Large",
-             "he": "✗ עברית בלבד - חלש יותר משפות אחרות מ-Large"},
+            {
+                "en": "✗ Hebrew only - weaker on other languages than Large",
+                "he": "✗ עברית בלבד - חלש יותר משפות אחרות מ-Large",
+            },
         ],
         "time_estimate": {"en": "~8-12 hours", "he": "כ-8-12 שעות"},
         "best_for": {"en": "Hebrew transcription (RECOMMENDED)", "he": "תמלול בעברית (מומלץ)"},
     },
     "ivrit-large": {
         "name": {"en": "Ivrit Large", "he": "Ivrit Large"},
-        "description": {"en": "Hebrew-tuned, highest accuracy, slow",
-                        "he": "מותאם לעברית, הדיוק הגבוה ביותר, איטי"},
+        "description": {
+            "en": "Hebrew-tuned, highest accuracy, slow",
+            "he": "מותאם לעברית, הדיוק הגבוה ביותר, איטי",
+        },
         "pros": [
-            {"en": "✓ Most accurate Hebrew option available",
-             "he": "✓ האפשרות המדויקת ביותר לעברית"},
-            {"en": "✓ Best for critical or hard-to-hear recordings",
-             "he": "✓ הטוב ביותר להקלטות קריטיות או קשות לשמיעה"},
+            {
+                "en": "✓ Most accurate Hebrew option available",
+                "he": "✓ האפשרות המדויקת ביותר לעברית",
+            },
+            {
+                "en": "✓ Best for critical or hard-to-hear recordings",
+                "he": "✓ הטוב ביותר להקלטות קריטיות או קשות לשמיעה",
+            },
         ],
         "cons": [
-            {"en": "✗ One-time 3.1 GB download on first use",
-             "he": "✗ הורדה חד-פעמית של 3.1 GB בשימוש הראשון"},
+            {
+                "en": "✗ One-time 3.1 GB download on first use",
+                "he": "✗ הורדה חד-פעמית של 3.1 GB בשימוש הראשון",
+            },
             {"en": "✗ Very slow (40+ hours)", "he": "✗ איטי מאוד (מעל 40 שעות)"},
             {"en": "✗ High RAM requirement (8 GB)", "he": "✗ דרישת זיכרון גבוהה (8 GB)"},
-            {"en": "✗ Rarely worth it over Ivrit Turbo", "he": "✗ לרוב לא שווה את זה לעומת Ivrit Turbo"},
+            {
+                "en": "✗ Rarely worth it over Ivrit Turbo",
+                "he": "✗ לרוב לא שווה את זה לעומת Ivrit Turbo",
+            },
         ],
         "time_estimate": {"en": "~40+ hours", "he": "מעל כ-40 שעות"},
         "best_for": {"en": "Critical Hebrew content", "he": "תוכן קריטי בעברית"},
@@ -739,6 +813,7 @@ def is_rtl() -> bool:
 def layout_direction():
     """Qt layout direction matching the current UI language."""
     from PyQt5.QtCore import Qt
+
     return Qt.RightToLeft if is_rtl() else Qt.LeftToRight
 
 
@@ -753,8 +828,7 @@ def load_saved_language() -> str:
 
 
 def apply_saved_language(app) -> None:
-    """
-    Bootstrap the persisted UI language onto a fresh QApplication, before
+    """Bootstrap the persisted UI language onto a fresh QApplication, before
     any widget is built: loads the saved choice (English on first-ever
     launch), sets it without re-saving, and applies the matching app-wide
     layout direction. Called by every GUI entry point.
@@ -779,8 +853,7 @@ def set_language(lang: str, save: bool = True) -> None:
 
 
 def t(key: str, **fmt) -> str:
-    """
-    Translate a key in the current language, applying str.format params.
+    """Translate a key in the current language, applying str.format params.
     Falls back to English if the key has no entry for the current language,
     and to the bare key if it's unknown entirely (visible, but non-fatal).
     """
@@ -796,8 +869,7 @@ _DOC_PREFIX = "doc_"
 
 
 def document_strings() -> dict:
-    """
-    Every string the generated transcript page needs, in the current language.
+    """Every string the generated transcript page needs, in the current language.
 
     Returned with the "doc_" prefix stripped, because the keys the renderer
     and the page script (core/assets/js/) look up are the bare names - the prefix only exists to
@@ -806,16 +878,11 @@ def document_strings() -> dict:
     Placeholders are left unsubstituted on purpose: "Play from {t}" is filled
     in per turn by the renderer, which knows the timestamp.
     """
-    return {
-        key[len(_DOC_PREFIX):]: t(key)
-        for key in STRINGS
-        if key.startswith(_DOC_PREFIX)
-    }
+    return {key[len(_DOC_PREFIX) :]: t(key) for key in STRINGS if key.startswith(_DOC_PREFIX)}
 
 
 def format_duration(seconds: int, elide_zero: bool = True) -> str:
-    """
-    A duration in the current language: "1m 46s" / "1 דק' 46 שנ'".
+    """A duration in the current language: "1m 46s" / "1 דק' 46 שנ'".
 
     The same <60s / <1h / else ladder as
     hardware_detection._format_duration, and the same elide_zero meaning -

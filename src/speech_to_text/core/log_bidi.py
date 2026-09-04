@@ -1,5 +1,4 @@
-"""
-Logging glue for visual-order console output - see the module comment in
+"""Logging glue for visual-order console output - see the module comment in
 core/hebrew_text.py above to_visual_order() for why this exists at all.
 Kept separate from main.py so main.py stays wiring: which handler gets
 which formatter, not why.
@@ -13,8 +12,7 @@ from speech_to_text.core.hebrew_text import to_visual_order
 
 
 def visual_order_mode() -> str:
-    """
-    Resolve STT_LOG_BIDI to "visual" or "logical".
+    """Resolve STT_LOG_BIDI to "visual" or "logical".
 
     "auto" (the default) resolves to visual on a Windows console tty and to
     logical everywhere else: no Windows console implements the Unicode
@@ -31,8 +29,7 @@ def visual_order_mode() -> str:
 
 
 class VisualOrderFormatter(logging.Formatter):
-    """
-    A logging.Formatter that reorders each formatted line into visual order
+    """A logging.Formatter that reorders each formatted line into visual order
     before it reaches a non-bidi console. Applied per line, not to the
     whole formatted record as one blob, so a multi-line exception traceback
     is reordered line by line rather than as a single paragraph with the

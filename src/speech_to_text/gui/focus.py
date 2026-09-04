@@ -1,5 +1,4 @@
-"""
-Keyboard-vs-pointer focus-ring gate.
+"""Keyboard-vs-pointer focus-ring gate.
 
 Qt's `:focus` pseudo-state paints identically whether a widget got focus
 from a Tab key press, a mouse click, or nothing at all - including a fresh
@@ -34,8 +33,7 @@ PROPERTY = "kbdFocus"
 
 
 class KeyboardFocusTracker(QObject):
-    """
-    Install exactly once, on the QApplication instance (see
+    """Install exactly once, on the QApplication instance (see
     MainWindow.__init__). Mirrors bindKeyboardModality() from the HTML
     transcript almost line for line:
 
@@ -124,8 +122,7 @@ class KeyboardFocusTracker(QObject):
             self._set_property(new, True)
 
     def is_keyboard_active(self) -> bool:
-        """
-        Whether the most recent input was a keyboard press (Tab/Backtab)
+        """Whether the most recent input was a keyboard press (Tab/Backtab)
         rather than a mouse click - the same flag _on_focus_changed reads to
         decide whether to stamp PROPERTY on the widget actually gaining
         focus.
@@ -148,8 +145,7 @@ class KeyboardFocusTracker(QObject):
 
     @staticmethod
     def _set_property(widget, value: bool) -> None:
-        """
-        Restyle exactly the one widget whose focus state changed, not the
+        """Restyle exactly the one widget whose focus state changed, not the
         whole application - unpolish()/polish() forces Qt to re-evaluate
         that widget's QSS against its (now different) dynamic property,
         which a bare setProperty() call alone does not trigger a repaint

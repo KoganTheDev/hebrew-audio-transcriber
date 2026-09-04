@@ -51,7 +51,7 @@ is used instead of hanging - see _greedy_mapping.
 
 import itertools
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 # One reference or hypothesis utterance: (start, end, speaker_label).
 Turn = Tuple[float, float, str]
@@ -143,10 +143,14 @@ def compute_der(
     ref_speakers, hyp_speakers, matrix = _confusion_matrix(reference, hypothesis)
     mapping = _optimal_mapping(ref_speakers, hyp_speakers, matrix, max_brute_force_speakers)
 
-    boundaries = sorted({
-        *(t[0] for t in reference), *(t[1] for t in reference),
-        *(t[0] for t in hypothesis), *(t[1] for t in hypothesis),
-    })
+    boundaries = sorted(
+        {
+            *(t[0] for t in reference),
+            *(t[1] for t in reference),
+            *(t[0] for t in hypothesis),
+            *(t[1] for t in hypothesis),
+        }
+    )
 
     total_ref = 0.0
     missed = 0.0

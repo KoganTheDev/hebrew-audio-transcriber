@@ -1,5 +1,4 @@
-"""
-Wizard step indicator: the three-segment status strip shown between the
+"""Wizard step indicator: the three-segment status strip shown between the
 header and the stacked widget, naming where the user is in the
 Select File -> Choose Model -> Transcribe flow.
 
@@ -124,9 +123,7 @@ class StepIndicator(QFrame):
         """Repaint every segment for `step` being the current one."""
         self._current_step = step
         current_index = [s for s, _ in _STEP_LABELS].index(step)
-        for i, ((_, key), badge, text) in enumerate(
-            zip(_STEP_LABELS, self._badges, self._texts)
-        ):
+        for i, ((_, key), badge, text) in enumerate(zip(_STEP_LABELS, self._badges, self._texts)):
             if i < current_index:
                 self._paint_completed(badge, text, i, key)
             elif i == current_index:
@@ -155,7 +152,11 @@ class StepIndicator(QFrame):
 
     def _paint_completed(self, badge: QLabel, text: QLabel, index: int, key: str) -> None:
         badge.clear()
-        badge.setPixmap(svg_to_pixmap(ICONS["check"], _CHECK_ICON_SIZE, COLORS['success'], dpr=self.devicePixelRatioF()))
+        badge.setPixmap(
+            svg_to_pixmap(
+                ICONS["check"], _CHECK_ICON_SIZE, COLORS["success"], dpr=self.devicePixelRatioF()
+            )
+        )
         badge.setStyleSheet(
             f"background-color: transparent; border-radius: {_BADGE_RADIUS}px; "
             f"border: {theme.Border.CONTROL}px solid {COLORS['success']};"

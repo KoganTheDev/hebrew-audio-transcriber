@@ -17,7 +17,6 @@ from speech_to_text.core.formatting import (
     LRI,
     PDI,
     RLM,
-    Sentence,
     Turn,
     format_hhmmss,
     format_plain,
@@ -97,15 +96,17 @@ def _external_references(rendered):
 
 
 class TestTimeFormatting:
-
-    @pytest.mark.parametrize("seconds,expected", [
-        (0, "0:00:00"),
-        (5, "0:00:05"),
-        (83, "0:01:23"),
-        (3600, "1:00:00"),
-        (3725, "1:02:05"),
-        (36000, "10:00:00"),
-    ])
+    @pytest.mark.parametrize(
+        "seconds,expected",
+        [
+            (0, "0:00:00"),
+            (5, "0:00:05"),
+            (83, "0:01:23"),
+            (3600, "1:00:00"),
+            (3725, "1:02:05"),
+            (36000, "10:00:00"),
+        ],
+    )
     def test_hhmmss(self, seconds, expected):
         assert format_hhmmss(seconds) == expected
 
@@ -161,7 +162,6 @@ class TestBidi:
 
 
 class TestTurnMerging:
-
     def test_consecutive_close_segments_merge(self):
         turns = merge_turns([seg(0, 3, "אחד"), seg(3.5, 6, "שתיים")])
         assert len(turns) == 1
@@ -174,10 +174,12 @@ class TestTurnMerging:
         assert len(turns) == 2
 
     def test_speaker_change_splits_a_turn(self):
-        turns = merge_turns([
-            seg(0, 3, "אחד", speaker=0),
-            seg(3.2, 6, "שתיים", speaker=1),
-        ])
+        turns = merge_turns(
+            [
+                seg(0, 3, "אחד", speaker=0),
+                seg(3.2, 6, "שתיים", speaker=1),
+            ]
+        )
         assert len(turns) == 2
         assert [t.speaker for t in turns] == [0, 1]
 
@@ -248,7 +250,6 @@ class TestSentences:
 
 
 class TestFormatPlain:
-
     def test_empty_input(self):
         assert format_plain("") == ""
 
@@ -334,7 +335,7 @@ class TestRenderHtml:
         """
         out = render_html([doc("a.wav", [seg(83, 90)])])
         assert '<button type="button" class="ts" dir="ltr"' in out
-        assert f'{LRI}1:23 - 1:30{PDI}' in out
+        assert f"{LRI}1:23 - 1:30{PDI}" in out
 
     def test_timestamp_button_carries_both_playback_bounds(self):
         out = render_html([doc("a.wav", [seg(83, 90)])])
@@ -388,11 +389,14 @@ class TestRenderHtml:
         assert "<p>מה שלומך?</p>" in out
 
     def test_failed_document_renders_notice_and_surrounding_documents_still_render(self):
-        out = render_html([
-            doc("before.wav", [seg(0, 1, "אחד")]),
-            doc("broken.wav", [], failed=True),
-            doc("after.wav", [seg(0, 1, "שתיים")]),
-        ], failed_label="Transcription failed")
+        out = render_html(
+            [
+                doc("before.wav", [seg(0, 1, "אחד")]),
+                doc("broken.wav", [], failed=True),
+                doc("after.wav", [seg(0, 1, "שתיים")]),
+            ],
+            failed_label="Transcription failed",
+        )
         assert "<h1>before.wav</h1>" in out
         assert "<h1>broken.wav</h1>" in out
         assert "<h1>after.wav</h1>" in out
@@ -419,10 +423,15 @@ class TestRenderHtml:
         random.choice happening to run at all - the backdrop's url(...) is
         exercised either way once a vista exists on disk.
         """
-        out = render_html([
-            doc("a.wav", [seg(0, 1, speaker=0)]),
-            doc("b.wav", [seg(0, 1)], failed=True),
-        ], speaker_label="Speaker {n}", failed_label="failed", vista="vista-01.webp")
+        out = render_html(
+            [
+                doc("a.wav", [seg(0, 1, speaker=0)]),
+                doc("b.wav", [seg(0, 1)], failed=True),
+            ],
+            speaker_label="Speaker {n}",
+            failed_label="failed",
+            vista="vista-01.webp",
+        )
 
         loaders = _external_references(out)
         assert loaders == [], f"document would fetch: {loaders}"
@@ -438,7 +447,7 @@ class TestRenderHtml:
         # is not in its FETCHING attribute set, since a style attribute's
         # *value* pointing off-page is not the same shape of bug as an
         # href/src doing so, and needs its own check.
-        urls = re.findall(r'url\(\s*([^)]*?)\s*\)', out)
+        urls = re.findall(r"url\(\s*([^)]*?)\s*\)", out)
         assert urls, "expected at least one url(...) - the pinned backdrop"
         for raw in urls:
             value = raw.strip("'\"")
@@ -452,9 +461,18 @@ class TestDataPayload:
     """
 
     def test_low_confidence_words_are_published_with_probability(self):
-        segments = [seg(0, 4, "אחד שתיים שלוש", words=[
-            word("אחד", 0.99), word("שתיים", 0.30), word("שלוש", 0.95),
-        ])]
+        segments = [
+            seg(
+                0,
+                4,
+                "אחד שתיים שלוש",
+                words=[
+                    word("אחד", 0.99),
+                    word("שתיים", 0.30),
+                    word("שלוש", 0.95),
+                ],
+            )
+        ]
         data = payload(render_html([doc("a.wav", segments)]))
         assert data["low"]["0-0"] == [["שתיים", 0.3, 0]]
 
@@ -473,9 +491,18 @@ class TestDataPayload:
         The occurrence index is what stops a confident word being shaded just
         because an identical string elsewhere in the turn was doubted.
         """
-        segments = [seg(0, 4, "כן ודאי כן", words=[
-            word("כן", 0.99), word("ודאי", 0.97), word("כן", 0.20),
-        ])]
+        segments = [
+            seg(
+                0,
+                4,
+                "כן ודאי כן",
+                words=[
+                    word("כן", 0.99),
+                    word("ודאי", 0.97),
+                    word("כן", 0.20),
+                ],
+            )
+        ]
         data = payload(render_html([doc("a.wav", segments)]))
         assert data["low"]["0-0"] == [["כן", 0.2, 1]]
 
@@ -518,7 +545,6 @@ class TestDataPayload:
 
 
 class TestEditableDocument:
-
     def test_turn_bodies_are_editable_and_labelled(self):
         out = render_html([doc("a.wav", [seg(0, 1)])])
         assert 'contenteditable="true"' in out
@@ -533,6 +559,7 @@ class TestEditableDocument:
 
     def test_doc_id_is_stable_within_a_render_and_unique_between_them(self):
         """It keys the browser's saved edits, so a collision would cross-load them."""
+
         def doc_id_of(rendered):
             return re.search(r'data-doc-id="(\w+)"', rendered).group(1)
 
@@ -549,8 +576,11 @@ class TestEditableDocument:
         assert 'data-fallback="Speaker 1"' in out
 
     def test_speakers_strip_lists_each_speaker_once(self):
-        segments = [seg(0, 2, "a", speaker=0), seg(10, 12, "b", speaker=1),
-                    seg(20, 22, "c", speaker=0)]
+        segments = [
+            seg(0, 2, "a", speaker=0),
+            seg(10, 12, "b", speaker=1),
+            seg(20, 22, "c", speaker=0),
+        ]
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
         assert out.count('class="speaker-row"') == 2
 
@@ -561,7 +591,8 @@ class TestEditableDocument:
         removal, the mirror image of the count test this replaces.
         """
         segments = [
-            seg(0, 2, "a", speaker=0), seg(2.2, 4, "b", speaker=0),
+            seg(0, 2, "a", speaker=0),
+            seg(2.2, 4, "b", speaker=0),
             seg(10, 12, "c", speaker=1),
         ]
         out = render_html([doc("a.wav", segments)], speaker_label="Speaker {n}")
@@ -622,18 +653,24 @@ class TestEditableDocument:
             assert 'class="speaker-row"' not in section
 
     def test_first_files_speakers_panel_is_marked_active(self):
-        out = render_html([
-            doc("a.wav", [seg(0, 1, speaker=0)]),
-            doc("b.wav", [seg(0, 1, speaker=0)]),
-        ], speaker_label="Speaker {n}")
+        out = render_html(
+            [
+                doc("a.wav", [seg(0, 1, speaker=0)]),
+                doc("b.wav", [seg(0, 1, speaker=0)]),
+            ],
+            speaker_label="Speaker {n}",
+        )
         assert 'class="speakers active" data-file="0"' in out
         assert 'class="speakers" data-file="1"' in out
 
     def test_audio_is_referenced_relatively_and_only_for_usable_documents(self):
-        out = render_html([
-            doc("meeting.m4a", [seg(0, 1)]),
-            doc("broken.mkv", [], failed=True),
-        ], failed_label="failed")
+        out = render_html(
+            [
+                doc("meeting.m4a", [seg(0, 1)]),
+                doc("broken.mkv", [], failed=True),
+            ],
+            failed_label="failed",
+        )
         assert 'data-audio="meeting.m4a"' in out
         assert 'data-audio="broken.mkv"' not in out
 
@@ -708,7 +745,7 @@ class TestEditableDocument:
         assert row.startswith(f"{LRI}1{PDI}. ")
         # No second isolate at all with timestamps off - there is nothing
         # for it to wrap.
-        assert LRI not in row[len(f"{LRI}1{PDI}. "):]
+        assert LRI not in row[len(f"{LRI}1{PDI}. ") :]
 
     def test_file_bar_carries_filename_and_position(self):
         out = render_html([doc("a.wav", [seg(0, 1)]), doc("b.wav", [seg(0, 1)])])
@@ -738,12 +775,12 @@ class TestBubbles:
         assert re.search(
             r'<div class="bubble" data-line="0-0-0" data-turn="0-0"'
             r' data-start="0\.00" data-end="1\.00">'
-            r'<p>אחד\.</p>'
+            r"<p>אחד\.</p>"
             r'<button type="button" class="ts" dir="ltr" contenteditable="false"'
             r' aria-label="[^"]+">.*?</button>'
             r'<button class="icon-btn copy-line" aria-label="[^"]+"'
             r' contenteditable="false">.*?</button>'
-            r'</div>',
+            r"</div>",
             out,
         ), out
         # No sentence number on the bubble any more - it lives only in the
@@ -767,12 +804,14 @@ class TestBubbles:
         assert 'data-end="2.00"' in bubble
         assert 'data-speaker="0"' in bubble
         assert 'data-palette="0"' in bubble
-        chip = re.search(r'<button type="button" class="bubble-spk"[^>]*>.*?</button>', bubble, re.S)
+        chip = re.search(
+            r'<button type="button" class="bubble-spk"[^>]*>.*?</button>', bubble, re.S
+        )
         assert chip, bubble
         assert 'data-speaker="0"' in chip.group(0)
         assert '<span class="bubble-spk-label">Speaker 1</span>' in chip.group(0)
         assert '<button type="button" class="ts" dir="ltr"' in bubble
-        assert f'{LRI}0:00 - 0:02{PDI}' in bubble
+        assert f"{LRI}0:00 - 0:02{PDI}" in bubble
         assert 'class="icon-btn copy-line"' in bubble
 
     def test_bubble_timestamp_is_a_real_button(self):
@@ -823,7 +862,7 @@ class TestBubbles:
         out = render_html([doc("a.wav", [seg(0.0, 0.9, "אחד שתיים.", words=words)])])
         bubble = re.search(r'<div class="bubble".*?</div>', out, re.S).group(0)
         assert 'data-end="0.90"' in bubble
-        assert f'{LRI}0:00 - 0:01{PDI}' in bubble
+        assert f"{LRI}0:00 - 0:01{PDI}" in bubble
         assert "0:00 - 0:00" not in bubble
 
     def test_bubble_carries_its_own_span_not_the_turns(self):
@@ -870,7 +909,7 @@ class TestBubbles:
         # _render_plain_line_html()); nothing else on the page emits a
         # digit run isolated on its own, immediately followed by a literal
         # dot, so this pattern picks out only the plain-panel numbers.
-        plain_numbers = re.findall(f'{LRI}(\\d+){PDI}\\.', out)
+        plain_numbers = re.findall(f"{LRI}(\\d+){PDI}\\.", out)
         assert plain_numbers == ["1", "2", "3"]
 
     def test_sentence_numbers_continue_across_multiple_documents_worth_of_turns(self):
@@ -880,11 +919,13 @@ class TestBubbles:
         each file's plain-text panel and card set is its own self-contained
         unit a reader copies out independently.
         """
-        out = render_html([
-            doc("a.wav", [seg(0, 1, "אחד. שתיים.")]),
-            doc("b.wav", [seg(0, 1, "שלוש.")]),
-        ])
-        plain_numbers = re.findall(f'{LRI}(\\d+){PDI}\\.', out)
+        out = render_html(
+            [
+                doc("a.wav", [seg(0, 1, "אחד. שתיים.")]),
+                doc("b.wav", [seg(0, 1, "שלוש.")]),
+            ]
+        )
+        plain_numbers = re.findall(f"{LRI}(\\d+){PDI}\\.", out)
         assert plain_numbers == ["1", "2", "1"]
 
 
@@ -923,12 +964,15 @@ class TestHelpPanel:
         in TestDataPayload) - Hebrew supplied via ui_strings must actually
         appear in the panel, not the English fallback.
         """
-        out = render_html([doc("a.wav", [seg(0, 1)])], ui_strings={
-            "help": "עזרה",
-            "help_title": "עזרה",
-            "tour_start": "התחלת סיור מודרך",
-            "help_search_title": "חיפוש",
-        })
+        out = render_html(
+            [doc("a.wav", [seg(0, 1)])],
+            ui_strings={
+                "help": "עזרה",
+                "help_title": "עזרה",
+                "tour_start": "התחלת סיור מודרך",
+                "help_search_title": "חיפוש",
+            },
+        )
         assert "<span>עזרה</span>" in out
         assert '<h2 id="help-title">עזרה</h2>' in out
         assert '<button id="tour-start" class="tb-btn primary">התחלת סיור מודרך</button>' in out
@@ -973,9 +1017,16 @@ class TestDocStringsHaveBothLanguages:
     def test_every_doc_key_has_english_and_hebrew(self):
         from speech_to_text.gui.i18n import STRINGS
 
-        doc_keys = [key for key in STRINGS if key.startswith("doc_help") or key in (
-            "doc_help", "doc_tour_start",
-        )]
+        doc_keys = [
+            key
+            for key in STRINGS
+            if key.startswith("doc_help")
+            or key
+            in (
+                "doc_help",
+                "doc_tour_start",
+            )
+        ]
         assert doc_keys, "expected at least the new help-panel doc_ keys to exist"
         for key in doc_keys:
             entry = STRINGS[key]
@@ -985,7 +1036,6 @@ class TestDocStringsHaveBothLanguages:
 
 
 class TestInlinedAssets:
-
     def test_stylesheet_and_script_are_inlined(self):
         out = render_html([doc("a.wav", [seg(0, 1)])])
         assert "<style>" in out and "</style>" in out
@@ -997,6 +1047,7 @@ class TestInlinedAssets:
         them produces a silently broken document rather than an import error.
         """
         from speech_to_text.core.formatting.assets import _asset_dir
+
         assert "body {" in _asset_dir("css")
         assert "localStorage" in _asset_dir("js")
 
@@ -1065,7 +1116,7 @@ class TestVistaBackdrop:
         .backdrop rule and one behind the narrow-viewport media query.
         """
         out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
-        uris = re.findall(r'data:image/webp;base64,[A-Za-z0-9+/=]+', out)
+        uris = re.findall(r"data:image/webp;base64,[A-Za-z0-9+/=]+", out)
         assert len(uris) == 2
         assert uris[0] != uris[1]
 
@@ -1083,7 +1134,9 @@ class TestVistaBackdrop:
             out,
         )
 
-    def test_portrait_variants_are_excluded_from_random_vista_selection(self, monkeypatch, tmp_path):
+    def test_portrait_variants_are_excluded_from_random_vista_selection(
+        self, monkeypatch, tmp_path
+    ):
         """
         Regression guard for the single most likely bug in art-directed
         backdrops: _vista_names() globs *.webp, and once a "-portrait" file
@@ -1144,7 +1197,8 @@ class TestVistaBackdrop:
             (assets_dir / kind).mkdir()
             for fragment in sorted((real_assets / kind).iterdir()):
                 (assets_dir / kind / fragment.name).write_text(
-                    fragment.read_text(encoding="utf-8"), encoding="utf-8",
+                    fragment.read_text(encoding="utf-8"),
+                    encoding="utf-8",
                 )
 
         monkeypatch.setattr(formatting.assets, "_ASSETS", assets_dir)
@@ -1155,7 +1209,7 @@ class TestVistaBackdrop:
         try:
             out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
             assert 'class="backdrop"' in out
-            uris = re.findall(r'data:image/webp;base64,[A-Za-z0-9+/=]+', out)
+            uris = re.findall(r"data:image/webp;base64,[A-Za-z0-9+/=]+", out)
             assert len(uris) == 1
             # A live media-query rule, not just the phrase - transcript.css's
             # own explanatory comment (copied verbatim into <style>, like all
@@ -1163,7 +1217,8 @@ class TestVistaBackdrop:
             # name, so a bare substring check would false-positive on that
             # comment even with no second backdrop rule present.
             assert not re.search(
-                r"@media \(max-aspect-ratio: 3/4\) \{ \.backdrop", out,
+                r"@media \(max-aspect-ratio: 3/4\) \{ \.backdrop",
+                out,
             )
         finally:
             formatting._vista_names.cache_clear()
@@ -1207,8 +1262,14 @@ class TestRemovedIdentifiersNeverReappear:
         from speech_to_text.core.formatting.assets import _asset_dir
 
         js, css = _asset_dir("js"), _asset_dir("css")
-        for name in ("spk-locate", "spk-count", "stepSpeakerTurns", "speakerCycle",
-                     "refreshSpeakerCounts", "i-locate"):
+        for name in (
+            "spk-locate",
+            "spk-count",
+            "stepSpeakerTurns",
+            "speakerCycle",
+            "refreshSpeakerCounts",
+            "i-locate",
+        ):
             assert name not in js, f"{name} still in the transcript script"
         for name in ("spk-locate", "spk-count"):
             assert name not in css, f"{name} still in the transcript stylesheet"
@@ -1234,8 +1295,8 @@ class TestPlayPauseGlyph:
     def test_player_toggle_starts_on_the_play_glyph(self):
         out = render_html([doc("a.wav", [seg(0, 1)])])
         toggle = re.search(r'<button id="player-toggle".*?</button>', out, re.S).group(0)
-        assert '#i-play' in toggle
-        assert '#i-pause' not in toggle
+        assert "#i-play" in toggle
+        assert "#i-pause" not in toggle
 
     # The JS half - the glyph and aria-label actually swapping on the
     # audio element's own play/pause events - is now
@@ -1328,16 +1389,27 @@ class TestTourStrings:
         from speech_to_text.gui.i18n import STRINGS
 
         required = [
-            "doc_tour_start", "doc_tour_next", "doc_tour_back", "doc_tour_skip",
+            "doc_tour_start",
+            "doc_tour_next",
+            "doc_tour_back",
+            "doc_tour_skip",
             "doc_tour_step_position",
-            "doc_tour_file_title", "doc_tour_file_body",
-            "doc_tour_outline_title", "doc_tour_outline_body",
-            "doc_tour_search_title", "doc_tour_search_body",
-            "doc_tour_speakers_title", "doc_tour_speakers_body",
-            "doc_tour_playback_title", "doc_tour_playback_body",
-            "doc_tour_editing_title", "doc_tour_editing_body",
-            "doc_tour_flags_title", "doc_tour_flags_body",
-            "doc_tour_export_title", "doc_tour_export_body",
+            "doc_tour_file_title",
+            "doc_tour_file_body",
+            "doc_tour_outline_title",
+            "doc_tour_outline_body",
+            "doc_tour_search_title",
+            "doc_tour_search_body",
+            "doc_tour_speakers_title",
+            "doc_tour_speakers_body",
+            "doc_tour_playback_title",
+            "doc_tour_playback_body",
+            "doc_tour_editing_title",
+            "doc_tour_editing_body",
+            "doc_tour_flags_title",
+            "doc_tour_flags_body",
+            "doc_tour_export_title",
+            "doc_tour_export_body",
         ]
         for key in required:
             assert key in STRINGS, f"{key} missing from STRINGS"
@@ -1379,10 +1451,9 @@ class TestPlainPanelCheckboxesMatchTheRender:
 
     def test_speaker_checkbox_follows_whether_a_speaker_label_was_given(self):
         without = markup(render_html([doc("a.wav", [seg(0, 1, "אחד.", speaker=0)])]))
-        assert "checked" not in re.search(
-            r'<input[^>]*class="opt-spk"[^>]*>', without).group(0)
+        assert "checked" not in re.search(r'<input[^>]*class="opt-spk"[^>]*>', without).group(0)
 
-        with_label = markup(render_html(
-            [doc("a.wav", [seg(0, 1, "אחד.", speaker=0)])], speaker_label="Speaker {n}"))
-        assert "checked" in re.search(
-            r'<input[^>]*class="opt-spk"[^>]*>', with_label).group(0)
+        with_label = markup(
+            render_html([doc("a.wav", [seg(0, 1, "אחד.", speaker=0)])], speaker_label="Speaker {n}")
+        )
+        assert "checked" in re.search(r'<input[^>]*class="opt-spk"[^>]*>', with_label).group(0)

@@ -1,5 +1,4 @@
-"""
-Settings for one transcription run.
+"""Settings for one transcription run.
 
 Bundled into a dataclass rather than passed as a growing list of positional
 arguments to run_transcription_process, which has to be forwarded verbatim
@@ -69,8 +68,7 @@ class TranscriptionOptions:
 
     @property
     def total_duration(self) -> float:
-        """
-        Sum of every input file's duration - one place for arithmetic that
+        """Sum of every input file's duration - one place for arithmetic that
         used to read a single audio_duration_seconds, now spread across a
         batch (progress rescaling in core/worker.py, the model-time
         recommendation in the GUI).

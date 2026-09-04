@@ -1,9 +1,7 @@
-"""
-Audio file utilities for the Speech-to-Text Transcriber GUI.
-"""
+"""Audio file utilities for the Speech-to-Text Transcriber GUI."""
 
-import os
 import logging
+import os
 
 from speech_to_text import config
 
@@ -11,8 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_audio_duration(file_path: str) -> int:
-    """
-    Get the real audio/video duration in seconds by reading container
+    """Get the real audio/video duration in seconds by reading container
     metadata - not an estimate.
 
     Uses PyAV (the 'av' package), which is already a required dependency of
@@ -25,6 +22,7 @@ def get_audio_duration(file_path: str) -> int:
     """
     try:
         import av
+
         container = av.open(file_path)
         try:
             if container.duration is not None:
@@ -49,6 +47,6 @@ def get_audio_duration(file_path: str) -> int:
     estimated_seconds = int(file_size_mb * 60 * config.AUDIO_MINUTES_PER_100MB)
     logger.warning(
         f"Using ESTIMATED duration (file could not be probed): "
-        f"{estimated_seconds}s ({estimated_seconds//60}m {estimated_seconds%60}s)"
+        f"{estimated_seconds}s ({estimated_seconds // 60}m {estimated_seconds % 60}s)"
     )
     return estimated_seconds

@@ -53,11 +53,13 @@ def edit_distance(reference: List[str], hypothesis: List[str]) -> int:
     for i, hyp in enumerate(hypothesis, start=1):
         current = [i]
         for j, ref in enumerate(reference, start=1):
-            current.append(min(
-                previous[j] + 1,              # deletion
-                current[j - 1] + 1,           # insertion
-                previous[j - 1] + (ref != hyp),  # substitution
-            ))
+            current.append(
+                min(
+                    previous[j] + 1,  # deletion
+                    current[j - 1] + 1,  # insertion
+                    previous[j - 1] + (ref != hyp),  # substitution
+                )
+            )
         previous = current
     return previous[-1]
 

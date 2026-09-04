@@ -1,5 +1,4 @@
-"""
-Shared Hebrew text handling.
+"""Shared Hebrew text handling.
 
 Both the correction pass (core/hebrew_correct.py) and the evaluation metrics
 (tests/eval/hebrew_metrics.py) need to decide when two spellings are "the same
@@ -77,8 +76,7 @@ _HAS_HEBREW = re.compile(r"[֐-׿]")
 
 
 def isolate_rtl(text: str) -> str:
-    """
-    Wrap text in an RTL isolate (RLI...PDI) if it contains Hebrew.
+    """Wrap text in an RTL isolate (RLI...PDI) if it contains Hebrew.
 
     Meant for interpolating raw Hebrew text into an otherwise-LTR line, such
     as a log message - see the module comment above for why the isolate is
@@ -108,20 +106,25 @@ def isolate_rtl(text: str) -> str:
 # it, get_display() from python-bidi is a drop-in replacement for the body
 # below.
 MIRROR_PAIRS = {
-    "(": ")", ")": "(",
-    "[": "]", "]": "[",
-    "{": "}", "}": "{",
-    "<": ">", ">": "<",
-    "«": "»", "»": "«",
-    "‹": "›", "›": "‹",
+    "(": ")",
+    ")": "(",
+    "[": "]",
+    "]": "[",
+    "{": "}",
+    "}": "{",
+    "<": ">",
+    ">": "<",
+    "«": "»",
+    "»": "«",
+    "‹": "›",
+    "›": "‹",
 }
 
 _ISOLATE_SPAN = re.compile(f"{RLI}(.*?){PDI}", re.DOTALL)
 
 
 def _bidi_class(ch: str) -> str:
-    """
-    Collapse unicodedata's bidi categories to the three that drive run
+    """Collapse unicodedata's bidi categories to the three that drive run
     detection: strong RTL, strong LTR, everything else neutral. This
     deliberately puts digits (EN/AN) in the neutral bucket - they only
     start counting as "keep reading left to right" once already inside an
@@ -140,8 +143,7 @@ def _is_ltr_or_digit(ch: str) -> bool:
 
 
 def _find_rtl_runs(text):
-    """
-    Locate maximal RTL runs in `text` under an LTR paragraph - UBA rules
+    """Locate maximal RTL runs in `text` under an LTR paragraph - UBA rules
     N1/N2: a neutral run flanked by strong RTL on both sides resolves to
     RTL, but a neutral run touching LTR text or a line boundary resolves to
     the paragraph direction (LTR here) instead and is left where it is.
@@ -179,8 +181,7 @@ def _find_rtl_runs(text):
 
 
 def _reverse_run(run_text: str) -> str:
-    """
-    Reverse one RTL run into visual order. Embedded Latin words and numbers
+    """Reverse one RTL run into visual order. Embedded Latin words and numbers
     (strong-LTR or digit characters, contiguous) are re-reversed after the
     whole-run reversal so they still read left-to-right at their mirrored
     position, and paired punctuation is swapped via MIRROR_PAIRS - Python's
@@ -225,8 +226,7 @@ def _reorder_plain(chunk: str) -> str:
 
 
 def to_visual_order(text: str) -> str:
-    """
-    Reorder one logical-order log line into the visual order a plain,
+    """Reorder one logical-order log line into the visual order a plain,
     non-bidi console needs - see the module comment above for why this is
     necessary at all. Honours isolate_rtl()'s RLI...PDI spans as whole RTL
     runs first: that is the point of isolating rather than stripping - the
@@ -250,7 +250,7 @@ def to_visual_order(text: str) -> str:
     out = []
     pos = 0
     for match in _ISOLATE_SPAN.finditer(text):
-        out.append(_reorder_plain(text[pos:match.start()]))
+        out.append(_reorder_plain(text[pos : match.start()]))
         out.append(_reverse_run(match.group(1)))
         pos = match.end()
     out.append(_reorder_plain(text[pos:]))

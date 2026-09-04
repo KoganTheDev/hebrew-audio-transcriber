@@ -1,5 +1,4 @@
-"""
-Targeted correction of misrecognised Hebrew words.
+"""Targeted correction of misrecognised Hebrew words.
 
 The obvious version of this idea - look up every word in a Hebrew dictionary
 and replace anything unknown with its nearest neighbour - makes transcripts
@@ -39,7 +38,8 @@ does not fix general Hebrew misrecognition - only a better model does that.
 import logging
 import os
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Dict, List, Optional, Tuple
 
 from speech_to_text.core.hebrew_text import CLITICS, normalize_word
 from speech_to_text.core.segments import Segment
@@ -93,8 +93,7 @@ for _group, _cost in _CONFUSION_GROUPS:
 
 
 def strip_clitics(word: str) -> Tuple[str, str]:
-    """
-    Split leading prefix letters off a word.
+    """Split leading prefix letters off a word.
 
     Returns (prefix, stem). A letter is only stripped if at least four letters
     remain afterwards: below that the "prefix" is far more likely to be part of
@@ -105,18 +104,13 @@ def strip_clitics(word: str) -> Tuple[str, str]:
     tries the unstripped word as well and keeps whichever matches better.
     """
     index = 0
-    while (
-        index < len(word)
-        and word[index] in CLITICS
-        and len(word) - index > 4
-    ):
+    while index < len(word) and word[index] in CLITICS and len(word) - index > 4:
         index += 1
     return word[:index], word[index:]
 
 
 def clitic_splits(word: str) -> List[Tuple[str, str]]:
-    """
-    Every plausible way to divide a word into prefix + stem.
+    """Every plausible way to divide a word into prefix + stem.
 
     Returns [("", word), (word[:1], word[1:]), ...] up to the maximum strip.
 
@@ -132,8 +126,7 @@ def clitic_splits(word: str) -> List[Tuple[str, str]]:
 
 
 def weighted_distance(a: str, b: str, cutoff: Optional[float] = None) -> float:
-    """
-    Levenshtein distance with Hebrew-aware substitution costs.
+    """Levenshtein distance with Hebrew-aware substitution costs.
 
     Insertions and deletions cost 1.0; substitutions cost less when the two
     letters are commonly confused. `cutoff` allows early exit once every cell
@@ -150,14 +143,16 @@ def weighted_distance(a: str, b: str, cutoff: Optional[float] = None) -> float:
     for i, char_b in enumerate(b, start=1):
         current = [float(i)]
         for j, char_a in enumerate(a, start=1):
-            substitution = 0.0 if char_a == char_b else _SUBSTITUTION_COST.get(
-                (char_a, char_b), 1.0
+            substitution = (
+                0.0 if char_a == char_b else _SUBSTITUTION_COST.get((char_a, char_b), 1.0)
             )
-            current.append(min(
-                previous[j] + 1.0,
-                current[j - 1] + 1.0,
-                previous[j - 1] + substitution,
-            ))
+            current.append(
+                min(
+                    previous[j] + 1.0,
+                    current[j - 1] + 1.0,
+                    previous[j - 1] + substitution,
+                )
+            )
         if cutoff is not None and min(current) > cutoff:
             return cutoff + 1.0
         previous = current
@@ -178,8 +173,7 @@ class TermList:
 
     @classmethod
     def load(cls, path: str) -> "TermList":
-        """
-        Read a term list, one entry per line. Missing file means an empty list,
+        """Read a term list, one entry per line. Missing file means an empty list,
         which makes the whole correction pass a no-op - the intended default.
         """
         if not os.path.exists(path):
@@ -188,8 +182,7 @@ class TermList:
         try:
             with open(path, encoding="utf-8") as handle:
                 lines = [
-                    line for line in handle
-                    if line.strip() and not line.lstrip().startswith("#")
+                    line for line in handle if line.strip() and not line.lstrip().startswith("#")
                 ]
             terms = cls(lines)
             logger.info(f"Loaded {len(terms)} Hebrew correction term(s) from {path}")
@@ -199,8 +192,7 @@ class TermList:
             return cls([])
 
     def best_match(self, word: str) -> Optional[Tuple[str, float, float]]:
-        """
-        Find the term this word was most likely meant to be.
+        """Find the term this word was most likely meant to be.
 
         Returns (term, distance, margin) or None when nothing is close enough
         or the choice is ambiguous.
@@ -253,8 +245,7 @@ def correct(
     terms: TermList,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
 ) -> List[Tuple[str, str, float]]:
-    """
-    Correct low-confidence words against the term list, in place.
+    """Correct low-confidence words against the term list, in place.
 
     Returns the list of (original, replacement, confidence) substitutions made,
     which the caller logs. Every change being auditable is not optional here:
@@ -278,7 +269,7 @@ def correct(
             # Whitespace is attached to words by faster-whisper; keep it so the
             # rebuilt segment text spaces correctly.
             leading = word.text[: len(word.text) - len(word.text.lstrip())]
-            trailing = word.text[len(word.text.rstrip()):]
+            trailing = word.text[len(word.text.rstrip()) :]
             bare = word.text.strip()
 
             if not _HEBREW_WORD.match(normalize_word(bare)):

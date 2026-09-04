@@ -1,5 +1,4 @@
-"""
-Painted checkbox indicator - replaces the QSS raster tick.
+"""Painted checkbox indicator - replaces the QSS raster tick.
 
 Why this exists instead of a QSS `image: url(...)` rule (which is what
 theme.app_stylesheet() used to draw the tick with, and what this module's
@@ -42,8 +41,7 @@ from speech_to_text.gui.theme import COLORS, Border, Radius
 
 
 class PaintedCheckboxStyle(QProxyStyle):
-    """
-    Draws QCheckBox's indicator (border, fill, tick) itself instead of
+    """Draws QCheckBox's indicator (border, fill, tick) itself instead of
     deferring to the platform style plus a QSS `image:` overlay.
 
     Installed once on the QApplication in main_window.configure_application,

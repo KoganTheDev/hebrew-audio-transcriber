@@ -2,25 +2,33 @@
 
 import fnmatch
 import glob
-import os
 import logging
+import os
 from typing import Dict, List
 
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QFileDialog, QFrame, QPushButton, QScrollArea, QSizePolicy,
-)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from PyQt5.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from speech_to_text import config
-from speech_to_text.hardware_detection import HardwareDetector
 from speech_to_text.gui import theme
-from speech_to_text.gui.i18n import t
-from speech_to_text.gui.theme import COLORS, Fonts, Spacing
-from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.audio_utils import get_audio_duration
+from speech_to_text.gui.i18n import t
+from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.widgets import DropZone
+from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
@@ -117,15 +125,21 @@ class FileSelectStep(QFrame):
 
         drop_layout = QVBoxLayout(self.drop_zone)
         drop_layout.setSpacing(config.GUI_DROP_ZONE_SPACING)
-        drop_layout.setContentsMargins(config.GUI_DROP_ZONE_PADDING, config.GUI_DROP_ZONE_PADDING,
-                                        config.GUI_DROP_ZONE_PADDING, config.GUI_DROP_ZONE_PADDING)
+        drop_layout.setContentsMargins(
+            config.GUI_DROP_ZONE_PADDING,
+            config.GUI_DROP_ZONE_PADDING,
+            config.GUI_DROP_ZONE_PADDING,
+            config.GUI_DROP_ZONE_PADDING,
+        )
 
         # Folder icon. The pixmap itself is still rasterized at a fixed
         # 48px (svg_to_pixmap's `size` arg controls the actual glyph, not
         # this label's box), so no maximumHeight is needed here - a QLabel
         # showing nothing but a pixmap already sizes to that pixmap.
         icon_label = QLabel()
-        icon_pixmap = svg_to_pixmap(ICONS["folder"], 48, COLORS['accent'], dpr=self.devicePixelRatioF())
+        icon_pixmap = svg_to_pixmap(
+            ICONS["folder"], 48, COLORS["accent"], dpr=self.devicePixelRatioF()
+        )
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
         icon_label.setAlignment(Qt.AlignCenter)
@@ -271,8 +285,7 @@ class FileSelectStep(QFrame):
 
     @staticmethod
     def _is_supported_file(path: str) -> bool:
-        """
-        Whether `path` matches one of config.SUPPORTED_FORMATS' glob
+        """Whether `path` matches one of config.SUPPORTED_FORMATS' glob
         patterns ("*.mp3", not a bare ".mp3" - see that constant's
         docstring), by filename rather than by opening the file. Used to
         filter a file dropped directly onto the zone; _expand_directory
@@ -284,8 +297,7 @@ class FileSelectStep(QFrame):
 
     @staticmethod
     def _expand_directory(dir_path: str) -> List[str]:
-        """
-        A dropped folder expands to the supported audio directly inside it -
+        """A dropped folder expands to the supported audio directly inside it -
         non-recursive (a subfolder of unrelated files shouldn't silently get
         pulled in) and sorted (so batch order is predictable and reproducible
         rather than whatever the filesystem happens to hand back).
@@ -331,7 +343,11 @@ class FileSelectStep(QFrame):
         row_layout.setSpacing(Spacing.XS)
 
         icon = QLabel()
-        icon.setPixmap(svg_to_pixmap(ICONS["check_circle"], 16, COLORS['success'], dpr=self.devicePixelRatioF()))
+        icon.setPixmap(
+            svg_to_pixmap(
+                ICONS["check_circle"], 16, COLORS["success"], dpr=self.devicePixelRatioF()
+            )
+        )
         icon.setStyleSheet("background: transparent;")
         icon.setFixedSize(16, 16)
         row_layout.addWidget(icon)
@@ -350,15 +366,19 @@ class FileSelectStep(QFrame):
         # retranslate() already funnel through) disambiguates which row's
         # button this is once more than one file is queued.
         remove_btn = QPushButton()
-        remove_btn.setIcon(QIcon(svg_to_pixmap(ICONS["x"], 14, COLORS['text_tertiary'], dpr=self.devicePixelRatioF())))
+        remove_btn.setIcon(
+            QIcon(
+                svg_to_pixmap(ICONS["x"], 14, COLORS["text_tertiary"], dpr=self.devicePixelRatioF())
+            )
+        )
         remove_btn.setFixedSize(20, 20)
         remove_btn.setCursor(Qt.PointingHandCursor)
         remove_btn.setFocusPolicy(Qt.StrongFocus)
-        hover_bg = COLORS['bg_tertiary']
+        hover_bg = COLORS["bg_tertiary"]
         remove_btn.setStyleSheet(
             "QPushButton { background: transparent; border: none; }"
             f"QPushButton:hover {{ background-color: {hover_bg}; border-radius: 4px; }}"
-            f"QPushButton[kbdFocus=\"true\"] {{ background-color: {hover_bg}; border-radius: 4px; "
+            f'QPushButton[kbdFocus="true"] {{ background-color: {hover_bg}; border-radius: 4px; '
             f"border: 1px solid {COLORS['focus']}; }}"
         )
         remove_btn.clicked.connect(lambda: self._remove_file(path))
@@ -386,13 +406,15 @@ class FileSelectStep(QFrame):
         duration = self._durations[path]
         size_mb = os.path.getsize(path) / (1024 * 1024)
         filename = os.path.basename(path)
-        label.setText(t(
-            "file_info",
-            filename=filename,
-            minutes=duration // 60,
-            seconds=duration % 60,
-            size=f"{size_mb:.1f}",
-        ))
+        label.setText(
+            t(
+                "file_info",
+                filename=filename,
+                minutes=duration // 60,
+                seconds=duration % 60,
+                size=f"{size_mb:.1f}",
+            )
+        )
         remove_btn = row.layout().itemAt(2).widget()
         remove_label = t("remove_file", filename=filename)
         remove_btn.setAccessibleName(remove_label)
@@ -411,8 +433,7 @@ class FileSelectStep(QFrame):
         self.files_selected.emit(list(self.selected_files), self.total_duration)
 
     def _sync_rows_height(self) -> None:
-        """
-        Give the scrolled container an explicit minimum height matching the
+        """Give the scrolled container an explicit minimum height matching the
         rows it holds.
 
         A setMinimumHeight on each row is not enough on its own.
@@ -464,8 +485,10 @@ class FileSelectStep(QFrame):
             # skipped" already answers the question a vanished file would
             # otherwise raise silently.
             skipped = len(self._skipped_last_drop)
-            text = text + " " + t(
-                "files_skipped" if skipped != 1 else "files_skipped_one", count=skipped
+            text = (
+                text
+                + " "
+                + t("files_skipped" if skipped != 1 else "files_skipped_one", count=skipped)
             )
         self.summary_label.setText(text)
 
@@ -485,8 +508,7 @@ class FileSelectStep(QFrame):
         self._last_tab_widget = self.drop_zone
 
     def showEvent(self, event) -> None:
-        """
-        Seed a sensible Tab starting point whenever this step becomes
+        """Seed a sensible Tab starting point whenever this step becomes
         visible: the drop zone, since it's both the first thing on the page
         and, on a fresh run, the only way to make any progress at all (see
         DropZone's docstring in gui/widgets.py).
@@ -536,14 +558,14 @@ class FileSelectStep(QFrame):
         # a divider line, and vertical divider lines between cells - a real
         # row/column grid rather than plain text spread across a bare card.
         hw_info = self.hardware.get_hardware_info()
-        self._hw_has_gpu = hw_info['has_gpu']
-        gpu_text = hw_info['gpu_name'] if hw_info['has_gpu'] else t("hw_no_gpu")
+        self._hw_has_gpu = hw_info["has_gpu"]
+        gpu_text = hw_info["gpu_name"] if hw_info["has_gpu"] else t("hw_no_gpu")
         # Header labels are keyed by i18n key so retranslate() can re-render
         # them; the GPU value cell is also tracked because "No GPU" is text.
         self._hw_header_labels = {}
         self._hw_gpu_value_label = None
         columns = [
-            ("hw_cpu_cores", str(hw_info['cpu_cores'])),
+            ("hw_cpu_cores", str(hw_info["cpu_cores"])),
             ("hw_ram", f"{hw_info['ram_gb']} GB"),
             ("hw_gpu", gpu_text),
         ]

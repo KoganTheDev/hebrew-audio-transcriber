@@ -29,9 +29,9 @@ from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
+
 def _model_is_downloaded(repo: str) -> bool:
-    """
-    Best-effort guess at whether `repo` already sits in faster-whisper's
+    """Best-effort guess at whether `repo` already sits in faster-whisper's
     local download cache, so a model card can skip warning about a
     download that has already happened.
 
@@ -93,12 +93,12 @@ class ModelSelectStep(QFrame):
         # would have left every card reading "Est: 1m 46s" in a Hebrew UI.
         self._time_secs = {}
         self._name_labels = {}  # model_name -> QLabel showing the model name
-        self._cards = {}        # model_name -> QFrame card
+        self._cards = {}  # model_name -> QFrame card
         self._radio_cards = {}  # QRadioButton -> its own QFrame card, for
         # _sync_card_focus_ring below - see that method's docstring for why
         # the card (not the radio Qt actually focuses) needs its own
         # keyboard-focus ring.
-        self._badges = {}       # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
+        self._badges = {}  # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
         # Computed once at construction, not re-checked per card render: a
         # download completing mid-session (this app's own transcription run
         # is the only thing that would trigger one) is already covered by a
@@ -109,10 +109,10 @@ class ModelSelectStep(QFrame):
         self._downloaded = {
             name: _model_is_downloaded(info["repo"]) for name, info in config.MODELS.items()
         }
-        self._error_key = None      # (key, params) of the last shown error, for retranslation
+        self._error_key = None  # (key, params) of the last shown error, for retranslation
         self._error_params = {}
         self._user_touched_model = False  # True once the user manually picks a model
-        self._syncing = False   # True while we're programmatically re-checking a radio
+        self._syncing = False  # True while we're programmatically re-checking a radio
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
         layout = QVBoxLayout(self)
@@ -145,14 +145,20 @@ class ModelSelectStep(QFrame):
         # panel's default: the banner is a slim single-line strip, not a
         # big centered block, so a shadow as strong as the result panel's
         # would read as heavier than the banner's own visual weight.
-        self.error_banner.setGraphicsEffect(theme.elevation_shadow(blur_radius=20, y_offset=6, alpha=110))
+        self.error_banner.setGraphicsEffect(
+            theme.elevation_shadow(blur_radius=20, y_offset=6, alpha=110)
+        )
         self.error_banner.hide()
         error_layout = QHBoxLayout(self.error_banner)
         error_layout.setContentsMargins(Spacing.SM, Spacing.XS, Spacing.SM, Spacing.XS)
         error_layout.setSpacing(Spacing.XS)
 
         error_icon = QLabel()
-        error_icon.setPixmap(svg_to_pixmap(ICONS["alert_triangle"], 16, COLORS['error'], dpr=self.devicePixelRatioF()))
+        error_icon.setPixmap(
+            svg_to_pixmap(
+                ICONS["alert_triangle"], 16, COLORS["error"], dpr=self.devicePixelRatioF()
+            )
+        )
         error_icon.setStyleSheet("background: transparent;")
         error_layout.addWidget(error_icon)
 
@@ -228,8 +234,7 @@ class ModelSelectStep(QFrame):
 
         for i, model_name in enumerate(config.MODELS):
             model_card = self._create_model_card(
-                i, model_name,
-                is_recommended=(model_name == recommended_model)
+                i, model_name, is_recommended=(model_name == recommended_model)
             )
             models_layout.addWidget(model_card)
 
@@ -259,8 +264,7 @@ class ModelSelectStep(QFrame):
         self.setTabOrder(self.identify_speakers_check, self.speaker_count_spin)
 
     def _build_speaker_row(self) -> QFrame:
-        """
-        The "identify speakers" toggle and speaker count.
+        """The "identify speakers" toggle and speaker count.
 
         Sits below the model list because it applies to the run as a whole
         rather than to any one model. The count is a spin box rather than free
@@ -373,8 +377,7 @@ class ModelSelectStep(QFrame):
         return self.speaker_count_spin.value()
 
     def show_error(self, key: str, params: dict) -> None:
-        """
-        Show an inline failure banner (used instead of a modal popup).
+        """Show an inline failure banner (used instead of a modal popup).
         Takes an i18n key + params (see TranscriptionThread.error) so the
         banner can be re-rendered if the language is toggled while shown.
         """
@@ -399,8 +402,7 @@ class ModelSelectStep(QFrame):
                 self._user_touched_model = True
 
     def _apply_selection(self, name: str) -> None:
-        """
-        Move the accent border to whichever card's radio is currently picked.
+        """Move the accent border to whichever card's radio is currently picked.
 
         Tried and dropped: a drop shadow on the selected card, matching the
         result panel's. Screenshotted it (see the redesign notes) and it
@@ -413,11 +415,12 @@ class ModelSelectStep(QFrame):
         carries "this one is selected" here.
         """
         for card_name, card in self._cards.items():
-            card.setStyleSheet(theme.card_qss(f"modelCard_{card_name}", selected=(card_name == name)))
+            card.setStyleSheet(
+                theme.card_qss(f"modelCard_{card_name}", selected=(card_name == name))
+            )
 
     def _info_note(self, name: str) -> str:
-        """
-        RAM (always) plus, for a model not yet cached locally, the full
+        """RAM (always) plus, for a model not yet cached locally, the full
         "not downloaded yet" sentence - the words the caption's terse
         "↓ {size}" arrow (see _desc_text) doesn't have room to spell out.
         Shared by the card's tooltip and the radio's accessible description
@@ -459,7 +462,9 @@ class ModelSelectStep(QFrame):
         # text - see _desc_text's comment on why: RAM applies to every card,
         # always, and the caption doesn't have room to spell either out in
         # full for all seven without overflowing.
-        radio.setAccessibleDescription(model_text(name, "description") + ". " + self._info_note(name))
+        radio.setAccessibleDescription(
+            model_text(name, "description") + ". " + self._info_note(name)
+        )
         self.model_group.addButton(radio, idx)
         self.model_radios[name] = radio
         # The card frame, not the radio, has to show the keyboard-focus ring
@@ -539,8 +544,7 @@ class ModelSelectStep(QFrame):
         return card
 
     def eventFilter(self, obj, event):
-        """
-        Watches every model radio's own FocusIn/FocusOut (installed in
+        """Watches every model radio's own FocusIn/FocusOut (installed in
         _create_model_card), so the surrounding card can react to a focus
         change that lands on its child rather than on itself - see
         _sync_card_focus_ring for why that indirection is needed at all.
@@ -560,8 +564,7 @@ class ModelSelectStep(QFrame):
         return super().eventFilter(obj, event)
 
     def _sync_container_width(self) -> None:
-        """
-        Keep the scrolled card container exactly as wide as the viewport.
+        """Keep the scrolled card container exactly as wide as the viewport.
 
         Only the width: the height stays whatever the container's own layout
         asked for, so this never fights setWidgetResizable's vertical half.
@@ -589,8 +592,7 @@ class ModelSelectStep(QFrame):
 
     @staticmethod
     def _sync_card_focus_ring(card: QFrame, focused_in: bool) -> None:
-        """
-        Stamp the model card's own [kbdFocus] property (see theme.card_qss)
+        """Stamp the model card's own [kbdFocus] property (see theme.card_qss)
         from its RADIO's focus state, not the card's own - the radio is the
         card's only focusable child, so Qt gives real focus to it, and
         gui/focus.py's KeyboardFocusTracker only ever stamps the widget that
@@ -639,8 +641,7 @@ class ModelSelectStep(QFrame):
             self.calibration_note.show()
 
     def mark_calibration_unmeasured(self) -> None:
-        """
-        Called from MainWindow._on_calibration_failed: the background
+        """Called from MainWindow._on_calibration_failed: the background
         benchmark didn't just take a while, it actively failed, so
         hardware.tiny_seconds_per_audio_second will stay None for the rest
         of this run. Leaving the "still measuring" note up would keep
@@ -651,8 +652,7 @@ class ModelSelectStep(QFrame):
         self._set_calibration_note("calibration_unmeasured")
 
     def update_audio_duration(self, seconds: int) -> None:
-        """
-        Recompute time estimates and the real recommendation in place, once
+        """Recompute time estimates and the real recommendation in place, once
         the actual audio duration (and possibly a freshly finished hardware
         calibration) is known.
         """
@@ -670,8 +670,7 @@ class ModelSelectStep(QFrame):
         self._apply_recommendation(recommended_model)
 
     def showEvent(self, event) -> None:
-        """
-        Bring the recommended card into view whenever this step is shown.
+        """Bring the recommended card into view whenever this step is shown.
 
         With seven cards behind a scroll area the recommendation can start off
         below the fold, and a user who doesn't scroll would never see it.
@@ -695,8 +694,7 @@ class ModelSelectStep(QFrame):
             self._scroll_area.ensureWidgetVisible(card)
 
     def _desc_text(self, name: str) -> str:
-        """
-        Compose one card's "description | Est: ..." line in the current
+        """Compose one card's "description | Est: ..." line in the current
         language. The time estimate is cached: a language toggle only
         re-renders text, so it must not re-run (and re-log) the hardware
         estimator - only update_audio_duration recomputes.
@@ -707,8 +705,9 @@ class ModelSelectStep(QFrame):
                 self.audio_duration, name, identify_speakers=self.identify_speakers
             )
             self._time_secs[name] = seconds
-        text = t("model_desc_est", desc=model_text(name, "description"),
-                 time=format_duration(seconds))
+        text = t(
+            "model_desc_est", desc=model_text(name, "description"), time=format_duration(seconds)
+        )
         if not self._downloaded[name]:
             # Direct dict access, not .get() - a model added to config.MODELS
             # without a download_size should raise here at card-build time,
@@ -733,8 +732,7 @@ class ModelSelectStep(QFrame):
 
     @staticmethod
     def _card_text_alignment():
-        """
-        Visual (absolute) alignment that puts card text next to the radio
+        """Visual (absolute) alignment that puts card text next to the radio
         button in the current language: right in Hebrew's mirrored layout,
         left in English. AlignLeading doesn't work here - QLabel resolves
         it against each label's own text direction, so Latin model names
@@ -756,7 +754,9 @@ class ModelSelectStep(QFrame):
             badge.setText(t("recommended_badge"))
         for name, radio in self.model_radios.items():
             radio.setAccessibleName(model_text(name, "name"))
-            radio.setAccessibleDescription(model_text(name, "description") + ". " + self._info_note(name))
+            radio.setAccessibleDescription(
+                model_text(name, "description") + ". " + self._info_note(name)
+            )
         for name, card in self._cards.items():
             card.setToolTip(self._info_note(name))
         self.identify_speakers_check.setText(t("identify_speakers"))
@@ -771,8 +771,7 @@ class ModelSelectStep(QFrame):
             )
 
     def _apply_recommendation(self, recommended_model: str) -> None:
-        """
-        Move the RECOMMENDED badge to recommended_model and, if the user
+        """Move the RECOMMENDED badge to recommended_model and, if the user
         hasn't manually picked a model yet, follow it with the selection.
 
         The accent border is a separate concept (see _apply_selection) -

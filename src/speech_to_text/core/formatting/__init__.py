@@ -1,5 +1,4 @@
-"""
-Rendering structured segments into the output transcript file.
+"""Rendering structured segments into the output transcript file.
 
 Split out of Transcriber because formatting stopped being a model concern
 once segments carried timing and speaker data: the renderer needs to know
@@ -51,8 +50,8 @@ from .assets import (
     _vista_portrait_name,
 )
 from .chrome import (
-    SPEAKER_PALETTE_SIZE,
     _ICON_DEFS,
+    SPEAKER_PALETTE_SIZE,
     _button,
     _icon,
     _palette_index,
@@ -112,8 +111,7 @@ __all__ = [
 
 
 def _json_payload(data: dict) -> str:
-    """
-    Serialise the page's data island.
+    """Serialise the page's data island.
 
     "<" is escaped so transcript text can never terminate the surrounding
     </script> element early, whatever the audio happened to contain.
@@ -126,8 +124,7 @@ def _build_payload(
     title: Optional[str],
     ui_strings: Optional[Dict[str, str]],
 ) -> tuple:
-    """
-    Job 1 of render_html(): the page's data island, before any document has
+    """Job 1 of render_html(): the page's data island, before any document has
     rendered.
 
     Returns (payload, strings) rather than just payload: `strings` (the
@@ -158,8 +155,7 @@ def _build_payload(
 
 
 def _render_head_html(doc_id: str, title: Optional[str]) -> List[str]:
-    """
-    Job 2 of render_html(): the <!doctype> through the closing </head>.
+    """Job 2 of render_html(): the <!doctype> through the closing </head>.
 
     Kept to exactly this span - not through <body> - because the backdrop
     <style> block (job 3) and the sprite are both things that get inserted
@@ -179,8 +175,7 @@ def _render_head_html(doc_id: str, title: Optional[str]) -> List[str]:
 
 
 def _render_script_html() -> str:
-    """
-    Job 3.5: The page script's inline <script>.
+    """Job 3.5: The page script's inline <script>.
 
     The concatenated fragments under core/assets/js/ (see _asset_dir()'s own
     docstring) are bare statement bodies, not a standalone script - they were
@@ -197,8 +192,7 @@ def _render_script_html() -> str:
 
 
 def _render_backdrop_html(vista: Optional[str]) -> List[str]:
-    """
-    Job 3 of render_html(): this render's photographic backdrop, as a
+    """Job 3 of render_html(): this render's photographic backdrop, as a
     per-document <style> block plus the <div> it paints onto.
 
     Returns [] - not a blank string, so the caller can extend() it straight
@@ -226,9 +220,7 @@ def _render_backdrop_html(vista: Optional[str]) -> List[str]:
     # asserting it can't costs nothing and matches _json_payload's same
     # defensive reasoning) so nothing in the embedded bytes could ever be
     # read as closing this </style> early.
-    style_rules = [
-        f'.backdrop{{background-image:url({html.escape(landscape_uri)})}}'
-    ]
+    style_rules = [f".backdrop{{background-image:url({html.escape(landscape_uri)})}}"]
     if portrait_uri:
         # 3/4, not "orientation: portrait": orientation flips at aspect
         # ratio 1:1, but the landscape crop's cover-scaled visible width
@@ -237,9 +229,9 @@ def _render_backdrop_html(vista: Optional[str]) -> List[str]:
         # switching at 1:1 would swap in the portrait crop for viewports
         # the landscape one still frames fine, for no benefit.
         style_rules.append(
-            '@media (max-aspect-ratio: 3/4) { '
-            f'.backdrop{{background-image:url({html.escape(portrait_uri)})}} '
-            '}'
+            "@media (max-aspect-ratio: 3/4) { "
+            f".backdrop{{background-image:url({html.escape(portrait_uri)})}} "
+            "}"
         )
     return [
         f"<style>{''.join(style_rules)}</style>",
@@ -264,8 +256,7 @@ def render_html(
     doc_id: Optional[str] = None,
     vista: Optional[str] = None,
 ) -> str:
-    """
-    Render one or more transcripts into a single, self-contained RTL HTML
+    """Render one or more transcripts into a single, self-contained RTL HTML
     document that can be read, corrected and exported.
 
     Args:
@@ -311,6 +302,7 @@ def render_html(
     is the one step that actually needs every other step's output in hand,
     so factoring it out would just move the same assembly code one call
     deeper for no clarity gained.
+
     """
     doc_id = doc_id or uuid.uuid4().hex
     payload, strings = _build_payload(speaker_label, title, ui_strings)
@@ -336,47 +328,62 @@ def render_html(
 
     total = len(documents)
     for index, document in enumerate(documents):
-        body.extend(_render_document_html(
-            document, index, total, turns_by_doc[index], speaker_label, timestamps,
-            failed_label, strings, payload,
-        ))
+        body.extend(
+            _render_document_html(
+                document,
+                index,
+                total,
+                turns_by_doc[index],
+                speaker_label,
+                timestamps,
+                failed_label,
+                strings,
+                payload,
+            )
+        )
 
     outline_html = _render_outline_html(documents, speaker_label, strings)
 
     parts = _render_head_html(doc_id, title)
-    parts.extend([
-        "<body>",
-        # First child of body: every icon site below references it, so it has
-        # to exist before any of them are parsed.
-        _render_sprite_html(),
-    ])
+    parts.extend(
+        [
+            "<body>",
+            # First child of body: every icon site below references it, so it has
+            # to exist before any of them are parsed.
+            _render_sprite_html(),
+        ]
+    )
     parts.extend(_render_backdrop_html(vista))
-    parts.extend([
-        _render_toolbar_html(strings),
-        # .layout is the grid that puts <aside> on the visual left of the
-        # RTL document by pure source order (grid-template-columns's first
-        # track maps to the inline-start edge, which is the right in RTL) -
-        # see the .layout comment in the stylesheet (core/assets/css/). <main> stays first so a
-        # screen reader or a JS-disabled reader hits the actual transcript
-        # before the navigation/speaker-management aside, matching normal
-        # reading order regardless of which side either lands on visually.
-        '<div class="layout">',
-        "<main>",
-    ])
+    parts.extend(
+        [
+            _render_toolbar_html(strings),
+            # .layout is the grid that puts <aside> on the visual left of the
+            # RTL document by pure source order (grid-template-columns's first
+            # track maps to the inline-start edge, which is the right in RTL) -
+            # see the .layout comment in the stylesheet (core/assets/css/). <main> stays first so a
+            # screen reader or a JS-disabled reader hits the actual transcript
+            # before the navigation/speaker-management aside, matching normal
+            # reading order regardless of which side either lands on visually.
+            '<div class="layout">',
+            "<main>",
+        ]
+    )
     parts.extend(body)
     parts.append("</main>")
     if outline_html:
         parts.append(outline_html)
-    parts.extend([
-        "</div>",
-        _render_player_html(strings),
-        _render_toast_html(),
-        _render_help_html(strings),
-        '<script type="application/json" id="transcript-data">',
-        _json_payload(payload),
-        "</script>",
-        _render_script_html(),
-        "</body>",
-        "</html>",
-    ])
+    parts.extend(
+        [
+            "</div>",
+            _render_player_html(strings),
+            _render_toast_html(),
+            _render_help_html(strings),
+            '<script type="application/json" id="transcript-data">',
+            _json_payload(payload),
+            "</script>",
+            _render_script_html(),
+            "</body>",
+            "</html>",
+        ]
+    )
     return "\n".join(parts)

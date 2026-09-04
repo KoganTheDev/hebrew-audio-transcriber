@@ -72,6 +72,7 @@ class FakeTranscriber:
 @pytest.fixture(autouse=True)
 def fake_transcriber(monkeypatch):
     import speech_to_text.core.transcriber as transcriber_module
+
     monkeypatch.setattr(transcriber_module, "Transcriber", FakeTranscriber)
 
 
@@ -88,7 +89,6 @@ def _progress_percents(progress_queue, keys=None):
 
 
 class TestBatchProgressRescaling:
-
     def test_per_file_progress_is_monotonic_and_stays_within_the_batch_band(self, tmp_path):
         """
         The 12-98% band is shared across every file in the batch, weighted by
@@ -131,7 +131,11 @@ class TestBatchProgressRescaling:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], str(tmp_path / "out.html"), options, progress_queue, result_queue,
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1] == ("finished", str(tmp_path / "out.html"))
@@ -139,7 +143,6 @@ class TestBatchProgressRescaling:
 
 
 class TestBatchFailureIsolation:
-
     def test_one_failing_file_does_not_lose_the_others(self, tmp_path):
         """
         Losing a finished transcript to one bad file would be indefensible
@@ -158,7 +161,10 @@ class TestBatchFailureIsolation:
 
         worker.run_transcription_process(
             ["good1.wav", "broken.wav", "good2.wav"],
-            output_path, options, progress_queue, result_queue,
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -177,7 +183,10 @@ class TestBatchFailureIsolation:
 
         worker.run_transcription_process(
             ["broken.wav", "broken.wav"],
-            str(tmp_path / "out.html"), options, progress_queue, result_queue,
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "error"
@@ -210,7 +219,8 @@ class TestCheckpointing:
         """
         output_path = str(tmp_path / "out.html")
         options = TranscriptionOptions(
-            identify_speakers=False, audio_durations=[10.0, 10.0, 10.0],
+            identify_speakers=False,
+            audio_durations=[10.0, 10.0, 10.0],
         )
         progress_queue = FakeQueue()
         result_queue = FakeQueue()
@@ -218,7 +228,10 @@ class TestCheckpointing:
         with pytest.raises(KeyboardInterrupt):
             worker.run_transcription_process(
                 ["a.wav", "b.wav", "fatal.wav"],
-                output_path, options, progress_queue, result_queue,
+                output_path,
+                options,
+                progress_queue,
+                result_queue,
             )
 
         # The run died before it could put anything on result_queue at all.
@@ -243,7 +256,8 @@ class TestCheckpointing:
         """
         output_path = str(tmp_path / "out.html")
         options = TranscriptionOptions(
-            identify_speakers=False, audio_durations=[10.0, 10.0, 10.0],
+            identify_speakers=False,
+            audio_durations=[10.0, 10.0, 10.0],
         )
         progress_queue = FakeQueue()
         result_queue = FakeQueue()
@@ -260,7 +274,11 @@ class TestCheckpointing:
         monkeypatch.setattr(FakeTranscriber, "transcribe", spying_transcribe)
 
         worker.run_transcription_process(
-            ["a.wav", "b.wav", "c.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav", "b.wav", "c.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -291,7 +309,11 @@ class TestCheckpointing:
         monkeypatch.setattr(worker, "_atomic_write_html", recording_write)
 
         worker.run_transcription_process(
-            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav", "b.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -304,7 +326,7 @@ class TestCheckpointing:
         # portrait art-direction swap needs a media query - see core/formatting
         # render_html()'s .backdrop <style> comment), not an inline style
         # attribute on the element itself - match the landscape rule's url().
-        match = re.search(r'\.backdrop\{background-image:url\(([^)]+)\)\}', html_out)
+        match = re.search(r"\.backdrop\{background-image:url\(([^)]+)\)\}", html_out)
         assert match, "expected a .backdrop rule with a background-image url()"
         return match.group(1)
 
@@ -332,7 +354,11 @@ class TestCheckpointing:
         monkeypatch.setattr(worker, "_atomic_write_html", recording_write)
 
         worker.run_transcription_process(
-            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav", "b.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -346,7 +372,11 @@ class TestCheckpointing:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav", "b.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav", "b.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -359,7 +389,11 @@ class TestCheckpointing:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1] == ("finished", output_path)
@@ -445,7 +479,11 @@ class TestDiarizationOverlap:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -480,14 +518,20 @@ class TestDiarizationOverlap:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
         assert any(
             item[0] == "progress" and item[1] == "w_identifying_speakers"
             for item in progress_queue.items
-        ), "expected a real percentage update once diarization succeeded, not just the status message"
+        ), (
+            "expected a real percentage update once diarization succeeded, not just the status message"
+        )
 
     def test_to_mono_runs_once_per_file_not_twice(self, tmp_path, monkeypatch):
         """
@@ -504,7 +548,11 @@ class TestDiarizationOverlap:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -531,7 +579,11 @@ class TestDiarizationOverlap:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -559,7 +611,11 @@ class TestDiarizationOverlap:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -594,7 +650,11 @@ class TestDiarizationOverlap:
         result_queue = FakeQueue()
 
         worker.run_transcription_process(
-            ["a.wav"], output_path, options, progress_queue, result_queue,
+            ["a.wav"],
+            output_path,
+            options,
+            progress_queue,
+            result_queue,
         )
 
         assert result_queue.items[-1][0] == "finished"
@@ -638,8 +698,12 @@ class TestDiarizationOverlap:
 
         with pytest.raises(RuntimeError):
             worker._transcribe_one(
-                "a.wav", ExplodingTranscriber(), options, 10.0,
-                lambda *a, **k: None, FakeQueue(),
+                "a.wav",
+                ExplodingTranscriber(),
+                options,
+                10.0,
+                lambda *a, **k: None,
+                FakeQueue(),
             )
 
         # Checked with NO extra wait: ExplodingTranscriber.transcribe()

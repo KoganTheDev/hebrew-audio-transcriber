@@ -1,5 +1,4 @@
-"""
-Rendering one document's worth of transcript: the file bar, every turn, the
+"""Rendering one document's worth of transcript: the file bar, every turn, the
 outline sidebar's per-file content, and the plain-text copy-out panel.
 
 Where chrome.py is "the same on every page", this module is "differs per
@@ -11,8 +10,10 @@ why that module is their home.
 """
 
 import html
-import math
 from typing import Dict, List, Optional
+
+from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
+from speech_to_text.core.segments import TranscriptDocument
 
 from .chrome import (
     _button,
@@ -29,13 +30,10 @@ from .timecode import (
     format_range,
 )
 from .turns import Sentence, Turn, _speaker_indices
-from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
-from speech_to_text.core.segments import TranscriptDocument
 
 
 def _render_file_bar_html(source_name: str, index: int, total: int, strings: Dict[str, str]) -> str:
-    """
-    The one piece of chrome that stays on screen for the whole file.
+    """The one piece of chrome that stays on screen for the whole file.
 
     Everything else about a batch of recordings looks alike - same card
     shape, same turn structure - so scrolling from one file's turns into the
@@ -114,9 +112,16 @@ def _render_document_html(
         if flagged:
             payload["low"][turn_id] = flagged
         sentences = turn.sentences()
-        lines.append(_render_turn_html(
-            turn, turn_id, sentences, speaker_label, timestamps, strings,
-        ))
+        lines.append(
+            _render_turn_html(
+                turn,
+                turn_id,
+                sentences,
+                speaker_label,
+                timestamps,
+                strings,
+            )
+        )
 
     lines.append(_render_plain_html(turns, turn_ids, speaker_label, timestamps, strings))
     lines.append("</section>")
@@ -130,8 +135,7 @@ def _render_speakers_html(
     strings: Dict[str, str],
     active: bool = False,
 ) -> str:
-    """
-    Editable names and colours for this recording's speakers.
+    """Editable names and colours for this recording's speakers.
 
     Lives in the outline sidebar (see _render_outline_html()), one panel per
     file with only the in-view file's panel shown - the .speaker-row shape
@@ -166,8 +170,8 @@ def _render_speakers_html(
         palette = _palette_index(speaker)
         rows.append(
             f'<div class="speaker-row" data-speaker="{speaker}" data-palette="{palette}">'
-            + _swatch_trigger_html(strings) +
-            f'<input class="speaker-name" type="text" value=""'
+            + _swatch_trigger_html(strings)
+            + f'<input class="speaker-name" type="text" value=""'
             f' placeholder="{fallback}"'
             f' aria-label="{fallback}">'
             "</div>"
@@ -175,16 +179,23 @@ def _render_speakers_html(
 
     apply_all = (
         f'<button class="link-btn apply-all">'
-        f'{_t(strings, "apply_names_all", "Use these names in all files")}</button>'
+        f"{_t(strings, 'apply_names_all', 'Use these names in all files')}</button>"
     )
-    add_speaker = _button(_t(strings, "add_speaker", "Add speaker"),
-                           css_class="tb-btn add-speaker", icon="plus", extra='type="button"')
+    add_speaker = _button(
+        _t(strings, "add_speaker", "Add speaker"),
+        css_class="tb-btn add-speaker",
+        icon="plus",
+        extra='type="button"',
+    )
     title = _t(strings, "speakers", "Speakers")
     cls = "speakers active" if active else "speakers"
     return (
         f'<div class="{cls}" data-file="{file_index}">'
         f'<span class="speakers-title">{title}</span>'
-        + "".join(rows) + apply_all + add_speaker + "</div>"
+        + "".join(rows)
+        + apply_all
+        + add_speaker
+        + "</div>"
     )
 
 
@@ -193,8 +204,7 @@ def _render_outline_html(
     speaker_label: Optional[str],
     strings: Dict[str, str],
 ) -> Optional[str]:
-    """
-    The sidebar: which file is which, and each file's speaker roster.
+    """The sidebar: which file is which, and each file's speaker roster.
 
     Replaces two things that used to live inside the reading column: the
     <nav class="toc"> file list (present only for a multi-file batch) and the
@@ -224,7 +234,10 @@ def _render_outline_html(
         if speaker_label is not None and speakers:
             panels.append(
                 _render_speakers_html(
-                    index, speakers, speaker_label, strings,
+                    index,
+                    speakers,
+                    speaker_label,
+                    strings,
                     active=index == 0,
                 )
             )
@@ -239,7 +252,7 @@ def _render_outline_html(
             current = ' aria-current="true"' if index == 0 else ""
             items.append(
                 f'<li><a href="#src-{index}" class="outline-file" data-file="{index}"{current}>'
-                f'{html.escape(document.source_name)}</a></li>'
+                f"{html.escape(document.source_name)}</a></li>"
             )
         sections.append(
             f'<h2 class="outline-title">{_t(strings, "files", "Files")}</h2>'
@@ -253,8 +266,7 @@ def _render_outline_html(
 
 
 def _display_end_second(sentence) -> int:
-    """
-    The end second to SHOW for one sentence's range - on its own card and in
+    """The end second to SHOW for one sentence's range - on its own card and in
     the plain-text panel.
 
     format_range() truncates both ends via int(), so a sentence under a
@@ -288,8 +300,7 @@ def _render_bubble_html(
     speaker: Optional[int],
     strings: Dict[str, str],
 ) -> str:
-    """
-    One <div class="bubble">: a full-width card for one sentence.
+    """One <div class="bubble">: a full-width card for one sentence.
 
     Flat cards, not a messaging bubble inside a cluster - see the review
     plan's "flat sentence cards" section. .turn (_render_turn_html) is now a
@@ -368,7 +379,7 @@ def _render_bubble_html(
             f' data-palette="{palette}" data-fallback="{label}"'
             f' aria-haspopup="true" aria-expanded="false" aria-label="{reassign_label}">'
             f'<span class="bubble-spk-label">{label}</span></button>'
-            f'</span>'
+            f"</span>"
         )
 
     lines = [
@@ -383,8 +394,7 @@ def _render_bubble_html(
         # keyboard. Reuses play_from: the label differs only in the instant
         # it names.
         aria = html.escape(
-            strings.get("play_from", "Play from {t}")
-            .replace("{t}", format_hhmmss(sentence.start))
+            strings.get("play_from", "Play from {t}").replace("{t}", format_hhmmss(sentence.start))
         )
         display_end = _display_end_second(sentence)
         lines.append(
@@ -394,8 +404,13 @@ def _render_bubble_html(
         )
     copy_label = _t(strings, "copy_line", "Copy this sentence")
     lines.append(
-        _button(None, css_class="icon-btn copy-line", icon="copy",
-                aria_label=copy_label, extra='contenteditable="false"')
+        _button(
+            None,
+            css_class="icon-btn copy-line",
+            icon="copy",
+            aria_label=copy_label,
+            extra='contenteditable="false"',
+        )
     )
     lines.append("</div>")
     return "".join(lines)
@@ -429,20 +444,22 @@ def _render_turn_html(
     """
     speaker_attr = (
         f' data-speaker="{turn.speaker}" data-palette="{_palette_index(turn.speaker)}"'
-        if turn.speaker is not None else ""
+        if turn.speaker is not None
+        else ""
     )
     body_label = _t(strings, "turn_text", "Turn text")
 
     lines = [
-        f'<article class="turn" data-turn="{turn_id}"'
-        f' data-start="{turn.start:.2f}"{speaker_attr}>',
+        f'<article class="turn" data-turn="{turn_id}" data-start="{turn.start:.2f}"{speaker_attr}>',
         f'<div class="body" contenteditable="true" role="textbox"'
         f' aria-multiline="true" aria-label="{body_label}">',
     ]
     for idx, sentence in enumerate(sentences):
         line_id = f"{turn_id}-{idx}"
         lines.append(
-            _render_bubble_html(sentence, line_id, turn_id, timestamps, speaker_label, turn.speaker, strings)
+            _render_bubble_html(
+                sentence, line_id, turn_id, timestamps, speaker_label, turn.speaker, strings
+            )
         )
     lines.append("</div>")
     lines.append("</article>")
@@ -456,8 +473,7 @@ def _render_plain_line_html(
     timestamps: bool,
     strings: Dict[str, str],
 ) -> str:
-    """
-    One sentence's own line in the copy-out panel.
+    """One sentence's own line in the copy-out panel.
 
     Rendered server-side (not built by the page script (core/assets/js/) from nothing) so the
     plain-text panel is readable - and editable via native contenteditable -
@@ -535,8 +551,7 @@ def _render_plain_html(
     timestamps: bool,
     strings: Dict[str, str],
 ) -> str:
-    """
-    The copy-out panel.
+    """The copy-out panel.
 
     Always visible, not collapsed inside a <details> - it was the thing this
     document gets used for most (pasting the whole recording somewhere else)
@@ -600,9 +615,15 @@ def _render_plain_html(
                     f'<div class="plain-heading" contenteditable="false">{name}:</div>'
                 )
             line_id = f"{turn_id}-{idx}"
-            line_parts.append(_render_plain_line_html(
-                sentence, line_id, sentence_number, timestamps, strings,
-            ))
+            line_parts.append(
+                _render_plain_line_html(
+                    sentence,
+                    line_id,
+                    sentence_number,
+                    timestamps,
+                    strings,
+                )
+            )
             sentence_number += 1
         previous_speaker = turn.speaker
     rows = "".join(line_parts)
@@ -619,13 +640,13 @@ def _render_plain_html(
     ts_checked = " checked" if timestamps else ""
     spk_checked = " checked" if speaker_label is not None else ""
 
-    copy_all_button = _button(s('copy_all', 'Copy all'), css_class="tb-btn copy-all", icon="copy")
+    copy_all_button = _button(s("copy_all", "Copy all"), css_class="tb-btn copy-all", icon="copy")
     return f"""<section class="plain">
-<h2 class="plain-title"><span>{s('plain_text', 'Plain text')}</span>
-<span class="summary-hint">{s('plain_hint', 'to paste into another app')}</span></h2>
+<h2 class="plain-title"><span>{s("plain_text", "Plain text")}</span>
+<span class="summary-hint">{s("plain_hint", "to paste into another app")}</span></h2>
 <div class="plain-controls">
-<label><input type="checkbox" class="opt-ts"{ts_checked}> {s('opt_timestamps', 'Timestamps')}</label>
-<label><input type="checkbox" class="opt-spk"{spk_checked}> {s('opt_speakers', 'Speaker names')}</label>
+<label><input type="checkbox" class="opt-ts"{ts_checked}> {s("opt_timestamps", "Timestamps")}</label>
+<label><input type="checkbox" class="opt-spk"{spk_checked}> {s("opt_speakers", "Speaker names")}</label>
 {copy_all_button}
 </div>
 <div class="plain-text" tabindex="-1">{rows}</div>

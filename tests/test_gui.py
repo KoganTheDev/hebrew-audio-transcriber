@@ -31,7 +31,10 @@ def hardware_stub():
     """Just enough of HardwareDetector's interface for FileSelectStep.__init__."""
     hw = MagicMock()
     hw.get_hardware_info.return_value = {
-        "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+        "cpu_cores": 4,
+        "ram_gb": 8,
+        "has_gpu": False,
+        "gpu_name": "",
     }
     return hw
 
@@ -39,17 +42,17 @@ def hardware_stub():
 @pytest.fixture
 def file_select_step(qapp, hardware_stub):
     from speech_to_text.gui.steps.file_select import FileSelectStep
+
     return FileSelectStep(hardware_stub)
 
 
 class TestGUI:
-
     @pytest.mark.skipif(True, reason="PyQt5 GUI testing requires X11 or mocking display")
     def test_main_window_creation(self):
         """Test main window creation."""
         pass
 
-    @patch('speech_to_text.gui.main_window.QMainWindow')
+    @patch("speech_to_text.gui.main_window.QMainWindow")
     def test_transcription_thread_initialization(self, mock_main_window):
         """TranscriptionThread takes a batch: a list of files and matching durations."""
         from speech_to_text.gui.main_window import TranscriptionThread
@@ -89,11 +92,11 @@ class TestFileSelectStepFolderExpansion:
 
 
 class TestFileSelectStepFileList:
-
     def test_files_selected_signal_carries_paths_and_total_duration(
         self, file_select_step, tmp_path, monkeypatch
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
+
         monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 30)
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
@@ -115,6 +118,7 @@ class TestFileSelectStepFileList:
         self, file_select_step, tmp_path, monkeypatch
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
+
         monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 10)
 
         f = tmp_path / "one.wav"
@@ -129,6 +133,7 @@ class TestFileSelectStepFileList:
         self, file_select_step, tmp_path, monkeypatch
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
+
         monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 10)
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
@@ -150,6 +155,7 @@ class TestFileSelectStepFileList:
         self, file_select_step, tmp_path, monkeypatch
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
+
         monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 90)
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
@@ -163,6 +169,7 @@ class TestFileSelectStepFileList:
 
     def test_reset_clears_the_list(self, file_select_step, tmp_path, monkeypatch):
         from speech_to_text.gui.steps import file_select as file_select_module
+
         monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 10)
 
         f = tmp_path / "one.wav"
@@ -186,7 +193,9 @@ class TestFileSelectStepSummaryPlurals:
     get away with.
     """
 
-    def test_one_file_reads_singular_in_both_languages(self, file_select_step, tmp_path, monkeypatch):
+    def test_one_file_reads_singular_in_both_languages(
+        self, file_select_step, tmp_path, monkeypatch
+    ):
         from speech_to_text.gui import i18n
 
         monkeypatch.setattr(
@@ -200,7 +209,9 @@ class TestFileSelectStepSummaryPlurals:
                 file_select_step.reset()
                 file_select_step._add_files([str(one)])
                 text = file_select_step.summary_label.text()
-                assert forbidden not in text, f"{lang}: plural form used for a single file: {text!r}"
+                assert forbidden not in text, (
+                    f"{lang}: plural form used for a single file: {text!r}"
+                )
         finally:
             i18n.set_language("en")
 
@@ -235,6 +246,7 @@ class TestFileSelectStepDirectDropFiltering:
         self, file_select_step, tmp_path, monkeypatch
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
+
         monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 30)
 
         mp3 = tmp_path / "meeting.mp3"
@@ -243,17 +255,13 @@ class TestFileSelectStepDirectDropFiltering:
         txt.write_bytes(b"")
 
         received = []
-        file_select_step.files_selected.connect(
-            lambda paths, total: received.append(paths)
-        )
+        file_select_step.files_selected.connect(lambda paths, total: received.append(paths))
         from PyQt5.QtCore import QMimeData, QPoint, QUrl
         from PyQt5.QtGui import QDropEvent
 
         mime = QMimeData()
         mime.setUrls([QUrl.fromLocalFile(str(mp3)), QUrl.fromLocalFile(str(txt))])
-        drop = QDropEvent(
-            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
-        )
+        drop = QDropEvent(QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         file_select_step._drop(drop)
 
         # QUrl.fromLocalFile()/toLocalFile() can normalize separators
@@ -283,9 +291,7 @@ class TestFileSelectStepDirectDropFiltering:
         txt.write_bytes(b"")
         mime = QMimeData()
         mime.setUrls([QUrl.fromLocalFile(str(txt))])
-        drop = QDropEvent(
-            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
-        )
+        drop = QDropEvent(QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         file_select_step._drop(drop)
 
         assert file_select_step.selected_files == []
@@ -310,6 +316,7 @@ class TestTranscriptionStepOpenButton:
     @pytest.fixture
     def step(self, qapp):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
+
         return TranscriptionStep()
 
     def test_open_button_is_hidden_until_a_run_finishes(self, step):
@@ -337,12 +344,15 @@ class TestTranscriptionStepOpenButton:
     def test_a_failure_to_open_is_not_fatal(self, step):
         """The path is on screen regardless - losing the window over it would not be."""
         step.show_result("C:/tmp/meeting_transcription.html")
-        with patch("speech_to_text.gui.steps.transcription.webbrowser.open",
-                   side_effect=OSError("no browser")):
+        with patch(
+            "speech_to_text.gui.steps.transcription.webbrowser.open",
+            side_effect=OSError("no browser"),
+        ):
             step._open_result()
 
     def test_button_follows_a_live_language_switch(self, step):
         from speech_to_text.gui import i18n
+
         i18n.set_language("en")
         step.retranslate()
         assert step.open_button.text() == "Open transcript"
@@ -363,6 +373,7 @@ class TestTranscriptionStepFolderButton:
     @pytest.fixture
     def step(self, qapp):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
+
         return TranscriptionStep()
 
     def test_opens_the_containing_folder(self, step):
@@ -380,12 +391,15 @@ class TestTranscriptionStepFolderButton:
 
     def test_a_failure_to_open_is_not_fatal(self, step):
         step.show_result("C:/tmp/meeting/meeting_transcription.html")
-        with patch("speech_to_text.gui.steps.transcription.QDesktopServices.openUrl",
-                   side_effect=OSError("no shell")):
+        with patch(
+            "speech_to_text.gui.steps.transcription.QDesktopServices.openUrl",
+            side_effect=OSError("no shell"),
+        ):
             step._open_folder()
 
     def test_button_follows_a_live_language_switch(self, step):
         from speech_to_text.gui import i18n
+
         i18n.set_language("en")
         step.retranslate()
         assert step.folder_button.text() == "Show in folder"
@@ -423,6 +437,7 @@ class TestTranscriptionStepResultPathElision:
     @pytest.fixture
     def step(self, qapp):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
+
         s = TranscriptionStep()
         # show() matters here, not just resize(): an un-shown top-level
         # widget's resize() sets its own geometry but Qt doesn't cascade a
@@ -523,6 +538,7 @@ class TestTranscriptionStepBatchStrip:
     @pytest.fixture
     def step(self, qapp):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
+
         return TranscriptionStep()
 
     @staticmethod
@@ -550,12 +566,13 @@ class TestTranscriptionStepBatchStrip:
         # Segments 1-2 done, 3 current, 4-10 pending - checked via the
         # accent fill that only the current segment's stylesheet carries.
         from speech_to_text.gui.theme import COLORS
+
         styles = [seg.styleSheet() for seg in step._batch_segment_frames]
-        assert COLORS['accent'] in styles[2]
-        assert COLORS['success'] in styles[0]
-        assert COLORS['success'] in styles[1]
-        assert COLORS['accent'] not in styles[0]
-        assert COLORS['accent'] not in styles[3]
+        assert COLORS["accent"] in styles[2]
+        assert COLORS["success"] in styles[0]
+        assert COLORS["success"] in styles[1]
+        assert COLORS["accent"] not in styles[0]
+        assert COLORS["accent"] not in styles[3]
 
     def test_each_segment_carries_its_own_filename(self, step):
         filenames = self._batch_files(3)
@@ -586,6 +603,7 @@ class TestDropZoneEventPath:
     @staticmethod
     def _mime(*paths):
         from PyQt5.QtCore import QMimeData, QUrl
+
         mime = QMimeData()
         mime.setUrls([QUrl.fromLocalFile(p) for p in paths])
         return mime
@@ -599,22 +617,16 @@ class TestDropZoneEventPath:
         mime = self._mime(str(audio))
 
         received = []
-        file_select_step.files_selected.connect(
-            lambda paths, seconds: received.append(paths)
-        )
+        file_select_step.files_selected.connect(lambda paths, seconds: received.append(paths))
 
-        enter = QDragEnterEvent(
-            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
-        )
+        enter = QDragEnterEvent(QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         qapp.sendEvent(file_select_step.drop_zone, enter)
         assert enter.isAccepted(), (
             "the drop zone refused a drag carrying file URLs - _drag_enter is "
             "not reaching the zone, so nothing can ever be dropped on it"
         )
 
-        drop = QDropEvent(
-            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
-        )
+        drop = QDropEvent(QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         qapp.sendEvent(file_select_step.drop_zone, drop)
         assert received, "a dropped file produced no files_selected signal"
         assert received[0][0].endswith("meeting.wav")
@@ -634,9 +646,7 @@ class TestDropZoneEventPath:
 
         mime = QMimeData()
         mime.setText("just some text")
-        enter = QDragEnterEvent(
-            QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
-        )
+        enter = QDragEnterEvent(QPoint(10, 10), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         qapp.sendEvent(file_select_step.drop_zone, enter)
         assert not enter.isAccepted()
 
@@ -652,6 +662,7 @@ class TestDropZoneKeyboardAccess:
 
     def test_the_zone_is_a_real_tab_stop(self, file_select_step):
         from PyQt5.QtCore import Qt
+
         assert file_select_step.drop_zone.focusPolicy() == Qt.StrongFocus
 
     @pytest.mark.parametrize("key", [Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter])
@@ -673,9 +684,7 @@ class TestDropZoneKeyboardAccess:
         from PyQt5.QtGui import QKeyEvent
 
         event = QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.NoModifier)
-        with patch(
-            "speech_to_text.gui.steps.file_select.QFileDialog.getOpenFileNames"
-        ) as dialog:
+        with patch("speech_to_text.gui.steps.file_select.QFileDialog.getOpenFileNames") as dialog:
             qapp.sendEvent(file_select_step.drop_zone, event)
         dialog.assert_not_called()
 
@@ -742,10 +751,16 @@ class TestKeyboardFocusTracker:
             assert btn.property(PROPERTY) is True, "precondition: keyboard session is on"
 
             # Deliberately NOT sent to btn, and btn keeps focus throughout.
-            qapp.sendEvent(tracker, QMouseEvent(
-                QEvent.MouseButtonPress, QPoint(0, 0),
-                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
-            ))
+            qapp.sendEvent(
+                tracker,
+                QMouseEvent(
+                    QEvent.MouseButtonPress,
+                    QPoint(0, 0),
+                    Qt.LeftButton,
+                    Qt.LeftButton,
+                    Qt.NoModifier,
+                ),
+            )
             qapp.processEvents()
             assert btn.hasFocus(), "focus must not have moved for this to be the case under test"
             assert btn.property(PROPERTY) is False
@@ -766,8 +781,11 @@ class TestKeyboardFocusTracker:
         btn.show()
         try:
             click = QMouseEvent(
-                QEvent.MouseButtonPress, btn.rect().center(),
-                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+                QEvent.MouseButtonPress,
+                btn.rect().center(),
+                Qt.LeftButton,
+                Qt.LeftButton,
+                Qt.NoModifier,
             )
             qapp.sendEvent(btn, click)
             btn.setFocus()
@@ -777,7 +795,6 @@ class TestKeyboardFocusTracker:
             btn.setParent(None)
             btn.deleteLater()
             tracker.deleteLater()
-
 
     def test_the_tracker_stops_stamping_once_the_application_is_quitting(self, qapp):
         """
@@ -810,9 +827,7 @@ class TestKeyboardFocusTracker:
             # longer be listening to it.
             btn.setFocus()
             qapp.processEvents()
-            assert not btn.property(PROPERTY), (
-                "tracker was still stamping focus after aboutToQuit"
-            )
+            assert not btn.property(PROPERTY), "tracker was still stamping focus after aboutToQuit"
 
             # Idempotent: aboutToQuit can reach it more than once (and
             # nothing should raise on the second pass).
@@ -849,7 +864,10 @@ class TestMainWindowKeyboardGuards:
         hw.tiny_seconds_per_audio_second = 1.0
         hw.cpu_count = 4
         hw.get_hardware_info.return_value = {
-            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+            "cpu_cores": 4,
+            "ram_gb": 8,
+            "has_gpu": False,
+            "gpu_name": "",
         }
         hw.recommend_model.return_value = ("tiny", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
@@ -922,7 +940,10 @@ class TestMainWindowStepNavigation:
         hw.tiny_seconds_per_audio_second = 1.0
         hw.cpu_count = 4
         hw.get_hardware_info.return_value = {
-            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+            "cpu_cores": 4,
+            "ram_gb": 8,
+            "has_gpu": False,
+            "gpu_name": "",
         }
         hw.recommend_model.return_value = ("tiny", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
@@ -962,8 +983,10 @@ class TestMainWindowStepNavigation:
         # first (this fixture starts with no file selected, which is what
         # leaves it disabled at construction).
         main_window.next_btn.setEnabled(True)
-        with patch.object(main_window, "_go_next") as go_next, \
-             patch.object(main_window, "_reset") as reset:
+        with (
+            patch.object(main_window, "_go_next") as go_next,
+            patch.object(main_window, "_reset") as reset,
+        ):
             main_window.next_btn.click()
         go_next.assert_called_once()
         reset.assert_not_called()
@@ -979,8 +1002,10 @@ class TestMainWindowStepNavigation:
         """
         main_window._set_next_button_mode("new_file")
         main_window.next_btn.setEnabled(True)
-        with patch.object(main_window, "_go_next") as go_next, \
-             patch.object(main_window, "_reset") as reset:
+        with (
+            patch.object(main_window, "_go_next") as go_next,
+            patch.object(main_window, "_reset") as reset,
+        ):
             main_window.next_btn.click()
         reset.assert_called_once()
         go_next.assert_not_called()
@@ -1023,7 +1048,10 @@ class TestMainWindowCancelConfirm:
         hw.tiny_seconds_per_audio_second = 1.0
         hw.cpu_count = 4
         hw.get_hardware_info.return_value = {
-            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+            "cpu_cores": 4,
+            "ram_gb": 8,
+            "has_gpu": False,
+            "gpu_name": "",
         }
         hw.recommend_model.return_value = ("tiny", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
@@ -1115,7 +1143,10 @@ class TestMainWindowResizing:
         hw.tiny_seconds_per_audio_second = 1.0
         hw.cpu_count = 4
         hw.get_hardware_info.return_value = {
-            "cpu_cores": 4, "ram_gb": 8, "has_gpu": False, "gpu_name": "",
+            "cpu_cores": 4,
+            "ram_gb": 8,
+            "has_gpu": False,
+            "gpu_name": "",
         }
         hw.recommend_model.return_value = ("tiny", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")

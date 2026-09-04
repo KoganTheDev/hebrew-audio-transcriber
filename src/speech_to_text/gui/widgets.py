@@ -8,8 +8,7 @@ from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 
 
 class DropZone(QFrame):
-    """
-    Step 1's file drop target, made a first-class keyboard control.
+    """Step 1's file drop target, made a first-class keyboard control.
 
     Before this it was a bare QFrame with mousePressEvent monkey-patched
     onto the instance (see FileSelectStep._init_ui): clickable with a
@@ -54,7 +53,9 @@ class DropZone(QFrame):
         # zone is focused" win over "Enter advances to the next step"
         # instead of the two racing.
         if event.type() == QEvent.ShortcutOverride and event.key() in (
-            Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter,
+            Qt.Key_Space,
+            Qt.Key_Return,
+            Qt.Key_Enter,
         ):
             event.accept()
             return True
@@ -69,8 +70,7 @@ class DropZone(QFrame):
 
 
 class IconTextButton(QPushButton):
-    """
-    QPushButton that paints its icon and text itself, as one centered
+    """QPushButton that paints its icon and text itself, as one centered
     group with an explicitly chosen VISUAL icon side.
 
     Why this exists: a stock QPushButton welds the icon to the leading
@@ -88,10 +88,10 @@ class IconTextButton(QPushButton):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._icon_name = None
-        self._icon_side = "left"     # visual side: "left" | "right"
+        self._icon_side = "left"  # visual side: "left" | "right"
         self._icon_px = 16
         self._color_normal = "#ffffff"
-        self._color_hover = None     # None: no hover color change
+        self._color_hover = None  # None: no hover color change
         self._color_disabled = None  # None: use the normal color
         # paintEvent runs on every hover change and repaint - rasterizing
         # the SVG each time (XML parse + render) is wasteful, so pixmaps

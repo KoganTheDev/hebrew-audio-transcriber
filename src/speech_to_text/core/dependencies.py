@@ -1,11 +1,10 @@
-"""
-Dependency Management Module
+"""Dependency Management Module
 Automatically installs required packages.
 """
 
-import sys
-import subprocess
 import logging
+import subprocess
+import sys
 from typing import Dict
 
 from speech_to_text import config
@@ -14,18 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_dependencies(packages: Dict[str, str]) -> bool:
-    """
-    Check and install required packages.
-    
+    """Check and install required packages.
+
     Args:
         packages: Dict of {import_name: pip_name}
-        
+
     Returns:
         True if all dependencies available, False otherwise
+
     """
     logger.info(f"Checking {len(packages)} required packages...")
     missing = []
-    
+
     for import_name, pip_name in packages.items():
         try:
             __import__(import_name)
@@ -33,13 +32,13 @@ def ensure_dependencies(packages: Dict[str, str]) -> bool:
         except ImportError:
             logger.warning(f"✗ Package missing: {import_name} (pip: {pip_name})")
             missing.append(pip_name)
-    
+
     if not missing:
         logger.info("All required packages are available")
         return True
-    
+
     logger.warning(f"{len(missing)} missing package(s) will be installed: {missing}")
-    
+
     for package in missing:
         logger.info(f"Installing package: {package}")
         try:
@@ -49,11 +48,13 @@ def ensure_dependencies(packages: Dict[str, str]) -> bool:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=config.INSTALL_TIMEOUT_SECONDS,
-                check=True
+                check=True,
             )
             logger.info(f"✓ Successfully installed: {package}")
         except subprocess.TimeoutExpired:
-            logger.error(f"✗ Installation timeout for {package} (exceeded {config.INSTALL_TIMEOUT_SECONDS}s)")
+            logger.error(
+                f"✗ Installation timeout for {package} (exceeded {config.INSTALL_TIMEOUT_SECONDS}s)"
+            )
             logger.info(f"Please install manually: pip install {package}")
             return False
         except subprocess.CalledProcessError as e:
@@ -66,6 +67,6 @@ def ensure_dependencies(packages: Dict[str, str]) -> bool:
         except Exception as e:
             logger.error(f"✗ Unexpected error installing {package}: {e}", exc_info=True)
             return False
-    
+
     logger.info(f"✓ All {len(missing)} missing package(s) installed successfully")
     return True

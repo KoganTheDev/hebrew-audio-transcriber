@@ -237,9 +237,9 @@ class TestPaintedCheckboxRenderedPixels:
         cb = _make_checkbox(painted_style, checked=True)
         rect = _indicator_rect(cb)
         pixmap = _grab(cb)
-        assert _scan_for_color(pixmap, rect, COLORS["accent_text"], tolerance=_TICK_INK_TOLERANCE), (
-            "expected accent_text tick ink somewhere inside the checked indicator"
-        )
+        assert _scan_for_color(
+            pixmap, rect, COLORS["accent_text"], tolerance=_TICK_INK_TOLERANCE
+        ), "expected accent_text tick ink somewhere inside the checked indicator"
 
     def test_disabled_differs_from_enabled_when_checked(self, qapp, painted_style):
         """
@@ -320,8 +320,7 @@ class TestPaintedCheckboxFocusRect:
             painter.end()
 
         assert recorder.drawn == [], (
-            "PE_FrameFocusRect must be swallowed for a QCheckBox, not "
-            "forwarded to the base style"
+            "PE_FrameFocusRect must be swallowed for a QCheckBox, not forwarded to the base style"
         )
 
     def test_focus_rect_is_not_swallowed_for_other_widgets(self, qapp):

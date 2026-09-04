@@ -25,14 +25,14 @@ def word(text, probability=0.9, start=0.0, end=1.0):
 
 def segment_of(*words):
     return Segment(
-        start=0.0, end=1.0,
+        start=0.0,
+        end=1.0,
         text="".join(w.text for w in words),
         words=list(words),
     )
 
 
 class TestNormalize:
-
     def test_nikud_removed(self):
         assert normalize_word("שָׁלוֹם") == normalize_word("שלום")
 
@@ -41,7 +41,6 @@ class TestNormalize:
 
 
 class TestStripClitics:
-
     def test_single_prefix(self):
         assert strip_clitics("בירושלים") == ("ב", "ירושלים")
 
@@ -61,7 +60,6 @@ class TestStripClitics:
 
 
 class TestWeightedDistance:
-
     def test_identical_words_are_free(self):
         assert weighted_distance("שלום", "שלום") == 0.0
 
@@ -88,7 +86,6 @@ class TestWeightedDistance:
 
 
 class TestTermList:
-
     def test_empty_list_matches_nothing(self):
         assert TermList([]).best_match("שלום") is None
 
@@ -136,7 +133,6 @@ class TestTermList:
 
 
 class TestCorrect:
-
     def test_empty_term_list_is_a_strict_no_op(self):
         """The default state of the feature must change nothing."""
         seg = segment_of(word("כיסריה", probability=0.2))

@@ -1,5 +1,4 @@
-"""
-Wizard step widgets for the Speech-to-Text Transcriber GUI.
+"""Wizard step widgets for the Speech-to-Text Transcriber GUI.
 3-step flow: Select File -> Choose Model -> Transcribe
 
 Split into one module per step (file_select.py / model_select.py /
@@ -17,6 +16,7 @@ from speech_to_text.gui.steps.transcription import TranscriptionStep
 
 class Step(Enum):
     """Application steps."""
+
     FILE_SELECT = 0
     MODEL_SELECT = 1
     TRANSCRIPTION = 2

@@ -1,5 +1,4 @@
-"""
-Keep the machine awake for the length of a transcription run.
+"""Keep the machine awake for the length of a transcription run.
 
 Why this exists
 ---------------
@@ -64,8 +63,7 @@ ES_SYSTEM_REQUIRED = 0x00000001
 
 
 def _set_thread_execution_state(flags: int) -> Optional[int]:
-    """
-    Call SetThreadExecutionState, or return None where that is impossible.
+    """Call SetThreadExecutionState, or return None where that is impossible.
 
     Split out from the context manager below purely so the failure paths are
     testable without a Windows kernel: tests patch this one function to
@@ -94,8 +92,7 @@ def _set_thread_execution_state(flags: int) -> Optional[int]:
 
 
 def acquire(reason: str = "transcription") -> bool:
-    """
-    Assert that the system is in use. Returns whether the request took.
+    """Assert that the system is in use. Returns whether the request took.
 
     Paired with release() below. This lower-level pair exists alongside the
     context manager because core/worker.py's entry point is one long
@@ -115,8 +112,7 @@ def acquire(reason: str = "transcription") -> bool:
 
 
 def release(reason: str = "transcription", acquired: bool = True) -> None:
-    """
-    Drop a previous acquire(). Safe to call when acquire() returned False.
+    """Drop a previous acquire(). Safe to call when acquire() returned False.
 
     Clearing with ES_CONTINUOUS alone is the documented way to drop a
     continuous assertion. Callers must run this from a finally so an
@@ -131,8 +127,7 @@ def release(reason: str = "transcription", acquired: bool = True) -> None:
 
 @contextlib.contextmanager
 def keep_system_awake(reason: str = "transcription"):
-    """
-    Prevent the system idling into sleep for the duration of the block.
+    """Prevent the system idling into sleep for the duration of the block.
 
     Always yields, whether or not the request was granted, so callers never
     need to branch on it - a run that cannot be protected still runs, just

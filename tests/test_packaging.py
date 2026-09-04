@@ -37,9 +37,7 @@ PACKAGE = SRC / "speech_to_text"
 ASSET_SUFFIXES = {".css", ".js", ".webp", ".ico"}
 
 
-pytestmark = pytest.mark.skipif(
-    tomllib is None, reason="tomllib requires Python 3.11+"
-)
+pytestmark = pytest.mark.skipif(tomllib is None, reason="tomllib requires Python 3.11+")
 
 
 def _config():
@@ -101,15 +99,12 @@ class TestPackageData:
         directory, added without a matching package-data entry.
         """
         assets = [
-            p for p in PACKAGE.rglob("*")
-            if p.is_file() and p.suffix.lower() in ASSET_SUFFIXES
+            p for p in PACKAGE.rglob("*") if p.is_file() and p.suffix.lower() in ASSET_SUFFIXES
         ]
         assert assets, "no assets found - the discovery glob itself is wrong"
 
         uncovered = sorted(
-            str(p.relative_to(SRC))
-            for p in assets
-            if not _covered(p.relative_to(SRC))
+            str(p.relative_to(SRC)) for p in assets if not _covered(p.relative_to(SRC))
         )
         assert not uncovered, (
             "these files ship at render time but no package-data glob in "

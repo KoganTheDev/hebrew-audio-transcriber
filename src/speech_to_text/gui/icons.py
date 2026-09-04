@@ -1,5 +1,4 @@
-"""
-Icon set for the Speech-to-Text Transcriber GUI.
+"""Icon set for the Speech-to-Text Transcriber GUI.
 
 Uses Tabler Icons (MIT licensed, https://tabler.io/icons) - stroke-based
 outline icons that recolor cleanly via the 'currentColor' substitution in
@@ -8,7 +7,7 @@ svg_to_pixmap().
 
 import math
 
-from PyQt5.QtCore import Qt, QByteArray
+from PyQt5.QtCore import QByteArray, Qt
 from PyQt5.QtGui import QPainter, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
 
@@ -37,54 +36,33 @@ ICONS = {
         '<path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />'
         "</svg>"
     ),
-    "check": (
-        _SVG_HEADER
-        + '<path d="M5 12l5 5l10 -10" />'
-        "</svg>"
-    ),
+    "check": (_SVG_HEADER + '<path d="M5 12l5 5l10 -10" /></svg>'),
     "check_circle": (
-        _SVG_HEADER
-        + '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />'
+        _SVG_HEADER + '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />'
         '<path d="M9 12l2 2l4 -4" />'
         "</svg>"
     ),
     "arrow_left": (
-        _SVG_HEADER
-        + '<path d="M5 12l14 0" />'
-        '<path d="M5 12l6 6" />'
-        '<path d="M5 12l6 -6" />'
-        "</svg>"
+        _SVG_HEADER + '<path d="M5 12l14 0" /><path d="M5 12l6 6" /><path d="M5 12l6 -6" /></svg>'
     ),
     "arrow_right": (
-        _SVG_HEADER
-        + '<path d="M5 12l14 0" />'
-        '<path d="M13 18l6 -6" />'
-        '<path d="M13 6l6 6" />'
-        "</svg>"
+        _SVG_HEADER + '<path d="M5 12l14 0" /><path d="M13 18l6 -6" /><path d="M13 6l6 6" /></svg>'
     ),
     "file": (
-        _SVG_HEADER
-        + '<path d="M14 3v4a1 1 0 0 0 1 1h4" />'
+        _SVG_HEADER + '<path d="M14 3v4a1 1 0 0 0 1 1h4" />'
         '<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" />'
         "</svg>"
     ),
     "file_plus": (
-        _SVG_HEADER
-        + '<path d="M14 3v4a1 1 0 0 0 1 1h4" />'
+        _SVG_HEADER + '<path d="M14 3v4a1 1 0 0 0 1 1h4" />'
         '<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" />'
         '<path d="M12 11l0 6" />'
         '<path d="M9 14l6 0" />'
         "</svg>"
     ),
-    "x": (
-        _SVG_HEADER
-        + '<path d="M18 6l-12 12" />'
-        '<path d="M6 6l12 12" />'
-        "</svg>"
-    ),
+    "x": (_SVG_HEADER + '<path d="M18 6l-12 12" /><path d="M6 6l12 12" /></svg>'),
     "alert_triangle": (
-        _SVG_HEADER
-        + '<path d="M12 9v4" />'
+        _SVG_HEADER + '<path d="M12 9v4" />'
         '<path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.535a1.914 1.914 0 0 0 -3.274 0z" />'
         '<path d="M12 16h.01" />'
         "</svg>"
@@ -92,9 +70,10 @@ ICONS = {
 }
 
 
-def svg_to_pixmap(svg_string: str, size: int = 24, color: str = "white", dpr: float = 1.0) -> QPixmap:
-    """
-    Rasterize an SVG string (with 'currentColor' tokens) to a square QPixmap.
+def svg_to_pixmap(
+    svg_string: str, size: int = 24, color: str = "white", dpr: float = 1.0
+) -> QPixmap:
+    """Rasterize an SVG string (with 'currentColor' tokens) to a square QPixmap.
 
     Args:
         svg_string: SVG markup, e.g. an entry from ICONS.
@@ -116,6 +95,7 @@ def svg_to_pixmap(svg_string: str, size: int = 24, color: str = "white", dpr: fl
     Returns:
         QPixmap with a transparent background, tagged with `dpr` so a
         QLabel/QIcon/QPushButton draws it 1:1 instead of stretching it.
+
     """
     svg_with_color = svg_string.replace("currentColor", color)
     renderer = QSvgRenderer(QByteArray(svg_with_color.encode()))

@@ -85,8 +85,7 @@ def test_no_core_module_imports_pyqt5_or_gui_i18n():
         if any(name == "PyQt5" or name.startswith("PyQt5.") for name in imported):
             violations.append(f"{module.__name__} imports PyQt5")
         if any(
-            name.endswith("gui.i18n") or ".gui.i18n" in name or name == "i18n"
-            for name in imported
+            name.endswith("gui.i18n") or ".gui.i18n" in name or name == "i18n" for name in imported
         ):
             violations.append(f"{module.__name__} imports gui.i18n")
 

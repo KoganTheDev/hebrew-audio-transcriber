@@ -8,8 +8,6 @@ visual_order_mode() for why this exists.
 import logging
 from unittest.mock import patch
 
-import pytest
-
 from speech_to_text.core.hebrew_text import isolate_rtl
 from speech_to_text.core.log_bidi import VisualOrderFormatter, visual_order_mode
 

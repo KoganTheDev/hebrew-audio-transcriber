@@ -53,7 +53,6 @@ def word(start, end, text="x", probability=0.9):
 
 
 class TestSpeakerSpan:
-
     def test_overlap_of_contained_range(self):
         assert SpeakerSpan(0, 10, 0).overlap(2, 5) == 3
 
@@ -68,7 +67,6 @@ class TestSpeakerSpan:
 
 
 class TestBestSpeaker:
-
     def test_picks_the_largest_overlap(self):
         spans = [SpeakerSpan(0, 4, 0), SpeakerSpan(4, 10, 1)]
         assert _best_speaker(spans, 3, 10) == 1
@@ -83,7 +81,6 @@ class TestBestSpeaker:
 
 
 class TestAssignSpeakers:
-
     def test_boundary_slip_word_does_not_split_and_takes_the_majority_label(self):
         """
         A stray word that is only CLIPPED by the next span - the diarizer put
@@ -96,7 +93,9 @@ class TestAssignSpeakers:
         below, which is the case this guard must NOT swallow.
         """
         segment = Segment(
-            start=0, end=10, text="a b c d e",
+            start=0,
+            end=10,
+            text="a b c d e",
             words=[word(0, 1), word(1, 2), word(2, 3), word(3, 4), word(4, 5)],
         )
         # Speaker 1 starts 0.1s before the last word ends, clipping it only.
@@ -118,9 +117,11 @@ class TestAssignSpeakers:
         and the segment splits three ways.
         """
         words = [
-            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(0.0, 1.0, text="a"),
+            word(1.0, 2.0, text=" b"),
             word(2.0, 3.0, text=" c"),
-            word(3.0, 4.0, text=" d"), word(4.0, 5.0, text=" e"),
+            word(3.0, 4.0, text=" d"),
+            word(4.0, 5.0, text=" e"),
         ]
         segment = Segment(start=0.0, end=5.0, text="a b c d e", words=words)
         spans = [
@@ -141,9 +142,11 @@ class TestAssignSpeakers:
         is how the earlier speaker accumulated the other's words.
         """
         words = [
-            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(0.0, 1.0, text="a"),
+            word(1.0, 2.0, text=" b"),
             word(2.0, 2.2, text=" c"),
-            word(2.2, 3.2, text=" d"), word(3.2, 4.2, text=" e"),
+            word(2.2, 3.2, text=" d"),
+            word(3.2, 4.2, text=" e"),
         ]
         segment = Segment(start=0.0, end=4.2, text="a b c d e", words=words)
         # "c" is a 0.2s boundary slip (too short to be an interjection), and
@@ -199,7 +202,9 @@ class TestAssignSpeakers:
     def test_no_split_needed_returns_the_input_object_unchanged(self):
         """A single-speaker segment is handed back by identity, not rebuilt."""
         segment = Segment(
-            start=0, end=2, text="a b",
+            start=0,
+            end=2,
+            text="a b",
             words=[word(0, 1, text="a"), word(1, 2, text=" b")],
         )
         result = assign_speakers([segment], [SpeakerSpan(0, 2, 0)])
@@ -311,9 +316,11 @@ class TestAssignSpeakers:
         0 purely because speaker 0 came first.
         """
         words = [
-            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(0.0, 1.0, text="a"),
+            word(1.0, 2.0, text=" b"),
             word(2.8, 2.95, text=" c"),
-            word(3.0, 4.0, text=" d"), word(4.0, 5.0, text=" e"),
+            word(3.0, 4.0, text=" d"),
+            word(4.0, 5.0, text=" e"),
         ]
         segment = Segment(start=0.0, end=5.0, text="a b c d e", words=words)
         # Nothing covers 2.8-2.95: it falls in the gap between the two spans.
@@ -331,7 +338,8 @@ class TestAssignSpeakers:
         honest outcome.
         """
         words = [
-            word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
+            word(0.0, 1.0, text="a"),
+            word(1.0, 2.0, text=" b"),
             word(20.0, 21.0, text=" c"),
         ]
         segment = Segment(start=0.0, end=21.0, text="a b c", words=words)
@@ -344,10 +352,14 @@ class TestAssignSpeakers:
     def test_multiple_segments_are_flattened_into_one_list(self):
         """assign_speakers returns a flat list, splits included, in order."""
         straddling = Segment(
-            start=0.0, end=4.0, text="a b c d",
+            start=0.0,
+            end=4.0,
+            text="a b c d",
             words=[
-                word(0.0, 1.0, text="a"), word(1.0, 2.0, text=" b"),
-                word(2.0, 3.0, text=" c"), word(3.0, 4.0, text=" d"),
+                word(0.0, 1.0, text="a"),
+                word(1.0, 2.0, text=" b"),
+                word(2.0, 3.0, text=" c"),
+                word(3.0, 4.0, text=" d"),
             ],
         )
         clean = Segment(start=4.5, end=5.5, text="e", words=[word(4.5, 5.5, text="e")])
@@ -380,8 +392,9 @@ def _install_fake_sherpa_onnx(monkeypatch):
         # anything back for the purpose.
         last_instance = None
 
-        def __init__(self, segmentation, embedding, clustering,
-                     min_duration_on=0.3, min_duration_off=0.5):
+        def __init__(
+            self, segmentation, embedding, clustering, min_duration_on=0.3, min_duration_off=0.5
+        ):
             self.segmentation = segmentation
             self.embedding = embedding
             self.clustering = clustering
@@ -535,6 +548,7 @@ class TestDiarizeBuildsSherpaConfig:
             return ["sentinel"]
 
         import speech_to_text.core.diarization_powerset as powerset_module
+
         monkeypatch.setattr(powerset_module, "diarize_powerset", fake_powerset)
         monkeypatch.setattr(app_config, "DIARIZATION_ENGINE", "powerset")
 

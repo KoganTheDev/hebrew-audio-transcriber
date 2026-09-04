@@ -1,5 +1,4 @@
-"""
-Background QThreads used by MainWindow.
+"""Background QThreads used by MainWindow.
 
 Both threads exist purely to bridge a `multiprocessing.Process` (running in
 a separate OS process, per the DLL-conflict note below) back into Qt
@@ -24,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class TranscriptionThread(QThread):
-    """
-    Worker thread for transcription.
+    """Worker thread for transcription.
 
     Runs the actual transcription in a separate OS process (see
     speech_to_text.core.worker) rather than in-process, and just relays
@@ -33,6 +31,7 @@ class TranscriptionThread(QThread):
     PyQt5 each bundle their own MSVCP140.dll on Windows, and loading both in
     one process causes an intermittent native crash.
     """
+
     # progress/error carry (i18n key, format params) rather than rendered
     # text - the worker process doesn't know the UI language, and rendering
     # at display time lets a mid-run language toggle re-render live status.
@@ -84,7 +83,7 @@ class TranscriptionThread(QThread):
 
     def run(self):
         """Launch the worker process and relay its progress/result as signals."""
-        logger.info(f"TranscriptionThread started")
+        logger.info("TranscriptionThread started")
         try:
             # Kept below run_transcription_process's own first emission
             # (BATCH_INIT_PERCENT, see core/progress_scale.py) so the bar
@@ -101,8 +100,7 @@ class TranscriptionThread(QThread):
 
             self._process = multiprocessing.Process(
                 target=run_transcription_process,
-                args=(self.audio_files, output_file, self.options,
-                      progress_queue, result_queue),
+                args=(self.audio_files, output_file, self.options, progress_queue, result_queue),
                 daemon=True,
             )
             self._process.start()
@@ -159,8 +157,7 @@ class TranscriptionThread(QThread):
                 self._process.terminate()
 
     def _relay_progress_message(self, kind: str, payload: list) -> None:
-        """
-        Relay one progress_queue message as the progress signal.
+        """Relay one progress_queue message as the progress signal.
 
         "progress" messages carry a real percentage. "status" messages (see
         core.worker._RetryStatusLogHandler) only describe background
@@ -191,8 +188,7 @@ class TranscriptionThread(QThread):
 
 
 class CalibrationThread(QThread):
-    """
-    Runs the one-time hardware calibration benchmark in the background.
+    """Runs the one-time hardware calibration benchmark in the background.
 
     Only actually benchmarks on first run - HardwareDetector already loads
     a cached result synchronously if one exists, in which case MainWindow
@@ -200,6 +196,7 @@ class CalibrationThread(QThread):
     TranscriptionThread: this loads faster-whisper, so it can't safely share
     a process with PyQt5.
     """
+
     calibrated = pyqtSignal(float)
     failed = pyqtSignal(str)
 

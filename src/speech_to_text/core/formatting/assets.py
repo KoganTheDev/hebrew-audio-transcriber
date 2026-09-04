@@ -1,5 +1,4 @@
-"""
-Reading the inlined stylesheet, script and backdrop photos off disk.
+"""Reading the inlined stylesheet, script and backdrop photos off disk.
 
 Everything the HTML renderer embeds rather than links to - see the module
 docstring in __init__.py for why the document is fully self-contained - is
@@ -17,7 +16,7 @@ tests/test_formatting.py's TestVistaBackdrop for the tests this matters to.
 
 import base64
 import random
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Optional
 
@@ -28,10 +27,9 @@ from typing import Optional
 _ASSETS = Path(__file__).parent.parent / "assets"
 
 
-@lru_cache(maxsize=None)
+@cache
 def _asset(name: str) -> str:
-    """
-    Read an inlined asset.
+    """Read an inlined asset.
 
     Kept as real .css/.js files rather than Python string literals so they
     stay lintable and syntax-highlighted; cached because a batch render would
@@ -40,10 +38,9 @@ def _asset(name: str) -> str:
     return (_ASSETS / name).read_text(encoding="utf-8")
 
 
-@lru_cache(maxsize=None)
+@cache
 def _asset_dir(name: str) -> str:
-    """
-    Read every fragment in an assets subdirectory and concatenate them, in
+    """Read every fragment in an assets subdirectory and concatenate them, in
     sorted filename order.
 
     The page script (core/assets/js/) and the stylesheet (core/assets/css/) each grew to roughly 2200 lines in one
@@ -75,10 +72,9 @@ def _asset_dir(name: str) -> str:
 _VISTAS_DIR = _ASSETS / "vistas"
 
 
-@lru_cache(maxsize=None)
+@cache
 def _vista_names() -> tuple:
-    """
-    Available LANDSCAPE backdrop photos, sorted so vista-01.webp always sorts
+    """Available LANDSCAPE backdrop photos, sorted so vista-01.webp always sorts
     first.
 
     Excludes *-portrait.webp: tools/build_vistas.py writes a portrait art-
@@ -102,16 +98,12 @@ def _vista_names() -> tuple:
     if not _VISTAS_DIR.is_dir():
         return ()
     return tuple(
-        sorted(
-            p.name for p in _VISTAS_DIR.glob("*.webp")
-            if not p.stem.endswith("-portrait")
-        )
+        sorted(p.name for p in _VISTAS_DIR.glob("*.webp") if not p.stem.endswith("-portrait"))
     )
 
 
 def _vista_portrait_name(landscape_name: str) -> Optional[str]:
-    """
-    The portrait art-direction crop for a chosen landscape backdrop, e.g.
+    """The portrait art-direction crop for a chosen landscape backdrop, e.g.
     "vista-07.webp" -> "vista-07-portrait.webp", or None if that photo has no
     portrait crop on disk.
 
@@ -128,10 +120,9 @@ def _vista_portrait_name(landscape_name: str) -> Optional[str]:
     return None
 
 
-@lru_cache(maxsize=None)
+@cache
 def _asset_bytes(name: str) -> bytes:
-    """
-    Binary counterpart to _asset(): the vista photos are WebP, not text, so
+    """Binary counterpart to _asset(): the vista photos are WebP, not text, so
     they cannot go through _asset()'s read_text/utf-8 path. Cached for the
     same reason - a batch render would otherwise re-read the same file once
     per document.
@@ -146,8 +137,7 @@ def _data_uri(name: str) -> str:
 
 
 def _vista_data_uris(vista: Optional[str]) -> Optional[tuple]:
-    """
-    Choose a backdrop and return (landscape_uri, portrait_uri_or_None).
+    """Choose a backdrop and return (landscape_uri, portrait_uri_or_None).
 
     vista=None (the default) picks uniformly at random from whatever exists.
     A caller passing a specific filename - the "vista" parameter on

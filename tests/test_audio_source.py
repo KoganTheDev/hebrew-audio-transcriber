@@ -43,7 +43,6 @@ def two_party_call(turns=6, turn_seconds=1.0):
 
 
 class TestTrueStereoDetection:
-
     def test_alternating_two_party_call_is_detected(self):
         assert is_true_stereo(two_party_call()) is True
 
@@ -81,7 +80,6 @@ class TestTrueStereoDetection:
 
 
 class TestToMono:
-
     def test_mono_passthrough_is_unchanged(self):
         channel = speech_like(1)
         assert to_mono([channel]) is channel

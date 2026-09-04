@@ -1,5 +1,4 @@
-"""
-Diarization built on our own powerset decode, for the "powerset" engine.
+"""Diarization built on our own powerset decode, for the "powerset" engine.
 
 Why this exists rather than just calling sherpa-onnx: see
 config.DIARIZATION_ENGINE. In short, sherpa runs the whole pipeline behind
@@ -57,7 +56,8 @@ one as evidence of the other.
 """
 
 import logging
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -75,8 +75,7 @@ def diarize_powerset(
     onset: Optional[float] = None,
     mask_overlap: bool = False,
 ) -> List:
-    """
-    Label who is speaking, decoding the segmentation model directly.
+    """Label who is speaking, decoding the segmentation model directly.
 
     Same contract as core.diarization.diarize: float32 mono audio in,
     speaker-labelled spans sorted by start time out.
@@ -92,10 +91,10 @@ def diarize_powerset(
     # process too, and sherpa-onnx must not be a hard import for code paths
     # that never diarize (see core/diarization.py's own local import).
     from speech_to_text.core.diarization import (
-        DiarizationUnavailable,
-        SpeakerSpan,
         _EMBEDDING_MODEL,
         _SEGMENTATION_MODEL,
+        DiarizationUnavailable,
+        SpeakerSpan,
         ensure_models,
     )
 
@@ -120,7 +119,7 @@ def diarize_powerset(
     )
     marginals, starts = _infer_with_progress(session, samples, progress)
 
-    active = marginals >= onset                                  # (W, F, K)
+    active = marginals >= onset  # (W, F, K)
     embeddings, owners = _embed_windows(
         sherpa_onnx, _EMBEDDING_MODEL, samples, active, starts, mask_overlap
     )
@@ -147,8 +146,7 @@ def _providers(name: str) -> List[str]:
 
 
 def _infer_with_progress(session, samples, progress):
-    """
-    infer_marginals, reporting progress per window.
+    """infer_marginals, reporting progress per window.
 
     Reimplemented here rather than adding a callback to segmentation.py, so
     that module stays free of anything but arithmetic and remains testable
@@ -156,16 +154,12 @@ def _infer_with_progress(session, samples, progress):
     """
     starts = seg.window_starts(len(samples))
     matrix = seg.powerset_matrix()
-    out = np.empty(
-        (len(starts), seg.FRAMES_PER_WINDOW, seg.NUM_LOCAL_SPEAKERS), dtype=np.float32
-    )
+    out = np.empty((len(starts), seg.FRAMES_PER_WINDOW, seg.NUM_LOCAL_SPEAKERS), dtype=np.float32)
     for index, start in enumerate(starts):
-        window = samples[start:start + seg.WINDOW_SAMPLES]
+        window = samples[start : start + seg.WINDOW_SAMPLES]
         if len(window) < seg.WINDOW_SAMPLES:
             window = np.pad(window, (0, seg.WINDOW_SAMPLES - len(window)))
-        logits = session.run(
-            None, {"x": window.reshape(1, 1, -1).astype(np.float32)}
-        )[0]
+        logits = session.run(None, {"x": window.reshape(1, 1, -1).astype(np.float32)})[0]
         out[index] = seg.softmax(logits[0]) @ matrix
         if progress:
             progress(index + 1, len(starts))
@@ -186,8 +180,7 @@ def _embed_windows(
     starts: Sequence[int],
     mask_overlap: bool,
 ) -> Tuple[List[np.ndarray], List[Tuple[int, int]]]:
-    """
-    One embedding per (window, local speaker) that has enough usable speech.
+    """One embedding per (window, local speaker) that has enough usable speech.
 
     Returns the embeddings and, alongside them, the (window, speaker) each one
     came from - `owners` is what lets the cluster labels be mapped back onto
@@ -213,8 +206,8 @@ def _embed_windows(
     embeddings: List[np.ndarray] = []
     owners: List[Tuple[int, int]] = []
     for window_index, start in enumerate(starts):
-        window_active = active[window_index]                     # (F, K)
-        alone = window_active.sum(axis=1) == 1                   # (F,)
+        window_active = active[window_index]  # (F, K)
+        alone = window_active.sum(axis=1) == 1  # (F,)
         for speaker in range(seg.NUM_LOCAL_SPEAKERS):
             usable = window_active[:, speaker]
             if mask_overlap:
@@ -263,8 +256,7 @@ def _mask_runs(mask: np.ndarray) -> List[Tuple[int, int]]:
 
 
 def _cluster(sherpa_onnx, embeddings: List[np.ndarray], num_speakers: int) -> List[int]:
-    """
-    Group (window, speaker) embeddings into speakers.
+    """Group (window, speaker) embeddings into speakers.
 
     num_speakers <= 0 means "infer", which hands the decision to the
     threshold. The GUI never sends that today (its spin box is 2-10), so in
@@ -287,8 +279,7 @@ def _reconstruct(
     labels: Sequence[int],
     num_samples: int,
 ) -> np.ndarray:
-    """
-    Fold every window's local speakers into global per-cluster activity.
+    """Fold every window's local speakers into global per-cluster activity.
 
     This is where cross-window alignment finally happens, and it happens by
     cluster membership rather than by comparing neighbouring windows to each
@@ -335,8 +326,7 @@ def _reconstruct(
 
 
 def _tracks_to_spans(span_type, tracks: np.ndarray) -> List:
-    """
-    Cut each cluster's boolean track into spans, applying the duration floors.
+    """Cut each cluster's boolean track into spans, applying the duration floors.
 
     min_duration_off is applied before min_duration_on deliberately: bridging
     a short pause first means a turn briefly interrupted by a breath is judged
@@ -354,9 +344,7 @@ def _tracks_to_spans(span_type, tracks: np.ndarray) -> List:
     return spans
 
 
-def _bridge(
-    intervals: List[Tuple[float, float]], max_gap: float
-) -> List[Tuple[float, float]]:
+def _bridge(intervals: List[Tuple[float, float]], max_gap: float) -> List[Tuple[float, float]]:
     """Join intervals separated by less than max_gap seconds."""
     if not intervals:
         return intervals

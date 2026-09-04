@@ -1,5 +1,4 @@
-"""
-One-time build step: turn the raw Unsplash JPEGs in vistas_source/ into the
+"""One-time build step: turn the raw Unsplash JPEGs in vistas_source/ into the
 WebP backdrops shipped inside speech_to_text/core/assets/vistas/.
 
 Each source produces TWO outputs: a landscape crop (vista-NN.webp, 16:9,
@@ -115,8 +114,7 @@ MIN_QUALITY = 60
 
 
 def _fit_to_target(image: Image.Image, target_w: int, target_h: int) -> Image.Image:
-    """
-    Centre-crop to target_w:target_h's aspect, then scale to that exact size.
+    """Centre-crop to target_w:target_h's aspect, then scale to that exact size.
 
     The crop is the same one the browser would perform at paint time (see
     TARGET_W's comment), done here so the discarded pixels never ship. Centre,
@@ -151,8 +149,7 @@ def _fit_to_target(image: Image.Image, target_w: int, target_h: int) -> Image.Im
 
 
 def _encode_under_budget(image: Image.Image, dest: Path, max_bytes: int) -> tuple:
-    """
-    Write `image` as WebP to `dest`, walking quality down until the file is
+    """Write `image` as WebP to `dest`, walking quality down until the file is
     <= max_bytes. Returns (size, quality), with size negated if even
     MIN_QUALITY didn't fit (the caller reports that; the file is still written
     rather than left missing). The quality comes back so the build log can show
@@ -182,12 +179,16 @@ def _encode_under_budget(image: Image.Image, dest: Path, max_bytes: int) -> tupl
 
 
 def _process_variant(
-    source: Path, raw: Image.Image, dest: Path,
-    target_w: int, target_h: int, max_bytes: int,
-    over_budget: list, undersized: list,
+    source: Path,
+    raw: Image.Image,
+    dest: Path,
+    target_w: int,
+    target_h: int,
+    max_bytes: int,
+    over_budget: list,
+    undersized: list,
 ) -> None:
-    """
-    Crop, encode and log one output file for one source image.
+    """Crop, encode and log one output file for one source image.
 
     Shared by the landscape and portrait passes in build() - the two variants
     differ only in their target size and byte budget, not in the crop/encode/
@@ -221,8 +222,7 @@ def build() -> int:
         return 1
 
     sources = sorted(
-        p for p in SOURCE_DIR.iterdir()
-        if p.is_file() and p.suffix.lower() in SOURCE_EXTS
+        p for p in SOURCE_DIR.iterdir() if p.is_file() and p.suffix.lower() in SOURCE_EXTS
     )
     if not sources:
         print(f"no images found in {SOURCE_DIR}", file=sys.stderr)
@@ -240,13 +240,24 @@ def build() -> int:
             # profile, and WebP encoding assumes RGB(A).
             image = raw.convert("RGB")
             _process_variant(
-                source, image, OUTPUT_DIR / f"vista-{index:02d}.webp",
-                TARGET_W, TARGET_H, MAX_BYTES, over_budget, undersized,
+                source,
+                image,
+                OUTPUT_DIR / f"vista-{index:02d}.webp",
+                TARGET_W,
+                TARGET_H,
+                MAX_BYTES,
+                over_budget,
+                undersized,
             )
             _process_variant(
-                source, image, OUTPUT_DIR / f"vista-{index:02d}-portrait.webp",
-                PORTRAIT_W, PORTRAIT_H, PORTRAIT_MAX_BYTES,
-                portrait_over_budget, portrait_undersized,
+                source,
+                image,
+                OUTPUT_DIR / f"vista-{index:02d}-portrait.webp",
+                PORTRAIT_W,
+                PORTRAIT_H,
+                PORTRAIT_MAX_BYTES,
+                portrait_over_budget,
+                portrait_undersized,
             )
 
     # Idempotent means re-running with fewer sources doesn't leave orphaned

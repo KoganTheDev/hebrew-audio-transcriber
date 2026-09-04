@@ -53,7 +53,9 @@ DEFAULT_MODELS = ["medium", "ivrit-turbo"]
 OUTPUT_DIR = "eval_output"
 
 
-def transcribe_once(model_size: str, samples, duration: float, language: Optional[str] = None) -> Dict:
+def transcribe_once(
+    model_size: str, samples, duration: float, language: Optional[str] = None
+) -> Dict:
     """
     Run one model over the audio and collect metrics alongside the text.
 
@@ -107,7 +109,8 @@ def transcribe_once(model_size: str, samples, duration: float, language: Optiona
         ),
         "low_confidence_share": (
             round(sum(1 for p in probabilities if p < LOW_CONFIDENCE) / len(probabilities), 4)
-            if probabilities else None
+            if probabilities
+            else None
         ),
         "repeated_segments": repeats,
         "text": text,
@@ -205,6 +208,7 @@ def print_table(results: List[Dict], reference: Optional[str]) -> None:
 # it were reproducible.
 # =============================================================================
 
+
 def build_configs(
     models: List[str],
     compute_types: List[Optional[str]],
@@ -229,14 +233,16 @@ def build_configs(
         for compute_type, beam_size, cpu_threads, num_workers, device in itertools.product(
             compute_types, beam_sizes, cpu_threads_list, num_workers_list, devices
         ):
-            configs.append({
-                "model": model,
-                "compute_type": compute_type,
-                "beam_size": beam_size,
-                "cpu_threads": cpu_threads,
-                "num_workers": num_workers,
-                "device": device,
-            })
+            configs.append(
+                {
+                    "model": model,
+                    "compute_type": compute_type,
+                    "beam_size": beam_size,
+                    "cpu_threads": cpu_threads,
+                    "num_workers": num_workers,
+                    "device": device,
+                }
+            )
     return configs
 
 
@@ -294,7 +300,9 @@ def _noise_hint(cv: float, realtime_factor: Optional[float]) -> Optional[str]:
     mismatch story), so name it explicitly rather than making a future
     reader rediscover it via a killed 2-hour run.
     """
-    if cv > NOISE_CV_THRESHOLD or (realtime_factor is not None and realtime_factor > REALTIME_SANITY_FACTOR):
+    if cv > NOISE_CV_THRESHOLD or (
+        realtime_factor is not None and realtime_factor > REALTIME_SANITY_FACTOR
+    ):
         return (
             "If this doesn't clear up with more repeats on a quiet machine, "
             "check --language: transcribing audio in the wrong language is a "
@@ -305,7 +313,11 @@ def _noise_hint(cv: float, realtime_factor: Optional[float]) -> Optional[str]:
 
 
 def run_config(
-    cfg: Dict, samples, duration: float, warmup: bool, repeats: int,
+    cfg: Dict,
+    samples,
+    duration: float,
+    warmup: bool,
+    repeats: int,
     language: Optional[str] = None,
 ) -> Dict:
     """
@@ -445,9 +457,7 @@ def print_sweep_table(results: List[Dict]) -> None:
             f"treat as a result: {', '.join(noisy)}"
         )
 
-    any_hint = any(
-        _noise_hint(r.get("cv", 0), r.get("median_realtime_factor")) for r in rows
-    )
+    any_hint = any(_noise_hint(r.get("cv", 0), r.get("median_realtime_factor")) for r in rows)
     if any_hint:
         print(
             "If this doesn't clear up with more repeats on a quiet machine, check "
@@ -468,18 +478,31 @@ def _sweep_requested(args) -> bool:
     argparse setup - specifically so a bare `--repeats` default cannot, on
     its own, flip an old-style invocation onto the sweep path."""
     return bool(
-        args.compute_types or args.beam_sizes or args.cpu_threads
-        or args.num_workers or args.devices or args.repeats is not None or args.warmup
+        args.compute_types
+        or args.beam_sizes
+        or args.cpu_threads
+        or args.num_workers
+        or args.devices
+        or args.repeats is not None
+        or args.warmup
     )
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("audio", help="Path to an audio file")
-    parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS,
-                        help=f"config.MODELS keys or raw repo ids (default: {DEFAULT_MODELS})")
-    parser.add_argument("--seconds", type=float, default=0,
-                        help="Only transcribe the first N seconds (0 = whole file)")
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        default=DEFAULT_MODELS,
+        help=f"config.MODELS keys or raw repo ids (default: {DEFAULT_MODELS})",
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        default=0,
+        help="Only transcribe the first N seconds (0 = whole file)",
+    )
     parser.add_argument("--reference", help="Hand-corrected transcript, enables true WER/CER")
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
     # Defaults to None -> config.LANGUAGE ("he"), the app's own default, so a
@@ -491,31 +514,59 @@ def main(argv=None) -> int:
     # sweep was run and discarded because of exactly this before this flag
     # existed - do not remove it or let it silently default to the wrong
     # language for a non-Hebrew fixture.
-    parser.add_argument("--language", default=None,
-                        help="faster-whisper language code (default: config.LANGUAGE, i.e. 'he'). "
-                             "Wrong language = wrong TIMING, not just wrong text - see run_config().")
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="faster-whisper language code (default: config.LANGUAGE, i.e. 'he'). "
+        "Wrong language = wrong TIMING, not just wrong text - see run_config().",
+    )
     # --- Phase B: compute-settings sweep. Any of these being passed switches
     # main() from the original one-run-per-model path to run_config()'s
     # warm-up + N-repeats + median/spread path - see _sweep_requested(). Left
     # unset, every one of these axes defaults to None ("don't override" -
     # Transcriber resolves its own production default), so passing none of
     # them changes nothing about the original --models behaviour.
-    parser.add_argument("--compute-types", nargs="+", default=None,
-                        help="e.g. int8 int8_float32 float32 (default: Transcriber's own default)")
-    parser.add_argument("--beam-sizes", nargs="+", type=int, default=None,
-                        help="e.g. 5 1 (default: config.BEAM_SIZE)")
-    parser.add_argument("--cpu-threads", nargs="+", type=int, default=None,
-                        help="e.g. 1 4 (default: ctranslate2's own choice)")
-    parser.add_argument("--num-workers", nargs="+", type=int, default=None,
-                        help="e.g. 1 2 (default: ctranslate2's own choice)")
-    parser.add_argument("--devices", nargs="+", default=None,
-                        help="e.g. cpu cuda (default: cpu)")
-    parser.add_argument("--repeats", type=int, default=None,
-                        help=f"Timed runs per config (default: {MIN_TRUSTWORTHY_REPEATS} once the sweep "
-                             f"path is taken at all - see MIN_TRUSTWORTHY_REPEATS). Fewer than "
-                             f"{MIN_TRUSTWORTHY_REPEATS}, spread/cv are barely more than a guess.")
-    parser.add_argument("--warmup", action="store_true",
-                        help="Run one untimed transcribe before timing, to exclude first-call effects")
+    parser.add_argument(
+        "--compute-types",
+        nargs="+",
+        default=None,
+        help="e.g. int8 int8_float32 float32 (default: Transcriber's own default)",
+    )
+    parser.add_argument(
+        "--beam-sizes",
+        nargs="+",
+        type=int,
+        default=None,
+        help="e.g. 5 1 (default: config.BEAM_SIZE)",
+    )
+    parser.add_argument(
+        "--cpu-threads",
+        nargs="+",
+        type=int,
+        default=None,
+        help="e.g. 1 4 (default: ctranslate2's own choice)",
+    )
+    parser.add_argument(
+        "--num-workers",
+        nargs="+",
+        type=int,
+        default=None,
+        help="e.g. 1 2 (default: ctranslate2's own choice)",
+    )
+    parser.add_argument("--devices", nargs="+", default=None, help="e.g. cpu cuda (default: cpu)")
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=f"Timed runs per config (default: {MIN_TRUSTWORTHY_REPEATS} once the sweep "
+        f"path is taken at all - see MIN_TRUSTWORTHY_REPEATS). Fewer than "
+        f"{MIN_TRUSTWORTHY_REPEATS}, spread/cv are barely more than a guess.",
+    )
+    parser.add_argument(
+        "--warmup",
+        action="store_true",
+        help="Run one untimed transcribe before timing, to exclude first-call effects",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -532,8 +583,11 @@ def main(argv=None) -> int:
     if args.seconds:
         samples = samples[: int(args.seconds * audio_source.SAMPLE_RATE)]
     duration = len(samples) / audio_source.SAMPLE_RATE
-    print(f"  {duration / 60:.1f} min, {len(channels)} channel(s), "
-          f"one-speaker-per-channel: {two_party}", flush=True)
+    print(
+        f"  {duration / 60:.1f} min, {len(channels)} channel(s), "
+        f"one-speaker-per-channel: {two_party}",
+        flush=True,
+    )
 
     if _sweep_requested(args):
         # Default to MIN_TRUSTWORTHY_REPEATS once the sweep path is taken at
@@ -562,7 +616,9 @@ def main(argv=None) -> int:
         results = []
         for cfg in configs:
             try:
-                results.append(run_config(cfg, samples, duration, args.warmup, repeats, args.language))
+                results.append(
+                    run_config(cfg, samples, duration, args.warmup, repeats, args.language)
+                )
             except Exception:
                 logger.exception("Config %s failed", _config_label(cfg))
                 results.append({**cfg, "label": _config_label(cfg), "error": "raised an exception"})
@@ -591,6 +647,7 @@ def main(argv=None) -> int:
             result = {"model": model, "error": str(e)}
         if reference is not None and "error" not in result:
             from tests.eval.hebrew_metrics import character_error_rate, word_error_rate
+
             result["wer"] = round(word_error_rate(reference, result["text"]), 4)
             result["cer"] = round(character_error_rate(reference, result["text"]), 4)
         results.append(result)
@@ -604,9 +661,13 @@ def main(argv=None) -> int:
     metrics_path = os.path.join(args.output_dir, f"{stem}_metrics.json")
     with open(metrics_path, "w", encoding="utf-8") as handle:
         json.dump(
-            [{k: v for k, v in r.items() if not k.startswith("_") and k != "text"}
-             for r in results],
-            handle, ensure_ascii=False, indent=2,
+            [
+                {k: v for k, v in r.items() if not k.startswith("_") and k != "text"}
+                for r in results
+            ],
+            handle,
+            ensure_ascii=False,
+            indent=2,
         )
 
     print_table(results, reference)

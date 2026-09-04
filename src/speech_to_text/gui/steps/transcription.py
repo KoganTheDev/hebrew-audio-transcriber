@@ -1,22 +1,22 @@
 """Step 3: transcription progress, live status, and completion result."""
 
+import logging
 import os
 import time
-import logging
 import webbrowser
 from pathlib import Path
 from typing import List
 
-from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QFrame
-from PyQt5.QtCore import Qt, QTimer, QUrl, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QFontMetrics
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout
 
 from speech_to_text.core.formatting import format_mmss
 from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
 from speech_to_text.gui import theme
 from speech_to_text.gui.i18n import t
-from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+from speech_to_text.gui.theme import COLORS, Fonts, Spacing
 from speech_to_text.gui.widgets import IconTextButton
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,9 @@ class TranscriptionStep(QFrame):
 
         # Checkmark icon
         result_icon = QLabel()
-        result_pixmap = svg_to_pixmap(ICONS["check"], 48, COLORS['success'], dpr=self.devicePixelRatioF())
+        result_pixmap = svg_to_pixmap(
+            ICONS["check"], 48, COLORS["success"], dpr=self.devicePixelRatioF()
+        )
         result_icon.setPixmap(result_pixmap)
         result_icon.setStyleSheet("background: transparent;")
         result_icon.setAlignment(Qt.AlignCenter)
@@ -250,7 +252,7 @@ class TranscriptionStep(QFrame):
         self.open_button = IconTextButton()
         self.open_button.setText(t("open_transcript"))
         self.open_button.set_icon_spec("file", "left")
-        self.open_button.set_text_colors(COLORS['bg_primary'], disabled=COLORS['text_tertiary'])
+        self.open_button.set_text_colors(COLORS["bg_primary"], disabled=COLORS["text_tertiary"])
         self.open_button.setStyleSheet(theme.button_primary_qss())
         self.open_button.setCursor(Qt.PointingHandCursor)
         self.open_button.clicked.connect(self._open_result)
@@ -265,7 +267,7 @@ class TranscriptionStep(QFrame):
         self.folder_button = IconTextButton()
         self.folder_button.setText(t("show_in_folder"))
         self.folder_button.set_icon_spec("folder", "left")
-        self.folder_button.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
+        self.folder_button.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
         self.folder_button.setStyleSheet(theme.button_secondary_qss())
         self.folder_button.setCursor(Qt.PointingHandCursor)
         self.folder_button.clicked.connect(self._open_folder)
@@ -286,7 +288,7 @@ class TranscriptionStep(QFrame):
         # so a mid-run language toggle can re-render the live status.
         self._status_key = "w_initializing"
         self._status_params = {}
-        self._file_info_args = None   # (filename, model) once a run starts
+        self._file_info_args = None  # (filename, model) once a run starts
         self._result_path_value = None
         self._dot_phase = 0
         # Ticks once a second so the elapsed/remaining time and a "still
@@ -305,8 +307,7 @@ class TranscriptionStep(QFrame):
         self.file_info.setText(t("file_model_info", filename=filename, model=model.title()))
 
     def set_batch_files(self, filenames: List[str]) -> None:
-        """
-        (Re)build the batch strip's segments from the GUI's own selected-
+        """(Re)build the batch strip's segments from the GUI's own selected-
         file list - called once, when a run starts (see
         MainWindow._start_transcription), NOT derived from the worker's
         w_file_progress messages.
@@ -366,8 +367,7 @@ class TranscriptionStep(QFrame):
         self.batch_strip.show()
 
     def _paint_batch_segments(self, current_index: int) -> None:
-        """
-        Repaint every segment for `current_index` (1-based) being the file
+        """Repaint every segment for `current_index` (1-based) being the file
         now running. Segments before it are done, the one at it is current,
         everything after is still pending.
 
@@ -382,11 +382,11 @@ class TranscriptionStep(QFrame):
         """
         for index, segment in enumerate(self._batch_segment_frames, start=1):
             if index < current_index:
-                fill, border = COLORS['success'], COLORS['success']
+                fill, border = COLORS["success"], COLORS["success"]
             elif index == current_index:
-                fill, border = COLORS['accent'], COLORS['accent']
+                fill, border = COLORS["accent"], COLORS["accent"]
             else:
-                fill, border = "transparent", COLORS['border']
+                fill, border = "transparent", COLORS["border"]
             segment.setStyleSheet(
                 f"background-color: {fill}; border: {theme.Border.HAIRLINE}px solid {border};"
             )
@@ -423,8 +423,7 @@ class TranscriptionStep(QFrame):
         return t(self._status_key, **self._status_params)
 
     def update_progress(self, status_key: str, params: dict, percentage: int):
-        """
-        Update status text and, for real percentage updates, the progress
+        """Update status text and, for real percentage updates, the progress
         bar and elapsed/estimated-remaining time.
 
         status_key/params identify an i18n message (rendered here, in the
@@ -471,8 +470,7 @@ class TranscriptionStep(QFrame):
         self._progress_animation.start()
 
     def _refresh_time_label(self, elapsed: float) -> None:
-        """
-        Recompute elapsed + estimated-remaining from the last known progress
+        """Recompute elapsed + estimated-remaining from the last known progress
         percentage. Called both on every real progress update and on every
         1-second tick, so "Est. remaining" stays visible and keeps counting
         down throughout the whole run instead of only appearing momentarily
@@ -487,24 +485,31 @@ class TranscriptionStep(QFrame):
         """
         percentage = self._last_percentage
         since_last_change = (
-            elapsed if self._last_percent_change_time is None
+            elapsed
+            if self._last_percent_change_time is None
             else time.time() - self._last_percent_change_time
         )
 
         if percentage <= 0:
             self.time_label.setText(t("elapsed", elapsed=format_mmss(elapsed)))
         elif since_last_change > self.STALL_SECONDS:
-            self.time_label.setText(t(
-                "elapsed_remaining",
-                elapsed=format_mmss(elapsed), remaining=t("calculating"),
-            ))
+            self.time_label.setText(
+                t(
+                    "elapsed_remaining",
+                    elapsed=format_mmss(elapsed),
+                    remaining=t("calculating"),
+                )
+            )
         else:
             # Simple linear projection from work done so far.
             remaining = elapsed * (100 - percentage) / percentage
-            self.time_label.setText(t(
-                "elapsed_remaining",
-                elapsed=format_mmss(elapsed), remaining=format_mmss(remaining),
-            ))
+            self.time_label.setText(
+                t(
+                    "elapsed_remaining",
+                    elapsed=format_mmss(elapsed),
+                    remaining=format_mmss(remaining),
+                )
+            )
 
     def show_result(self, file_path: str):
         """Show completion result."""
@@ -527,8 +532,7 @@ class TranscriptionStep(QFrame):
         self._render_result_path()
 
     def _render_result_path(self) -> None:
-        """
-        Render self._result_path_value into result_path as one middle-elided
+        """Render self._result_path_value into result_path as one middle-elided
         line, and put the full path where truncation costs nothing: the
         tooltip and the accessible description. See the comment above
         result_path's construction for why this replaced a wrapped two-line
@@ -559,8 +563,7 @@ class TranscriptionStep(QFrame):
         self.result_path.setAccessibleDescription(full_text)
 
     def resizeEvent(self, event) -> None:
-        """
-        Keep the elided path in sync with the panel's actual width - see
+        """Keep the elided path in sync with the panel's actual width - see
         _render_result_path's docstring. A no-op whenever there is no
         result yet (the guard inside _render_result_path), so this costs
         nothing on every other resize this step sees before a run has
@@ -570,8 +573,7 @@ class TranscriptionStep(QFrame):
         self._render_result_path()
 
     def _open_result(self):
-        """
-        Open the finished transcript in the default browser.
+        """Open the finished transcript in the default browser.
 
         webbrowser rather than os.startfile: the output is HTML, and the
         association for .html is the browser on every platform this runs on,
@@ -587,8 +589,7 @@ class TranscriptionStep(QFrame):
             logger.warning(f"Could not open transcript in a browser: {e}")
 
     def _open_folder(self):
-        """
-        Reveal the transcript's containing folder in the OS file manager.
+        """Reveal the transcript's containing folder in the OS file manager.
 
         QDesktopServices.openUrl rather than webbrowser: a directory has no
         browser association to hand off to (webbrowser.open on a folder

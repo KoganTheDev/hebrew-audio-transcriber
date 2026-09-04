@@ -4,31 +4,35 @@ Tests for configuration module.
 
 import os
 
-import pytest
-
 from speech_to_text import config
 
 
 class TestConfig:
     """Test configuration module."""
-    
+
     def test_models_configuration(self):
         """Test that all models are configured correctly."""
         assert len(config.MODELS) == 7
-        for name in ("tiny", "base", "small", "medium", "large",
-                     "ivrit-turbo", "ivrit-large"):
+        for name in ("tiny", "base", "small", "medium", "large", "ivrit-turbo", "ivrit-large"):
             assert name in config.MODELS
 
     def test_model_has_required_keys(self):
         """Test that all models have required keys."""
         required_keys = {
-            "repo", "name", "description", "pros", "cons", "time_estimate",
-            "ram_required", "accuracy_score", "best_for", "recommended"
+            "repo",
+            "name",
+            "description",
+            "pros",
+            "cons",
+            "time_estimate",
+            "ram_required",
+            "accuracy_score",
+            "best_for",
+            "recommended",
         }
 
         for model_name, model_info in config.MODELS.items():
-            assert set(model_info.keys()) >= required_keys, \
-                f"Model {model_name} missing keys"
+            assert set(model_info.keys()) >= required_keys, f"Model {model_name} missing keys"
 
     def test_large_is_pinned_to_an_explicit_version(self):
         """
@@ -44,29 +48,29 @@ class TestConfig:
     def test_default_model_is_hebrew_tuned(self):
         """A Hebrew transcription app should not default to a general model."""
         assert config.DEFAULT_MODEL.startswith("ivrit-")
-    
+
     def test_default_model_exists(self):
         """Test that default model is configured."""
         assert config.DEFAULT_MODEL in config.MODELS
-    
+
     def test_only_one_recommended_model(self):
         """Test that exactly one model is marked as recommended."""
-        recommended = [m for m in config.MODELS.values() if m['recommended']]
+        recommended = [m for m in config.MODELS.values() if m["recommended"]]
         assert len(recommended) == 1
-    
+
     def test_app_configuration(self):
         """Test application configuration."""
         assert config.APP_NAME == "Hebrew Audio Transcriber"
         assert config.APP_VERSION == "2.0.0"
         assert config.WINDOW_WIDTH > 0
         assert config.WINDOW_HEIGHT > 0
-    
+
     def test_supported_formats(self):
         """Test that supported audio formats are defined."""
         assert isinstance(config.SUPPORTED_FORMATS, tuple)
         assert len(config.SUPPORTED_FORMATS) > 0
         assert all(fmt.startswith("*.") for fmt in config.SUPPORTED_FORMATS)
-    
+
     def test_required_packages(self):
         """Test that required packages are defined."""
         required_packages = config.REQUIRED_PACKAGES
@@ -77,7 +81,7 @@ class TestConfig:
         # These should NOT be in required_packages (lazy/optional)
         assert "faster_whisper" not in required_packages
         assert "psutil" not in required_packages
-    
+
     def test_transcription_settings(self):
         """Test transcription configuration."""
         assert config.LANGUAGE == "he"
@@ -85,16 +89,17 @@ class TestConfig:
         assert config.COMPUTE_TYPE in ["int8", "int16", "float16", "float32"]
         assert isinstance(config.VAD_FILTER, bool)
         assert isinstance(config.FORMAT_OUTPUT, bool)
-    
+
     def test_model_accuracy_progression(self):
         """Test that accuracy scores increase with model size."""
         models = list(config.MODELS.keys())
         scores = [config.MODELS[m]["accuracy_score"] for m in models]
-        
+
         # Check that scores are in increasing order
         for i in range(len(scores) - 1):
-            assert scores[i] <= scores[i + 1], \
-                f"Accuracy should increase: {models[i]}/{scores[i]} -> {models[i+1]}/{scores[i+1]}"
+            assert scores[i] <= scores[i + 1], (
+                f"Accuracy should increase: {models[i]}/{scores[i]} -> {models[i + 1]}/{scores[i + 1]}"
+            )
 
 
 class TestOutputPathFor:
@@ -110,10 +115,12 @@ class TestOutputPathFor:
         assert os.path.basename(path) == "meeting_transcription.html"
 
     def test_multiple_files_are_named_after_the_shared_folder(self):
-        path = config.output_path_for([
-            os.path.join("recordings", "a.wav"),
-            os.path.join("recordings", "b.wav"),
-        ])
+        path = config.output_path_for(
+            [
+                os.path.join("recordings", "a.wav"),
+                os.path.join("recordings", "b.wav"),
+            ]
+        )
         assert os.path.dirname(path) == "recordings"
         assert os.path.basename(path) == "recordings_transcription.html"
 
@@ -128,16 +135,21 @@ class TestOutputPathFor:
         assert one != two
 
         single = config.output_path_for([os.path.join("dir", "a.wav")])
-        batch = config.output_path_for([
-            os.path.join("dir", "a.wav"), os.path.join("dir", "b.wav"),
-        ])
+        batch = config.output_path_for(
+            [
+                os.path.join("dir", "a.wav"),
+                os.path.join("dir", "b.wav"),
+            ]
+        )
         assert single != batch
 
     def test_output_is_written_beside_the_first_input(self):
-        path = config.output_path_for([
-            os.path.join("here", "a.wav"),
-            os.path.join("here", "b.wav"),
-        ])
+        path = config.output_path_for(
+            [
+                os.path.join("here", "a.wav"),
+                os.path.join("here", "b.wav"),
+            ]
+        )
         assert os.path.dirname(path) == "here"
 
 
@@ -194,9 +206,7 @@ class TestModelDownloadRoot:
 
         assert os.path.abspath(result) == os.path.abspath(str(beside_package))
 
-    def test_result_is_absolute_and_stable_across_working_directory(
-        self, monkeypatch, tmp_path
-    ):
+    def test_result_is_absolute_and_stable_across_working_directory(self, monkeypatch, tmp_path):
         """
         The actual regression test for this bug: MODEL_DOWNLOAD_ROOT must
         not change with the working directory. Against the old code (the

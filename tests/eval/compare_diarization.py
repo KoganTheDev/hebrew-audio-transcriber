@@ -97,7 +97,7 @@ import logging
 import os
 import sys
 import time
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,9 @@ def run_span_mode(samples, sample_rate: int, num_speakers: int, reference) -> di
     before_report["spans"] = len(before_spans)
     before_report["diarize_seconds"] = round(before_elapsed, 1)
 
-    print("\n=== span-level: after (config.DIARIZATION_MIN_DURATION_ON/OFF, explicit) ===", flush=True)
+    print(
+        "\n=== span-level: after (config.DIARIZATION_MIN_DURATION_ON/OFF, explicit) ===", flush=True
+    )
     start = time.time()
     after_spans = diarization.diarize(samples, sample_rate=sample_rate, num_speakers=num_speakers)
     after_elapsed = time.time() - start
@@ -265,28 +267,40 @@ def run_span_mode(samples, sample_rate: int, num_speakers: int, reference) -> di
     return {"mode": "span", "before": before_report, "after": after_report}
 
 
-def run_e2e_mode(samples, sample_rate: int, num_speakers: int, duration: float, model: str, language: str, reference, no_vad: bool = False) -> dict:
+def run_e2e_mode(
+    samples,
+    sample_rate: int,
+    num_speakers: int,
+    duration: float,
+    model: str,
+    language: str,
+    reference,
+    no_vad: bool = False,
+) -> dict:
     """
     Score labelled transcript segments - what a user actually sees - against
     the reference. See the module docstring's "Two modes" section for why
     this is the only mode that can show the word-boundary splitting change.
     """
-    from speech_to_text.core import diarization
-    from speech_to_text.core.transcriber import Transcriber
-    from tests.eval.diarization_metrics import compute_der
-
     # transcriber.transcribe() reads config.VAD_FILTER at call time, so a
     # module-level override here reaches it without threading a new argument
     # through production code for a dev-only measurement. Restored in the
     # finally below so a --mode both run does not leak the override into
     # anything measured after it.
     from speech_to_text import config as app_config
+    from speech_to_text.core import diarization
+    from speech_to_text.core.transcriber import Transcriber
+    from tests.eval.diarization_metrics import compute_der
+
     previous_vad = app_config.VAD_FILTER
     if no_vad:
         app_config.VAD_FILTER = False
 
-    print(f"\n=== end-to-end: transcribing with model={model!r} language={language!r}"
-          f" vad_filter={app_config.VAD_FILTER} ===", flush=True)
+    print(
+        f"\n=== end-to-end: transcribing with model={model!r} language={language!r}"
+        f" vad_filter={app_config.VAD_FILTER} ===",
+        flush=True,
+    )
     transcriber = Transcriber(model_size=model, language=language)
     load_start = time.time()
     if not transcriber.load_model():
@@ -339,29 +353,56 @@ def run_e2e_mode(samples, sample_rate: int, num_speakers: int, duration: float, 
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--audio", default=DEFAULT_AUDIO, help=f"Audio fixture (default: {DEFAULT_AUDIO})")
-    parser.add_argument("--rttm", default=DEFAULT_RTTM, help=f"Reference RTTM (default: {DEFAULT_RTTM})")
-    parser.add_argument("--seconds", type=float, default=300,
-                         help="Only diarize/transcribe the first N seconds (default: 300 = ~5 min, per the plan; 0 = whole file)")
-    parser.add_argument("--num-speakers", type=int, default=DEFAULT_NUM_SPEAKERS,
-                         help=f"Known speaker count, or -1 to infer (default: {DEFAULT_NUM_SPEAKERS})")
-    parser.add_argument("--mode", choices=["span", "e2e", "both"], default="span",
-                         help="span: sherpa-onnx spans only (fast, default). "
-                              "e2e: labelled transcript segments (slow - runs real transcription). "
-                              "both: run both.")
-    parser.add_argument("--model", default=DEFAULT_E2E_MODEL,
-                         help=f"--mode e2e only: config.MODELS key or raw repo id (default: {DEFAULT_E2E_MODEL})")
-    parser.add_argument("--language", default=DEFAULT_E2E_LANGUAGE,
-                         help=f"--mode e2e only: transcription language (default: {DEFAULT_E2E_LANGUAGE}, "
-                              f"since the AMI fixture is English - see the module docstring)")
-    parser.add_argument("--no-vad", action="store_true",
-                         help="Transcribe with config.VAD_FILTER forced off for this run. "
-                              "End-to-end DER is dominated by missed speech (55.6s of 155.4s on "
-                              "AMI ES2004a, against 16.3s at span level) - speech the diarizer "
-                              "found but no transcript segment covers, which no assignment logic "
-                              "can label. This isolates how much of that gap is the VAD dropping "
-                              "audio before the decoder ever sees it.")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--audio", default=DEFAULT_AUDIO, help=f"Audio fixture (default: {DEFAULT_AUDIO})"
+    )
+    parser.add_argument(
+        "--rttm", default=DEFAULT_RTTM, help=f"Reference RTTM (default: {DEFAULT_RTTM})"
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        default=300,
+        help="Only diarize/transcribe the first N seconds (default: 300 = ~5 min, per the plan; 0 = whole file)",
+    )
+    parser.add_argument(
+        "--num-speakers",
+        type=int,
+        default=DEFAULT_NUM_SPEAKERS,
+        help=f"Known speaker count, or -1 to infer (default: {DEFAULT_NUM_SPEAKERS})",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["span", "e2e", "both"],
+        default="span",
+        help="span: sherpa-onnx spans only (fast, default). "
+        "e2e: labelled transcript segments (slow - runs real transcription). "
+        "both: run both.",
+    )
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_E2E_MODEL,
+        help=f"--mode e2e only: config.MODELS key or raw repo id (default: {DEFAULT_E2E_MODEL})",
+    )
+    parser.add_argument(
+        "--language",
+        default=DEFAULT_E2E_LANGUAGE,
+        help=f"--mode e2e only: transcription language (default: {DEFAULT_E2E_LANGUAGE}, "
+        f"since the AMI fixture is English - see the module docstring)",
+    )
+    parser.add_argument(
+        "--no-vad",
+        action="store_true",
+        help="Transcribe with config.VAD_FILTER forced off for this run. "
+        "End-to-end DER is dominated by missed speech (55.6s of 155.4s on "
+        "AMI ES2004a, against 16.3s at span level) - speech the diarizer "
+        "found but no transcript segment covers, which no assignment logic "
+        "can label. This isolates how much of that gap is the VAD dropping "
+        "audio before the decoder ever sees it.",
+    )
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
     args = parser.parse_args(argv)
 
@@ -384,7 +425,9 @@ def main(argv=None) -> int:
         return 0
 
     if not diarization.models_present():
-        print("Diarization models not downloaded - skipping. Run diarization.ensure_models() first,")
+        print(
+            "Diarization models not downloaded - skipping. Run diarization.ensure_models() first,"
+        )
         print("or transcribe once with speaker identification on to fetch them.")
         return 0
 
@@ -415,13 +458,23 @@ def main(argv=None) -> int:
 
     results = []
     if args.mode in ("span", "both"):
-        results.append(run_span_mode(samples, audio_source.SAMPLE_RATE, args.num_speakers, reference))
+        results.append(
+            run_span_mode(samples, audio_source.SAMPLE_RATE, args.num_speakers, reference)
+        )
     if args.mode in ("e2e", "both"):
         try:
-            results.append(run_e2e_mode(
-                samples, audio_source.SAMPLE_RATE, args.num_speakers, duration,
-                args.model, args.language, reference, no_vad=args.no_vad,
-            ))
+            results.append(
+                run_e2e_mode(
+                    samples,
+                    audio_source.SAMPLE_RATE,
+                    args.num_speakers,
+                    duration,
+                    args.model,
+                    args.language,
+                    reference,
+                    no_vad=args.no_vad,
+                )
+            )
         except Exception as e:
             logger.exception("End-to-end mode failed")
             print(f"\nEnd-to-end mode failed: {e}", file=sys.stderr)

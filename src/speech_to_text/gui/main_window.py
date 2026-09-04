@@ -1,5 +1,4 @@
-"""
-Main window for the Speech-to-Text Transcriber GUI.
+"""Main window for the Speech-to-Text Transcriber GUI.
 3-step flow: Select File → Choose Model → Transcribe
 """
 
@@ -9,7 +8,7 @@ import sys
 from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QThread, QTimer
-from PyQt5.QtGui import QFont, QIcon, QKeySequence
+from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -36,8 +35,8 @@ from speech_to_text.gui import i18n, theme
 from speech_to_text.gui.checkbox_style import PaintedCheckboxStyle
 from speech_to_text.gui.focus import KeyboardFocusTracker
 from speech_to_text.gui.i18n import t
-from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.stepper import StepIndicator
+from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.theme import COLORS, Fonts
 from speech_to_text.gui.threads import CalibrationThread, TranscriptionThread
 from speech_to_text.gui.widgets import IconTextButton
@@ -79,8 +78,7 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPo
 
 
 def _is_text_entry_widget(widget) -> bool:
-    """
-    True for any widget where Enter means "confirm what I just typed here",
+    """True for any widget where Enter means "confirm what I just typed here",
     not "advance to the next step" - the window-level Enter shortcut below
     checks this before acting. The speaker-count QSpinBox on step 2 is the
     concrete case that matters (typing "10" and pressing Enter must not
@@ -188,8 +186,7 @@ class MainWindow(QMainWindow):
         logger.debug(f"Window centered at ({x}, {y})")
 
     def _init_shortcuts(self):
-        """
-        Window-level keyboard shortcuts. Each is a QShortcut parented to
+        """Window-level keyboard shortcuts. Each is a QShortcut parented to
         the window with the default Qt.WindowShortcut context, so it fires
         whenever this window (or a descendant) has focus, regardless of
         which specific widget that is - the per-widget guards below (the
@@ -224,8 +221,7 @@ class MainWindow(QMainWindow):
             self.file_step.browse_for_files()
 
     def _on_advance_shortcut(self):
-        """
-        Enter/Return: equivalent to clicking Next, guarded against firing
+        """Enter/Return: equivalent to clicking Next, guarded against firing
         while the user is mid-entry in a text field (see
         _is_text_entry_widget - the speaker-count QSpinBox on step 2 is the
         case that matters: typing "10" and pressing Enter must confirm the
@@ -249,8 +245,7 @@ class MainWindow(QMainWindow):
             self.next_btn.click()
 
     def _on_escape_shortcut(self):
-        """
-        Escape: go Back on step 2 (Choose Model); on step 3 (Transcribing),
+        """Escape: go Back on step 2 (Choose Model); on step 3 (Transcribing),
         drive the same two-press Cancel confirmation the button itself
         uses (see _on_cancel_clicked).
 
@@ -296,7 +291,9 @@ class MainWindow(QMainWindow):
         # Rendered as a pixmap, so retranslate() re-renders it on language switch.
         self.title_label = QLabel()
         self.title_label.setPixmap(
-            theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF())
+            theme.gradient_text_pixmap(
+                t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF()
+            )
         )
         self.title_label.setStyleSheet("background: transparent;")
         self.title_label.setAlignment(Qt.AlignCenter)
@@ -390,7 +387,7 @@ class MainWindow(QMainWindow):
         self.back_btn.setFixedSize(*nav_btn_size)
         self.back_btn.setFont(Fonts.BODY_BOLD)
         self.back_btn.setStyleSheet(theme.button_secondary_qss())
-        self.back_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
+        self.back_btn.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
         self.back_btn.clicked.connect(self._go_back)
         self.back_btn.hide()
         nav_layout.addWidget(self.back_btn)
@@ -412,7 +409,7 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setFixedSize(*nav_btn_size)
         self.cancel_btn.setFont(Fonts.BODY_BOLD)
         self.cancel_btn.setStyleSheet(theme.button_secondary_qss())
-        self.cancel_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
+        self.cancel_btn.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.hide()
         nav_layout.addWidget(self.cancel_btn)
@@ -435,7 +432,7 @@ class MainWindow(QMainWindow):
         self.next_btn.setFixedSize(*nav_btn_size)
         self.next_btn.setFont(Fonts.BODY_BOLD)
         self.next_btn.setStyleSheet(theme.button_primary_qss())
-        self.next_btn.set_text_colors(COLORS['bg_primary'], disabled=COLORS['text_tertiary'])
+        self.next_btn.set_text_colors(COLORS["bg_primary"], disabled=COLORS["text_tertiary"])
         # Connected once, to a slot that dispatches on next_btn's current
         # role (see _on_next_clicked) - not reconnected per step the way
         # earlier revisions did. That disconnect/reconnect dance needed a
@@ -453,8 +450,7 @@ class MainWindow(QMainWindow):
         self._wire_tab_order()
 
     def _wire_tab_order(self):
-        """
-        Explicit Tab chain spanning the whole window, following visual
+        """Explicit Tab chain spanning the whole window, following visual
         order top to bottom: header language toggle, then each step's own
         internal chain (each step already wires its own controls in
         __init__/showEvent - see FileSelectStep and ModelSelectStep), then
@@ -485,7 +481,9 @@ class MainWindow(QMainWindow):
         """(Re-)apply window title, header, and nav button text/icons/directions."""
         self.setWindowTitle(t("app_title"))
         self.title_label.setPixmap(
-            theme.gradient_text_pixmap(t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF())
+            theme.gradient_text_pixmap(
+                t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF()
+            )
         )
         # Toggle shows the language it switches TO.
         self.lang_btn.setText("עב" if i18n.get_language() == "en" else "EN")
@@ -497,8 +495,9 @@ class MainWindow(QMainWindow):
         # side of the text: [← Back] mirrors to [חזרה →].
         self.back_btn.setText(t("nav_back"))
         self.back_btn.setAccessibleName(t("nav_back"))
-        self.back_btn.set_icon_spec("arrow_right" if rtl else "arrow_left",
-                                    side="right" if rtl else "left")
+        self.back_btn.set_icon_spec(
+            "arrow_right" if rtl else "arrow_left", side="right" if rtl else "left"
+        )
 
         # Cancel's x sits on the leading side of the text in both languages.
         self.cancel_btn.setText(t("nav_cancel"))
@@ -512,8 +511,7 @@ class MainWindow(QMainWindow):
         self._set_next_button_mode(self._next_btn_mode)
 
     def _set_next_button_mode(self, mode: str):
-        """
-        Configure next_btn for its current role: "next" (forward arrow on
+        """Configure next_btn for its current role: "next" (forward arrow on
         the trailing side, pointing along the reading direction) or
         "new_file" (reset action after completion - plus-file icon on the
         leading side, no directional claim).
@@ -530,8 +528,9 @@ class MainWindow(QMainWindow):
             # the reading direction: [Next →] mirrors to [← הבא].
             self.next_btn.setText(t("nav_next"))
             self.next_btn.setAccessibleName(t("nav_next"))
-            self.next_btn.set_icon_spec("arrow_left" if rtl else "arrow_right",
-                                        side="left" if rtl else "right")
+            self.next_btn.set_icon_spec(
+                "arrow_left" if rtl else "arrow_right", side="left" if rtl else "right"
+            )
 
     def _toggle_language(self):
         i18n.set_language("he" if i18n.get_language() == "en" else "en")
@@ -539,6 +538,7 @@ class MainWindow(QMainWindow):
     def _on_language_changed(self, lang: str):
         """Apply app-wide layout direction and re-render every visible string."""
         from PyQt5.QtWidgets import QApplication
+
         QApplication.instance().setLayoutDirection(
             Qt.RightToLeft if lang == "he" else Qt.LeftToRight
         )
@@ -581,8 +581,7 @@ class MainWindow(QMainWindow):
         next_mode: str = "next",
         focus_widget=None,
     ) -> None:
-        """
-        Single funnel for every wizard-navigation transition. Owns exactly
+        """Single funnel for every wizard-navigation transition. Owns exactly
         the bookkeeping that was previously hand-written in five separate
         places (_go_back, _go_next, _start_transcription,
         _return_to_model_select, _reset - see this method's call sites
@@ -628,8 +627,7 @@ class MainWindow(QMainWindow):
         logger.debug(f"Navigated to: {step}")
 
     def _on_next_clicked(self):
-        """
-        next_btn's one and only clicked connection (see _init_ui) -
+        """next_btn's one and only clicked connection (see _init_ui) -
         dispatches on the button's current role instead of the
         disconnect/reconnect-a-different-slot dance this used to require.
         "next" is the forward-navigation role _go_next always handles;
@@ -768,8 +766,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_transcription_error(self, error_key: str, error_params: dict):
-        """
-        Handle a genuine transcription failure (not a user cancel - that's
+        """Handle a genuine transcription failure (not a user cancel - that's
         handled separately by _cancel_transcription).
 
         Receives an i18n key + params (rendered at display time, so the
@@ -784,8 +781,7 @@ class MainWindow(QMainWindow):
         self._return_to_model_select()
 
     def _on_cancel_clicked(self):
-        """
-        Cancel's actual clicked/Escape handler - a two-press control rather
+        """Cancel's actual clicked/Escape handler - a two-press control rather
         than the single click _cancel_transcription used to be wired
         directly to.
 
@@ -814,8 +810,7 @@ class MainWindow(QMainWindow):
         self._cancel_arm_timer.start()
 
     def _disarm_cancel(self):
-        """
-        Revert Cancel to its resting state - called by the arm timer's own
+        """Revert Cancel to its resting state - called by the arm timer's own
         timeout, and unconditionally by _set_step on every navigation (see
         its comment) so an armed state never survives leaving step 3.
         Safe to call when already disarmed: stopping a timer that isn't
@@ -829,11 +824,11 @@ class MainWindow(QMainWindow):
         """Paint cancel_btn/cancel_confirm_label for `armed` - see _on_cancel_clicked."""
         if armed:
             self.cancel_btn.setStyleSheet(theme.button_danger_qss())
-            self.cancel_btn.set_text_colors(COLORS['error'], hover=COLORS['error'])
+            self.cancel_btn.set_text_colors(COLORS["error"], hover=COLORS["error"])
             self.cancel_confirm_label.show()
         else:
             self.cancel_btn.setStyleSheet(theme.button_secondary_qss())
-            self.cancel_btn.set_text_colors(COLORS['text_primary'], hover=COLORS['accent'])
+            self.cancel_btn.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
             self.cancel_confirm_label.hide()
 
     def _cancel_transcription(self):
@@ -878,8 +873,7 @@ class MainWindow(QMainWindow):
         logger.debug("Reset to file selection step")
 
     def closeEvent(self, event):
-        """
-        Stop any running transcription before the window closes.
+        """Stop any running transcription before the window closes.
 
         Deliberately NOT routed through the two-press arm/confirm flow
         Cancel and Escape use on step 3 (see _on_cancel_clicked) - closing
@@ -901,8 +895,7 @@ class MainWindow(QMainWindow):
 
 
 def configure_application(app: QApplication) -> None:
-    """
-    Apply the two pieces of process-wide setup every GUI entry point needs
+    """Apply the two pieces of process-wide setup every GUI entry point needs
     on a freshly-constructed QApplication, before any window is built:
     the app stylesheet and the persisted UI language.
 

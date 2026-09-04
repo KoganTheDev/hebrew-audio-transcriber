@@ -1,5 +1,4 @@
-"""
-Hardware-specific transcription-speed calibration.
+"""Hardware-specific transcription-speed calibration.
 
 Replaces guessed "speed factor" constants with a number grounded in an
 actual measurement: this module runs a short real transcription with the
@@ -77,7 +76,7 @@ def load_cached_tiny_rtf(cpu_cores: int) -> Optional[float]:
     if not os.path.exists(CALIBRATION_CACHE_PATH):
         return None
     try:
-        with open(CALIBRATION_CACHE_PATH, "r", encoding="utf-8") as f:
+        with open(CALIBRATION_CACHE_PATH, encoding="utf-8") as f:
             data = json.load(f)
         if data.get("cpu_cores") == cpu_cores and "tiny_seconds_per_audio_second" in data:
             return float(data["tiny_seconds_per_audio_second"])
@@ -90,17 +89,19 @@ def save_calibration(cpu_cores: int, tiny_seconds_per_audio_second: float) -> No
     try:
         os.makedirs(os.path.dirname(CALIBRATION_CACHE_PATH) or ".", exist_ok=True)
         with open(CALIBRATION_CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump({
-                "cpu_cores": cpu_cores,
-                "tiny_seconds_per_audio_second": tiny_seconds_per_audio_second,
-            }, f)
+            json.dump(
+                {
+                    "cpu_cores": cpu_cores,
+                    "tiny_seconds_per_audio_second": tiny_seconds_per_audio_second,
+                },
+                f,
+            )
     except Exception as e:
         logger.warning(f"Could not save calibration cache: {e}")
 
 
 def _generate_silence_wav(path: str, seconds: int, sample_rate: int) -> None:
-    """
-    Write a short silent mono WAV using only the stdlib.
+    """Write a short silent mono WAV using only the stdlib.
 
     Calibration explicitly disables VAD (see _run_calibration), so silence
     is not skipped - the encoder still runs its full fixed-size window
@@ -135,7 +136,10 @@ def _run_calibration(cpu_cores: int) -> float:
         # audio content, since we can't know in advance how much of a real
         # file will be silence.
         segments, _ = transcriber.model.transcribe(
-            wav_path, language="he", beam_size=5, vad_filter=False,
+            wav_path,
+            language="he",
+            beam_size=5,
+            vad_filter=False,
         )
         list(segments)  # faster-whisper returns a lazy generator; force full processing
         elapsed = time.time() - start
@@ -150,8 +154,7 @@ def _run_calibration(cpu_cores: int) -> float:
 
 
 def run_calibration_process(cpu_cores: int, result_queue: "multiprocessing.Queue") -> None:
-    """
-    Entry point for the calibration subprocess.
+    """Entry point for the calibration subprocess.
 
     Puts ("ok", seconds_per_audio_second) or ("error", message) on
     result_queue before exiting. Import-light at module level (no PyQt5) -

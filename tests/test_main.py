@@ -8,9 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-from unittest.mock import MagicMock, patch, call
-
 from speech_to_text.core.log_bidi import VisualOrderFormatter
 
 
@@ -21,7 +18,7 @@ class TestMain:
         """Test that main module imports are correct."""
         from speech_to_text import main
 
-        assert hasattr(main, 'main')
+        assert hasattr(main, "main")
         assert callable(main.main)
 
     def test_main_callable(self):
@@ -235,14 +232,12 @@ class TestShippedEntryPointAppliesStylesheet:
             f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
         marker = "STYLESHEET_LEN="
-        line = next(
-            (l for l in result.stdout.splitlines() if l.startswith(marker)), None
-        )
+        line = next((l for l in result.stdout.splitlines() if l.startswith(marker)), None)
         assert line is not None, (
             f"subprocess never printed a stylesheet length:\n"
             f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
-        length = int(line[len(marker):])
+        length = int(line[len(marker) :])
         assert length > 0, (
             "speech_to_text.main.main() produced a QApplication with an "
             "empty styleSheet() - the shipped entry point is not applying "

@@ -1,5 +1,4 @@
-"""
-Theme system for the Speech-to-Text Transcriber GUI.
+"""Theme system for the Speech-to-Text Transcriber GUI.
 
 Single source of truth for colors, fonts, spacing, and QSS (Qt stylesheet)
 generation - and, as of this token layer, for the radius/border/motion
@@ -32,7 +31,7 @@ per-widget call - app_stylesheet() is not the place to fight it.
 import math
 
 from PyQt5.QtCore import QRect, Qt
-from PyQt5.QtGui import QFont, QFontMetrics, QLinearGradient, QColor, QPainter, QPixmap
+from PyQt5.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect
 
 COLORS = {
@@ -107,8 +106,7 @@ _DEMIBOLD = QFont.DemiBold
 
 
 class _FontsMeta(type):
-    """
-    Builds each Fonts role on first use, not at class-definition time.
+    """Builds each Fonts role on first use, not at class-definition time.
 
     This is not a style preference, it is a correctness requirement. A QFont
     constructed before a QApplication exists resolves against an
@@ -147,9 +145,7 @@ class _FontsMeta(type):
         try:
             size, demibold = cls._SPECS[name]
         except KeyError:
-            raise AttributeError(
-                f"{cls.__name__} has no font role {name!r}"
-            ) from None
+            raise AttributeError(f"{cls.__name__} has no font role {name!r}") from None
         font = QFont(FONT_FAMILY, size, _DEMIBOLD) if demibold else QFont(FONT_FAMILY, size)
         # Only memoise once the font database is real - see the class
         # docstring. Before that, hand back a correct-for-now object without
@@ -160,8 +156,7 @@ class _FontsMeta(type):
 
 
 class Fonts(metaclass=_FontsMeta):
-    """
-    Named font roles, resolved lazily by _FontsMeta - read its docstring
+    """Named font roles, resolved lazily by _FontsMeta - read its docstring
     before adding one as a plain class attribute, which would reintroduce
     the pre-QApplication resolution bug.
 
@@ -203,8 +198,7 @@ class Spacing:
 
 
 class Radius:
-    """
-    Named corner radii (px), grouped by what the rounded element is - not
+    """Named corner radii (px), grouped by what the rounded element is - not
     by size - so a later redesign can change one kind of surface without
     guessing which literal belongs to which. Values moved from the
     pre-redesign scale (CONTROL 8 / PANEL 10 / DROP_ZONE 12 / BADGE 4) to
@@ -255,8 +249,7 @@ class Radius:
 
 
 class Border:
-    """
-    Named border widths (px), same grouping rationale as Radius: named for
+    """Named border widths (px), same grouping rationale as Radius: named for
     what they outline, not for their thickness. Values unchanged from
     what each builder used before this token layer existed.
     """
@@ -283,8 +276,7 @@ class Border:
 
 
 class Motion:
-    """
-    Named animation durations (ms). There is exactly one animation in the
+    """Named animation durations (ms). There is exactly one animation in the
     app today (the transcription step's progress bar, animated with
     QEasingCurve.OutCubic in transcription.py) - PROGRESS_MS names that
     duration here so a later step can retune it in one place, but wiring
@@ -310,8 +302,8 @@ def button_primary_qss() -> str:
     # the focus rule's border-color override is new to the eye.
     return f"""
     QPushButton {{
-        background-color: {COLORS['accent']};
-        color: {COLORS['accent_text']};
+        background-color: {COLORS["accent"]};
+        color: {COLORS["accent_text"]};
         border: {Border.CONTROL}px solid transparent;
         border-radius: {Radius.CONTROL}px;
         padding: 10px 20px;
@@ -319,61 +311,59 @@ def button_primary_qss() -> str:
         font-size: 12px;
     }}
     QPushButton:hover {{
-        background-color: {COLORS['accent_hover']};
+        background-color: {COLORS["accent_hover"]};
     }}
     QPushButton:pressed {{
-        background-color: {COLORS['accent_dark']};
+        background-color: {COLORS["accent_dark"]};
     }}
     QPushButton:disabled {{
-        background-color: {COLORS['bg_tertiary']};
-        color: {COLORS['text_disabled']};
+        background-color: {COLORS["bg_tertiary"]};
+        color: {COLORS["text_disabled"]};
     }}
     QPushButton[kbdFocus="true"] {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
     """
 
 
 def button_secondary_qss(padding: str = "8px 18px") -> str:
-    """
-    padding: override for small fixed-size buttons (e.g. the header
+    """padding: override for small fixed-size buttons (e.g. the header
     language toggle passes "2px 4px" - the default 18px side padding plus
     the 2px border would leave almost no room for text in a ~50px button).
     """
     return f"""
     QPushButton {{
         background-color: transparent;
-        color: {COLORS['text_primary']};
-        border: {Border.CONTROL}px solid {COLORS['control_border']};
+        color: {COLORS["text_primary"]};
+        border: {Border.CONTROL}px solid {COLORS["control_border"]};
         border-radius: {Radius.CONTROL}px;
         padding: {padding};
         font-weight: 600;
         font-size: 12px;
     }}
     QPushButton:hover {{
-        background-color: {COLORS['bg_tertiary']};
-        border-color: {COLORS['accent']};
-        color: {COLORS['accent']};
+        background-color: {COLORS["bg_tertiary"]};
+        border-color: {COLORS["accent"]};
+        color: {COLORS["accent"]};
     }}
     QPushButton:pressed {{
-        background-color: {COLORS['surface_hover']};
-        border-color: {COLORS['accent_dark']};
-        color: {COLORS['accent_dark']};
+        background-color: {COLORS["surface_hover"]};
+        border-color: {COLORS["accent_dark"]};
+        color: {COLORS["accent_dark"]};
     }}
     QPushButton:disabled {{
         background-color: transparent;
-        border-color: {COLORS['border']};
-        color: {COLORS['text_disabled']};
+        border-color: {COLORS["border"]};
+        color: {COLORS["text_disabled"]};
     }}
     QPushButton[kbdFocus="true"] {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
     """
 
 
 def button_danger_qss() -> str:
-    """
-    Armed-cancel treatment (see MainWindow._on_cancel_clicked): Cancel's
+    """Armed-cancel treatment (see MainWindow._on_cancel_clicked): Cancel's
     second press stops a possibly 40-minute-long run with no further
     confirmation, so once armed the button itself should read as
     dangerous rather than relying on the neighboring hint label's wording
@@ -397,25 +387,25 @@ def button_danger_qss() -> str:
     return f"""
     QPushButton {{
         background-color: transparent;
-        color: {COLORS['error']};
-        border: {Border.CONTROL}px solid {COLORS['error']};
+        color: {COLORS["error"]};
+        border: {Border.CONTROL}px solid {COLORS["error"]};
         border-radius: {Radius.CONTROL}px;
         padding: 8px 18px;
         font-weight: 600;
         font-size: 12px;
     }}
     QPushButton:hover {{
-        background-color: {COLORS['bg_tertiary']};
-        border-color: {COLORS['error']};
-        color: {COLORS['error']};
+        background-color: {COLORS["bg_tertiary"]};
+        border-color: {COLORS["error"]};
+        color: {COLORS["error"]};
     }}
     QPushButton:pressed {{
-        background-color: {COLORS['surface_hover']};
-        border-color: {COLORS['error']};
-        color: {COLORS['error']};
+        background-color: {COLORS["surface_hover"]};
+        border-color: {COLORS["error"]};
+        color: {COLORS["error"]};
     }}
     QPushButton[kbdFocus="true"] {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
     """
 
@@ -425,8 +415,7 @@ def frame_bg_qss(color_key: str = "bg_primary") -> str:
 
 
 def text_qss(color_key: str, extra: str = "") -> str:
-    """
-    Style for a QLabel sitting on a colored parent frame.
+    """Style for a QLabel sitting on a colored parent frame.
 
     Explicitly sets 'background: transparent' - without it, once any ancestor
     in the widget tree has a stylesheet, Qt renders plain QLabels with an
@@ -448,23 +437,22 @@ def card_qss(object_name: str, selected: bool = False) -> str:
     # it needs the 3:1-clearing color even before it becomes the selected
     # one. 'border' would fail that floor and read as though only the
     # selected card (accent-outlined) were interactive at all.
-    border_color = COLORS['accent'] if selected else COLORS['control_border']
+    border_color = COLORS["accent"] if selected else COLORS["control_border"]
     return f"""
     QFrame#{object_name} {{
-        background-color: {COLORS['bg_tertiary']};
+        background-color: {COLORS["bg_tertiary"]};
         border: {Border.CONTROL}px solid {border_color};
         border-radius: {Radius.PANEL}px;
         padding: 0px;
     }}
     QFrame#{object_name}[kbdFocus="true"] {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
     """
 
 
 def progress_bar_qss() -> str:
-    """
-    No text-align/color rule here, and the bar itself runs with
+    """No text-align/color rule here, and the bar itself runs with
     setTextVisible(False) - see TranscriptionStep. QProgressBar centres its
     percentage label over whichever of the two surfaces happens to be under
     it, so the ink has to be legible on the filled chunk AND on the empty
@@ -477,21 +465,21 @@ def progress_bar_qss() -> str:
     """
     return f"""
     QProgressBar {{
-        background-color: {COLORS['bg_tertiary']};
+        background-color: {COLORS["bg_tertiary"]};
         border-radius: {Radius.CONTROL}px;
         border: none;
         height: 24px;
     }}
     QProgressBar::chunk {{
-        background-color: {COLORS['accent']};
+        background-color: {COLORS["accent"]};
         border-radius: {Radius.CONTROL}px;
     }}
     """
 
 
 def drop_zone_qss(object_name: str, active: bool = False) -> str:
-    bg = COLORS['bg_secondary'] if active else COLORS['bg_tertiary']
-    border_color = COLORS['accent_hover'] if active else COLORS['accent']
+    bg = COLORS["bg_secondary"] if active else COLORS["bg_tertiary"]
+    border_color = COLORS["accent_hover"] if active else COLORS["accent"]
     return f"""
     QFrame#{object_name} {{
         background-color: {bg};
@@ -500,7 +488,7 @@ def drop_zone_qss(object_name: str, active: bool = False) -> str:
     }}
     QFrame#{object_name}[kbdFocus="true"] {{
         border-style: solid;
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
     """
 
@@ -508,9 +496,9 @@ def drop_zone_qss(object_name: str, active: bool = False) -> str:
 def header_qss(object_name: str) -> str:
     return f"""
     QFrame#{object_name} {{
-        background-color: {COLORS['bg_secondary']};
+        background-color: {COLORS["bg_secondary"]};
         border: none;
-        border-bottom: {Border.HAIRLINE}px solid {COLORS['accent']};
+        border-bottom: {Border.HAIRLINE}px solid {COLORS["accent"]};
         padding: 0px;
     }}
     """
@@ -519,8 +507,8 @@ def header_qss(object_name: str) -> str:
 def nav_bar_qss(object_name: str) -> str:
     return f"""
     QFrame#{object_name} {{
-        background-color: {COLORS['bg_secondary']};
-        border-top: {Border.HAIRLINE}px solid {COLORS['border']};
+        background-color: {COLORS["bg_secondary"]};
+        border-top: {Border.HAIRLINE}px solid {COLORS["border"]};
         padding: 12px 16px;
     }}
     """
@@ -533,8 +521,8 @@ def badge_qss() -> str:
     # curve to show, rather than getting clipped flat by tight padding.
     return f"""
     QLabel {{
-        background-color: {COLORS['accent']};
-        color: {COLORS['accent_text']};
+        background-color: {COLORS["accent"]};
+        color: {COLORS["accent_text"]};
         border-radius: {Radius.BADGE}px;
         padding: 4px 10px;
         font-weight: 600;
@@ -549,22 +537,21 @@ def hardware_card_qss(object_name: str) -> str:
     # height and clipped the icon/text.
     return f"""
     QFrame#{object_name} {{
-        background-color: {COLORS['bg_tertiary']};
+        background-color: {COLORS["bg_tertiary"]};
         border-radius: {Radius.PANEL}px;
     }}
     """
 
 
 def error_banner_qss(object_name: str) -> str:
-    """
-    Inline error banner - shown in place of a modal QMessageBox popup so a
+    """Inline error banner - shown in place of a modal QMessageBox popup so a
     failed transcription doesn't interrupt the user with a blocking dialog.
     """
     return f"""
     QFrame#{object_name} {{
-        background-color: {COLORS['bg_tertiary']};
-        border: {Border.ERROR_BOX}px solid {COLORS['error']};
-        border-left: {Border.ERROR_ACCENT}px solid {COLORS['error']};
+        background-color: {COLORS["bg_tertiary"]};
+        border: {Border.ERROR_BOX}px solid {COLORS["error"]};
+        border-left: {Border.ERROR_ACCENT}px solid {COLORS["error"]};
         border-radius: {Radius.PANEL}px;
     }}
     """
@@ -583,7 +570,7 @@ def result_panel_qss(object_name: str) -> str:
     # overflow. XL is the largest padding that stays clear of that.
     return f"""
     QFrame#{object_name} {{
-        background-color: {COLORS['bg_tertiary']};
+        background-color: {COLORS["bg_tertiary"]};
         border-radius: {Radius.PANEL}px;
         padding: {Spacing.XL}px;
     }}
@@ -591,8 +578,7 @@ def result_panel_qss(object_name: str) -> str:
 
 
 def app_stylesheet() -> str:
-    """
-    Application-wide QSS, applied once on the QApplication instance. Holds
+    """Application-wide QSS, applied once on the QApplication instance. Holds
     only defaults that every widget should inherit unless a more specific
     per-widget setStyleSheet(...) call overrides it (see the ordering rule
     in the module docstring) - so this stays deliberately small.
@@ -626,12 +612,12 @@ def app_stylesheet() -> str:
     """
     return f"""
     QMainWindow {{
-        background-color: {COLORS['bg_primary']};
+        background-color: {COLORS["bg_primary"]};
     }}
     QToolTip {{
-        background-color: {COLORS['bg_tertiary']};
-        color: {COLORS['text_primary']};
-        border: {Border.HAIRLINE}px solid {COLORS['control_border']};
+        background-color: {COLORS["bg_tertiary"]};
+        color: {COLORS["text_primary"]};
+        border: {Border.HAIRLINE}px solid {COLORS["control_border"]};
         border-radius: {Radius.CONTROL}px;
         padding: {Spacing.XS}px {Spacing.SM}px;
     }}
@@ -649,7 +635,7 @@ def app_stylesheet() -> str:
        never had one (labels, frames), which does nothing useful and just
        adds dead CSS that looks like it should be doing something. */
     QRadioButton[kbdFocus="true"], QCheckBox[kbdFocus="true"], QSpinBox[kbdFocus="true"] {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
 
     /* QRadioButton. Setting any property on ::indicator makes Qt stop
@@ -662,7 +648,7 @@ def app_stylesheet() -> str:
        and a transparent stop at 0.5 fakes a "dot inside a ring" using pure
        QSS - the ring itself is just the indicator's border-color. */
     QRadioButton {{
-        color: {COLORS['text_primary']};
+        color: {COLORS["text_primary"]};
         background: transparent;
         spacing: {Spacing.SM}px;
     }}
@@ -670,33 +656,33 @@ def app_stylesheet() -> str:
         width: 18px;
         height: 18px;
         border-radius: 9px;
-        border: {Border.CONTROL}px solid {COLORS['control_border']};
-        background-color: {COLORS['bg_tertiary']};
+        border: {Border.CONTROL}px solid {COLORS["control_border"]};
+        background-color: {COLORS["bg_tertiary"]};
     }}
     QRadioButton::indicator:hover {{
-        border-color: {COLORS['accent_hover']};
+        border-color: {COLORS["accent_hover"]};
     }}
     QRadioButton::indicator:checked {{
-        border-color: {COLORS['accent']};
+        border-color: {COLORS["accent"]};
         background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
-            stop:0 {COLORS['accent']}, stop:0.45 {COLORS['accent']}, stop:0.5 transparent);
+            stop:0 {COLORS["accent"]}, stop:0.45 {COLORS["accent"]}, stop:0.5 transparent);
     }}
     QRadioButton::indicator:checked:hover {{
-        border-color: {COLORS['accent_hover']};
+        border-color: {COLORS["accent_hover"]};
         background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
-            stop:0 {COLORS['accent_hover']}, stop:0.45 {COLORS['accent_hover']}, stop:0.5 transparent);
+            stop:0 {COLORS["accent_hover"]}, stop:0.45 {COLORS["accent_hover"]}, stop:0.5 transparent);
     }}
     QRadioButton::indicator:disabled {{
-        border-color: {COLORS['border']};
-        background-color: {COLORS['bg_tertiary']};
+        border-color: {COLORS["border"]};
+        background-color: {COLORS["bg_tertiary"]};
     }}
     QRadioButton::indicator:checked:disabled {{
-        border-color: {COLORS['text_disabled']};
+        border-color: {COLORS["text_disabled"]};
         background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
-            stop:0 {COLORS['text_disabled']}, stop:0.45 {COLORS['text_disabled']}, stop:0.5 transparent);
+            stop:0 {COLORS["text_disabled"]}, stop:0.45 {COLORS["text_disabled"]}, stop:0.5 transparent);
     }}
     QRadioButton[kbdFocus="true"]::indicator {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
 
     /* QCheckBox. Deliberately NO ::indicator rule of any kind here -
@@ -718,7 +704,7 @@ def app_stylesheet() -> str:
        applies (it styles the label text, a different selector Qt's CSS
        capture doesn't extend to). */
     QCheckBox {{
-        color: {COLORS['text_primary']};
+        color: {COLORS["text_primary"]};
         background: transparent;
         spacing: {Spacing.SM}px;
     }}
@@ -740,30 +726,30 @@ def app_stylesheet() -> str:
        (a painted QProxyStyle primitive, following checkbox_style.py's
        pattern, rather than resurrecting the raster path). */
     QSpinBox {{
-        background-color: {COLORS['bg_tertiary']};
-        color: {COLORS['text_primary']};
-        border: {Border.CONTROL}px solid {COLORS['control_border']};
+        background-color: {COLORS["bg_tertiary"]};
+        color: {COLORS["text_primary"]};
+        border: {Border.CONTROL}px solid {COLORS["control_border"]};
         border-radius: {Radius.CONTROL}px;
         padding: 4px 6px;
         min-width: 32px;
     }}
     QSpinBox:hover {{
-        border-color: {COLORS['accent_hover']};
+        border-color: {COLORS["accent_hover"]};
     }}
     QSpinBox:disabled {{
-        color: {COLORS['text_disabled']};
-        border-color: {COLORS['border']};
+        color: {COLORS["text_disabled"]};
+        border-color: {COLORS["border"]};
     }}
     QSpinBox[kbdFocus="true"] {{
-        border-color: {COLORS['focus']};
+        border-color: {COLORS["focus"]};
     }}
     QSpinBox::up-button, QSpinBox::down-button {{
-        background-color: {COLORS['surface_hover']};
+        background-color: {COLORS["surface_hover"]};
         border: none;
         width: 16px;
     }}
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
-        background-color: {COLORS['control_border']};
+        background-color: {COLORS["control_border"]};
     }}
 
     /* QScrollBar. Slim and flat, no arrow buttons - the model list on the
@@ -780,12 +766,12 @@ def app_stylesheet() -> str:
         margin: 0px;
     }}
     QScrollBar::handle:vertical {{
-        background-color: {COLORS['border']};
+        background-color: {COLORS["border"]};
         border-radius: {Radius.BADGE}px;
         min-height: 24px;
     }}
     QScrollBar::handle:vertical:hover {{
-        background-color: {COLORS['control_border']};
+        background-color: {COLORS["control_border"]};
     }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
         height: 0px;
@@ -800,12 +786,12 @@ def app_stylesheet() -> str:
         margin: 0px;
     }}
     QScrollBar::handle:horizontal {{
-        background-color: {COLORS['border']};
+        background-color: {COLORS["border"]};
         border-radius: {Radius.BADGE}px;
         min-width: 24px;
     }}
     QScrollBar::handle:horizontal:hover {{
-        background-color: {COLORS['control_border']};
+        background-color: {COLORS["control_border"]};
     }}
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
         width: 0px;
@@ -816,9 +802,10 @@ def app_stylesheet() -> str:
     """
 
 
-def elevation_shadow(blur_radius: int = 32, y_offset: int = 10, alpha: int = 130) -> QGraphicsDropShadowEffect:
-    """
-    A soft drop shadow for the handful of static, non-scrolling surfaces
+def elevation_shadow(
+    blur_radius: int = 32, y_offset: int = 10, alpha: int = 130
+) -> QGraphicsDropShadowEffect:
+    """A soft drop shadow for the handful of static, non-scrolling surfaces
     that should read as physically raised off the window's crust ground.
 
     Deliberately NOT used everywhere elevation could apply - two reasons,
@@ -861,8 +848,7 @@ def gradient_text_pixmap(
     padding: int = 4,
     dpr: float = 1.0,
 ) -> QPixmap:
-    """
-    Render text filled with a vertical linear gradient, as a QPixmap.
+    """Render text filled with a vertical linear gradient, as a QPixmap.
 
     Qt stylesheets can't apply a gradient to text color (only to
     background-color), so this paints the text as an alpha mask and

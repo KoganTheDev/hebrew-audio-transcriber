@@ -18,7 +18,6 @@ from tests.eval.hebrew_metrics import (
 
 
 class TestNormalize:
-
     def test_nikud_is_not_a_recognition_error(self):
         assert normalize("שָׁלוֹם עוֹלָם") == normalize("שלום עולם")
 
@@ -52,7 +51,6 @@ class TestNormalize:
 
 
 class TestEditDistance:
-
     def test_identical_sequences(self):
         assert edit_distance(["a", "b"], ["a", "b"]) == 0
 
@@ -66,7 +64,6 @@ class TestEditDistance:
 
 
 class TestErrorRates:
-
     def test_identical_text_scores_zero(self):
         text = "שלום מה שלומך היום"
         assert word_error_rate(text, text) == 0.0

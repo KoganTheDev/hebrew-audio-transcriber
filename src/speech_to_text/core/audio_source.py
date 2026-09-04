@@ -1,5 +1,4 @@
-"""
-Decoding audio into arrays, and deciding whether a file already separates its
+"""Decoding audio into arrays, and deciding whether a file already separates its
 speakers by channel.
 
 This project never used to open audio at all - the file path went straight to
@@ -53,8 +52,7 @@ SILENCE_FLOOR_RATIO = 0.1
 
 
 def decode_channels(path: str) -> Tuple[List[np.ndarray], int]:
-    """
-    Decode an audio file to a list of float32 channel arrays at 16 kHz.
+    """Decode an audio file to a list of float32 channel arrays at 16 kHz.
 
     Returns ([channel0, channel1, ...], sample_rate). Mono files yield a
     single-element list.
@@ -73,7 +71,7 @@ def decode_channels(path: str) -> Tuple[List[np.ndarray], int]:
         channels = stream.codec_context.channels or 1
 
         resampler = av.audio.resampler.AudioResampler(
-            format="fltp",          # planar float, so channels come out separated
+            format="fltp",  # planar float, so channels come out separated
             layout="stereo" if channels >= 2 else "mono",
             rate=SAMPLE_RATE,
         )
@@ -116,8 +114,7 @@ def _frame_energies(channel: np.ndarray, frame_length: int) -> np.ndarray:
 
 
 def is_true_stereo(channels: List[np.ndarray], sample_rate: int = SAMPLE_RATE) -> bool:
-    """
-    Decide whether this file has one speaker per channel.
+    """Decide whether this file has one speaker per channel.
 
     Both conditions must hold, and they catch different failure modes:
 
@@ -190,8 +187,7 @@ def is_true_stereo(channels: List[np.ndarray], sample_rate: int = SAMPLE_RATE) -
 
 
 def load(path: str) -> Tuple[Optional[List[np.ndarray]], bool]:
-    """
-    Decode a file and classify it, tolerating failure.
+    """Decode a file and classify it, tolerating failure.
 
     Returns (channels, is_two_party). channels is None if decoding failed, in
     which case the caller should hand the path to faster-whisper directly and

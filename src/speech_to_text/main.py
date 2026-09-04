@@ -1,12 +1,10 @@
-"""
-Speech-to-Text Application Main Entry Point
+"""Speech-to-Text Application Main Entry Point
 Professional GUI application for audio transcription.
 """
 
-import sys
-import os
 import logging
-import traceback
+import os
+import sys
 
 # Ensure parent directory is in path so we can import speech_to_text package
 # This allows the script to be run directly without path issues
@@ -19,8 +17,7 @@ from speech_to_text.core.log_bidi import VisualOrderFormatter
 # Setup logging: fixed-width, column-aligned format with millisecond precision
 # and source location (file:line) - easy to scan and to grep by level/module.
 LOG_FORMAT = (
-    "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)-32s "
-    "%(filename)s:%(lineno)d - %(message)s"
+    "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)-32s %(filename)s:%(lineno)d - %(message)s"
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -65,20 +62,19 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Main entry point."""
-    
     logger.info("=" * 70)
     logger.info(f"Starting {config.APP_NAME} v{config.APP_VERSION}")
     logger.info(f"Python {sys.version.split()[0]}")
     logger.info(f"Platform: {sys.platform}")
     logger.info("=" * 70)
-    
+
     # Ensure all dependencies are installed
     logger.info("Checking dependencies...")
     logger.debug(f"Required packages: {config.REQUIRED_PACKAGES}")
     if not ensure_dependencies(config.REQUIRED_PACKAGES):
         logger.critical("Failed to install required dependencies. Exiting.")
         sys.exit(1)
-    
+
     logger.info("✓ All dependencies available")
 
     # Import faster-whisper (ctranslate2) before PyQt5. Both bundle their own
@@ -89,6 +85,7 @@ def main():
     # it both ways. This import order avoids the conflict; do not reorder it.
     try:
         import faster_whisper  # noqa: F401
+
         logger.debug("faster_whisper imported (establishes DLL load order before PyQt5)")
     except ImportError as e:
         logger.error(f"Failed to import faster_whisper: {e}", exc_info=True)
@@ -98,14 +95,16 @@ def main():
 
     # Import PyQt5 after dependencies are ensured
     try:
-        from PyQt5.QtWidgets import QApplication, QMessageBox
         from PyQt5.QtGui import QIcon
+        from PyQt5.QtWidgets import QApplication, QMessageBox
+
         from speech_to_text.gui.main_window import MainWindow, configure_application
+
         logger.debug("PyQt5 imports successful")
     except ImportError as e:
         logger.error(f"Failed to import PyQt5: {e}", exc_info=True)
         sys.exit(1)
-    
+
     try:
         # On Windows, the taskbar groups/icons processes by AppUserModelID
         # rather than by window icon alone. Without setting our own, Windows
@@ -114,6 +113,7 @@ def main():
         if sys.platform == "win32":
             try:
                 import ctypes
+
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.APP_ID)
                 logger.debug(f"Set AppUserModelID: {config.APP_ID}")
             except Exception as e:
@@ -138,15 +138,15 @@ def main():
         logger.debug("Creating MainWindow...")
         window = MainWindow()
         logger.debug("MainWindow instance created")
-        
+
         logger.info("Displaying main window...")
         window.show()
         logger.info("Application ready. Entering event loop.")
-        
+
         exit_code = app.exec_()
         logger.info(f"Application event loop exited with code: {exit_code}")
         sys.exit(exit_code)
-    
+
     except OSError as e:
         logger.error(f"OSError during application startup: {e}", exc_info=True)
         if "DLL" in str(e) or "dynamic link library" in str(e):

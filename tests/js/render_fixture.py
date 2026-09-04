@@ -58,7 +58,9 @@ from speech_to_text.core.segments import Segment, TranscriptDocument, Word  # no
 HE = "שלום עולם מה שלומך"
 
 UI_STRINGS = {
-    "help": "Help", "help_title": "Help", "help_close": "Close help",
+    "help": "Help",
+    "help_title": "Help",
+    "help_close": "Close help",
     "tour_start": "Start guided tour",
 }
 
@@ -92,15 +94,29 @@ def render_full():
     # stay inside the first sentence, so the low-confidence tests elsewhere
     # (editing.test.mjs) are untouched by the split.
     documents = [
-        doc("recording-one.wav", [
-            seg(0, 3, "שלום אחד שתיים שלוש. עוד משפט קצר", speaker=0, words=[
-                word("אחד", 0.99), word("שתיים", 0.20), word("שלוש", 0.95),
-            ]),
-            seg(5, 8, "שלום ארבע חמש שש", speaker=1),
-        ]),
-        doc("recording-two.wav", [
-            seg(0, 4, "שלום שבע שמונה תשע", speaker=0),
-        ]),
+        doc(
+            "recording-one.wav",
+            [
+                seg(
+                    0,
+                    3,
+                    "שלום אחד שתיים שלוש. עוד משפט קצר",
+                    speaker=0,
+                    words=[
+                        word("אחד", 0.99),
+                        word("שתיים", 0.20),
+                        word("שלוש", 0.95),
+                    ],
+                ),
+                seg(5, 8, "שלום ארבע חמש שש", speaker=1),
+            ],
+        ),
+        doc(
+            "recording-two.wav",
+            [
+                seg(0, 4, "שלום שבע שמונה תשע", speaker=0),
+            ],
+        ),
     ]
     return render_html(
         documents,
@@ -136,10 +152,13 @@ def render_triple():
     # sentence of turn "0-0" a real, differently-named neighbour to merge
     # into when it is reassigned.
     documents = [
-        doc("recording-one.wav", [
-            seg(0, 3, "אחד. שתיים. שלוש.", speaker=0),
-            seg(5, 6, "ארבע", speaker=1),
-        ]),
+        doc(
+            "recording-one.wav",
+            [
+                seg(0, 3, "אחד. שתיים. שלוש.", speaker=0),
+                seg(5, 6, "ארבע", speaker=1),
+            ],
+        ),
     ]
     return render_html(
         documents,
