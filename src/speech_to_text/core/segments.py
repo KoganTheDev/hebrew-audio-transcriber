@@ -19,7 +19,7 @@ belong to either side.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Optional
 
 
 @dataclass
@@ -52,7 +52,7 @@ class Segment:
     start: float
     end: float
     text: str
-    words: List[Word] = field(default_factory=list)
+    words: list[Word] = field(default_factory=list)
     # 0-based speaker index. None means speaker identification did not run,
     # or ran and could not attribute this segment - both render without a
     # speaker label rather than guessing.
@@ -77,11 +77,11 @@ class TranscriptDocument:
     """
 
     source_name: str  # basename of the audio file
-    segments: List[Segment] = field(default_factory=list)
+    segments: list[Segment] = field(default_factory=list)
     failed: bool = False  # transcription of this one file did not complete
 
 
-def plain_text(segments: List[Segment]) -> str:
+def plain_text(segments: list[Segment]) -> str:
     """Flatten segments back into one unpunctuated-by-us blob.
 
     This reproduces exactly what Transcriber.transcribe used to return, and

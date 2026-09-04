@@ -5,14 +5,13 @@ Automatically installs required packages.
 import logging
 import subprocess
 import sys
-from typing import Dict
 
 from speech_to_text import config
 
 logger = logging.getLogger(__name__)
 
 
-def ensure_dependencies(packages: Dict[str, str]) -> bool:
+def ensure_dependencies(packages: dict[str, str]) -> bool:
     """Check and install required packages.
 
     Args:
@@ -43,10 +42,9 @@ def ensure_dependencies(packages: Dict[str, str]) -> bool:
         logger.info(f"Installing package: {package}")
         try:
             # Use subprocess with timeout and proper output redirection
-            result = subprocess.run(
+            subprocess.run(
                 [sys.executable, "-m", "pip", "install", package, "-q"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=config.INSTALL_TIMEOUT_SECONDS,
                 check=True,
             )

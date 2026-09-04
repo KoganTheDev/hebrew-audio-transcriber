@@ -215,7 +215,7 @@ def _process_variant(
     )
 
 
-def build() -> int:
+def build() -> int:  # noqa: C901 - argparse CLI for a dev tool, not shipped code
     """Process every source image. Returns the count that could not fit budget."""
     if not SOURCE_DIR.is_dir():
         print(f"no source directory: {SOURCE_DIR}", file=sys.stderr)

@@ -97,7 +97,6 @@ import logging
 import os
 import sys
 import time
-from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -121,12 +120,12 @@ DEFAULT_E2E_MODEL = "medium"
 DEFAULT_E2E_LANGUAGE = "en"
 
 
-def _spans_to_turns(spans) -> List[Tuple[float, float, str]]:
+def _spans_to_turns(spans) -> list[tuple[float, float, str]]:
     """core.diarization.SpeakerSpan list -> diarization_metrics.Turn list."""
     return [(span.start, span.end, str(span.speaker)) for span in spans]
 
 
-def _segments_to_turns(segments) -> List[Tuple[float, float, str]]:
+def _segments_to_turns(segments) -> list[tuple[float, float, str]]:
     """
     core.segments.Segment list -> diarization_metrics.Turn list.
 
@@ -185,7 +184,7 @@ def _diarize_before(samples, sample_rate: int, num_speakers: int):
     ]
 
 
-def _assign_speakers_before_e2e(segments, spans) -> List[Tuple[float, float, str]]:
+def _assign_speakers_before_e2e(segments, spans) -> list[tuple[float, float, str]]:
     """
     Frozen copy of the PRE-CHANGE assign_speakers: one label per whole
     segment, decided by majority vote of its words' best-overlap speaker.
@@ -200,7 +199,7 @@ def _assign_speakers_before_e2e(segments, spans) -> List[Tuple[float, float, str
     """
     from speech_to_text.core.diarization import _best_speaker
 
-    turns: List[Tuple[float, float, str]] = []
+    turns: list[tuple[float, float, str]] = []
     for segment in segments:
         votes = {}
         for word in segment.words:
@@ -352,7 +351,7 @@ def run_e2e_mode(
     }
 
 
-def main(argv=None) -> int:
+def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not shipped code
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

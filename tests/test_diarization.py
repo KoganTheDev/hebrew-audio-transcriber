@@ -372,7 +372,7 @@ class TestAssignSpeakers:
         assert result[2] is clean
 
 
-def _install_fake_sherpa_onnx(monkeypatch):
+def _install_fake_sherpa_onnx(monkeypatch):  # noqa: C901 - test fixture builder, not shipped code
     """
     Plant a minimal stand-in for the sherpa_onnx package under
     sys.modules["sherpa_onnx"], so diarize()'s local `import sherpa_onnx`

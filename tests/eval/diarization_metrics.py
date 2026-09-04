@@ -51,10 +51,9 @@ is used instead of hanging - see _greedy_mapping.
 
 import itertools
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 # One reference or hypothesis utterance: (start, end, speaker_label).
-Turn = Tuple[float, float, str]
+Turn = tuple[float, float, str]
 
 # Hard cap on the brute-force permutation search - see the module docstring
 # for why brute force was chosen at all. 8! = 40320 permutations is instant;
@@ -65,7 +64,7 @@ Turn = Tuple[float, float, str]
 _MAX_BRUTE_FORCE_SPEAKERS = 8
 
 
-def read_rttm(path: str) -> List[Turn]:
+def read_rttm(path: str) -> list[Turn]:
     """
     Parse an RTTM file into a list of (start, end, speaker) turns.
 
@@ -82,7 +81,7 @@ def read_rttm(path: str) -> List[Turn]:
     ground-truth file downloaded from a mirror is not this project's to
     reject on formatting it doesn't control.
     """
-    turns: List[Turn] = []
+    turns: list[Turn] = []
     with open(path, encoding="utf-8") as handle:
         for line in handle:
             fields = line.split()
@@ -126,8 +125,8 @@ class DERResult:
 
 
 def compute_der(
-    reference: List[Turn],
-    hypothesis: List[Turn],
+    reference: list[Turn],
+    hypothesis: list[Turn],
     max_brute_force_speakers: int = _MAX_BRUTE_FORCE_SPEAKERS,
 ) -> DERResult:
     """
@@ -188,8 +187,8 @@ def compute_der(
 
 
 def _confusion_matrix(
-    reference: List[Turn], hypothesis: List[Turn]
-) -> Tuple[List[str], List[str], Dict[Tuple[str, str], float]]:
+    reference: list[Turn], hypothesis: list[Turn]
+) -> tuple[list[str], list[str], dict[tuple[str, str], float]]:
     """
     Total co-occurrence duration between every (ref speaker, hyp speaker)
     pair, summed pairwise over every overlapping turn. This is the whole-file
@@ -198,7 +197,7 @@ def _confusion_matrix(
     """
     ref_speakers = sorted({speaker for _, _, speaker in reference})
     hyp_speakers = sorted({speaker for _, _, speaker in hypothesis})
-    matrix: Dict[Tuple[str, str], float] = {}
+    matrix: dict[tuple[str, str], float] = {}
 
     for ref_start, ref_end, ref_speaker in reference:
         for hyp_start, hyp_end, hyp_speaker in hypothesis:
@@ -211,11 +210,11 @@ def _confusion_matrix(
 
 
 def _optimal_mapping(
-    ref_speakers: List[str],
-    hyp_speakers: List[str],
-    matrix: Dict[Tuple[str, str], float],
+    ref_speakers: list[str],
+    hyp_speakers: list[str],
+    matrix: dict[tuple[str, str], float],
     max_brute_force_speakers: int,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """One-to-one ref-speaker -> hyp-speaker mapping maximising total overlap."""
     if not ref_speakers or not hyp_speakers:
         return {}
@@ -225,8 +224,8 @@ def _optimal_mapping(
 
 
 def _brute_force_mapping(
-    ref_speakers: List[str], hyp_speakers: List[str], matrix: Dict[Tuple[str, str], float]
-) -> Dict[str, str]:
+    ref_speakers: list[str], hyp_speakers: list[str], matrix: dict[tuple[str, str], float]
+) -> dict[str, str]:
     """
     Exhaustively try every way to assign hypothesis speakers to reference
     speakers and keep the one with the largest total matched overlap. See
@@ -242,7 +241,7 @@ def _brute_force_mapping(
         candidates.append(None)
 
     best_score = -1.0
-    best_mapping: Dict[str, str] = {}
+    best_mapping: dict[str, str] = {}
     for assignment in itertools.permutations(candidates, len(ref_speakers)):
         score = sum(
             matrix.get((r, h), 0.0) for r, h in zip(ref_speakers, assignment) if h is not None
@@ -254,8 +253,8 @@ def _brute_force_mapping(
 
 
 def _greedy_mapping(
-    ref_speakers: List[str], hyp_speakers: List[str], matrix: Dict[Tuple[str, str], float]
-) -> Dict[str, str]:
+    ref_speakers: list[str], hyp_speakers: list[str], matrix: dict[tuple[str, str], float]
+) -> dict[str, str]:
     """
     Non-optimal fallback for pathologically large speaker counts (see
     _MAX_BRUTE_FORCE_SPEAKERS). Repeatedly takes the single largest remaining
@@ -267,7 +266,7 @@ def _greedy_mapping(
     remaining_ref = set(ref_speakers)
     remaining_hyp = set(hyp_speakers)
     pairs = sorted(matrix.items(), key=lambda kv: kv[1], reverse=True)
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     for (ref_speaker, hyp_speaker), _overlap in pairs:
         if ref_speaker in remaining_ref and hyp_speaker in remaining_hyp:
             mapping[ref_speaker] = hyp_speaker

@@ -39,7 +39,7 @@ import logging
 import os
 import re
 from collections.abc import Sequence
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from speech_to_text.core.hebrew_text import CLITICS, normalize_word
 from speech_to_text.core.segments import Segment
@@ -72,7 +72,7 @@ MIN_MARGIN = 0.5
 # א/ה/ע are silent or near-silent; כ/ק and ט/ת and ס/שׂ are homophones; ב/ו
 # overlap on the /v/ sound. These are the substitutions an ASR model actually
 # makes, which plain Levenshtein weights the same as any other letter swap.
-_CONFUSION_GROUPS: Sequence[Tuple[str, float]] = (
+_CONFUSION_GROUPS: Sequence[tuple[str, float]] = (
     ("אהע", 0.25),
     ("כק", 0.25),
     ("טת", 0.25),
@@ -84,7 +84,7 @@ _CONFUSION_GROUPS: Sequence[Tuple[str, float]] = (
 
 _HEBREW_WORD = re.compile(r"^[א-ת]+$")
 
-_SUBSTITUTION_COST: Dict[Tuple[str, str], float] = {}
+_SUBSTITUTION_COST: dict[tuple[str, str], float] = {}
 for _group, _cost in _CONFUSION_GROUPS:
     for _a in _group:
         for _b in _group:
@@ -92,7 +92,7 @@ for _group, _cost in _CONFUSION_GROUPS:
                 _SUBSTITUTION_COST.setdefault((_a, _b), _cost)
 
 
-def strip_clitics(word: str) -> Tuple[str, str]:
+def strip_clitics(word: str) -> tuple[str, str]:
     """Split leading prefix letters off a word.
 
     Returns (prefix, stem). A letter is only stripped if at least four letters
@@ -109,7 +109,7 @@ def strip_clitics(word: str) -> Tuple[str, str]:
     return word[:index], word[index:]
 
 
-def clitic_splits(word: str) -> List[Tuple[str, str]]:
+def clitic_splits(word: str) -> list[tuple[str, str]]:
     """Every plausible way to divide a word into prefix + stem.
 
     Returns [("", word), (word[:1], word[1:]), ...] up to the maximum strip.
@@ -191,7 +191,7 @@ class TermList:
             logger.warning(f"Could not read term list {path}: {e}")
             return cls([])
 
-    def best_match(self, word: str) -> Optional[Tuple[str, float, float]]:
+    def best_match(self, word: str) -> Optional[tuple[str, float, float]]:  # noqa: C901 - scheduled for extraction
         """Find the term this word was most likely meant to be.
 
         Returns (term, distance, margin) or None when nothing is close enough
@@ -206,7 +206,7 @@ class TermList:
         # כ, which is also a prefix. Whichever reading matches a term best wins.
         candidates = clitic_splits(normalize_word(word))
 
-        best: Optional[Tuple[str, float]] = None
+        best: Optional[tuple[str, float]] = None
         runner_up = float("inf")
 
         for candidate_prefix, candidate in candidates:
@@ -240,11 +240,11 @@ class TermList:
         return best[0], best[1], margin
 
 
-def correct(
+def correct(  # noqa: C901 - scheduled for extraction
     segments: Sequence[Segment],
     terms: TermList,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
-) -> List[Tuple[str, str, float]]:
+) -> list[tuple[str, str, float]]:
     """Correct low-confidence words against the term list, in place.
 
     Returns the list of (original, replacement, confidence) substitutions made,
@@ -255,13 +255,13 @@ def correct(
     if not len(terms):
         return []
 
-    changes: List[Tuple[str, str, float]] = []
+    changes: list[tuple[str, str, float]] = []
 
     for segment in segments:
         if not segment.words:
             continue
 
-        replacements: Dict[int, str] = {}
+        replacements: dict[int, str] = {}
         for index, word in enumerate(segment.words):
             if word.probability >= confidence_threshold:
                 continue

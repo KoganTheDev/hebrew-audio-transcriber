@@ -10,7 +10,8 @@ why that module is their home.
 """
 
 import html
-from typing import Dict, List, Optional
+from functools import partial
+from typing import Optional
 
 from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
 from speech_to_text.core.segments import TranscriptDocument
@@ -32,7 +33,7 @@ from .timecode import (
 from .turns import Sentence, Turn, _speaker_indices
 
 
-def _render_file_bar_html(source_name: str, index: int, total: int, strings: Dict[str, str]) -> str:
+def _render_file_bar_html(source_name: str, index: int, total: int, strings: dict[str, str]) -> str:
     """The one piece of chrome that stays on screen for the whole file.
 
     Everything else about a batch of recordings looks alike - same card
@@ -66,13 +67,13 @@ def _render_document_html(
     document: TranscriptDocument,
     index: int,
     total: int,
-    turns: List[Turn],
+    turns: list[Turn],
     speaker_label: Optional[str],
     timestamps: bool,
     failed_label: Optional[str],
-    strings: Dict[str, str],
+    strings: dict[str, str],
     payload: dict,
-) -> List[str]:
+) -> list[str]:
     """One <section class="source">: sticky file bar, turns, plain text.
 
     No speakers strip here any more - it rendered the same roster twice (once
@@ -130,9 +131,9 @@ def _render_document_html(
 
 def _render_speakers_html(
     file_index: int,
-    speakers: List[int],
+    speakers: list[int],
     speaker_label: str,
-    strings: Dict[str, str],
+    strings: dict[str, str],
     active: bool = False,
 ) -> str:
     """Editable names and colours for this recording's speakers.
@@ -200,9 +201,9 @@ def _render_speakers_html(
 
 
 def _render_outline_html(
-    documents: List[TranscriptDocument],
+    documents: list[TranscriptDocument],
     speaker_label: Optional[str],
-    strings: Dict[str, str],
+    strings: dict[str, str],
 ) -> Optional[str]:
     """The sidebar: which file is which, and each file's speaker roster.
 
@@ -298,7 +299,7 @@ def _render_bubble_html(
     timestamps: bool,
     speaker_label: Optional[str],
     speaker: Optional[int],
-    strings: Dict[str, str],
+    strings: dict[str, str],
 ) -> str:
     """One <div class="bubble">: a full-width card for one sentence.
 
@@ -419,10 +420,10 @@ def _render_bubble_html(
 def _render_turn_html(
     turn: Turn,
     turn_id: str,
-    sentences: List[Sentence],
+    sentences: list[Sentence],
     speaker_label: Optional[str],
     timestamps: bool,
-    strings: Dict[str, str],
+    strings: dict[str, str],
 ) -> str:
     """One <article class="turn">: a transparent grouping wrapper, then one card per sentence.
 
@@ -471,7 +472,7 @@ def _render_plain_line_html(
     line_id: str,
     number: int,
     timestamps: bool,
-    strings: Dict[str, str],
+    strings: dict[str, str],
 ) -> str:
     """One sentence's own line in the copy-out panel.
 
@@ -545,11 +546,11 @@ def _render_plain_line_html(
 
 
 def _render_plain_html(
-    turns: List[Turn],
-    turn_ids: List[str],
+    turns: list[Turn],
+    turn_ids: list[str],
     speaker_label: Optional[str],
     timestamps: bool,
-    strings: Dict[str, str],
+    strings: dict[str, str],
 ) -> str:
     """The copy-out panel.
 
@@ -594,7 +595,7 @@ def _render_plain_html(
     mid-turn, which is exactly what has no client-side override to say
     otherwise yet.
     """
-    s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
+    s = partial(_t, strings)  # see _render_toolbar_html's s
 
     line_parts = []
     sentence_number = 1

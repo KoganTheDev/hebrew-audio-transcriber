@@ -260,7 +260,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Optional
 
 from speech_to_text import config as app_config
 from speech_to_text.core.worker import _RETRY_LOG_PATTERNS
@@ -371,7 +371,7 @@ _TRANSCRIBE_KEYS = (
 # actually passed, and cross-check it against this comment, not just the
 # config name.
 # =============================================================================
-CONFIGS: Dict[str, Dict] = {
+CONFIGS: dict[str, dict] = {
     "baseline": {},
     "crt_2.6": {"compression_ratio_threshold": 2.6},
     "crt_2.8": {"compression_ratio_threshold": 2.8},
@@ -392,7 +392,7 @@ CONFIGS: Dict[str, Dict] = {
 
 # One-line "what changed" per config, used in the printed table so a reader
 # doesn't have to cross-reference CONFIGS by hand.
-def _override_summary(overrides: Dict) -> str:
+def _override_summary(overrides: dict) -> str:
     if not overrides:
         return "(production defaults)"
     return ", ".join(f"{k}={v}" for k, v in overrides.items())
@@ -417,7 +417,7 @@ class _RetryCollector(logging.Handler):
 
     def __init__(self):
         super().__init__(level=logging.DEBUG)
-        self.events: List[Dict] = []
+        self.events: list[dict] = []
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -502,7 +502,7 @@ class _CpuSampler(threading.Thread):
         super().__init__(daemon=True)
         self.interval = interval
         self._stop_event = threading.Event()
-        self.samples: List[float] = []
+        self.samples: list[float] = []
 
     def run(self) -> None:
         while not self._stop_event.is_set():
@@ -511,7 +511,7 @@ class _CpuSampler(threading.Thread):
                 self.samples.append(value)
             self._stop_event.wait(self.interval)
 
-    def stop_and_summarize(self) -> Dict[str, Optional[float]]:
+    def stop_and_summarize(self) -> dict[str, Optional[float]]:
         self._stop_event.set()
         # ident is None until start() has actually run - guards a caller
         # (or a unit test) that summarizes a sampler it never started.
@@ -553,7 +553,7 @@ def cooldown_wait(
     cap_seconds: float,
     recovery_threshold: float = COOLDOWN_RECOVERY_THRESHOLD,
     poll_interval: float = COOLDOWN_POLL_INTERVAL,
-) -> Dict:
+) -> dict:
     """
     Idle between subprocess configs until `% Processor Performance` reads
     back at or above recovery_threshold, or cap_seconds elapses, whichever
@@ -601,10 +601,10 @@ def cooldown_wait(
 
 
 def compute_baseline_drift(
-    first: Dict,
-    last: Dict,
+    first: dict,
+    last: dict,
     threshold: float = BASELINE_DRIFT_WARN_THRESHOLD,
-) -> Dict:
+) -> dict:
     """
     Diffs the FIRST and LAST baseline run of an A-B-A sweep (--repeat > 1)
     and flags the sweep as thermally confounded if either the raw time or
@@ -639,7 +639,7 @@ def compute_baseline_drift(
     }
 
 
-def _build_model(overrides: Dict):
+def _build_model(overrides: dict):
     """
     Construct WhisperModel per PRODUCTION_DEFAULTS + overrides, wrapped in a
     BatchedInferencePipeline when overrides carries batch_size.
@@ -675,7 +675,7 @@ def _build_model(overrides: Dict):
     return model, batch_size
 
 
-def _build_transcribe_kwargs(overrides: Dict) -> Dict:
+def _build_transcribe_kwargs(overrides: dict) -> dict:
     kwargs = {}
     for key in _TRANSCRIBE_KEYS:
         kwargs[key] = overrides.get(key, PRODUCTION_DEFAULTS[key])
@@ -684,12 +684,12 @@ def _build_transcribe_kwargs(overrides: Dict) -> Dict:
 
 def run_config(
     name: str,
-    overrides: Dict,
+    overrides: dict,
     samples,
     duration: float,
     reference: Optional[str],
     baseline_text: Optional[str],
-) -> Dict:
+) -> dict:
     """
     Run one named config over `samples` and collect every metric this
     harness's per-config schema promises. `reference` is the real WER/CER
@@ -825,7 +825,7 @@ def run_config(
     return result
 
 
-def print_table(results: List[Dict], has_reference: bool) -> None:
+def print_table(results: list[dict], has_reference: bool) -> None:
     # "_baseline_drift" (from compute_baseline_drift) is analysis metadata,
     # not a config run - it has no transcribe_seconds/segments/etc of its own
     # and is reported separately, in its own loud banner, not as a table row.
@@ -1014,17 +1014,17 @@ def _spawn_single_config(
     subprocess.run(cmd, check=False)
 
 
-def run_target(
+def run_target(  # noqa: C901 - dev harness, not shipped code
     label: str,
     audio_path: str,
     reference_path: Optional[str],
-    config_names: List[str],
+    config_names: list[str],
     start: float,
     seconds: float,
     output_dir: str,
     cooldown: float,
     repeat: int,
-) -> List[Dict]:
+) -> list[dict]:
     if not os.path.exists(audio_path):
         print(f"{label}: audio not found at {audio_path} - skipping.")
         return []
@@ -1048,7 +1048,7 @@ def run_target(
     # absent.
     has_baseline = "baseline" in config_names
     other_names = sorted(n for n in config_names if n != "baseline")
-    run_plan: List[tuple] = []
+    run_plan: list[tuple] = []
     if has_baseline:
         run_plan.append(("baseline", "baseline_first"))
         run_plan += [(n, "other") for n in other_names]
@@ -1062,8 +1062,8 @@ def run_target(
                 f"the A-B-A drift check needs a baseline run and will be skipped."
             )
 
-    results: List[Dict] = []
-    baseline_first_result: Optional[Dict] = None
+    results: list[dict] = []
+    baseline_first_result: Optional[dict] = None
     baseline_text_file: Optional[str] = None
     tmp_dir = tempfile.mkdtemp(prefix="compare_transcription_")
     try:

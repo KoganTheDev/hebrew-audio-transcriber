@@ -3,7 +3,6 @@ Centralized configuration for the application.
 """
 
 import os
-from typing import List
 
 # ============================================================================
 # Model Configuration with detailed pros/cons
@@ -345,7 +344,7 @@ SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.m
 OUTPUT_FILENAME_TEMPLATE = "{stem}_transcription.html"
 
 
-def output_path_for(audio_files: List[str]) -> str:
+def output_path_for(audio_files: list[str]) -> str:
     """Decide the output path for a transcription run.
 
     One file -> named after it (so two different recordings never collide).

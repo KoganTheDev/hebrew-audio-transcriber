@@ -20,8 +20,6 @@ Hebrew is RTL) with no direction-specific code needed here, the same
 "mirrors for free" property every other QHBoxLayout in this app relies on.
 """
 
-from typing import List
-
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy
 
@@ -92,8 +90,8 @@ class StepIndicator(QFrame):
         layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
         layout.setSpacing(Spacing.SM)
 
-        self._badges: List[QLabel] = []
-        self._texts: List[QLabel] = []
+        self._badges: list[QLabel] = []
+        self._texts: list[QLabel] = []
 
         for i, (_step, key) in enumerate(_STEP_LABELS):
             badge = QLabel()

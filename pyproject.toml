@@ -116,6 +116,19 @@ ignore = [
     # and a missing full stop change nothing for a reader, and enforcing them
     # across ~500 docstrings would bury the real documentation work in churn.
     "D400", "D401", "D403", "D415", "D417",
+    # ruff format already enforces the line length for code. What is left over
+    # is prose inside comments and docstrings, which the formatter will not
+    # rewrap, and data it must not touch - gui/icons.py holds a 547-character
+    # SVG path. Letting the formatter own line length is the documented way to
+    # pair the two.
+    "E501",
+    # TEMPORARY - re-enabled in Wave 4, as the objective check that the
+    # documentation pass actually happened. 96 docstrings currently open with a
+    # summary that wraps onto a second line, so D212's autofix left them as a
+    # sentence split across the summary and the body. Mechanically inserting a
+    # blank line would cut those sentences in half; they need rewriting into a
+    # real one-line summary, which is the documentation pass's job.
+    "D205",
 ]
 
 [tool.ruff.lint.mccabe]
@@ -159,6 +172,9 @@ disallow_untyped_defs = false
 
 [tool.importlinter]
 root_packages = ["speech_to_text"]
+# Required to forbid an external package (PyQt5) rather than only first-party
+# modules - without it the contract is rejected at run time.
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 # The same rule tests/test_layering.py enforces at test time, stated

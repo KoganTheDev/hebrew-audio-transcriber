@@ -42,7 +42,7 @@ import os
 import statistics
 import sys
 import time
-from typing import Dict, List, Optional
+from typing import Optional
 
 from speech_to_text import config
 
@@ -55,7 +55,7 @@ OUTPUT_DIR = "eval_output"
 
 def transcribe_once(
     model_size: str, samples, duration: float, language: Optional[str] = None
-) -> Dict:
+) -> dict:
     """
     Run one model over the audio and collect metrics alongside the text.
 
@@ -124,7 +124,7 @@ def transcribe_once(
     return result
 
 
-def write_side_by_side(results: List[Dict], path: str) -> None:
+def write_side_by_side(results: list[dict], path: str) -> None:
     """
     Write the transcripts one after another for manual reading.
 
@@ -157,7 +157,7 @@ def write_side_by_side(results: List[Dict], path: str) -> None:
             handle.write("\n\n\n")
 
 
-def print_table(results: List[Dict], reference: Optional[str]) -> None:
+def print_table(results: list[dict], reference: Optional[str]) -> None:
     rows = [r for r in results if "error" not in r]
     if not rows:
         print("\nNo model produced a transcript.")
@@ -210,13 +210,13 @@ def print_table(results: List[Dict], reference: Optional[str]) -> None:
 
 
 def build_configs(
-    models: List[str],
-    compute_types: List[Optional[str]],
-    beam_sizes: List[Optional[int]],
-    cpu_threads_list: List[Optional[int]],
-    num_workers_list: List[Optional[int]],
-    devices: List[str],
-) -> List[Dict]:
+    models: list[str],
+    compute_types: list[Optional[str]],
+    beam_sizes: list[Optional[int]],
+    cpu_threads_list: list[Optional[int]],
+    num_workers_list: list[Optional[int]],
+    devices: list[str],
+) -> list[dict]:
     """
     Cartesian product of every axis, once per model.
 
@@ -246,7 +246,7 @@ def build_configs(
     return configs
 
 
-def _config_label(cfg: Dict) -> str:
+def _config_label(cfg: dict) -> str:
     parts = [cfg["model"], cfg["device"]]
     if cfg["compute_type"] is not None:
         parts.append(cfg["compute_type"])
@@ -313,13 +313,13 @@ def _noise_hint(cv: float, realtime_factor: Optional[float]) -> Optional[str]:
 
 
 def run_config(
-    cfg: Dict,
+    cfg: dict,
     samples,
     duration: float,
     warmup: bool,
     repeats: int,
     language: Optional[str] = None,
-) -> Dict:
+) -> dict:
     """
     Load once, optionally warm up once (untimed, discarded), then time
     `repeats` transcribe() calls of the SAME loaded model over the SAME
@@ -428,7 +428,7 @@ def run_config(
     return result
 
 
-def print_sweep_table(results: List[Dict]) -> None:
+def print_sweep_table(results: list[dict]) -> None:
     rows = [r for r in results if "error" not in r]
     if not rows:
         print("\nNo config produced a transcript.")
@@ -488,7 +488,7 @@ def _sweep_requested(args) -> bool:
     )
 
 
-def main(argv=None) -> int:
+def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not shipped code
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("audio", help="Path to an audio file")
     parser.add_argument(

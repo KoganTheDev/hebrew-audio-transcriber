@@ -5,7 +5,6 @@ import os
 import time
 import webbrowser
 from pathlib import Path
-from typing import List
 
 from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QFontMetrics
@@ -133,8 +132,8 @@ class TranscriptionStep(QFrame):
         layout.addWidget(self.batch_strip)
         self.batch_strip.hide()
 
-        self._batch_filenames: List[str] = []
-        self._batch_segment_frames: List[QFrame] = []
+        self._batch_filenames: list[str] = []
+        self._batch_segment_frames: list[QFrame] = []
 
         layout.addSpacing(Spacing.LG)
 
@@ -306,7 +305,7 @@ class TranscriptionStep(QFrame):
         self._file_info_args = (filename, model)
         self.file_info.setText(t("file_model_info", filename=filename, model=model.title()))
 
-    def set_batch_files(self, filenames: List[str]) -> None:
+    def set_batch_files(self, filenames: list[str]) -> None:
         """(Re)build the batch strip's segments from the GUI's own selected-
         file list - called once, when a run starts (see
         MainWindow._start_transcription), NOT derived from the worker's

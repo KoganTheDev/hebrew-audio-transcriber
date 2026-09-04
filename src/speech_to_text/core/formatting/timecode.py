@@ -9,7 +9,6 @@ outside this package entirely).
 
 import logging
 import re
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ PDI = "⁩"
 RLM = "‏"
 
 
-def split_sentences(text: str) -> List[str]:
+def split_sentences(text: str) -> list[str]:
     """Split a transcript blob into one entry per sentence.
 
     Shared by format_plain (one sentence per text line) and render_html (one

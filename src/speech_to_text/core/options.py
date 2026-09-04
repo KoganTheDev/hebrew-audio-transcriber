@@ -9,7 +9,7 @@ Stdlib only and trivially picklable, since instances cross a process boundary.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
 from speech_to_text import config
 
@@ -26,7 +26,7 @@ class TranscriptionOptions:
     # starts (gui.audio_utils), one entry per audio_files entry in the same
     # order. Drives accurate, duration-weighted progress percentages across
     # a batch - see core/worker.py's per-file progress rescaling.
-    audio_durations: List[float] = field(default_factory=list)
+    audio_durations: list[float] = field(default_factory=list)
 
     # --- Output rendering -------------------------------------------------
     timestamps: bool = True
@@ -48,7 +48,7 @@ class TranscriptionOptions:
     # same reason: the rendered document is a small application with visible
     # text, and this process cannot translate any of it. Missing keys fall
     # back to English inside the page rather than rendering blank.
-    ui_strings: Dict[str, str] = field(default_factory=dict)
+    ui_strings: dict[str, str] = field(default_factory=dict)
 
     # --- Speaker identification -------------------------------------------
     identify_speakers: bool = True

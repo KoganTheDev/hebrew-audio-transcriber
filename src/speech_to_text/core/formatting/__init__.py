@@ -33,7 +33,7 @@ tests/test_core/formatting's imports, and worker.py's) unchanged.
 import html
 import json
 import uuid
-from typing import Dict, List, Optional
+from typing import Optional
 
 from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
 from speech_to_text.core.segments import TranscriptDocument
@@ -122,7 +122,7 @@ def _json_payload(data: dict) -> str:
 def _build_payload(
     speaker_label: Optional[str],
     title: Optional[str],
-    ui_strings: Optional[Dict[str, str]],
+    ui_strings: Optional[dict[str, str]],
 ) -> tuple:
     """Job 1 of render_html(): the page's data island, before any document has
     rendered.
@@ -154,7 +154,7 @@ def _build_payload(
     return payload, strings
 
 
-def _render_head_html(doc_id: str, title: Optional[str]) -> List[str]:
+def _render_head_html(doc_id: str, title: Optional[str]) -> list[str]:
     """Job 2 of render_html(): the <!doctype> through the closing </head>.
 
     Kept to exactly this span - not through <body> - because the backdrop
@@ -191,7 +191,7 @@ def _render_script_html() -> str:
     return "<script>(function () {\n  'use strict';\n\n" + _asset_dir("js") + "\n})();</script>"
 
 
-def _render_backdrop_html(vista: Optional[str]) -> List[str]:
+def _render_backdrop_html(vista: Optional[str]) -> list[str]:
     """Job 3 of render_html(): this render's photographic backdrop, as a
     per-document <style> block plus the <div> it paints onto.
 
@@ -247,12 +247,12 @@ def _render_backdrop_html(vista: Optional[str]) -> List[str]:
 
 
 def render_html(
-    documents: List[TranscriptDocument],
+    documents: list[TranscriptDocument],
     speaker_label: Optional[str] = None,
     timestamps: bool = True,
     failed_label: Optional[str] = None,
     title: Optional[str] = None,
-    ui_strings: Optional[Dict[str, str]] = None,
+    ui_strings: Optional[dict[str, str]] = None,
     doc_id: Optional[str] = None,
     vista: Optional[str] = None,
 ) -> str:
@@ -314,7 +314,7 @@ def render_html(
     # _render_outline_html(), which also absorbs the per-file speakers strip
     # that _render_document_html used to render inline (same reasoning -
     # speaker management is navigation-adjacent, not reading content).
-    body: List[str] = []
+    body: list[str] = []
 
     # Computed once, here, rather than inside _render_document_html: the
     # outline sidebar used to need each document's turns too, to show a

@@ -5,7 +5,7 @@ Detects CPU/GPU specs and calculates estimated transcription time.
 import logging
 import platform
 import subprocess
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 from speech_to_text import config
 from speech_to_text.core.calibration import RELATIVE_COMPUTE_COST, load_cached_tiny_rtf
@@ -138,7 +138,7 @@ class HardwareDetector:
             logger.debug(f"Could not retrieve GPU name: {e}")
             return None
 
-    def get_device_recommendation(self) -> Tuple[str, str]:
+    def get_device_recommendation(self) -> tuple[str, str]:
         """Recommend optimal device (CPU or GPU) based on available hardware.
 
         Prioritizes NVIDIA GPU if available; falls back to CPU with core count information.
@@ -159,7 +159,7 @@ class HardwareDetector:
             return ("cuda", f"NVIDIA GPU detected: {self.gpu_name}")
         return ("cpu", f"Using CPU ({self.cpu_count} cores, {self.ram_gb:.1f}GB RAM)")
 
-    def get_hardware_info(self) -> Dict:
+    def get_hardware_info(self) -> dict:
         """Get formatted hardware information."""
         return {
             "cpu_cores": self.cpu_count,
@@ -169,7 +169,7 @@ class HardwareDetector:
             "os": self.os_name,
         }
 
-    def can_run_model(self, model_size: str) -> Tuple[bool, str]:
+    def can_run_model(self, model_size: str) -> tuple[bool, str]:
         """Check if system can run given model size.
         Returns: (can_run, reason)
         """
@@ -194,7 +194,7 @@ class HardwareDetector:
     # same ceiling.
     RECOMMENDED_TIME_BUDGET_SECONDS = 2 * 3600  # 2 hours
 
-    def recommend_model(self, audio_duration_seconds: int = 0) -> Tuple[str, str]:
+    def recommend_model(self, audio_duration_seconds: int = 0) -> tuple[str, str]:
         """Recommend the highest-accuracy model this machine (and, once known,
         this specific file) can realistically handle.
 
@@ -247,7 +247,7 @@ class HardwareDetector:
         audio_duration_seconds: int,
         model_size: str,
         identify_speakers: bool = False,
-    ) -> Tuple[int, str]:
+    ) -> tuple[int, str]:
         """Estimate transcription time based on audio duration, model, and hardware.
 
         Uses a real measured benchmark (self.tiny_seconds_per_audio_second,

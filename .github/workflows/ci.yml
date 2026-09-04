@@ -1,0 +1,57 @@
+name: CI
+
+# windows-latest, not ubuntu: PyQt5 wheels and the app itself target Windows,
+# the launcher is PowerShell, and config._default_model_download_root branches
+# on os.name. Testing anywhere else would test a configuration nobody runs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check src tests tools
+
+      - name: Format (ruff)
+        run: ruff format --check src tests tools
+
+      - name: Architecture contract (import-linter)
+        # The same rule tests/test_layering.py enforces, checked declaratively.
+        # Invoke the console script, not `python -m importlinter.cli`: the
+        # module form exits 0 without checking anything.
+        run: lint-imports
+
+      - name: Types (mypy)
+        # Advisory for now. core/ is held to disallow_untyped_defs and is not
+        # there yet, and gui/ carries errors that are PyQt5's missing type
+        # information rather than defects. Each refactor package drives its own
+        # files to zero; this becomes blocking once they have.
+        continue-on-error: true
+        run: mypy -p speech_to_text
+
+      - name: Tests
+        # QT_QPA_PLATFORM=offscreen: the GUI suite builds real widgets and
+        # there is no display on a runner.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest --cov=speech_to_text --cov-branch --cov-fail-under=76
+
+      - name: Documentation density
+        # Reported, never gated - no tool can judge whether a given paragraph
+        # is load-bearing. See tools/doc_density.py.
+        run: python tools/doc_density.py src --baseline docs/doc-density-baseline.json

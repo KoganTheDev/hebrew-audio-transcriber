@@ -4,7 +4,6 @@ import fnmatch
 import glob
 import logging
 import os
-from typing import Dict, List
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QIcon
@@ -220,16 +219,16 @@ class FileSelectStep(QFrame):
 
         # Parallel to each other and to the row widgets, all keyed by path -
         # simpler than one struct per file given how small this state is.
-        self.selected_files: List[str] = []
-        self._durations: Dict[str, int] = {}
-        self._rows: Dict[str, QFrame] = {}
+        self.selected_files: list[str] = []
+        self._durations: dict[str, int] = {}
+        self._rows: dict[str, QFrame] = {}
         # Basenames skipped by the most recent drop (see _drop) - rendered
         # into the summary line by _update_summary until the next drop
         # replaces it or reset() clears it. Not cleared by browse_for_files
         # or _remove_file: those aren't drops, and a skip note from one
         # drop staying visible while the user removes an unrelated file
         # from the list is still an accurate statement about what happened.
-        self._skipped_last_drop: List[str] = []
+        self._skipped_last_drop: list[str] = []
         # Tab-order chain anchor - see _add_row. Starts at the drop zone,
         # the first (and while the list is empty, only) focusable thing on
         # this step.
@@ -240,7 +239,7 @@ class FileSelectStep(QFrame):
         return sum(self._durations.values())
 
     @property
-    def durations(self) -> List[int]:
+    def durations(self) -> list[int]:
         """Per-file durations, in the same order as selected_files."""
         return [self._durations[path] for path in self.selected_files]
 
@@ -296,7 +295,7 @@ class FileSelectStep(QFrame):
         return any(fnmatch.fnmatch(name, pattern.lower()) for pattern in config.SUPPORTED_FORMATS)
 
     @staticmethod
-    def _expand_directory(dir_path: str) -> List[str]:
+    def _expand_directory(dir_path: str) -> list[str]:
         """A dropped folder expands to the supported audio directly inside it -
         non-recursive (a subfolder of unrelated files shouldn't silently get
         pulled in) and sorted (so batch order is predictable and reproducible
@@ -317,7 +316,7 @@ class FileSelectStep(QFrame):
         """Public entry point for the window-level Ctrl+O shortcut (see MainWindow)."""
         self._browse()
 
-    def _add_files(self, paths: List[str]) -> None:
+    def _add_files(self, paths: list[str]) -> None:
         """Append new files, skipping any already listed - a second drop never duplicates."""
         changed = False
         for path in paths:

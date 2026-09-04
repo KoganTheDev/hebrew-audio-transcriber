@@ -57,7 +57,7 @@ one as evidence of the other.
 
 import logging
 from collections.abc import Sequence
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -74,7 +74,7 @@ def diarize_powerset(
     progress: Optional[Callable[[int, int], None]] = None,
     onset: Optional[float] = None,
     mask_overlap: bool = False,
-) -> List:
+) -> list:
     """Label who is speaking, decoding the segmentation model directly.
 
     Same contract as core.diarization.diarize: float32 mono audio in,
@@ -139,7 +139,7 @@ def diarize_powerset(
     return spans
 
 
-def _providers(name: str) -> List[str]:
+def _providers(name: str) -> list[str]:
     """onnxruntime provider list, falling back to CPU if the name is unknown."""
     available = {"cpu": "CPUExecutionProvider", "cuda": "CUDAExecutionProvider"}
     return [available.get(name.lower(), "CPUExecutionProvider")]
@@ -166,7 +166,7 @@ def _infer_with_progress(session, samples, progress):
     return out, starts
 
 
-def _frame_samples(window_start: int, frame_index: int) -> Tuple[int, int]:
+def _frame_samples(window_start: int, frame_index: int) -> tuple[int, int]:
     """Sample range one frame's receptive field covers."""
     begin = window_start + frame_index * seg.FRAME_SHIFT_SAMPLES
     return begin, begin + seg.RECEPTIVE_FIELD_SAMPLES
@@ -179,7 +179,7 @@ def _embed_windows(
     active: np.ndarray,
     starts: Sequence[int],
     mask_overlap: bool,
-) -> Tuple[List[np.ndarray], List[Tuple[int, int]]]:
+) -> tuple[list[np.ndarray], list[tuple[int, int]]]:
     """One embedding per (window, local speaker) that has enough usable speech.
 
     Returns the embeddings and, alongside them, the (window, speaker) each one
@@ -203,8 +203,8 @@ def _embed_windows(
     )
     minimum = int(config.DIARIZATION_EMBED_MIN_CLEAN_SECONDS * seg.SAMPLE_RATE)
 
-    embeddings: List[np.ndarray] = []
-    owners: List[Tuple[int, int]] = []
+    embeddings: list[np.ndarray] = []
+    owners: list[tuple[int, int]] = []
     for window_index, start in enumerate(starts):
         window_active = active[window_index]  # (F, K)
         alone = window_active.sum(axis=1) == 1  # (F,)
@@ -248,14 +248,14 @@ def _gather(samples: np.ndarray, window_start: int, mask: np.ndarray) -> np.ndar
     return np.concatenate(pieces).astype(np.float32)
 
 
-def _mask_runs(mask: np.ndarray) -> List[Tuple[int, int]]:
+def _mask_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     """Contiguous True stretches of a boolean array, as [begin, end) indices."""
     padded = np.concatenate(([False], mask.astype(bool), [False]))
     edges = np.flatnonzero(padded[1:] != padded[:-1])
     return list(zip(edges[0::2].tolist(), edges[1::2].tolist()))
 
 
-def _cluster(sherpa_onnx, embeddings: List[np.ndarray], num_speakers: int) -> List[int]:
+def _cluster(sherpa_onnx, embeddings: list[np.ndarray], num_speakers: int) -> list[int]:
     """Group (window, speaker) embeddings into speakers.
 
     num_speakers <= 0 means "infer", which hands the decision to the
@@ -275,7 +275,7 @@ def _cluster(sherpa_onnx, embeddings: List[np.ndarray], num_speakers: int) -> Li
 def _reconstruct(
     active: np.ndarray,
     starts: Sequence[int],
-    owners: Sequence[Tuple[int, int]],
+    owners: Sequence[tuple[int, int]],
     labels: Sequence[int],
     num_samples: int,
 ) -> np.ndarray:
@@ -325,7 +325,7 @@ def _reconstruct(
     return share >= 0.5
 
 
-def _tracks_to_spans(span_type, tracks: np.ndarray) -> List:
+def _tracks_to_spans(span_type, tracks: np.ndarray) -> list:
     """Cut each cluster's boolean track into spans, applying the duration floors.
 
     min_duration_off is applied before min_duration_on deliberately: bridging
@@ -344,7 +344,7 @@ def _tracks_to_spans(span_type, tracks: np.ndarray) -> List:
     return spans
 
 
-def _bridge(intervals: List[Tuple[float, float]], max_gap: float) -> List[Tuple[float, float]]:
+def _bridge(intervals: list[tuple[float, float]], max_gap: float) -> list[tuple[float, float]]:
     """Join intervals separated by less than max_gap seconds."""
     if not intervals:
         return intervals

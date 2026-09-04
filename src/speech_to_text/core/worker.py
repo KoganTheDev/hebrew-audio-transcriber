@@ -18,7 +18,7 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 from speech_to_text.core import power
 from speech_to_text.core.progress_scale import (
@@ -143,8 +143,8 @@ def _atomic_write_html(path: str, content: str) -> None:
         raise
 
 
-def run_transcription_process(
-    audio_files: List[str],
+def run_transcription_process(  # noqa: C901 - scheduled for extraction into batch-setup / per-file loop / render
+    audio_files: list[str],
     output_file: str,
     options: "TranscriptionOptions",
     progress_queue: "multiprocessing.Queue",
@@ -431,7 +431,7 @@ def _transcribe_one(
     file_duration: float,
     emit_progress,
     progress_queue: "multiprocessing.Queue",
-) -> Optional[List["Segment"]]:
+) -> Optional[list["Segment"]]:
     """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
 
     emit_progress here is already file-local (0-100 covering just this
@@ -560,7 +560,7 @@ def _transcribe_one(
 
 def _prepare_audio(
     audio_file: str, options, file_duration: float, emit_progress
-) -> Tuple[Optional[list], bool]:
+) -> tuple[Optional[list], bool]:
     """Decode the file and decide which speaker-separation path applies.
 
     Returns (channels, two_party). Decoding is skipped entirely when speaker

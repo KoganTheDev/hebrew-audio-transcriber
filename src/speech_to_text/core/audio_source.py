@@ -14,7 +14,7 @@ adds no new requirement.
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -51,7 +51,7 @@ FRAME_SECONDS = 0.1
 SILENCE_FLOOR_RATIO = 0.1
 
 
-def decode_channels(path: str) -> Tuple[List[np.ndarray], int]:
+def decode_channels(path: str) -> tuple[list[np.ndarray], int]:
     """Decode an audio file to a list of float32 channel arrays at 16 kHz.
 
     Returns ([channel0, channel1, ...], sample_rate). Mono files yield a
@@ -76,7 +76,7 @@ def decode_channels(path: str) -> Tuple[List[np.ndarray], int]:
             rate=SAMPLE_RATE,
         )
 
-        buffers: List[List[np.ndarray]] = []
+        buffers: list[list[np.ndarray]] = []
         for frame in container.decode(stream):
             for resampled in resampler.resample(frame):
                 planes = resampled.to_ndarray()
@@ -96,7 +96,7 @@ def decode_channels(path: str) -> Tuple[List[np.ndarray], int]:
     return [np.concatenate(chunks).astype(np.float32) for chunks in buffers], SAMPLE_RATE
 
 
-def to_mono(channels: List[np.ndarray]) -> np.ndarray:
+def to_mono(channels: list[np.ndarray]) -> np.ndarray:
     """Average channels into one array, as Whisper would do internally."""
     if len(channels) == 1:
         return channels[0]
@@ -113,7 +113,7 @@ def _frame_energies(channel: np.ndarray, frame_length: int) -> np.ndarray:
     return np.mean(np.square(frames), axis=1)
 
 
-def is_true_stereo(channels: List[np.ndarray], sample_rate: int = SAMPLE_RATE) -> bool:
+def is_true_stereo(channels: list[np.ndarray], sample_rate: int = SAMPLE_RATE) -> bool:
     """Decide whether this file has one speaker per channel.
 
     Both conditions must hold, and they catch different failure modes:
@@ -186,7 +186,7 @@ def is_true_stereo(channels: List[np.ndarray], sample_rate: int = SAMPLE_RATE) -
     return bool(ratio >= MIN_EXCLUSIVE_FRAME_RATIO)
 
 
-def load(path: str) -> Tuple[Optional[List[np.ndarray]], bool]:
+def load(path: str) -> tuple[Optional[list[np.ndarray]], bool]:
     """Decode a file and classify it, tolerating failure.
 
     Returns (channels, is_two_party). channels is None if decoding failed, in

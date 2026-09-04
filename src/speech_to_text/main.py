@@ -96,7 +96,7 @@ def main():
     # Import PyQt5 after dependencies are ensured
     try:
         from PyQt5.QtGui import QIcon
-        from PyQt5.QtWidgets import QApplication, QMessageBox
+        from PyQt5.QtWidgets import QApplication
 
         from speech_to_text.gui.main_window import MainWindow, configure_application
 

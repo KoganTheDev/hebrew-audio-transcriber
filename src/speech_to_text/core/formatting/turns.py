@@ -8,7 +8,6 @@ without either being able to influence how they were grouped.
 
 import logging
 from dataclasses import dataclass, field
-from typing import List
 
 from speech_to_text.core.segments import Segment, Word
 
@@ -48,7 +47,7 @@ class Sentence:
     text: str
     start: float
     end: float
-    words: List[Word] = field(default_factory=list)
+    words: list[Word] = field(default_factory=list)
 
 
 class Turn:
@@ -64,7 +63,7 @@ class Turn:
         # which is the difference between proofreading the whole transcript
         # and proofreading the parts that need it. Same data hebrew_correct
         # already uses to decide what it is allowed to touch.
-        self.words: List[Word] = list(segment.words or [])
+        self.words: list[Word] = list(segment.words or [])
 
     def append(self, segment: Segment) -> None:
         self.end = segment.end
@@ -78,7 +77,7 @@ class Turn:
     def text(self) -> str:
         return " ".join(part for part in self._parts if part)
 
-    def low_confidence(self, threshold: float) -> List[list]:
+    def low_confidence(self, threshold: float) -> list[list]:
         """Words the model was unsure about, as [text, probability, occurrence].
 
         The occurrence index counts how many times that exact token has
@@ -90,7 +89,7 @@ class Turn:
         duplicate being highlighted instead.
         """
         seen: dict = {}
-        flagged: List[list] = []
+        flagged: list[list] = []
 
         for word in self.words:
             token = (word.text or "").strip()
@@ -103,7 +102,7 @@ class Turn:
 
         return flagged
 
-    def sentences(self) -> List[Sentence]:
+    def sentences(self) -> list[Sentence]:
         """Split this turn's text into Sentence objects, each with its own span.
 
         split_sentences() already produces the text of each sentence; this
@@ -135,7 +134,7 @@ class Turn:
             return [Sentence(text=t, start=self.start, end=self.end, words=[]) for t in texts]
 
         try:
-            result: List[Sentence] = []
+            result: list[Sentence] = []
             word_index = 0
             word_count = len(self.words)
             previous_end = self.start
@@ -143,7 +142,7 @@ class Turn:
             for text in texts:
                 target_len = len("".join(text.split()))
                 consumed_len = 0
-                sentence_words: List[Word] = []
+                sentence_words: list[Word] = []
 
                 while word_index < word_count and consumed_len < target_len:
                     w = self.words[word_index]
@@ -170,12 +169,12 @@ class Turn:
 
 
 def merge_turns(
-    segments: List[Segment],
+    segments: list[Segment],
     gap_seconds: float = TURN_GAP_SECONDS,
     max_seconds: float = TURN_MAX_SECONDS,
-) -> List[Turn]:
+) -> list[Turn]:
     """Group consecutive segments into readable speaker turns."""
-    turns: List[Turn] = []
+    turns: list[Turn] = []
 
     for segment in segments:
         if not segment.text or not segment.text.strip():
@@ -195,9 +194,9 @@ def merge_turns(
     return turns
 
 
-def _speaker_indices(segments: List[Segment]) -> List[int]:
+def _speaker_indices(segments: list[Segment]) -> list[int]:
     """Distinct speakers in a document, in first-appearance order."""
-    ordered: List[int] = []
+    ordered: list[int] = []
     for segment in segments:
         if segment.speaker is not None and segment.speaker not in ordered:
             ordered.append(segment.speaker)

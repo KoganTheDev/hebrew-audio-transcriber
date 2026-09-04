@@ -32,7 +32,7 @@ across windows are only the ones that survive an unknown permutation:
 """
 
 from collections.abc import Sequence
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -89,7 +89,7 @@ def powerset_matrix() -> np.ndarray:
     return matrix
 
 
-def powerset_classes() -> List[Tuple[int, ...]]:
+def powerset_classes() -> list[tuple[int, ...]]:
     """The speaker set each of the 7 classes stands for, in model order."""
     return [(), (0,), (1,), (2,), (0, 1), (0, 2), (1, 2)]
 
@@ -106,7 +106,7 @@ def softmax(logits: np.ndarray) -> np.ndarray:
     return exp / exp.sum(axis=-1, keepdims=True)
 
 
-def window_starts(num_samples: int) -> List[int]:
+def window_starts(num_samples: int) -> list[int]:
     """Start sample of every analysis window covering num_samples of audio.
 
     Always returns at least one window. Audio shorter than one window, and
@@ -144,7 +144,7 @@ def frame_center_time(window_start: int, frame_index: int) -> float:
     return center_sample / SAMPLE_RATE
 
 
-def infer_marginals(session, samples: np.ndarray) -> Tuple[np.ndarray, List[int]]:
+def infer_marginals(session, samples: np.ndarray) -> tuple[np.ndarray, list[int]]:
     """Run the model over every window and return per-speaker marginals.
 
     Returns (marginals, starts) where marginals has shape
@@ -175,7 +175,7 @@ def aggregate_invariants(
     starts: Sequence[int],
     onset: float,
     num_samples: Optional[int] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Fold overlapping windows into two global tracks that survive permutation.
 
     Returns (speech, count) over a global frame grid, where speech[g] is the
@@ -251,7 +251,7 @@ def grid_times(grid_size: int) -> np.ndarray:
     return center / SAMPLE_RATE
 
 
-def runs_to_intervals(mask: np.ndarray, min_duration: float = 0.0) -> List[Tuple[float, float]]:
+def runs_to_intervals(mask: np.ndarray, min_duration: float = 0.0) -> list[tuple[float, float]]:
     """Contiguous True stretches of a per-frame mask, as (start, end) seconds.
 
     Interval edges are frame centres, so a single-frame run has zero width
@@ -263,7 +263,7 @@ def runs_to_intervals(mask: np.ndarray, min_duration: float = 0.0) -> List[Tuple
     frame = FRAME_SHIFT_SAMPLES / SAMPLE_RATE
     times = grid_times(len(mask))
 
-    intervals: List[Tuple[float, float]] = []
+    intervals: list[tuple[float, float]] = []
     padded = np.concatenate(([False], mask.astype(bool), [False]))
     edges = np.flatnonzero(padded[1:] != padded[:-1])
     for begin, finish in zip(edges[0::2], edges[1::2]):

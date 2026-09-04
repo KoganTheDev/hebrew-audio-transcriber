@@ -232,7 +232,7 @@ class TestShippedEntryPointAppliesStylesheet:
             f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
         marker = "STYLESHEET_LEN="
-        line = next((l for l in result.stdout.splitlines() if l.startswith(marker)), None)
+        line = next((out for out in result.stdout.splitlines() if out.startswith(marker)), None)
         assert line is not None, (
             f"subprocess never printed a stylesheet length:\n"
             f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"

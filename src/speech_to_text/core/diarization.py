@@ -22,7 +22,7 @@ import shutil
 import tarfile
 import urllib.request
 from collections.abc import Sequence
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -136,7 +136,7 @@ def diarize(
     sample_rate: int = 16000,
     num_speakers: int = 2,
     progress: Optional[Callable[[int, int], None]] = None,
-) -> List["SpeakerSpan"]:
+) -> list["SpeakerSpan"]:
     """Label who is speaking across a mono recording.
 
     Args:
@@ -266,7 +266,7 @@ def assign_speakers(
     segments: Sequence[Segment],
     spans: Sequence[SpeakerSpan],
     min_run_words: int = MIN_SPEAKER_RUN_WORDS,
-) -> List[Segment]:
+) -> list[Segment]:
     """Attach a speaker to each transcript segment, splitting where the speaker
     changes mid-segment.
 
@@ -302,7 +302,7 @@ def assign_speakers(
     if not spans:
         return list(segments)
 
-    result: List[Segment] = []
+    result: list[Segment] = []
     for segment in segments:
         result.extend(_split_segment(segment, spans, min_run_words))
     return result
@@ -312,7 +312,7 @@ def _split_segment(
     segment: Segment,
     spans: Sequence[SpeakerSpan],
     min_run_words: int = MIN_SPEAKER_RUN_WORDS,
-) -> List[Segment]:
+) -> list[Segment]:
     """Attribute one segment, splitting it if a real speaker change is found."""
     if not segment.words:
         # No word timings at all - the per-channel stereo path never carries
@@ -341,7 +341,7 @@ def _split_segment(
         segment.speaker = runs[0][2]
         return [segment]
 
-    pieces: List[Segment] = []
+    pieces: list[Segment] = []
     last_index = len(runs) - 1
     for i, (start_idx, end_idx, label) in enumerate(runs):
         run_words = segment.words[start_idx:end_idx]
@@ -376,7 +376,7 @@ def _label_coverage(
     return sum(span.overlap(start, end) for span in spans if span.speaker == label)
 
 
-def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> List[Optional[int]]:
+def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> list[Optional[int]]:
     """Carry a real label over words that overlap no span, from whichever
     labelled neighbour is nearer IN TIME - and only across a short gap.
 
@@ -398,12 +398,12 @@ def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> L
     an unattributed word renders without a speaker rather than under the wrong
     one - see assign_speakers' docstring on why that is the honest failure.
     """
-    filled: List[Optional[int]] = list(labels)
+    filled: list[Optional[int]] = list(labels)
 
     # Nearest real label to each side, indices into the ORIGINAL labels.
     n = len(labels)
-    left_of: List[Optional[int]] = [None] * n
-    right_of: List[Optional[int]] = [None] * n
+    left_of: list[Optional[int]] = [None] * n
+    right_of: list[Optional[int]] = [None] * n
     seen: Optional[int] = None
     for i in range(n):
         left_of[i] = seen
@@ -440,9 +440,9 @@ def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> L
     return filled
 
 
-def _runs(labels: Sequence[Optional[int]]) -> List[List]:
+def _runs(labels: Sequence[Optional[int]]) -> list[list]:
     """Consecutive equal-label stretches, as mutable [start, end, label]."""
-    runs: List[List] = []
+    runs: list[list] = []
     start = 0
     for i in range(1, len(labels) + 1):
         if i == len(labels) or labels[i] != labels[start]:
@@ -481,12 +481,12 @@ def _is_real_interjection(
     return covered >= config.DIARIZATION_INTERJECTION_MIN_COVERAGE * duration
 
 
-def _merge_short_runs(
-    runs: List[List],
+def _merge_short_runs(  # noqa: C901 - scheduled for extraction into core/speaker_attribution.py
+    runs: list[list],
     min_words: int,
     words: Sequence[Word] = (),
     spans: Sequence[SpeakerSpan] = (),
-) -> List[List]:
+) -> list[list]:
     """Fold any run shorter than min_words into a neighbour so it cannot, on its
     own, split the segment (see MIN_SPEAKER_RUN_WORDS) - unless it is a real
     interjection, which keeps its own run.
@@ -572,7 +572,7 @@ def _merge_short_runs(
     return merged
 
 
-def _coalesce_adjacent(runs: List[List]) -> List[List]:
+def _coalesce_adjacent(runs: list[list]) -> list[list]:
     """Merge neighbouring runs that ended up with the same label after merging short ones."""
     if not runs:
         return runs

@@ -33,7 +33,7 @@ class TestDependencies:
 
         with patch("speech_to_text.core.dependencies.subprocess.run") as mock_subprocess:
             packages = {"pytest": "pytest", "setuptools": "setuptools"}
-            result = ensure_dependencies(packages)
+            ensure_dependencies(packages)
 
             # Should attempt to install missing packages
             assert mock_subprocess.call_count == 2

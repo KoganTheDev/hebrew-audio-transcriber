@@ -5,7 +5,7 @@
 import logging
 import os
 import sys
-from typing import List, Optional
+from typing import Optional
 
 from PyQt5.QtCore import Qt, QThread, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
         self.hardware = HardwareDetector()
         self.current_step = Step.FILE_SELECT
         self.transcription_thread: Optional[QThread] = None
-        self.selected_files: List[str] = []
+        self.selected_files: list[str] = []
         self.selected_model: Optional[str] = None
         # Total across every selected file - what should drive the model
         # recommendation, since the estimate has to cover the whole batch.

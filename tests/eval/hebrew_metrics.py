@@ -10,7 +10,6 @@ differently".
 """
 
 import re
-from typing import List
 
 from speech_to_text.core.hebrew_text import BIDI_CONTROLS, normalize_word
 
@@ -41,11 +40,11 @@ def normalize(text: str) -> str:
     return " ".join(text.split())
 
 
-def tokens(text: str) -> List[str]:
+def tokens(text: str) -> list[str]:
     return normalize(text).split()
 
 
-def edit_distance(reference: List[str], hypothesis: List[str]) -> int:
+def edit_distance(reference: list[str], hypothesis: list[str]) -> int:
     """Levenshtein distance over sequences, O(len(reference)) memory."""
     if not reference:
         return len(hypothesis)

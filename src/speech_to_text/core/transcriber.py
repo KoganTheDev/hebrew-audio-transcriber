@@ -3,7 +3,7 @@ Handles the actual transcription process.
 """
 
 import logging
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 from speech_to_text import config
 from speech_to_text.core.formatting import format_mmss
@@ -175,7 +175,7 @@ class Transcriber:
 
         self.model = WhisperModel(self.model_repo, **kwargs)
 
-    def transcribe(self, audio_file, total_duration_seconds: float = 0) -> Optional[List[Segment]]:
+    def transcribe(self, audio_file, total_duration_seconds: float = 0) -> Optional[list[Segment]]:
         """Transcribe audio to structured segments.
 
         Args:
@@ -225,7 +225,7 @@ class Transcriber:
 
             logger.debug(f"Transcription info: {info}")
 
-            collected: List[Segment] = []
+            collected: list[Segment] = []
             segment_count = 0
 
             # 'segments' is a lazy generator - faster-whisper decodes one

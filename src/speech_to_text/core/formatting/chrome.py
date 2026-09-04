@@ -16,7 +16,8 @@ here; chrome.py never imports from document.py, so there is no cycle.
 
 import html
 import re
-from typing import Dict, Optional
+from functools import partial
+from typing import Optional
 
 from .timecode import LRI, PDI
 
@@ -28,7 +29,7 @@ _HEBREW_LETTER = re.compile(r"[֐-׿]")
 
 
 def _input_dir(text: str) -> str:
-    """ "ltr" or "rtl", guessed from whether `text` itself contains a Hebrew
+    """Return "ltr" or "rtl", guessed from whether `text` itself contains a Hebrew
     letter - the only signal this module has for which way a translated UI
     string reads.
 
@@ -71,7 +72,7 @@ def _input_dir(text: str) -> str:
 SPEAKER_PALETTE_SIZE = 8
 
 
-def _t(strings: Dict[str, str], key: str, fallback: str) -> str:
+def _t(strings: dict[str, str], key: str, fallback: str) -> str:
     """An already-translated, HTML-escaped UI string, or its English fallback.
 
     The single choke point for `html.escape(strings.get(key, fallback))`,
@@ -175,7 +176,7 @@ def _button(
 # inheritable presentation properties cross the <use> shadow boundary the
 # same way "color" crosses into a <slot>, so one CSS rule styles every
 # instance instead of every glyph repeating stroke="currentColor" nine times.
-_ICON_DEFS: Dict[str, str] = {
+_ICON_DEFS: dict[str, str] = {
     "search": '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     "up": '<path d="M18 15l-6-6-6 6"/>',
     "down": '<path d="M6 9l6 6 6-6"/>',
@@ -248,14 +249,14 @@ def _icon(name: str) -> str:
     return f'<svg class="icon" aria-hidden="true"><use href="#i-{name}"></use></svg>'
 
 
-def _render_toolbar_html(strings: Dict[str, str]) -> str:
+def _render_toolbar_html(strings: dict[str, str]) -> str:
     """The document's own chrome: search, view toggles, export, save status."""
     # A local alias, not a redefinition of _t's logic: this function calls it
     # by key/fallback so often that spelling out `_t(strings, ...)` at every
     # site would bury the strings the call sites actually care about under
     # repeated boilerplate. The one-line lambda still routes through _t, so
     # there is exactly one place html.escape(strings.get(...)) is written.
-    s = lambda key, fallback: _t(strings, key, fallback)
+    s = partial(_t, strings)
 
     search = s("search", "Search transcript")
     search_placeholder = s("search_placeholder", "Search")
@@ -373,7 +374,7 @@ def _render_toolbar_html(strings: Dict[str, str]) -> str:
     )
 
 
-def _render_player_html(strings: Dict[str, str]) -> str:
+def _render_player_html(strings: dict[str, str]) -> str:
     """A single mini-player for the whole document.
 
     The transcript is written beside its audio, so a relative src resolves.
@@ -427,7 +428,7 @@ def _render_toast_html() -> str:
     return '<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>'
 
 
-def _render_help_html(strings: Dict[str, str]) -> str:
+def _render_help_html(strings: dict[str, str]) -> str:
     """What every toolbar control and reading-column affordance actually does,
     plus the one hook (#tour-start) a separate guided-tour feature binds to.
 
@@ -447,7 +448,7 @@ def _render_help_html(strings: Dict[str, str]) -> str:
     package docstring in __init__.py), so the only contract between the two
     is this button's id existing in the markup.
     """
-    s = lambda key, fallback: _t(strings, key, fallback)  # see _render_toolbar_html's s
+    s = partial(_t, strings)  # see _render_toolbar_html's s
 
     # (icon name, title key/fallback, description key/fallback) - one row
     # per control this page has, in the same top-to-bottom order those
@@ -584,7 +585,7 @@ def _render_help_html(strings: Dict[str, str]) -> str:
     )
 
 
-def _swatch_trigger_html(strings: Dict[str, str]) -> str:
+def _swatch_trigger_html(strings: dict[str, str]) -> str:
     """The one always-visible colour control per speaker row.
 
     Earlier this rendered all eight palette slots expanded inline - with just

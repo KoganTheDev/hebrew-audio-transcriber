@@ -8,7 +8,7 @@ signals - neither does any heavy lifting itself.
 import logging
 import multiprocessing
 import queue
-from typing import List, Optional
+from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -41,10 +41,10 @@ class TranscriptionThread(QThread):
 
     def __init__(
         self,
-        audio_files: List[str],
+        audio_files: list[str],
         model_size: str,
         device: str,
-        durations: Optional[List[float]] = None,
+        durations: Optional[list[float]] = None,
         options: Optional[TranscriptionOptions] = None,
     ):
         super().__init__()
@@ -81,7 +81,7 @@ class TranscriptionThread(QThread):
     def device(self) -> str:
         return self.options.device
 
-    def run(self):
+    def run(self):  # noqa: C901 - scheduled for extraction
         """Launch the worker process and relay its progress/result as signals."""
         logger.info("TranscriptionThread started")
         try:
