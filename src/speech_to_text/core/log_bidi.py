@@ -1,7 +1,6 @@
-"""Logging glue for visual-order console output - see the module comment in
-core/hebrew_text.py above to_visual_order() for why this exists at all.
-Kept separate from main.py so main.py stays wiring: which handler gets
-which formatter, not why.
+"""Logging glue for visual-order console output - see core/hebrew_text.py,
+above to_visual_order(), for why this exists at all. Separate from main.py so
+main.py stays wiring: which handler gets which formatter, not why.
 """
 
 import logging
@@ -14,13 +13,12 @@ from speech_to_text.core.hebrew_text import to_visual_order
 def visual_order_mode() -> str:
     """Resolve STT_LOG_BIDI to "visual" or "logical".
 
-    "auto" (the default) resolves to visual on a Windows console tty and to
-    logical everywhere else: no Windows console implements the Unicode
-    Bidirectional Algorithm, so a Windows tty always needs the pre-reversed
-    text to read correctly, while redirected output is headed for a file or
-    a pager that a bidi-capable reader will open, where pre-reversed text
-    would be wrong. The env var is the escape hatch for anyone on a
-    terminal that does implement the UBA.
+    "auto" (the default) means visual on a Windows console tty and logical
+    everywhere else: no Windows console implements the UBA, so a Windows tty
+    needs pre-reversed text, while redirected output is headed for a file or
+    pager opened by a bidi-capable reader, where pre-reversed text would be
+    wrong. The env var is the escape hatch for a terminal that does implement
+    the UBA.
     """
     mode = os.environ.get("STT_LOG_BIDI", "auto").strip().lower()
     if mode in ("visual", "logical"):
@@ -29,11 +27,11 @@ def visual_order_mode() -> str:
 
 
 class VisualOrderFormatter(logging.Formatter):
-    """A logging.Formatter that reorders each formatted line into visual order
-    before it reaches a non-bidi console. Applied per line, not to the
-    whole formatted record as one blob, so a multi-line exception traceback
-    is reordered line by line rather than as a single paragraph with the
-    wrong boundaries.
+    """Reorders each formatted line into visual order for a non-bidi console.
+
+    Per line, not over the whole record as one blob, so a multi-line exception
+    traceback is reordered line by line rather than as a single paragraph with
+    the wrong boundaries.
     """
 
     def format(self, record: logging.LogRecord) -> str:

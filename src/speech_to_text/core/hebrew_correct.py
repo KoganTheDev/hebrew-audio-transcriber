@@ -1,53 +1,45 @@
 """Targeted correction of misrecognised Hebrew words.
 
-The obvious version of this idea - look up every word in a Hebrew dictionary
-and replace anything unknown with its nearest neighbour - makes transcripts
-worse, for two reasons specific to the language:
+The obvious version - look every word up in a Hebrew dictionary and replace
+anything unknown with its nearest neighbour - makes transcripts worse, for two
+reasons specific to the language:
 
 1. Morphology defeats the "is this a word?" test. Hebrew stacks prefix clitics
-   (ו ב כ ל מ ש ה, and combinations of them) and attaches possessive and plural
-   suffixes, so one lemma has dozens of surface forms. Any plain word list
-   marks a large share of perfectly correct words as unknown, and a
-   dictionary-driven pass then spends most of its effort "fixing" text that was
-   already right.
+   (ו ב כ ל מ ש ה, and combinations) and attaches possessive and plural
+   suffixes, so one lemma has dozens of surface forms and any plain word list
+   marks a large share of correct words as unknown.
 
-2. Edit-distance neighbours in Hebrew are usually other real words. Unvocalised
-   Hebrew is dense: חתם / חתן / חתך are mutually distance 1 and all valid. So
-   nearest-neighbour matching against a general dictionary has a genuinely high
-   chance of replacing a correct word with an incorrect one.
+2. Edit-distance neighbours in Hebrew are usually other real words.
+   Unvocalised Hebrew is dense: חתם / חתן / חתך are mutually distance 1 and
+   all valid, so nearest-neighbour matching has a high chance of replacing a
+   correct word with an incorrect one.
 
-This module therefore does something narrower, which is where the actual wins
-are anyway:
+Hence something narrower, which is where the wins are anyway:
 
-* It only looks at words the model itself flagged as uncertain, using the
-  per-word probabilities that word_timestamps=True provides. Words Whisper was
-  confident about are never touched.
-* It matches against a curated term list supplied by the user - names, places,
-  organisations, jargon - not a dictionary. These are precisely the words a
+* Only words the model itself flagged as uncertain, via the per-word
+  probabilities word_timestamps=True provides. Confident words are untouched.
+* Matched against a curated term list from the user - names, places,
+  organisations, jargon - not a dictionary. These are exactly the words a
   general model gets wrong and a dictionary cannot help with. No list means
   this pass does nothing at all.
 * Distance is phonetically weighted rather than plain Levenshtein, because the
   substitutions Whisper actually makes in Hebrew are the ones that sound alike.
-* A replacement happens only when one candidate is clearly better than the
-  runner-up, so ambiguous cases are left alone.
+* A replacement happens only when one candidate clearly beats the runner-up.
 
-Set expectations accordingly: this fixes proper nouns and domain vocabulary. It
-does not fix general Hebrew misrecognition - only a better model does that.
+Set expectations accordingly: this fixes proper nouns and domain vocabulary,
+not general Hebrew misrecognition - only a better model does that.
 """
 
 import logging
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Optional
 
 from speech_to_text.core.hebrew_text import CLITICS, normalize_word
-from speech_to_text.core.segments import Segment
+from speech_to_text.core.segments import Segment, Word
 
 logger = logging.getLogger(__name__)
-
-# Default location of the user's term list, alongside the model caches.
-TERMS_FILENAME = "hebrew_terms.txt"
 
 # Only words the model scored below this are candidates. This gate is what
 # makes the pass safe rather than reckless: it is the difference between
@@ -65,13 +57,11 @@ MAX_RELATIVE_DISTANCE = 0.34
 # model's guess in place.
 MIN_MARGIN = 0.5
 
-# Hebrew letters that are routinely confused because they sound identical or
-# near-identical in modern pronunciation. Cost below 1.0 means "these two being
-# different is weak evidence that this is a different word".
-#
-# א/ה/ע are silent or near-silent; כ/ק and ט/ת and ס/שׂ are homophones; ב/ו
-# overlap on the /v/ sound. These are the substitutions an ASR model actually
-# makes, which plain Levenshtein weights the same as any other letter swap.
+# Letters routinely confused because they sound identical or near-identical in
+# modern pronunciation, so a difference between them is weak evidence that this
+# is a different word - hence a cost below 1.0. א/ה/ע are silent or
+# near-silent; כ/ק, ט/ת and ס/שׂ are homophones; ב/ו overlap on /v/. Plain
+# Levenshtein weights these the same as any other letter swap.
 _CONFUSION_GROUPS: Sequence[tuple[str, float]] = (
     ("אהע", 0.25),
     ("כק", 0.25),
@@ -93,15 +83,15 @@ for _group, _cost in _CONFUSION_GROUPS:
 
 
 def strip_clitics(word: str) -> tuple[str, str]:
-    """Split leading prefix letters off a word.
+    """Split leading prefix letters off a word, returning (prefix, stem).
 
-    Returns (prefix, stem). A letter is only stripped if at least four letters
-    remain afterwards: below that the "prefix" is far more likely to be part of
-    the word itself, and stripping the ש from שלום would be actively harmful.
+    A letter is only stripped if at least four remain: below that the "prefix"
+    is far more likely part of the word itself, and stripping the ש from שלום
+    would be actively harmful.
 
-    Note this is a guess, not an analysis - Hebrew has no way to tell a clitic
-    from a stem letter without a morphological lexicon. best_match therefore
-    tries the unstripped word as well and keeps whichever matches better.
+    This is a guess, not an analysis - telling a clitic from a stem letter
+    needs a morphological lexicon - so _rank tries the unstripped word too and
+    keeps whichever matches better.
     """
     index = 0
     while index < len(word) and word[index] in CLITICS and len(word) - index > 4:
@@ -110,15 +100,13 @@ def strip_clitics(word: str) -> tuple[str, str]:
 
 
 def clitic_splits(word: str) -> list[tuple[str, str]]:
-    """Every plausible way to divide a word into prefix + stem.
-
-    Returns [("", word), (word[:1], word[1:]), ...] up to the maximum strip.
+    """Every plausible way to divide a word into prefix + stem, shortest first.
 
     Splitting greedily at the longest run of prefix letters is not enough,
     because prefix letters also occur as ordinary first letters of words.
     בכיסריה is "ב" + the misheard "כיסריה", but a greedy strip reads it as
-    "בכ" + "יסריה" and never finds קיסריה. Trying each split point costs at
-    most a handful of extra comparisons and removes the guesswork.
+    "בכ" + "יסריה" and never finds קיסריה. Trying each split point costs a
+    handful of extra comparisons and removes the guesswork.
     """
     _, stem = strip_clitics(word)
     max_strip = len(word) - len(stem)
@@ -128,9 +116,9 @@ def clitic_splits(word: str) -> list[tuple[str, str]]:
 def weighted_distance(a: str, b: str, cutoff: Optional[float] = None) -> float:
     """Levenshtein distance with Hebrew-aware substitution costs.
 
-    Insertions and deletions cost 1.0; substitutions cost less when the two
-    letters are commonly confused. `cutoff` allows early exit once every cell
-    in a row already exceeds it, which matters when scanning a long term list.
+    Insertions and deletions cost 1.0; substitutions cost less for commonly
+    confused letters. `cutoff` exits early once every cell in a row exceeds it,
+    which matters when scanning a long term list.
     """
     if a == b:
         return 0.0
@@ -191,7 +179,51 @@ class TermList:
             logger.warning(f"Could not read term list {path}: {e}")
             return cls([])
 
-    def best_match(self, word: str) -> Optional[tuple[str, float, float]]:  # noqa: C901 - scheduled for extraction
+    def _near_matches(self, prefix: str, candidate: str) -> Iterator[tuple[str, float]]:
+        """Yield (replacement, distance) for each term close enough to
+        `candidate`, with `prefix` - the clitic run stripped off the front -
+        put back on so the replacement keeps the original word's grammar.
+        """
+        for normalized_term, original_term in self._normalized:
+            # Length gate first: far cheaper than the distance itself, and
+            # it discards most of the list.
+            if abs(len(normalized_term) - len(candidate)) > 2:
+                continue
+            limit = MAX_RELATIVE_DISTANCE * max(len(normalized_term), len(candidate))
+            distance = weighted_distance(candidate, normalized_term, cutoff=limit)
+            if distance > limit:
+                continue
+            yield prefix + original_term, distance
+
+    def _rank(self, word: str) -> tuple[Optional[tuple[str, float]], float]:
+        """Score every clitic reading of `word`, returning ((replacement,
+        distance) or None, runner-up distance).
+
+        Every reading is tried because Hebrew gives no way to tell a clitic
+        from a stem letter that happens to be one: קיסריה begins with ק, but
+        כיסריה - the very misrecognition we want to fix - begins with כ, which
+        is also a prefix. Whichever reading matches a term best wins.
+
+        A second match producing the *same* replacement text is not a
+        runner-up: two readings agreeing is confirmation, not ambiguity.
+        """
+        best: Optional[tuple[str, float]] = None
+        runner_up = float("inf")
+
+        for candidate_prefix, candidate in clitic_splits(normalize_word(word)):
+            if len(candidate) < 2:
+                continue
+            for replacement, distance in self._near_matches(candidate_prefix, candidate):
+                if best is None or distance < best[1]:
+                    if best is not None and best[0] != replacement:
+                        runner_up = best[1]
+                    best = (replacement, distance)
+                elif distance < runner_up and best[0] != replacement:
+                    runner_up = distance
+
+        return best, runner_up
+
+    def best_match(self, word: str) -> Optional[tuple[str, float, float]]:
         """Find the term this word was most likely meant to be.
 
         Returns (term, distance, margin) or None when nothing is close enough
@@ -200,36 +232,7 @@ class TermList:
         if not self._normalized:
             return None
 
-        # Every prefix reading is tried, because Hebrew gives no way to tell a
-        # clitic from a stem letter that happens to be one: קיסריה begins with
-        # ק, but כיסריה - the very misrecognition we want to fix - begins with
-        # כ, which is also a prefix. Whichever reading matches a term best wins.
-        candidates = clitic_splits(normalize_word(word))
-
-        best: Optional[tuple[str, float]] = None
-        runner_up = float("inf")
-
-        for candidate_prefix, candidate in candidates:
-            if len(candidate) < 2:
-                continue
-            for normalized_term, original_term in self._normalized:
-                # Length gate first: far cheaper than the distance itself, and
-                # it discards most of the list.
-                if abs(len(normalized_term) - len(candidate)) > 2:
-                    continue
-                limit = MAX_RELATIVE_DISTANCE * max(len(normalized_term), len(candidate))
-                distance = weighted_distance(candidate, normalized_term, cutoff=limit)
-                if distance > limit:
-                    continue
-
-                replacement = candidate_prefix + original_term
-                if best is None or distance < best[1]:
-                    if best is not None and best[0] != replacement:
-                        runner_up = best[1]
-                    best = (replacement, distance)
-                elif distance < runner_up and best[0] != replacement:
-                    runner_up = distance
-
+        best, runner_up = self._rank(word)
         if best is None:
             return None
 
@@ -240,17 +243,49 @@ class TermList:
         return best[0], best[1], margin
 
 
-def correct(  # noqa: C901 - scheduled for extraction
+def _correction_for(
+    word: Word, terms: TermList, confidence_threshold: float
+) -> Optional[tuple[str, str]]:
+    """Decide what one word should be replaced with, or None to leave it alone.
+
+    Returns (original, replacement) with the surrounding whitespace stripped -
+    the caller puts it back. Logs the accepted replacement here, where the
+    distance and margin that justified it are still in scope.
+    """
+    if word.probability >= confidence_threshold:
+        return None
+
+    bare = word.text.strip()
+    if not _HEBREW_WORD.match(normalize_word(bare)):
+        return None
+
+    match = terms.best_match(bare)
+    if match is None:
+        return None
+
+    replacement, distance, margin = match
+    if replacement == bare:
+        return None
+
+    logger.info(
+        f"Hebrew correction: {bare!r} -> {replacement!r} "
+        f"(confidence {word.probability:.2f}, distance {distance:.2f}, "
+        f"margin {margin:.2f})"
+    )
+    return bare, replacement
+
+
+def correct(
     segments: Sequence[Segment],
     terms: TermList,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
 ) -> list[tuple[str, str, float]]:
     """Correct low-confidence words against the term list, in place.
 
-    Returns the list of (original, replacement, confidence) substitutions made,
-    which the caller logs. Every change being auditable is not optional here:
-    without a record of what it did, a pass like this is unfalsifiable and its
-    thresholds cannot be tuned against real audio.
+    Returns the (original, replacement, confidence) substitutions made, which
+    the caller logs. Auditability is not optional here: without a record of
+    what it did, a pass like this is unfalsifiable and its thresholds cannot be
+    tuned against real audio.
     """
     if not len(terms):
         return []
@@ -263,33 +298,18 @@ def correct(  # noqa: C901 - scheduled for extraction
 
         replacements: dict[int, str] = {}
         for index, word in enumerate(segment.words):
-            if word.probability >= confidence_threshold:
+            correction = _correction_for(word, terms, confidence_threshold)
+            if correction is None:
                 continue
+            bare, replacement = correction
 
             # Whitespace is attached to words by faster-whisper; keep it so the
             # rebuilt segment text spaces correctly.
             leading = word.text[: len(word.text) - len(word.text.lstrip())]
             trailing = word.text[len(word.text.rstrip()) :]
-            bare = word.text.strip()
-
-            if not _HEBREW_WORD.match(normalize_word(bare)):
-                continue
-
-            match = terms.best_match(bare)
-            if match is None:
-                continue
-
-            replacement, distance, margin = match
-            if replacement == bare:
-                continue
 
             replacements[index] = leading + replacement + trailing
             changes.append((bare, replacement, word.probability))
-            logger.info(
-                f"Hebrew correction: {bare!r} -> {replacement!r} "
-                f"(confidence {word.probability:.2f}, distance {distance:.2f}, "
-                f"margin {margin:.2f})"
-            )
 
         if not replacements:
             continue

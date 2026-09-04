@@ -1,10 +1,9 @@
 """Shared Hebrew text handling.
 
-Both the correction pass (core/hebrew_correct.py) and the evaluation metrics
-(tests/eval/hebrew_metrics.py) need to decide when two spellings are "the same
-word". They had grown their own copies of that logic, which is exactly the kind
-of duplication that drifts: a normalisation rule fixed in one place and not the
-other silently changes what a word error rate means relative to what the
+The correction pass (core/hebrew_correct.py) and the evaluation metrics
+(tests/eval/hebrew_metrics.py) must agree on when two spellings are "the same
+word", so the rules live in one place: a normalisation applied in one and not
+the other silently changes what a word error rate means relative to what the
 corrector actually does.
 
 Stdlib only - imported by the worker process.
@@ -34,37 +33,27 @@ CLITICS = "ובכלמשה"
 # of these deliberately when rendering timestamps into RTL text.
 BIDI_CONTROLS = re.compile(r"[‎‏⁦-⁩‪-‮]")
 
-# ---------------------------------------------------------------------------
-# RTL isolation for Hebrew text logged into an otherwise-LTR line
-# ---------------------------------------------------------------------------
-# main.py's LOG_FORMAT puts %(message)s last, after fields that are always
-# LTR (timestamp, level, logger name, file:line). When the message itself is
-# Hebrew, that makes the Hebrew a right-to-left run trailing an LTR
-# paragraph with nothing marking where the neutral run stops. A neutral
-# character sitting right after the Hebrew - the trailing comma
-# faster-whisper leaves on a truncated segment, for example - has no strong
-# direction of its own, so the bidi algorithm resolves it from context, and
-# it can render *before* the Hebrew instead of after it: "Segment 26: ,נין"
-# instead of "Segment 26: ...נין,".
+# RTL isolation for Hebrew logged into an otherwise-LTR line.
 #
-# core/formatting/timecode.py documents the mirror-image problem - an LTR
-# timestamp range embedded inside RTL transcript text - and fixes it with an
-# LRI/PDI pair. This is the same fix run the other way: an RTL run embedded
-# inside LTR text.
+# main.py's LOG_FORMAT puts %(message)s last, after fields that are always LTR
+# (timestamp, level, logger name, file:line), so Hebrew text is an RTL run
+# trailing an LTR paragraph with nothing marking where it ends. A neutral
+# character right after the Hebrew - the trailing comma faster-whisper leaves
+# on a truncated segment, say - has no direction of its own, so the bidi
+# algorithm resolves it from context and can render it *before* the Hebrew:
+# "Segment 26: ,נין" instead of "Segment 26: ...נין,".
 #
-#   RLI ... PDI  (U+2067 / U+2069) - Right-to-Left Isolate. Forces the
-#       enclosed run to lay out RTL *and* isolates it, so a neutral
-#       character immediately outside the pair resolves against the LTR
-#       paragraph it actually sits in, not against the Hebrew inside it.
+#   RLI ... PDI (U+2067 / U+2069) - Right-to-Left Isolate. Lays the enclosed
+#       run out RTL *and* isolates it, so a neutral immediately outside the
+#       pair resolves against the LTR paragraph it actually sits in, not
+#       against the Hebrew inside it.
 #
-# Defined here instead of importing timecode.py's LRI/PDI: this module is
-# already the stdlib-only home for Hebrew-text handling shared across the
-# corrector and the eval metrics, and it is imported into the transcription
-# worker process regardless. Reaching into core/formatting for two control
-# characters would pull that package's __init__ (assets, chrome, document,
-# turns) into the worker for no reason connected to what it is doing there -
-# building transcript output, not logging a debug line - even on paths that
-# never call format_range() at all.
+# core/formatting/timecode.py fixes the mirror image of this - an LTR timestamp
+# inside RTL transcript text - with an LRI/PDI pair. These two characters are
+# redefined here rather than imported from it because importing would pull
+# core/formatting's __init__ (assets, chrome, document, turns) into the
+# transcription worker, which needs this module for text handling and never
+# renders a transcript.
 RLI = "⁧"
 PDI = "⁩"
 
@@ -76,35 +65,30 @@ _HAS_HEBREW = re.compile(r"[֐-׿]")
 
 
 def isolate_rtl(text: str) -> str:
-    """Wrap text in an RTL isolate (RLI...PDI) if it contains Hebrew.
+    """Wrap Hebrew text in RLI...PDI before interpolating it into an LTR line.
 
-    Meant for interpolating raw Hebrew text into an otherwise-LTR line, such
-    as a log message - see the module comment above for why the isolate is
-    needed and why it lives here rather than in core/formatting.
+    Text with no Hebrew is returned untouched - see the comment above.
     """
     if not text or not _HAS_HEBREW.search(text):
         return text
     return f"{RLI}{text}{PDI}"
 
 
-# ---------------------------------------------------------------------------
-# Visual-order reordering for console output
-# ---------------------------------------------------------------------------
-# isolate_rtl() fixes speech_to_text.log because every real bidi-aware
+# Visual-order reordering for console output.
+#
+# isolate_rtl() is enough for speech_to_text.log, because every bidi-aware
 # reader (VS Code, Notepad, a browser) implements the Unicode Bidirectional
-# Algorithm and does the reordering itself off the RLI/PDI markers. No
-# Windows console host does - not conhost.exe, not Windows Terminal
-# (microsoft/terminal#538, open since 2019) - so those same markers draw as
-# nothing and the console prints logical order, which for Hebrew is
-# backwards. There is no markup fix for a renderer that does no reordering
-# at all; the reordering has to happen on our side before the bytes reach
-# it. to_visual_order() is that reordering, scoped to what LOG_FORMAT
-# actually needs: a single line with an LTR paragraph base (timestamp,
-# level, logger name and file:line always precede %(message)s) and short,
-# single-direction previews rather than arbitrary bidi documents.
-# Deliberately a subset of the full UBA - if a log line ever needs more of
-# it, get_display() from python-bidi is a drop-in replacement for the body
-# below.
+# Algorithm and reorders off the RLI/PDI markers itself. No Windows console
+# host does - not conhost.exe, not Windows Terminal (microsoft/terminal#538,
+# open since 2019) - so there the markers draw as nothing and the console
+# prints logical order, which for Hebrew is backwards. No markup fixes a
+# renderer that does no reordering at all, so to_visual_order() reorders on
+# our side before the bytes reach it.
+#
+# Deliberately a subset of the UBA, scoped to what LOG_FORMAT needs: one line
+# with an LTR paragraph base and short single-direction previews, not arbitrary
+# bidi documents. If a log line ever needs more, get_display() from python-bidi
+# is a drop-in replacement for the body below.
 MIRROR_PAIRS = {
     "(": ")",
     ")": "(",
@@ -125,10 +109,9 @@ _ISOLATE_SPAN = re.compile(f"{RLI}(.*?){PDI}", re.DOTALL)
 
 def _bidi_class(ch: str) -> str:
     """Collapse unicodedata's bidi categories to the three that drive run
-    detection: strong RTL, strong LTR, everything else neutral. This
-    deliberately puts digits (EN/AN) in the neutral bucket - they only
-    start counting as "keep reading left to right" once already inside an
-    RTL run, which _reverse_run handles separately.
+    detection: strong RTL, strong LTR, everything else neutral. Digits (EN/AN)
+    deliberately land in the neutral bucket - they only count as "keep reading
+    left to right" once already inside an RTL run, which _reverse_run handles.
     """
     category = unicodedata.bidirectional(ch)
     if category in ("R", "AL"):
@@ -142,12 +125,13 @@ def _is_ltr_or_digit(ch: str) -> bool:
     return unicodedata.bidirectional(ch) in ("L", "EN", "AN")
 
 
-def _find_rtl_runs(text):
-    """Locate maximal RTL runs in `text` under an LTR paragraph - UBA rules
-    N1/N2: a neutral run flanked by strong RTL on both sides resolves to
-    RTL, but a neutral run touching LTR text or a line boundary resolves to
-    the paragraph direction (LTR here) instead and is left where it is.
-    Returns a list of (start, end) half-open index spans into `text`.
+def _find_rtl_runs(text: str) -> list[tuple[int, int]]:
+    """Locate maximal RTL runs in `text` under an LTR paragraph, as half-open
+    (start, end) spans.
+
+    UBA rules N1/N2: a neutral run flanked by strong RTL on both sides resolves
+    to RTL, but one touching LTR text or a line boundary resolves to the
+    paragraph direction (LTR here) and is left where it is.
     """
     classes = [_bidi_class(ch) for ch in text]
     n = len(classes)
@@ -181,12 +165,12 @@ def _find_rtl_runs(text):
 
 
 def _reverse_run(run_text: str) -> str:
-    """Reverse one RTL run into visual order. Embedded Latin words and numbers
-    (strong-LTR or digit characters, contiguous) are re-reversed after the
-    whole-run reversal so they still read left-to-right at their mirrored
-    position, and paired punctuation is swapped via MIRROR_PAIRS - Python's
-    unicodedata exposes bidirectional *category* and a mirrored() yes/no
-    flag, but no mirror *mapping*, hence the explicit table.
+    """Reverse one RTL run into visual order.
+
+    Contiguous embedded Latin words and numbers are re-reversed after the
+    whole-run reversal, so they still read left-to-right at their mirrored
+    position. Paired punctuation is swapped via MIRROR_PAIRS: unicodedata
+    exposes a mirrored() yes/no flag but no mirror *mapping*, hence the table.
     """
     chars = list(run_text)
     keep_order = [_is_ltr_or_digit(ch) for ch in chars]
@@ -226,21 +210,18 @@ def _reorder_plain(chunk: str) -> str:
 
 
 def to_visual_order(text: str) -> str:
-    """Reorder one logical-order log line into the visual order a plain,
-    non-bidi console needs - see the module comment above for why this is
-    necessary at all. Honours isolate_rtl()'s RLI...PDI spans as whole RTL
-    runs first: that is the point of isolating rather than stripping - the
-    isolate already records that a trailing neutral (the comma
-    faster-whisper leaves on a truncated segment, say) belongs inside the
-    Hebrew run. Any further RTL runs in the rest of the line are found the
-    same way isolate_rtl's output would have been found by a real UBA
-    implementation. Bidi control characters are stripped at the end -
-    invisible-or-garbage on a non-bidi console and meaningless once the
-    text is already in visual order.
+    """Reorder one logical-order log line into the visual order a non-bidi
+    console needs - see the comment above for why this is necessary at all.
 
-    Text with no strong-RTL character and no isolate span comes back
-    unchanged (the same object) - the common case, and it must not pay for
-    a reorder it doesn't need.
+    isolate_rtl()'s RLI...PDI spans are taken as whole RTL runs first, which is
+    the point of isolating rather than stripping: the isolate already records
+    that a trailing neutral belongs inside the Hebrew run. Remaining RTL runs
+    are then detected the way a real UBA implementation would find them. Bidi
+    controls are stripped at the end - invisible-or-garbage on such a console,
+    and meaningless once the text is already in visual order.
+
+    Text with no strong-RTL character and no isolate span comes back as the
+    same object: the common case must not pay for a reorder it doesn't need.
     """
     if not text:
         return text
