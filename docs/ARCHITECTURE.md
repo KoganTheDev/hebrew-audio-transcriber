@@ -45,8 +45,10 @@ src/speech_to_text/
                          transcribe -> diarize -> correct, checkpoint, render
     transcriber.py       wraps faster-whisper; emits Segment objects
     audio_source.py      PyAV decode; detects true-stereo two-party recordings
-    diarization.py       sherpa-onnx speaker segmentation + word attribution
-    segmentation.py      pure-numpy powerset decode (opt-in engine)
+    diarization.py       sherpa-onnx model lifecycle and engine dispatch
+    speaker_attribution.py  deciding which speaker each word belongs to
+    diarization_powerset.py opt-in second engine, decodes the model itself
+    segmentation.py      pure-numpy powerset decode maths
     hebrew_correct.py    term-list correction of low-confidence Hebrew words
     hebrew_text.py       Hebrew normalization and BiDi isolation
     segments.py          Word / Segment / TranscriptDocument - shared vocabulary
