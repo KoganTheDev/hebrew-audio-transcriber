@@ -84,10 +84,10 @@ class TranscriptDocument:
 def plain_text(segments: list[Segment]) -> str:
     """Flatten segments back into one unpunctuated-by-us blob.
 
-    This reproduces exactly what Transcriber.transcribe used to return, and
-    exists so the pre-refactor output remains reproducible: format_output's
-    sentence splitting is defined in terms of this string, and the Step 0
-    regression check compares against it.
+    No production caller: it is the regression baseline that tests/eval's
+    model sweep and the integration test both compare transcripts against,
+    and it has to produce the exact string the pipeline did before segments
+    carried structure, so it belongs beside the type it flattens.
     """
     text = ""
     for segment in segments:

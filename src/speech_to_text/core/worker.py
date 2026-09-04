@@ -457,43 +457,40 @@ def run_transcription_process(
     # Held for the whole batch, not per file: the gap between two files is
     # still this process working, and letting the machine stand by in that
     # window would reintroduce exactly the problem this prevents. See
-    # core/power.py for what was actually going wrong.
-    awake = power.acquire("transcription batch")
-    try:
-        progress_queue.put(("progress", "w_initializing", {}, BATCH_INIT_PERCENT))
+    # core/power.py for what was actually going wrong. The `with` also covers
+    # every early return below - leaving sleep suppressed after the work is
+    # done would be a worse bug than the one this fixes.
+    with power.keep_system_awake("transcription batch"):
+        try:
+            progress_queue.put(("progress", "w_initializing", {}, BATCH_INIT_PERCENT))
 
-        from speech_to_text.core.transcriber import Transcriber
+            from speech_to_text.core.transcriber import Transcriber
 
-        emit_progress = _progress_emitter(progress_queue)
-        transcriber = Transcriber(
-            model_size=options.model_size,
-            device=options.device,
-            language=options.language,
-            progress_callback=emit_progress,
-        )
+            emit_progress = _progress_emitter(progress_queue)
+            transcriber = Transcriber(
+                model_size=options.model_size,
+                device=options.device,
+                language=options.language,
+                progress_callback=emit_progress,
+            )
 
-        if not transcriber.load_model():
-            result_queue.put(("error", "err_load_model", {}))
-            return
+            if not transcriber.load_model():
+                result_queue.put(("error", "err_load_model", {}))
+                return
 
-        batch = _new_batch(options, output_file)
-        succeeded = _transcribe_all(audio_files, transcriber, options, batch, progress_queue)
+            batch = _new_batch(options, output_file)
+            succeeded = _transcribe_all(audio_files, transcriber, options, batch, progress_queue)
 
-        if succeeded == 0:
-            result_queue.put(("error", "err_transcription_failed", {}))
-            return
+            if succeeded == 0:
+                result_queue.put(("error", "err_transcription_failed", {}))
+                return
 
-        _write_final_document(batch, emit_progress)
-        result_queue.put(("finished", output_file))
+            _write_final_document(batch, emit_progress)
+            result_queue.put(("finished", output_file))
 
-    except Exception as e:
-        logger.error(f"Transcription worker process error: {e}", exc_info=True)
-        result_queue.put(("error", "err_generic", {"detail": str(e)}))
-    finally:
-        # Also covers the early `return` when every file failed - leaving
-        # sleep suppressed after the work is done would be a worse bug than
-        # the one this fixes.
-        power.release("transcription batch", awake)
+        except Exception as e:
+            logger.error(f"Transcription worker process error: {e}", exc_info=True)
+            result_queue.put(("error", "err_generic", {"detail": str(e)}))
 
 
 def _file_local_emitter(emit_progress: _Emitter) -> _Emitter:

@@ -94,12 +94,9 @@ def _set_thread_execution_state(flags: int) -> Optional[int]:
 def acquire(reason: str = "transcription") -> bool:
     """Assert that the system is in use. Returns whether the request took.
 
-    Paired with release() below. This lower-level pair exists alongside the
-    context manager because core/worker.py's entry point is one long
-    try/except whose body would have to be reindented wholesale to sit
-    inside a `with` - a diff that would bury a four-line behaviour change in
-    two hundred lines of whitespace. The context manager is still the right
-    choice for any caller that can use it.
+    Paired with release(). Callers should reach for keep_system_awake()
+    instead; this pair is what it is built from, and what a caller whose
+    hold does not nest inside one block would need.
     """
     acquired = _set_thread_execution_state(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) is not None
     if acquired:
