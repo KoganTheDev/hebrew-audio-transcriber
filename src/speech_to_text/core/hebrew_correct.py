@@ -42,7 +42,7 @@ from collections.abc import Iterator, Sequence
 from typing import Optional
 
 from speech_to_text.core.hebrew_text import CLITICS, normalize_word
-from speech_to_text.core.segments import Segment
+from speech_to_text.core.segments import Segment, Word
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +256,39 @@ class TermList:
         return best[0], best[1], margin
 
 
-def correct(  # noqa: C901 - scheduled for extraction
+def _correction_for(
+    word: Word, terms: TermList, confidence_threshold: float
+) -> Optional[tuple[str, str]]:
+    """Decide what one word should be replaced with, or None to leave it alone.
+
+    Returns (original, replacement) with the surrounding whitespace stripped -
+    the caller puts it back. Logs the accepted replacement here, where the
+    distance and margin that justified it are still in scope.
+    """
+    if word.probability >= confidence_threshold:
+        return None
+
+    bare = word.text.strip()
+    if not _HEBREW_WORD.match(normalize_word(bare)):
+        return None
+
+    match = terms.best_match(bare)
+    if match is None:
+        return None
+
+    replacement, distance, margin = match
+    if replacement == bare:
+        return None
+
+    logger.info(
+        f"Hebrew correction: {bare!r} -> {replacement!r} "
+        f"(confidence {word.probability:.2f}, distance {distance:.2f}, "
+        f"margin {margin:.2f})"
+    )
+    return bare, replacement
+
+
+def correct(
     segments: Sequence[Segment],
     terms: TermList,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
@@ -279,33 +311,18 @@ def correct(  # noqa: C901 - scheduled for extraction
 
         replacements: dict[int, str] = {}
         for index, word in enumerate(segment.words):
-            if word.probability >= confidence_threshold:
+            correction = _correction_for(word, terms, confidence_threshold)
+            if correction is None:
                 continue
+            bare, replacement = correction
 
             # Whitespace is attached to words by faster-whisper; keep it so the
             # rebuilt segment text spaces correctly.
             leading = word.text[: len(word.text) - len(word.text.lstrip())]
             trailing = word.text[len(word.text.rstrip()) :]
-            bare = word.text.strip()
-
-            if not _HEBREW_WORD.match(normalize_word(bare)):
-                continue
-
-            match = terms.best_match(bare)
-            if match is None:
-                continue
-
-            replacement, distance, margin = match
-            if replacement == bare:
-                continue
 
             replacements[index] = leading + replacement + trailing
             changes.append((bare, replacement, word.probability))
-            logger.info(
-                f"Hebrew correction: {bare!r} -> {replacement!r} "
-                f"(confidence {word.probability:.2f}, distance {distance:.2f}, "
-                f"margin {margin:.2f})"
-            )
 
         if not replacements:
             continue
