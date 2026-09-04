@@ -112,28 +112,6 @@ def format_hhmmss(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
-def format_instant(seconds: float) -> str:
-    """Format one moment as "M:SS", isolated for RTL embedding.
-
-    format_range() below argues that a turn needs a range rather than a
-    single instant, because an instant does not say where playback stops.
-    That reasoning does not carry to a sentence bubble, for two reasons.
-    A bubble already carries data-start/data-end, so clicking it plays
-    exactly that sentence whatever the label says - the ambiguity the range
-    was introduced to remove cannot occur here. And at whole-second
-    resolution a range is actively worse: sentences are routinely under a
-    second apart, so "0:00 - 0:00" is what a real short sentence renders as.
-    A repeated degenerate range on every bubble is noise that also looks
-    broken.
-
-    The hour promotion is kept, though, because that half of format_range's
-    reasoning does still apply: "72:15" reads as a wrong number rather than
-    as an hour boundary.
-    """
-    fmt = format_hhmmss if _total_seconds(seconds) >= 3600 else format_mmss
-    return f"{LRI}{fmt(seconds)}{PDI}"
-
-
 def format_range(start: float, end: float) -> str:
     """Format a turn's timing as "M:SS - M:SS", isolated for RTL embedding.
 

@@ -266,7 +266,7 @@ def _render_outline_html(
     return f'<aside class="outline" aria-label="{label}" id="outline">{"".join(sections)}</aside>'
 
 
-def _display_end_second(sentence) -> int:
+def _display_end_second(sentence: Sentence) -> int:
     """The end second to SHOW for one sentence's range - on its own card and in
     the plain-text panel.
 
