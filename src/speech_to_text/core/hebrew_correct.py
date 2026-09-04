@@ -38,7 +38,7 @@ does not fix general Hebrew misrecognition - only a better model does that.
 import logging
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Optional
 
 from speech_to_text.core.hebrew_text import CLITICS, normalize_word
@@ -191,7 +191,52 @@ class TermList:
             logger.warning(f"Could not read term list {path}: {e}")
             return cls([])
 
-    def best_match(self, word: str) -> Optional[tuple[str, float, float]]:  # noqa: C901 - scheduled for extraction
+    def _near_matches(self, prefix: str, candidate: str) -> Iterator[tuple[str, float]]:
+        """Yield (replacement, distance) for each term close enough to `candidate`.
+
+        `prefix` is the clitic run that was stripped off the front; it is put
+        back on the term so a replacement keeps the original word's grammar.
+        """
+        for normalized_term, original_term in self._normalized:
+            # Length gate first: far cheaper than the distance itself, and
+            # it discards most of the list.
+            if abs(len(normalized_term) - len(candidate)) > 2:
+                continue
+            limit = MAX_RELATIVE_DISTANCE * max(len(normalized_term), len(candidate))
+            distance = weighted_distance(candidate, normalized_term, cutoff=limit)
+            if distance > limit:
+                continue
+            yield prefix + original_term, distance
+
+    def _rank(self, word: str) -> tuple[Optional[tuple[str, float]], float]:
+        """Score every reading of `word` and return (best, runner-up distance).
+
+        best is (replacement, distance), or None when nothing was close enough.
+        A further match producing the *same* replacement text does not count as
+        a runner-up: two readings agreeing on an answer is confirmation, not
+        ambiguity.
+        """
+        # Every prefix reading is tried, because Hebrew gives no way to tell a
+        # clitic from a stem letter that happens to be one: קיסריה begins with
+        # ק, but כיסריה - the very misrecognition we want to fix - begins with
+        # כ, which is also a prefix. Whichever reading matches a term best wins.
+        best: Optional[tuple[str, float]] = None
+        runner_up = float("inf")
+
+        for candidate_prefix, candidate in clitic_splits(normalize_word(word)):
+            if len(candidate) < 2:
+                continue
+            for replacement, distance in self._near_matches(candidate_prefix, candidate):
+                if best is None or distance < best[1]:
+                    if best is not None and best[0] != replacement:
+                        runner_up = best[1]
+                    best = (replacement, distance)
+                elif distance < runner_up and best[0] != replacement:
+                    runner_up = distance
+
+        return best, runner_up
+
+    def best_match(self, word: str) -> Optional[tuple[str, float, float]]:
         """Find the term this word was most likely meant to be.
 
         Returns (term, distance, margin) or None when nothing is close enough
@@ -200,36 +245,7 @@ class TermList:
         if not self._normalized:
             return None
 
-        # Every prefix reading is tried, because Hebrew gives no way to tell a
-        # clitic from a stem letter that happens to be one: קיסריה begins with
-        # ק, but כיסריה - the very misrecognition we want to fix - begins with
-        # כ, which is also a prefix. Whichever reading matches a term best wins.
-        candidates = clitic_splits(normalize_word(word))
-
-        best: Optional[tuple[str, float]] = None
-        runner_up = float("inf")
-
-        for candidate_prefix, candidate in candidates:
-            if len(candidate) < 2:
-                continue
-            for normalized_term, original_term in self._normalized:
-                # Length gate first: far cheaper than the distance itself, and
-                # it discards most of the list.
-                if abs(len(normalized_term) - len(candidate)) > 2:
-                    continue
-                limit = MAX_RELATIVE_DISTANCE * max(len(normalized_term), len(candidate))
-                distance = weighted_distance(candidate, normalized_term, cutoff=limit)
-                if distance > limit:
-                    continue
-
-                replacement = candidate_prefix + original_term
-                if best is None or distance < best[1]:
-                    if best is not None and best[0] != replacement:
-                        runner_up = best[1]
-                    best = (replacement, distance)
-                elif distance < runner_up and best[0] != replacement:
-                    runner_up = distance
-
+        best, runner_up = self._rank(word)
         if best is None:
             return None
 
