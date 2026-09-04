@@ -496,47 +496,25 @@ def run_transcription_process(
         power.release("transcription batch", awake)
 
 
-def _transcribe_one(
-    audio_file: str,
-    transcriber: "Transcriber",
-    options: "TranscriptionOptions",
-    file_duration: float,
-    emit_progress,
-    progress_queue: "multiprocessing.Queue",
-) -> Optional[list["Segment"]]:
-    """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
+def _file_local_emitter(emit_progress: _Emitter) -> _Emitter:
+    """Remap Transcriber's own absolute scale onto this file's local 0-100.
 
-    emit_progress here is already file-local (0-100 covering just this
-    file's own work) - the caller in run_transcription_process does the
-    duration-weighted rescale into the batch's overall percentage.
-    progress_queue is the raw queue underneath it, needed separately because
-    the overlapped diarization thread below reports its own progress as
-    text-only "status" messages rather than through emit_progress's percent
-    scale (see the comment at that thread's call site for why).
-
-    Reassigns transcriber.progress_callback for the duration of this call.
-    Transcriber.transcribe() reports its own progress on a fixed absolute
-    15-90 sub-range, written back when a worker run only ever handled one
-    file (see core/transcriber.py). Remapping that fixed range back onto
-    this file's local 0-100 scale is what lets a single already-loaded
-    Transcriber be reused, unmodified, across every file in a batch, instead
-    of paying the model-load cost again per file.
-
-    Returns None (rather than raising) if this file's transcription itself
-    failed, so one bad file can be caught and skipped by the caller without
-    losing the rest of the batch.
+    Transcriber emits TRANSCRIBER_MODEL_LOADED_PERCENT at the start of
+    transcribe() and climbs to TRANSCRIBER_TRANSCRIBE_END_PERCENT as segments
+    complete; that fixed range was written back when a worker run only ever
+    handled one file. Remapping it here onto
+    FILE_LOCAL_TRANSCRIBE_START..FILE_LOCAL_TRANSCRIBE_END (leaving
+    0..FILE_LOCAL_TRANSCRIBE_START for decoding and
+    FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_MAX for speakers and correction) is
+    what lets a single already-loaded Transcriber be reused, unmodified,
+    across every file in a batch instead of paying the model-load cost again
+    per file.
     """
 
-    def from_transcriber_scale(message, percent: int) -> None:
-        # Transcriber emits TRANSCRIBER_MODEL_LOADED_PERCENT at the start of
-        # transcribe() and climbs to TRANSCRIBER_TRANSCRIBE_END_PERCENT as
-        # segments complete; map that onto this file's own
-        # FILE_LOCAL_TRANSCRIBE_START..FILE_LOCAL_TRANSCRIBE_END local band
-        # (leaving 0..FILE_LOCAL_TRANSCRIBE_START for decoding and
-        # FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_MAX for speakers/correction
-        # below). A stray 0 (Transcriber's own error sentinel) clamps to 0
-        # rather than going negative - the file is about to be marked
-        # failed regardless of the exact number shown at that instant.
+    def from_transcriber_scale(message: _Message, percent: int) -> None:
+        # A stray 0 (Transcriber's own error sentinel) clamps to 0 rather
+        # than going negative - the file is about to be marked failed
+        # regardless of the exact number shown at that instant.
         local = max(
             0,
             min(
@@ -551,72 +529,142 @@ def _transcribe_one(
         )
         emit_progress(message, local)
 
-    transcriber.progress_callback = from_transcriber_scale
+    return from_transcriber_scale
 
-    channels, two_party = _prepare_audio(audio_file, options, file_duration, emit_progress)
 
-    # Diarization is a full second pass over the SAME audio, and - unlike
-    # every other step in this pipeline - does not depend on the transcript
-    # at all: diarize() takes only the raw samples, and only assign_speakers
-    # (below, after both are done) needs segments. Run sequentially, it costs
-    # a whole extra pass; started here, before transcribe(), it costs only
-    # whatever of it doesn't finish before transcribe() does. Both
-    # faster-whisper (ctranslate2) and sherpa-onnx (onnxruntime) release the
-    # GIL during their native compute, so a plain Python thread gets real
-    # wall-clock overlap, not just interleaving - though with 4 physical
-    # cores and beam_size=5 already asking for several of them, how much
-    # overlap actually pays off is a measurement question (see tests/eval/
-    # compare_models.py and the Stage 2 report), not something guaranteed by
-    # the threading alone.
-    #
-    # Progress during the overlap window is deliberately routed as
-    # ("status", key, params) - text only, no percentage (see
-    # _RetryStatusLogHandler above for the existing precedent, and
-    # gui/threads.py's _relay_progress_message for how the GUI treats it) -
-    # rather than through emit_progress's file-local percent scale.
-    # Diarization's own band (FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_SPEAKER_ID_END)
-    # was carved out on the assumption transcription had already reached
-    # FILE_LOCAL_TRANSCRIBE_END by the time diarization started; once the two
-    # run concurrently that assumption no longer holds - diarization can
-    # legitimately finish before transcription does on a long file - so a
-    # diarization percentage arriving mid-overlap would either lie (claim
-    # more done than the file-local scale means) or need to fight
-    # transcribe's own climbing percentage for the same numbers. Text status
-    # has no such ordering constraint. The real percentage bump for this
-    # phase still happens, in _finish_identify_speakers below, but only
-    # after both threads have actually finished - at that point there is
-    # only one writer again and the normal sequential guarantee holds.
-    mono = None
-    diarization_thread = None
-    diarization_result: dict = {}
-    if channels is not None and not two_party:
-        from speech_to_text.core import audio_source
+def _start_overlapped_diarization(
+    channels: Optional[list],
+    two_party: bool,
+    options: "TranscriptionOptions",
+    progress_queue: "multiprocessing.Queue",
+    result: dict,
+) -> tuple[Optional[Any], Optional["threading.Thread"]]:
+    """Downmix to mono and kick diarization off before transcription starts.
 
-        mono = audio_source.to_mono(channels)
-        diarization_thread = _start_diarization(mono, options, progress_queue, diarization_result)
+    Returns (mono, thread), either of which is None when there is nothing to
+    diarize - a two-party file attributes speakers by channel instead, and a
+    file that would not decode has no samples to work from.
 
-    # try/finally, not a bare call followed by a join: transcriber.transcribe()
-    # can raise (a bad file, a decode failure faster-whisper only discovers
-    # partway through), and letting that propagate straight out - skipping
-    # the join below - would leave the diarization thread orphaned. daemon=True
-    # (see _start_diarization) only guarantees it won't block process exit;
-    # while THIS process is still alive (more files left in the batch, or
-    # about to render/write the final HTML) an unjoined thread keeps burning
-    # CPU concurrently with that work for a result nothing will ever read.
+    Diarization is a full second pass over the SAME audio, and - unlike every
+    other step in this pipeline - does not depend on the transcript at all:
+    diarize() takes only the raw samples, and only assign_speakers (after
+    both are done) needs segments. Run sequentially, it costs a whole extra
+    pass; started here, before transcribe(), it costs only whatever of it
+    doesn't finish before transcribe() does. Both faster-whisper
+    (ctranslate2) and sherpa-onnx (onnxruntime) release the GIL during their
+    native compute, so a plain Python thread gets real wall-clock overlap,
+    not just interleaving - though with 4 physical cores and beam_size=5
+    already asking for several of them, how much overlap actually pays off is
+    a measurement question (see tests/eval/compare_models.py and the Stage 2
+    report), not something guaranteed by the threading alone.
+
+    Progress during the overlap window is deliberately routed as
+    ("status", key, params) - text only, no percentage (see
+    _RetryStatusLogHandler for the existing precedent, and gui/threads.py's
+    _relay_progress_message for how the GUI treats it) - rather than through
+    the file-local percent scale. Diarization's own band
+    (FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_SPEAKER_ID_END) was carved out on
+    the assumption transcription had already reached
+    FILE_LOCAL_TRANSCRIBE_END by the time diarization started; once the two
+    run concurrently that assumption no longer holds - diarization can
+    legitimately finish before transcription does on a long file - so a
+    diarization percentage arriving mid-overlap would either lie (claim more
+    done than the file-local scale means) or fight transcribe's own climbing
+    percentage for the same numbers. Text status has no such ordering
+    constraint. The real percentage bump for this phase still happens, in
+    _finish_identify_speakers, but only after both threads have actually
+    finished - at that point there is only one writer again and the normal
+    sequential guarantee holds.
+    """
+    if channels is None or two_party:
+        return None, None
+
+    from speech_to_text.core import audio_source
+
+    mono = audio_source.to_mono(channels)
+    return mono, _start_diarization(mono, options, progress_queue, result)
+
+
+def _decode_transcript(
+    transcriber: "Transcriber",
+    audio_file: str,
+    channels: Optional[list],
+    mono: Optional[Any],
+    two_party: bool,
+    file_duration: float,
+    diarization_thread: Optional["threading.Thread"],
+) -> Optional[list["Segment"]]:
+    """Produce this file's segments, joining the diarization thread either way.
+
+    try/finally, not a bare call followed by a join: transcriber.transcribe()
+    can raise (a bad file, a decode failure faster-whisper only discovers
+    partway through), and letting that propagate straight out - skipping the
+    join - would leave the diarization thread orphaned. daemon=True (see
+    _start_diarization) only guarantees it won't block process exit; while
+    THIS process is still alive (more files left in the batch, or about to
+    render and write the final HTML) an unjoined thread keeps burning CPU
+    concurrently with that work for a result nothing will ever read.
+    """
     try:
         if two_party:
-            segments = _transcribe_per_channel(transcriber, channels, file_duration)
-        else:
-            # Hand over the decoded array when we have one so the file is not
-            # decoded twice (also what makes reusing it for diarization above
-            # free); fall back to the path if decoding failed.
-            source = mono if mono is not None else audio_file
-            transcribe_start = time.perf_counter()
-            segments = transcriber.transcribe(source, total_duration_seconds=file_duration)
-            _log_phase("transcribe", transcribe_start)
+            return _transcribe_per_channel(transcriber, channels, file_duration)
+
+        # Hand over the decoded array when we have one so the file is not
+        # decoded twice (also what makes reusing it for diarization free);
+        # fall back to the path if decoding failed.
+        source = mono if mono is not None else audio_file
+        transcribe_start = time.perf_counter()
+        segments = transcriber.transcribe(source, total_duration_seconds=file_duration)
+        _log_phase("transcribe", transcribe_start)
+        return segments
     finally:
         if diarization_thread is not None:
             diarization_thread.join()
+
+
+def _transcribe_one(
+    audio_file: str,
+    transcriber: "Transcriber",
+    options: "TranscriptionOptions",
+    file_duration: float,
+    emit_progress: _Emitter,
+    progress_queue: "multiprocessing.Queue",
+) -> Optional[list["Segment"]]:
+    """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
+
+    emit_progress here is already file-local (0-100 covering just this file's
+    own work) - the caller does the duration-weighted rescale into the
+    batch's overall percentage. progress_queue is the raw queue underneath
+    it, needed separately because the overlapped diarization thread reports
+    its own progress as text-only "status" messages rather than through
+    emit_progress's percent scale (see _start_overlapped_diarization).
+
+    Reassigns transcriber.progress_callback for the duration of this call, so
+    one already-loaded Transcriber serves the whole batch (see
+    _file_local_emitter).
+
+    Returns None (rather than raising) if this file's transcription itself
+    failed, so one bad file can be caught and skipped by the caller without
+    losing the rest of the batch.
+    """
+    transcriber.progress_callback = _file_local_emitter(emit_progress)
+
+    channels, two_party = _prepare_audio(audio_file, options, file_duration, emit_progress)
+
+    diarization_result: dict = {}
+    mono, diarization_thread = _start_overlapped_diarization(
+        channels, two_party, options, progress_queue, diarization_result
+    )
+
+    segments = _decode_transcript(
+        transcriber,
+        audio_file,
+        channels,
+        mono,
+        two_party,
+        file_duration,
+        diarization_thread,
+    )
 
     if segments is None:
         return None
