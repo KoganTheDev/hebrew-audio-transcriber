@@ -2,9 +2,51 @@
 
 from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QIcon, QPainter
-from PyQt5.QtWidgets import QFrame, QPushButton, QStyle, QStyleOptionButton, QStylePainter
+from PyQt5.QtWidgets import (
+    QFrame,
+    QLabel,
+    QPushButton,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
+)
 
+from speech_to_text.gui import theme
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+
+
+def make_label(text="", *, font=None, color=None, align=None, parent=None) -> QLabel:
+    """Build a styled QLabel in one call instead of four statements.
+
+    Almost every label in this app is the same four-line shape - construct
+    with text, setFont(a Fonts constant), setStyleSheet(theme.text_qss(key)),
+    and often setAlignment. Repeated across the three steps and the main
+    window that came to 27 QLabel constructions and 22 text_qss calls, and
+    the cost was not just typing: with the font and the color key on
+    separate lines from the construction, a label that quietly lost its
+    setStyleSheet line looked exactly like one that never needed it, so
+    "does this label match its neighbours" was never readable at a glance.
+
+    Colors stay color KEYS routed through theme.text_qss - the same names
+    the call sites already used - rather than becoming a second vocabulary
+    for naming a color. Passing None for font, color or align skips that
+    call entirely, so a label built here is byte-identical to the hand-
+    written one it replaces, including which properties are left at Qt's
+    defaults.
+
+    Deliberately narrow: labels that only carry a pixmap, or that need word
+    wrap, a size policy or an object name, are still built by hand (or get
+    those extras set on the result). Widening this into a kitchen-sink
+    constructor would trade four honest lines for one line of keyword soup.
+    """
+    label = QLabel(text, parent)
+    if font is not None:
+        label.setFont(font)
+    if color is not None:
+        label.setStyleSheet(theme.text_qss(color))
+    if align is not None:
+        label.setAlignment(align)
+    return label
 
 
 class DropZone(QFrame):

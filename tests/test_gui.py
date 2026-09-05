@@ -1573,3 +1573,61 @@ class TestCalibrationThreadTeardown:
 
         uncalibrated_window.model_step.update_audio_duration.assert_not_called()
         uncalibrated_window.model_step.mark_calibration_unmeasured.assert_not_called()
+
+
+class TestMakeLabelFactory:
+    """make_label exists purely to collapse the construct/setFont/
+    setStyleSheet/setAlignment boilerplate, so what it must guarantee is
+    that it produces exactly what the hand-written four lines produced -
+    including leaving properties untouched when an argument is omitted."""
+
+    def test_a_label_built_with_every_argument_matches_the_hand_written_four_liner(self, qapp):
+        from PyQt5.QtWidgets import QLabel
+
+        from speech_to_text.gui import theme
+        from speech_to_text.gui.theme import Fonts
+        from speech_to_text.gui.widgets import make_label
+
+        expected = QLabel("hello")
+        expected.setFont(Fonts.BODY_BOLD)
+        expected.setStyleSheet(theme.text_qss("text_primary"))
+        expected.setAlignment(Qt.AlignCenter)
+
+        built = make_label(
+            "hello", font=Fonts.BODY_BOLD, color="text_primary", align=Qt.AlignCenter
+        )
+
+        assert built.text() == expected.text()
+        assert built.font() == expected.font()
+        assert built.styleSheet() == expected.styleSheet()
+        assert built.alignment() == expected.alignment()
+
+    def test_omitted_arguments_leave_the_label_at_the_qt_defaults(self, qapp):
+        from PyQt5.QtWidgets import QLabel
+
+        from speech_to_text.gui.widgets import make_label
+
+        plain = QLabel()
+        built = make_label()
+
+        assert built.text() == ""
+        assert built.styleSheet() == plain.styleSheet()
+        assert built.alignment() == plain.alignment()
+        assert built.font() == plain.font()
+
+    def test_the_colour_argument_is_a_theme_key_routed_through_text_qss(self, qapp):
+        """Colour keys must not become a second vocabulary: whatever
+        theme.text_qss returns for a key is what the label gets, verbatim."""
+        from speech_to_text.gui import theme
+        from speech_to_text.gui.widgets import make_label
+
+        for key in ("text_primary", "text_secondary", "text_tertiary", "error", "success"):
+            assert make_label(color=key).styleSheet() == theme.text_qss(key)
+
+    def test_a_parent_passed_to_the_factory_really_becomes_the_labels_parent(self, qapp):
+        from PyQt5.QtWidgets import QWidget
+
+        from speech_to_text.gui.widgets import make_label
+
+        parent = QWidget()
+        assert make_label("x", parent=parent).parent() is parent

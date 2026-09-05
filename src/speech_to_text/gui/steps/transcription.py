@@ -16,7 +16,7 @@ from speech_to_text.gui import theme
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
-from speech_to_text.gui.widgets import IconTextButton
+from speech_to_text.gui.widgets import IconTextButton, make_label
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +84,7 @@ class TranscriptionStep(QFrame):
         # gui/stepper.py). File info becomes the first thing on the page.
 
         # File info
-        self.file_info = QLabel()
-        self.file_info.setFont(Fonts.BODY)
-        self.file_info.setStyleSheet(theme.text_qss("text_secondary"))
-        self.file_info.setAlignment(Qt.AlignCenter)
+        self.file_info = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
         layout.addWidget(self.file_info)
 
         # Batch strip: "3 / 10" plus one small segment per file, shown only
@@ -114,10 +111,9 @@ class TranscriptionStep(QFrame):
         batch_layout.setContentsMargins(0, 0, 0, 0)
         batch_layout.setSpacing(Spacing.XS)
 
-        self.batch_readout = QLabel()
-        self.batch_readout.setFont(Fonts.CAPTION_BOLD)
-        self.batch_readout.setStyleSheet(theme.text_qss("text_secondary"))
-        self.batch_readout.setAlignment(Qt.AlignCenter)
+        self.batch_readout = make_label(
+            font=Fonts.CAPTION_BOLD, color="text_secondary", align=Qt.AlignCenter
+        )
         batch_layout.addWidget(self.batch_readout)
 
         # One QFrame per file, laid out with equal stretch so N segments
@@ -158,17 +154,16 @@ class TranscriptionStep(QFrame):
         self._progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
         # Status and times
-        self.status_label = QLabel(t("w_initializing"))
-        self.status_label.setFont(Fonts.BODY_BOLD_SMALL)
-        self.status_label.setStyleSheet(theme.text_qss("text_primary"))
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label = make_label(
+            t("w_initializing"),
+            font=Fonts.BODY_BOLD_SMALL,
+            color="text_primary",
+            align=Qt.AlignCenter,
+        )
         layout.addWidget(self.status_label)
 
         # Time info
-        self.time_label = QLabel()
-        self.time_label.setFont(Fonts.BODY)
-        self.time_label.setStyleSheet(theme.text_qss("text_secondary"))
-        self.time_label.setAlignment(Qt.AlignCenter)
+        self.time_label = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
         layout.addWidget(self.time_label)
 
         layout.addSpacing(Spacing.LG)
@@ -196,10 +191,12 @@ class TranscriptionStep(QFrame):
         result_layout.addWidget(result_icon)
 
         # Success message
-        self.success_msg = QLabel(t("transcription_complete"))
-        self.success_msg.setFont(Fonts.SUBTITLE_BOLD)
-        self.success_msg.setStyleSheet(theme.text_qss("success"))
-        self.success_msg.setAlignment(Qt.AlignCenter)
+        self.success_msg = make_label(
+            t("transcription_complete"),
+            font=Fonts.SUBTITLE_BOLD,
+            color="success",
+            align=Qt.AlignCenter,
+        )
         result_layout.addWidget(self.success_msg)
 
         # File path - caption and path are two separate labels now, not one
@@ -227,16 +224,12 @@ class TranscriptionStep(QFrame):
         # unelided path still reaches the user via tooltip and accessible
         # description (set in _render_result_path), and via "Show in
         # folder" / "Open transcript" right below it.
-        self.result_saved_caption = QLabel(t("saved_to_caption"))
-        self.result_saved_caption.setFont(Fonts.BODY)
-        self.result_saved_caption.setStyleSheet(theme.text_qss("text_secondary"))
-        self.result_saved_caption.setAlignment(Qt.AlignCenter)
+        self.result_saved_caption = make_label(
+            t("saved_to_caption"), font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter
+        )
         result_layout.addWidget(self.result_saved_caption)
 
-        self.result_path = QLabel()
-        self.result_path.setFont(Fonts.BODY)
-        self.result_path.setStyleSheet(theme.text_qss("text_secondary"))
-        self.result_path.setAlignment(Qt.AlignCenter)
+        self.result_path = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
         self.result_path.setWordWrap(False)
         result_layout.addWidget(self.result_path)
 
