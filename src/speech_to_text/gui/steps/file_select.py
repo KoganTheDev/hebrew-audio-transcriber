@@ -26,7 +26,7 @@ from speech_to_text.gui.audio_utils import get_audio_duration
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
-from speech_to_text.gui.widgets import DropZone
+from speech_to_text.gui.widgets import DropZone, make_label
 from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
@@ -83,9 +83,9 @@ class FileSelectStep(QFrame):
         layout.addSpacing(Spacing.SM)
 
         # Subheading for the drop zone below.
-        self.file_heading = QLabel(t("select_audio_file"))
-        self.file_heading.setFont(Fonts.SUBTITLE_BOLD)
-        self.file_heading.setStyleSheet(theme.text_qss("text_primary"))
+        self.file_heading = make_label(
+            t("select_audio_file"), font=Fonts.SUBTITLE_BOLD, color="text_primary"
+        )
         layout.addWidget(self.file_heading)
 
         # Drop zone - large and spacious. Also acts as the browse button: the
@@ -153,32 +153,29 @@ class FileSelectStep(QFrame):
         # answer once the font resolves correctly, and a stale cap would
         # just reintroduce the same clipping the next time a font metric
         # shifts.
-        self.main_text = QLabel(t("drop_main"))
-        self.main_text.setFont(Fonts.BODY_BOLD)
-        self.main_text.setStyleSheet(theme.text_qss("text_primary"))
-        self.main_text.setAlignment(Qt.AlignCenter)
+        self.main_text = make_label(
+            t("drop_main"), font=Fonts.BODY_BOLD, color="text_primary", align=Qt.AlignCenter
+        )
         drop_layout.addWidget(self.main_text)
 
         # Supported formats
-        self.formats_text = QLabel(t("drop_formats"))
-        self.formats_text.setFont(Fonts.CAPTION)
-        self.formats_text.setStyleSheet(theme.text_qss("text_secondary"))
-        self.formats_text.setAlignment(Qt.AlignCenter)
+        self.formats_text = make_label(
+            t("drop_formats"), font=Fonts.CAPTION, color="text_secondary", align=Qt.AlignCenter
+        )
         drop_layout.addWidget(self.formats_text)
 
         # Alt text
-        self.alt_text = QLabel(t("drop_alt"))
-        self.alt_text.setFont(Fonts.CAPTION)
-        self.alt_text.setStyleSheet(theme.text_qss("text_tertiary"))
-        self.alt_text.setAlignment(Qt.AlignCenter)
+        self.alt_text = make_label(
+            t("drop_alt"), font=Fonts.CAPTION, color="text_tertiary", align=Qt.AlignCenter
+        )
         drop_layout.addWidget(self.alt_text)
 
         layout.addWidget(self.drop_zone, 1)
 
         # Selected-files summary line, above the scrollable list.
-        self.summary_label = QLabel(t("no_file_selected"))
-        self.summary_label.setFont(Fonts.BODY)
-        self.summary_label.setStyleSheet(theme.text_qss("text_secondary"))
+        self.summary_label = make_label(
+            t("no_file_selected"), font=Fonts.BODY, color="text_secondary"
+        )
         layout.addWidget(self.summary_label)
 
         # Selected-files list. A scroll area rather than a fixed row list -
@@ -351,9 +348,7 @@ class FileSelectStep(QFrame):
         icon.setFixedSize(16, 16)
         row_layout.addWidget(icon)
 
-        label = QLabel()
-        label.setFont(Fonts.BODY)
-        label.setStyleSheet(theme.text_qss("text_secondary"))
+        label = make_label(font=Fonts.BODY, color="text_secondary")
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row_layout.addWidget(label, 1)
 
@@ -591,19 +586,17 @@ class FileSelectStep(QFrame):
         cell_layout.setContentsMargins(Spacing.MD, 0, Spacing.MD, 0)
         cell_layout.setSpacing(Spacing.XS)
 
-        label_widget = QLabel(t(label_key))
-        label_widget.setFont(Fonts.CAPTION)
-        label_widget.setStyleSheet(theme.text_qss("text_tertiary"))
-        label_widget.setAlignment(Qt.AlignCenter)
+        label_widget = make_label(
+            t(label_key), font=Fonts.CAPTION, color="text_tertiary", align=Qt.AlignCenter
+        )
         cell_layout.addWidget(label_widget)
         self._hw_header_labels[label_key] = label_widget
 
         cell_layout.addWidget(self._hline())
 
-        value_widget = QLabel(value)
-        value_widget.setFont(Fonts.BODY_BOLD)
-        value_widget.setStyleSheet(theme.text_qss("text_primary"))
-        value_widget.setAlignment(Qt.AlignCenter)
+        value_widget = make_label(
+            value, font=Fonts.BODY_BOLD, color="text_primary", align=Qt.AlignCenter
+        )
         cell_layout.addWidget(value_widget)
         if label_key == "hw_gpu":
             self._hw_gpu_value_label = value_widget
