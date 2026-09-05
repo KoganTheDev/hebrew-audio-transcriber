@@ -3,7 +3,6 @@
 """
 
 import logging
-import os
 import sys
 from typing import Optional
 
@@ -30,11 +29,11 @@ from PyQt5.QtWidgets import (
 )
 
 from speech_to_text import config
-from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.gui import i18n, theme
 from speech_to_text.gui.checkbox_style import PaintedCheckboxStyle
 from speech_to_text.gui.focus import KeyboardFocusTracker
 from speech_to_text.gui.i18n import t
+from speech_to_text.gui.presenters import build_transcription_request
 from speech_to_text.gui.stepper import StepIndicator
 from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.theme import COLORS, Fonts
@@ -703,11 +702,21 @@ class MainWindow(QMainWindow):
             focus_widget=self.cancel_btn,
         )
 
-        if len(self.selected_files) == 1:
-            file_summary = os.path.basename(self.selected_files[0])
-        else:
-            file_summary = t("files_count_label", count=len(self.selected_files))
-        self.transcription_step.set_file_info(file_summary, self.selected_model)
+        # Every decision this run needs, taken in one Qt-free place (see
+        # gui/presenters/transcription.py). What is left below is only
+        # widget and thread work. t is passed in rather than imported there
+        # because gui.i18n imports PyQt5.
+        request = build_transcription_request(
+            files=self.selected_files,
+            model=self.selected_model,
+            durations=self.file_step.durations,
+            hardware=self.hardware,
+            identify_speakers=self.model_step.identify_speakers,
+            num_speakers=self.model_step.num_speakers,
+            translate=t,
+        )
+
+        self.transcription_step.set_file_info(request.file_summary, self.selected_model)
         # Filenames for the batch strip's tooltips come from here, not from
         # the worker - see TranscriptionStep.set_batch_files's docstring
         # for why. self.selected_files is exactly the list FileSelectStep
@@ -715,29 +724,17 @@ class MainWindow(QMainWindow):
         self.transcription_step.set_batch_files(self.selected_files)
         self.transcription_step.start()
 
-        logger.info(f"Starting transcription: {file_summary} with {self.selected_model} model")
-
-        # get_device_recommendation() was long dead code (hardware_detection.py
-        # can return "cuda", but nothing called it - this literal "cpu" was
-        # the only device value ever used). Wiring it in is UNTESTED on real
-        # GPU hardware: this development machine has no NVIDIA GPU at all
-        # (Intel Iris Xe only), so the "cuda" branch has never actually run
-        # here. Safety net if it's wrong: Transcriber.load_model() catches a
-        # CUDA init failure and retries on CPU (see its docstring) rather
-        # than failing the transcription outright - a live failure mode on
-        # any machine with a driver/CUDA-version mismatch.
-        device, device_reason = self.hardware.get_device_recommendation()
-        logger.info(f"Device: {device} ({device_reason})")
+        logger.info(
+            f"Starting transcription: {request.file_summary} with {self.selected_model} model"
+        )
+        logger.info(f"Device: {request.device} ({request.device_reason})")
 
         self.transcription_thread = TranscriptionThread(
-            self.selected_files,
-            self.selected_model,
-            device,
-            self.file_step.durations,  # real PyAV-measured durations, for accurate progress
-            options=TranscriptionOptions(
-                identify_speakers=self.model_step.identify_speakers,
-                num_speakers=self.model_step.num_speakers,
-            ),
+            request.files,
+            request.model,
+            request.device,
+            request.durations,  # real PyAV-measured durations, for accurate progress
+            options=request.options,
         )
         self.transcription_thread.progress.connect(self.transcription_step.update_progress)
         self.transcription_thread.finished.connect(self._on_transcription_complete)

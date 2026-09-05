@@ -194,3 +194,15 @@ name = "core must not depend on the GUI"
 type = "forbidden"
 source_modules = ["speech_to_text.core"]
 forbidden_modules = ["speech_to_text.gui", "PyQt5"]
+
+[[tool.importlinter.contracts]]
+# gui/presenters/ exists to be testable without a QApplication, which only
+# holds while it stays Qt-free. tests/test_presenters.py proves the current
+# state in a subprocess with PyQt5 poisoned at the import hook; this states
+# the same rule declaratively so it also fails at lint time, and catches an
+# indirect pull (via gui.i18n, which does import PyQt5) as readily as a
+# direct one.
+name = "presenters must not depend on Qt"
+type = "forbidden"
+source_modules = ["speech_to_text.gui.presenters"]
+forbidden_modules = ["PyQt5"]
