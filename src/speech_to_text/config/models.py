@@ -1,9 +1,5 @@
 """The model catalogue: what the GUI offers and what faster-whisper loads."""
 
-# ============================================================================
-# Model Configuration with detailed pros/cons
-# ============================================================================
-#
 # The dict key is this app's identifier for a model (used by the GUI cards,
 # i18n.MODEL_STRINGS, RELATIVE_COMPUTE_COST and the settings we persist).
 # "repo" is what actually gets handed to faster-whisper's WhisperModel - either
@@ -140,7 +136,6 @@ MODELS = {
         "best_for": "Mixed-language or non-Hebrew content",
         "recommended": False,
     },
-    # ------------------------------------------------------------------
     # Hebrew-specialised models (ivrit.ai).
     #
     # Everything above is stock OpenAI Whisper, trained overwhelmingly on
@@ -149,7 +144,6 @@ MODELS = {
     # fine-tunes Whisper on hundreds of hours of transcribed Hebrew speech and
     # publishes the result already converted to CTranslate2 - the exact format
     # faster-whisper loads - so using them costs nothing but the download.
-    # ------------------------------------------------------------------
     "ivrit-turbo": {
         "repo": "ivrit-ai/whisper-large-v3-turbo-ct2",
         "name": "Ivrit Turbo",

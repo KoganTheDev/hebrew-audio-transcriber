@@ -7,35 +7,23 @@ download root, and naming a transcription run's output file.
 import os
 
 
-# ============================================================================
-# Model Download Location
-# ============================================================================
-#
 # WhisperModel's download_root controls both where faster-whisper looks for
-# an already-cached model AND where it writes a new download. This used to
-# be the literal "./whisper_models" passed straight into the WhisperModel(...)
-# call in core/transcriber.py - relative to the process's CURRENT WORKING
-# DIRECTORY, not to this package or the repo. That was invisible for as long
-# as the app was only ever launched from the repo root, but pyproject.toml
-# installs a `speech-to-text` console script (see [project.scripts]) that can
-# be run from anywhere, and a relative download_root resolves against
-# wherever the process happened to start - so a launch from a different
-# working directory couldn't find the existing cache and silently
-# re-downloaded the whole thing from scratch. There is no download-progress
-# signal anywhere in this app (see MODELS' "download_size" comment above), so
-# the only symptom was "Loading model..." taking twenty unexplained minutes -
-# and on this machine that re-download is 5.9 GB.
+# an already-cached model AND where it writes a new download, so it must be
+# ABSOLUTE. A relative root resolves against the process's current working
+# directory, and pyproject.toml installs a `speech-to-text` console script
+# (see [project.scripts]) that can be run from anywhere - so a launch from a
+# different directory would miss the existing cache and silently re-download
+# from scratch. There is no download-progress signal anywhere in this app (see
+# MODELS' "download_size" comment), so the only symptom is "Loading model..."
+# taking twenty unexplained minutes - and on this machine that re-download is
+# 5.9 GB.
 #
-# gui/steps/model_select.py used to hand-mirror the same literal in
-# _WHISPER_DOWNLOAD_ROOT (with a comment admitting there was no shared
-# constant to import instead) just to decide whether a model card should
-# warn about a pending download. Two independent copies of the same path
-# meant they could only be changed in lockstep by hand, and a mismatch would
-# make the card's download note lie about what the downloader will actually
-# do. MODEL_DOWNLOAD_ROOT is that shared constant - both call sites read it.
+# MODEL_DOWNLOAD_ROOT is also the single shared constant behind the model
+# card's pending-download warning in gui/steps/model_select.py: two copies of
+# this path could drift, and the card's note would then lie about what the
+# downloader will actually do.
 #
-# Resolved once, at import time, to an ABSOLUTE path - so the value cannot
-# change with the working directory - in this order:
+# Resolved once, at import time, in this order:
 #
 #   1. SPEECH_TO_TEXT_MODEL_DIR, if set. An explicit escape hatch for anyone
 #      who wants models on a different drive (they run multiple GB each).
@@ -98,17 +86,13 @@ def resolve_model_download_root() -> str:
 
 MODEL_DOWNLOAD_ROOT = resolve_model_download_root()
 
-# ============================================================================
-# File Configuration
-# ============================================================================
-
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
 
-# HTML replaced .txt as the output format entirely (see core/formatting's
-# module docstring for why: only a declared, not guessed, paragraph
-# direction gets Hebrew to align correctly). One input file is named after
-# itself; a batch is named after the folder it came from, since there is no
-# single source filename to hang the output name on. See output_path_for().
+# HTML, not .txt: only a declared, not guessed, paragraph direction gets Hebrew
+# to align correctly (see core/formatting's module docstring). One input file is
+# named after itself; a batch is named after the folder it came from, since
+# there is no single source filename to hang the output name on. See
+# output_path_for().
 OUTPUT_FILENAME_TEMPLATE = "{stem}_transcription.html"
 
 
@@ -121,8 +105,7 @@ def output_path_for(audio_files: list[str]) -> str:
     of which directory the app itself runs from.
 
     This only overwrites a previous run over the *same* input(s) - re-running
-    a batch from the same folder replaces its own output, which is no worse
-    than the old fixed transcription.txt and strictly better everywhere else.
+    a batch from the same folder replaces its own output.
     """
     first_dir = os.path.dirname(audio_files[0])
     if len(audio_files) == 1:
