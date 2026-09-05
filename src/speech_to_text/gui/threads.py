@@ -203,6 +203,7 @@ class CalibrationThread(QThread):
     def __init__(self, cpu_cores: int):
         super().__init__()
         self.cpu_cores = cpu_cores
+        self._is_running = True
         self._process: Optional[multiprocessing.Process] = None
 
     def run(self):
@@ -216,7 +217,7 @@ class CalibrationThread(QThread):
             )
             self._process.start()
 
-            while True:
+            while self._is_running:
                 try:
                     kind, payload = result_queue.get(timeout=0.5)
                     if kind == "ok":
@@ -228,8 +229,32 @@ class CalibrationThread(QThread):
                     return
                 except queue.Empty:
                     if not self._process.is_alive():
-                        self.failed.emit("Calibration process exited unexpectedly")
+                        # A stop() that has just terminated the process gets
+                        # here too, and that exit is expected rather than a
+                        # failure - the flag is what tells the two apart.
+                        if self._is_running:
+                            self.failed.emit("Calibration process exited unexpectedly")
                         return
+            logger.info("Calibration stopped before a result arrived")
         except Exception as e:
             logger.error(f"CalibrationThread error: {e}", exc_info=True)
-            self.failed.emit(str(e))
+            if self._is_running:
+                self.failed.emit(str(e))
+        finally:
+            if self._process and self._process.is_alive():
+                self._process.terminate()
+
+    def stop(self):
+        """Stop the thread and terminate the benchmark process if running.
+
+        Same shape as TranscriptionThread.stop() above, and needed for the
+        same reason even though the benchmark process is daemonic and so
+        would never hold up interpreter exit on its own: what matters is
+        the QThread and its two signals, which will happily deliver a
+        result into slots whose widgets are already being destroyed (see
+        MainWindow._detach_calibration_thread, and gui/focus.py for the
+        one time this repo watched that happen).
+        """
+        self._is_running = False
+        if self._process and self._process.is_alive():
+            self._process.terminate()

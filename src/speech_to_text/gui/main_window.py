@@ -869,6 +869,40 @@ class MainWindow(QMainWindow):
         self.file_step.reset()
         logger.debug("Reset to file selection step")
 
+    def _detach_calibration_thread(self):
+        """Unwire and stop the background calibration, on the way out.
+
+        The calibration thread outlives nothing gracefully on its own: it
+        is started in __init__ and, unlike the transcription thread, has no
+        user-facing cancel path, so a window closed while the benchmark is
+        still running leaves a live thread whose `calibrated` signal calls
+        _on_calibration_done - which writes straight into widgets
+        (model_step.update_audio_duration) that Qt is by then destroying.
+
+        Disconnecting matters as much as stopping, and comes first for the
+        same reason it does in _cancel_transcription: stop() cannot un-emit
+        a result that is already in flight, so the only way to be sure no
+        slot touches a widget after teardown starts is to take the slots
+        off the signals. gui/focus.py's _detach is the precedent for the
+        whole shape - and this is the same class of gap it closed, though
+        no crash has been observed from this one.
+
+        Idempotent, and safe on a window that never started a calibration
+        at all (a cached result, which is the common case).
+        """
+        if self.calibration_thread is None:
+            return
+        try:
+            self.calibration_thread.calibrated.disconnect(self._on_calibration_done)
+            self.calibration_thread.failed.disconnect(self._on_calibration_failed)
+        except TypeError:
+            # Already disconnected - _detach_calibration_thread ran twice.
+            pass
+        self.calibration_thread.stop()
+        # Bounded: the run loop wakes at least every 0.5s to re-check its
+        # own flag, so this waits for that poll, not for the benchmark.
+        self.calibration_thread.wait()
+
     def closeEvent(self, event):
         """Stop any running transcription before the window closes.
 
@@ -883,10 +917,24 @@ class MainWindow(QMainWindow):
         exception at the highest-stakes moment (the user is already
         leaving) would be a stranger inconsistency than simply trusting
         the close itself.
+
+        The background calibration is torn down here too, unconditionally -
+        see _detach_calibration_thread. closeEvent rather than
+        QApplication.aboutToQuit (which is where gui/focus.py hooks its own
+        detach) because the two modules are guarding different lifetimes:
+        KeyboardFocusTracker has no window of its own and its danger window
+        opens after exec_() returns, when Qt is destroying the widget tree,
+        so aboutToQuit is the only moment left where everything is still
+        alive. This thread's slots reach into THIS window's widgets, and
+        closeEvent is the earliest point at which those widgets are known
+        to be going away - unwiring here closes the gap before aboutToQuit
+        would even fire, and keeps the teardown next to the transcription
+        thread's, which is the other half of the same job.
         """
         if self.current_step == Step.TRANSCRIPTION and self.transcription_thread:
             self.transcription_thread.stop()
             self.transcription_thread.wait()
+        self._detach_calibration_thread()
         logger.info("Application closed by user")
         event.accept()
 
