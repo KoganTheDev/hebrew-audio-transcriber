@@ -1,4 +1,3 @@
-  // ---------------------------------------------------------------- storage
 
   function load() {
     try {
@@ -32,18 +31,16 @@
     }, 400);
   }
 
-  // Sets the attribute and nothing else. All four labels are already in the
-  // DOM (the renderer emits them) and the stylesheet shows exactly the one
-  // this attribute names - which is what keeps the box a fixed width instead
-  // of resizing to its text and shoving the whole button row sideways. Do not
-  // "simplify" this back into a textContent write: the four stacked labels are
-  // the width reserve, so a single label written here would take it away.
+  // The renderer emits all four status labels and the stylesheet shows the
+  // one this attribute names, which is what keeps the box a fixed width
+  // instead of resizing to its text and shoving the button row sideways. Do
+  // not "simplify" this into a textContent write: the stacked labels are the
+  // width reserve.
   //
-  // On the states themselves: "local" is the honest one and the one the reader
-  // is usually in - the edit is safely in this browser, but the .html on disk
-  // does not contain it and will not until "Save a copy" is used. Reporting a
-  // plain "Saved" there would imply the file had been updated, which is
-  // exactly the thing a file:// page cannot do.
+  // "local" is the usual state - the edit is in this browser, but the .html
+  // on disk does not contain it until "Save a copy" is used. A plain "Saved"
+  // would imply the file itself had been updated, which a file:// page cannot
+  // do.
   function setStatus(kind) {
     if (!statusEl) { return; }
     statusEl.dataset.kind = kind;
