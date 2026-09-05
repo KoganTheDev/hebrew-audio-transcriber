@@ -17,7 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
-from PyQt5.QtCore import Qt  # noqa: E402
+from PyQt5.QtCore import Qt, QThread, pyqtSignal  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 
@@ -1464,3 +1464,112 @@ class TestModelSelectStepCalibrationNote:
         step = ModelSelectStep(model_hardware_stub)
 
         assert step.calibration_note.isHidden()
+
+
+class _FakeCalibrationThread(QThread):
+    """Stand-in for CalibrationThread that never spawns anything.
+
+    The real thread starts a subprocess that loads a Whisper model and
+    benchmarks it, which takes seconds - far too much for a unit test. What
+    the teardown tests below actually need is only the parts MainWindow
+    touches: the two signals it connects to, a start() that does not run a
+    thread, and a record of whether stop() was ever called.
+    """
+
+    calibrated = pyqtSignal(float)
+    failed = pyqtSignal(str)
+
+    def __init__(self, cpu_cores: int):
+        super().__init__()
+        self.cpu_cores = cpu_cores
+        self.start_called = False
+        self.stop_called = False
+
+    def start(self, *args, **kwargs):  # type: ignore[override]
+        self.start_called = True
+
+    def stop(self):
+        self.stop_called = True
+
+    def wait(self, *args, **kwargs):  # type: ignore[override]
+        return True
+
+    def run(self):  # pragma: no cover - never actually started
+        pass
+
+
+class TestCalibrationThreadTeardown:
+    """
+    MainWindow starts CalibrationThread in __init__ and wires `calibrated`
+    to a slot that writes to live widgets (_on_calibration_done calls
+    model_step.update_audio_duration). Nothing used to stop or unwire that
+    thread when the window closed, so a benchmark still running at close
+    time could deliver its result into slots whose widgets Qt is already
+    tearing down.
+
+    That is the same shape as the focusChanged problem gui/focus.py had to
+    solve: a signal source outliving the widgets its slot reaches into,
+    which surfaces as a native access violation with no Python frame rather
+    than as an exception you can catch. These tests pin the two halves of
+    the guard - the thread is stopped, and its signals can no longer reach
+    a slot.
+    """
+
+    @pytest.fixture
+    def uncalibrated_window(self, qapp, monkeypatch):
+        from speech_to_text.gui import main_window as main_window_module
+
+        hw = MagicMock()
+        # None is what makes MainWindow start a calibration thread at all -
+        # a cached calibration (the common case on a developer machine)
+        # skips it entirely, which is exactly why this gap is easy to miss.
+        hw.tiny_seconds_per_audio_second = None
+        hw.cpu_count = 4
+        hw.get_hardware_info.return_value = {
+            "cpu_cores": 4,
+            "ram_gb": 8,
+            "has_gpu": False,
+            "gpu_name": "",
+        }
+        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.estimate_transcription_time.return_value = (60, "stub")
+        hw.get_time_estimate_display.return_value = "~1 min"
+        hw.get_device_recommendation.return_value = ("cpu", "stub")
+        monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
+        monkeypatch.setattr(main_window_module, "CalibrationThread", _FakeCalibrationThread)
+
+        window = main_window_module.MainWindow()
+        window.show()
+        yield window
+        window.close()
+
+    def test_an_uncalibrated_window_really_does_start_a_calibration_thread(
+        self, uncalibrated_window
+    ):
+        """Guards the fixture itself: if MainWindow ever stopped starting the
+        thread here, the two teardown tests below would pass vacuously."""
+        assert isinstance(uncalibrated_window.calibration_thread, _FakeCalibrationThread)
+        assert uncalibrated_window.calibration_thread.start_called
+
+    def test_closing_the_window_stops_a_still_running_calibration_thread(self, uncalibrated_window):
+        thread = uncalibrated_window.calibration_thread
+        uncalibrated_window.close()
+        assert thread.stop_called
+
+    def test_a_calibration_result_arriving_after_close_never_reaches_the_widgets(
+        self, uncalibrated_window
+    ):
+        """The failure this change exists to prevent: `calibrated` fires late
+        and _on_calibration_done writes into a widget tree that is on its way
+        out. Stopping the thread is not enough on its own - a result can
+        already be in flight - so the signals have to be disconnected too."""
+        thread = uncalibrated_window.calibration_thread
+        uncalibrated_window.model_step.update_audio_duration = MagicMock()
+        uncalibrated_window.model_step.mark_calibration_unmeasured = MagicMock()
+
+        uncalibrated_window.close()
+        thread.calibrated.emit(0.5)
+        thread.failed.emit("too late")
+
+        uncalibrated_window.model_step.update_audio_duration.assert_not_called()
+        uncalibrated_window.model_step.mark_calibration_unmeasured.assert_not_called()
