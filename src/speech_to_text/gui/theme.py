@@ -1,22 +1,19 @@
 """Theme system for the Speech-to-Text Transcriber GUI.
 
 Single source of truth for colors, fonts, spacing, and QSS (Qt stylesheet)
-generation - and, as of this token layer, for the radius/border/motion
-constants that the QSS builders read instead of embedding literals. This
-keeps a later value-only redesign a one-file change instead of a hunt
-through string literals scattered across the builder bodies. Palette:
-Catppuccin Mocha, with peach as the accent. The app used to run a
-bespoke amber/copper-on-charcoal palette, but the HTML transcript it
-produces is styled with Catppuccin (see
-speech_to_text/core/assets/css/00-tokens.css), so the app and its own
-output read as two different products. Peach was picked as the
-replacement accent because it is the nearest Catppuccin color to the
-old copper accent (#C9814A) by measured RGB distance (92.9, versus
-103.4 for the next closest, Mocha red) and the only close match that keeps the same warm
-register the app had before - so the redesign is a palette swap, not a
-mood change. The one deliberate exception is the header title text,
-which uses a peach-toned gradient fill as a one-off brand accent (see
-gradient_text_pixmap).
+generation, plus the radius/border/motion constants the QSS builders read
+instead of embedding literals - so a value-only redesign is a one-file
+change rather than a hunt through string literals in the builder bodies.
+
+Palette: Catppuccin Mocha, with peach as the accent. It has to match the
+HTML transcript the app produces, which is styled with Catppuccin (see
+speech_to_text/core/assets/css/00-tokens.css), or the app and its own
+output read as two different products. Peach is the accent because it is
+the nearest Catppuccin color to the app's original copper (#C9814A) by
+measured RGB distance (92.9, versus 103.4 for the next closest, Mocha
+red) and the only close match in the same warm register. The one
+deliberate exception is the header title text, which uses a peach-toned
+gradient fill as a one-off brand accent (see gradient_text_pixmap).
 
 Ordering rule for the two stylesheet layers: app_stylesheet() is applied
 once on the QApplication and holds only defaults (e.g. QToolTip, the main
@@ -54,9 +51,6 @@ COLORS = {
     "text_secondary": "#a6adc8",  # subtext0 (doc). 8.42 / 7.89 / 7.37.
     "text_tertiary": "#9399b2",  # overlay2 - captions and small labels.
     # 6.64 / 6.22 / 5.81 - clears the 4.5:1 floor on all three grounds.
-    # An earlier draft of this palette used text_disabled (3.84/3.59/3.36)
-    # here instead, which would have shipped failing captions on two of
-    # the three screens; caught by contrast measurement, not by eye.
     "text_disabled": "#6c7086",  # overlay0 - disabled text and muted
     # icons ONLY. 3.84 / 3.59 / 3.36 against crust/mantle/base - this
     # deliberately fails the 4.5:1 body-text floor. It's valid here only
@@ -97,11 +91,10 @@ FONT_FAMILY = "Segoe UI"
 
 # QFont.Weight values, named here because "62" and "75" read as noise at
 # every call site below. DemiBold - not Bold - is used for every heading
-# and label role: it's the weight that reads as deliberate and current:
-# Bold at every level (the pre-redesign scale used QFont.Bold everywhere)
-# reads as heavy and dated because nothing is held in reserve for actual
-# emphasis. Segoe UI Semibold is a real installed cut on Windows, so this
-# maps onto genuine hinted glyphs rather than a synthetically bolded font.
+# and label role: Bold at every level reads as heavy and dated because
+# nothing is held in reserve for actual emphasis. Segoe UI Semibold is a
+# real installed cut on Windows, so this maps onto genuine hinted glyphs
+# rather than a synthetically bolded font.
 _DEMIBOLD = QFont.DemiBold
 
 
@@ -122,9 +115,9 @@ class _FontsMeta(type):
     that measures a font by hand and allocates a canvas from the answer:
     gradient_text_pixmap() sized the header title's pixmap from the
     under-reported advance, so the text painted into it was wider than the
-    pixmap and lost a character off each end. That went unseen while the
-    title was 12pt (the shortfall still fit inside the padding) and appeared
-    the moment the type scale moved it to 13pt.
+    pixmap and lost a character off each end. The shortfall stays hidden
+    while it still fits inside the padding (it did at 12pt, not at 13pt),
+    which is what makes this class of bug latent rather than obvious.
 
     Roles are cached once a QApplication exists, and deliberately NOT cached
     before then, so an early access during import or test collection cannot
@@ -160,10 +153,9 @@ class Fonts(metaclass=_FontsMeta):
     before adding one as a plain class attribute, which would reintroduce
     the pre-QApplication resolution bug.
 
-    The scale widens size gaps between roles (10/11/12pt used to sit one
-    point apart, which reads as noise rather than hierarchy) and moves
-    weight onto DemiBold so size is no longer the only lever carrying the
-    hierarchy - see _DEMIBOLD above for why DemiBold specifically.
+    Size gaps between roles are kept wide - a single point apart reads as
+    noise rather than hierarchy - and weight carries part of the hierarchy
+    too, so size is not the only lever (see _DEMIBOLD above).
 
     Sizes and weights live in _FontsMeta._SPECS. What each role is FOR:
       DISPLAY         step headings ("Specs", "Choose Model", "Transcribing")
@@ -186,13 +178,12 @@ class Spacing:
     MD = 12
     LG = 16
     XL = 20
-    # Added for the "elevated and generous" pass. XXL is the step page
-    # margin (was XL) - spent on steps 1 and 3, which this redesign's room
-    # analysis found had slack (an ~85px empty band under step 1's file
-    # list, a large empty middle on step 3). XXXL is a bigger single jump,
-    # used sparingly, for the handful of places on those two steps that can
-    # absorb a full 40px without pushing anything else out of the fixed
-    # 650x600 window - never used on step 2, which has no slack to spend.
+    # XXL is the step page margin, spent only on steps 1 and 3, the two
+    # with measured slack (an ~85px empty band under step 1's file list, a
+    # large empty middle on step 3). XXXL is used sparingly, for the few
+    # places on those two steps that can absorb a full 40px without
+    # pushing anything else out of the fixed 650x600 window - never on
+    # step 2, which has no slack to spend.
     XXL = 28
     XXXL = 40
 
@@ -200,20 +191,16 @@ class Spacing:
 class Radius:
     """Named corner radii (px), grouped by what the rounded element is - not
     by size - so a later redesign can change one kind of surface without
-    guessing which literal belongs to which. Values moved from the
-    pre-redesign scale (CONTROL 8 / PANEL 10 / DROP_ZONE 12 / BADGE 4) to
-    the "elevated and generous" scale below, matching the HTML transcript
-    document's own --control-radius/--panel-radius system so a control
-    looks like a control and a surface looks like a surface the same way
-    whether you're looking at the app or the document it produces.
+    guessing which literal belongs to which. The values match the HTML
+    transcript document's own --control-radius/--panel-radius system, so a
+    control looks like a control and a surface looks like a surface the
+    same way whether you're looking at the app or the document it produces.
 
-    Note the ordering flips from before: CONTROL (14) is now larger than
-    PANEL (12). That's deliberate, not a typo - small interactive things
-    (buttons, the progress bar) read as more current with a rounder,
-    almost-pill corner, while bigger static surfaces (cards, panels) stay
-    a little tighter so they read as "container" rather than "control" at
-    a glance - the same relationship the old scale expressed, just with
-    softer absolute values on both ends.
+    CONTROL (14) is deliberately larger than PANEL (12), not a typo: small
+    interactive things (buttons, the progress bar) read as more current
+    with a rounder, almost-pill corner, while bigger static surfaces
+    (cards, panels) stay tighter so they read as "container" rather than
+    "control" at a glance.
     """
 
     # Small interactive controls: buttons, the progress bar (track and
@@ -232,26 +219,22 @@ class Radius:
     # than a solid one - hence a few px over PANEL rather than equal to it.
     DROP_ZONE = 16
     # The small pill-shaped recommendation badge on a model card. Tracks
-    # CONTROL rather than keeping its own small literal: at the badge's
-    # actual pixel height (~20px with its padding), a radius this size
-    # exceeds half that height, which is exactly what turns a rounded
-    # rectangle into a true stadium/pill shape - the look "pill-shaped"
-    # already implied before the value backed it up.
+    # CONTROL rather than keeping its own literal: at the badge's actual
+    # pixel height (~20px with its padding), a radius this size exceeds
+    # half that height, which is what turns a rounded rectangle into a
+    # true stadium/pill shape.
     BADGE = CONTROL
-    # The checkbox indicator's own rounding. Deliberately NOT Radius.BADGE
-    # (which the pre-redesign code borrowed it from, coincidentally, when
-    # BADGE was small enough not to matter): the checkbox indicator is an
-    # 18x18 box, and BADGE is now 14 - large enough to round an 18px square
-    # into a near-circle, which would read as a second radio button rather
-    # than a checkbox. Kept at the old BADGE literal so the checkbox stays
-    # a visibly rounded square next to the now-fully-circular radio.
+    # The checkbox indicator's own rounding. Deliberately NOT Radius.BADGE:
+    # the indicator is an 18x18 box, and BADGE is 14 - large enough to
+    # round an 18px square into a near-circle, which would read as a second
+    # radio button rather than a checkbox. 4 keeps it a visibly rounded
+    # square next to the fully-circular radio.
     CHECKBOX = 4
 
 
 class Border:
     """Named border widths (px), same grouping rationale as Radius: named for
-    what they outline, not for their thickness. Values unchanged from
-    what each builder used before this token layer existed.
+    what they outline, not for their thickness.
     """
 
     # Default width for outlined controls and cards: the secondary button,
@@ -283,7 +266,6 @@ class Motion:
     it into transcription.py is out of scope for this token layer.
     """
 
-    # Progress bar fill animation duration.
     PROGRESS_MS = 500
     # Budget for the micro-interactions (hover/press transitions etc.) a
     # later step adds. Shorter than PROGRESS_MS because those are small,
@@ -293,13 +275,11 @@ class Motion:
 
 def button_primary_qss() -> str:
     # border: 2px solid transparent, not "none" - a keyboard-focus ring
-    # needs a border to color (see the [kbdFocus] rule below and
-    # gui/focus.py for why native :focus can't be used instead), and
-    # Qt has no CSS 'outline' that sits outside a widget without changing
-    # its box. Transparent at Border.CONTROL width is invisible in every
-    # other state - same pixels as "none" once painted - so this adds a
-    # new capability without changing how the button already looks; only
-    # the focus rule's border-color override is new to the eye.
+    # needs a border to color (see _focus_ring_qss and gui/focus.py for why
+    # native :focus can't be used instead), and Qt has no CSS 'outline'
+    # that sits outside a widget without changing its box. Transparent at
+    # Border.CONTROL width paints the same pixels as "none" in every other
+    # state, so the border costs nothing until the focus rule colors it.
     return f"""
     QPushButton {{
         background-color: {COLORS["accent"]};
@@ -429,14 +409,12 @@ def card_qss(object_name: str, selected: bool = False) -> str:
     # since QLabel subclasses QFrame in Qt, leaking the border/background onto child text.
     # 'selected' means this card's radio button is the one currently picked -
     # not necessarily the recommended one, which gets its own separate badge.
-    # Unselected uses control_border, not the decorative 'border' hairline.
-    # The card is drawn at Border.CONTROL width and is the visual boundary
-    # of a selectable radio option (each card owns exactly one
-    # QRadioButton) - its outline is part of "which of these seven things
-    # can I pick", the same question the radio's own indicator answers, so
-    # it needs the 3:1-clearing color even before it becomes the selected
-    # one. 'border' would fail that floor and read as though only the
-    # selected card (accent-outlined) were interactive at all.
+    # Unselected uses control_border, not the decorative 'border' hairline:
+    # each card is the visual boundary of a selectable radio option (it owns
+    # exactly one QRadioButton), so its outline answers "which of these can
+    # I pick" and needs the 3:1-clearing color even while unselected.
+    # 'border' fails that floor and reads as though only the selected,
+    # accent-outlined card were interactive at all.
     border_color = COLORS["accent"] if selected else COLORS["control_border"]
     return f"""
     QFrame#{object_name} {{
@@ -458,10 +436,9 @@ def progress_bar_qss() -> str:
     it, so the ink has to be legible on the filled chunk AND on the empty
     groove, and with an accent-filled chunk no single color is: light ink
     reads 1.22:1 on the peach and dark ink reads 1.14:1 on the groove. The
-    old copper palette had the same defect more mildly (2.60:1) and it was
-    simply never noticed. The bar's own fill already shows progress, and the
-    status and elapsed/remaining lines directly beneath it carry the detail,
-    so the unreadable number is removed rather than recolored.
+    bar's own fill already shows progress, and the status and
+    elapsed/remaining lines directly beneath it carry the detail, so the
+    unreadable number is removed rather than recolored.
     """
     return f"""
     QProgressBar {{
@@ -515,10 +492,9 @@ def nav_bar_qss(object_name: str) -> str:
 
 
 def badge_qss() -> str:
-    # padding widened slightly alongside the BADGE radius bump (4px -> 14px,
-    # tracking Radius.CONTROL - see Radius docstring): the taller radius
-    # only reads as a pill if the label has enough vertical room for the
-    # curve to show, rather than getting clipped flat by tight padding.
+    # Padding has to keep pace with Radius.BADGE (see the Radius docstring):
+    # the radius only reads as a pill if the label has enough vertical room
+    # for the curve to show, rather than getting clipped flat.
     return f"""
     QLabel {{
         background-color: {COLORS["accent"]};
@@ -558,16 +534,14 @@ def error_banner_qss(object_name: str) -> str:
 
 
 def result_panel_qss(object_name: str) -> str:
-    # Padding widened from 16px (Spacing.LG) to Spacing.XL: step 3 has a
-    # large empty middle at 650x600, and the result panel is the one
-    # surface on that step that benefits from more breathing room around
-    # its checkmark/message/path/button stack. Stopped at XL rather than
-    # XXL - measured empirically (see TranscriptionStep's layout-spacing
-    # comment): at XXL padding the panel's own minimum height, added to
-    # the rest of the step's content, exceeded the 471px this step
-    # actually gets, and Qt's AlignCenter layout responded by compressing
-    # the panel itself down to a near-empty sliver instead of clipping the
-    # overflow. XL is the largest padding that stays clear of that.
+    # Spacing.XL, not XXL - measured empirically (see TranscriptionStep's
+    # layout-spacing comment): at XXL padding the panel's own minimum
+    # height, added to the rest of the step's content, exceeded the 471px
+    # this step actually gets, and Qt's AlignCenter layout responded by
+    # compressing the panel down to a near-empty sliver instead of
+    # clipping the overflow. XL is the largest padding that stays clear of
+    # that while still giving the checkmark/message/path/button stack the
+    # breathing room step 3's large empty middle can afford.
     return f"""
     QFrame#{object_name} {{
         background-color: {COLORS["bg_tertiary"]};
@@ -577,74 +551,49 @@ def result_panel_qss(object_name: str) -> str:
     """
 
 
-def app_stylesheet() -> str:
-    """Application-wide QSS, applied once on the QApplication instance. Holds
-    only defaults that every widget should inherit unless a more specific
-    per-widget setStyleSheet(...) call overrides it (see the ordering rule
-    in the module docstring) - so this stays deliberately small.
-
-    Currently:
-      - the main window background, moved here from the setStyleSheet(...)
-        call MainWindow.__init__ used to make directly (kept as a QSS rule
-        rather than a QPalette tweak so it still cascades the same way).
-      - a QToolTip rule. Nothing in the app sets a tooltip today, so this
-        rule has no visible effect yet - it exists so a later step can add
-        tooltips without also having to invent their styling.
-      - QRadioButton, QCheckBox, QSpinBox and QScrollBar rules. These four
-        are drawn entirely by the native Windows style when unstyled -
-        nothing in this codebase ever touched them before this step - so
-        without a rule here they render as light-blue Windows controls on
-        top of the Catppuccin Mocha ground the rest of the app now uses.
-        They belong here rather than per-widget because every instance of
-        each control should look the same everywhere they appear. The
-        QCheckBox entry is deliberately label-only, though: its indicator
-        is painted by PaintedCheckboxStyle instead, not by QSS - see the
-        QCheckBox comment further down for why the two can't coexist.
-      - a [kbdFocus="true"] rule as the keyboard-focus ring, scoped to that
-        dynamic property rather than the native :focus pseudo-state. Native
-        :focus paints for default and mouse-click focus too - which is what
-        put a sapphire ring around the header language toggle on every
-        launch, before this property existed - so the ring is gated behind
-        gui/focus.py's KeyboardFocusTracker instead, the same "was focus
-        just given by a keyboard" gate the app's own generated HTML
-        transcript already uses via data-kbd (see
-        core/assets/js/94-layout.js's bindKeyboardModality()).
-    """
+def _main_window_qss() -> str:
     return f"""
     QMainWindow {{
         background-color: {COLORS["bg_primary"]};
-    }}
+    }}"""
+
+
+def _tooltip_qss() -> str:
+    return f"""
     QToolTip {{
         background-color: {COLORS["bg_tertiary"]};
         color: {COLORS["text_primary"]};
         border: {Border.HAIRLINE}px solid {COLORS["control_border"]};
         border-radius: {Radius.CONTROL}px;
         padding: {Spacing.XS}px {Spacing.SM}px;
-    }}
+    }}"""
+
+
+def _focus_ring_qss() -> str:
+    return f"""
 
     /* Generic keyboard-focus ring. Qt stylesheets have no CSS 'outline'
        box that sits outside a widget without affecting its layout, so this
-       reuses border-color on widgets that already carry a border. Scoped
-       to [kbdFocus="true"] (see gui/focus.py), not the native :focus
-       pseudo-state - :focus paints for default and mouse-click focus too,
-       which is the exact bug this property exists to fix. It's applied to
-       the controls that get their own border rules below (plus
-       QPushButton, handled in button_secondary_qss/button_primary_qss)
-       rather than a bare 'QWidget[kbdFocus="true"]', because a bare rule
-       would also paint a border-color on borderless widgets that have
-       never had one (labels, frames), which does nothing useful and just
-       adds dead CSS that looks like it should be doing something. */
+       reuses border-color on widgets that already carry a border. Listed
+       per control (plus QPushButton, handled in
+       button_primary_qss/button_secondary_qss) rather than as a bare
+       'QWidget[kbdFocus="true"]': a bare rule would also set a
+       border-color on borderless widgets like labels and frames, which
+       paints nothing and just adds dead CSS. */
     QRadioButton[kbdFocus="true"], QCheckBox[kbdFocus="true"], QSpinBox[kbdFocus="true"] {{
         border-color: {COLORS["focus"]};
-    }}
+    }}"""
+
+
+def _radio_button_qss() -> str:
+    return f"""
 
     /* QRadioButton. Setting any property on ::indicator makes Qt stop
        drawing its native indicator altogether, so every state has to be
        written explicitly - unchecked, checked, hover, disabled - or a
-       missed one renders as a blank box (see module-level note in the
-       redesign plan this step follows). The checked dot can't be done with
-       background-color alone: a flat fill produces a solid disc, not a
-       ring with a dot inside it. qradialgradient with a hard stop at 0.45
+       missed one renders as a blank box. The checked dot can't be done
+       with background-color alone: a flat fill produces a solid disc, not
+       a ring with a dot inside it. qradialgradient with a hard stop at 0.45
        and a transparent stop at 0.5 fakes a "dot inside a ring" using pure
        QSS - the ring itself is just the indicator's border-color. */
     QRadioButton {{
@@ -683,31 +632,38 @@ def app_stylesheet() -> str:
     }}
     QRadioButton[kbdFocus="true"]::indicator {{
         border-color: {COLORS["focus"]};
-    }}
+    }}"""
+
+
+def _checkbox_qss() -> str:
+    return f"""
 
     /* QCheckBox. Deliberately NO ::indicator rule of any kind here -
-       unlike QRadioButton/QSpinBox above, whose indicators/arrows are
-       still drawn by plain QSS. The checkbox indicator is painted by
+       unlike QRadioButton/QSpinBox, whose indicators/arrows are still
+       drawn by plain QSS. The checkbox indicator is painted by
        PaintedCheckboxStyle (gui/checkbox_style.py), a QProxyStyle
        installed on the QApplication in main_window.configure_application,
-       because Qt's stylesheet 'image:' mechanism has no
-       devicePixelRatio concept - see that module's docstring for the full
-       reasoning. This is not merely "no rule needed": setting even ONE
+       because Qt's stylesheet 'image:' mechanism has no devicePixelRatio
+       concept - see that module's docstring.
+
+       This is not merely "no rule needed": setting even ONE
        QCheckBox::indicator{...} property here (border, background,
        anything) makes Qt's internal QStyleSheetStyle claim the whole
-       indicator subcontrol and paint it itself from the CSS box model,
-       which pre-empts PaintedCheckboxStyle.drawPrimitive() before it ever
-       runs. So the QSS and the painted style are mutually exclusive for
-       this control, and the QSS side has to stay completely silent on
-       ::indicator - including hover/disabled/kbdFocus - for the painted
-       one to take effect at all. The bare QCheckBox{...} rule below still
-       applies (it styles the label text, a different selector Qt's CSS
-       capture doesn't extend to). */
+       indicator subcontrol and paint it from the CSS box model, which
+       pre-empts PaintedCheckboxStyle.drawPrimitive() before it ever runs.
+       The two are mutually exclusive for this control, so the QSS side has
+       to stay silent on ::indicator - hover/disabled/kbdFocus included.
+       The bare QCheckBox{...} rule below still applies: it styles the
+       label text, a selector Qt's CSS capture doesn't extend to. */
     QCheckBox {{
         color: {COLORS["text_primary"]};
         background: transparent;
         spacing: {Spacing.SM}px;
-    }}
+    }}"""
+
+
+def _spin_box_qss() -> str:
+    return f"""
 
     /* QSpinBox. ::up-button/::down-button are styled here even though the
        app's one QSpinBox (speaker count, model_select.py) currently ships
@@ -715,16 +671,13 @@ def app_stylesheet() -> str:
        widget's own comment for why the buttons were dropped and why this
        block was deliberately kept rather than deleted alongside them, so a
        future spin box that DOES want buttons finds them already themed.
-       ::up-arrow/::down-arrow are NOT styled: an earlier version of this
-       rule drew arrow glyphs on top via the same rasterize-to-QSS-image:
-       mechanism the checkbox tick used to (see git history /
-       checkbox_style.py's docstring for why that mechanism was retired
-       wholesale, not just for the tick) - styling ::up-button/::down-button
-       without also supplying ::up-arrow/::down-arrow leaves two blank dark
-       rectangles rather than the native arrow, so if a future widget
-       re-enables the buttons, drawing the arrows again needs solving fresh
-       (a painted QProxyStyle primitive, following checkbox_style.py's
-       pattern, rather than resurrecting the raster path). */
+       ::up-arrow/::down-arrow are NOT styled, and styling
+       ::up-button/::down-button without also supplying them leaves two
+       blank dark rectangles rather than the native arrow. So a future
+       widget that re-enables the buttons has to draw the arrows itself,
+       with a painted QProxyStyle primitive following checkbox_style.py's
+       pattern - not the rasterize-to-QSS-'image:' path, which
+       checkbox_style.py's docstring explains was retired wholesale. */
     QSpinBox {{
         background-color: {COLORS["bg_tertiary"]};
         color: {COLORS["text_primary"]};
@@ -750,7 +703,11 @@ def app_stylesheet() -> str:
     }}
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
         background-color: {COLORS["control_border"]};
-    }}
+    }}"""
+
+
+def _scroll_bar_qss() -> str:
+    return f"""
 
     /* QScrollBar. Slim and flat, no arrow buttons - the model list on the
        model-select step is the one place this is visible today. Both
@@ -798,8 +755,31 @@ def app_stylesheet() -> str:
     }}
     QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
         background: transparent;
-    }}
+    }}"""
+
+
+def app_stylesheet() -> str:
+    """Application-wide QSS, applied once on the QApplication instance. Holds
+    only defaults that every widget should inherit unless a more specific
+    per-widget setStyleSheet(...) call overrides it (see the ordering rule
+    in the module docstring) - so this stays deliberately small.
+
+    QRadioButton, QCheckBox, QSpinBox and QScrollBar are drawn entirely by
+    the native Windows style when unstyled, which renders them as
+    light-blue Windows controls on top of the Catppuccin Mocha ground the
+    rest of the app uses. They are themed here rather than per-widget
+    because every instance of each control should look the same everywhere
+    it appears. The keyboard-focus ring (_focus_ring_qss) is app-wide for
+    the same reason; it is scoped to the [kbdFocus="true"] dynamic property
+    rather than the native :focus pseudo-state, which paints for default
+    and mouse-click focus too and so put a sapphire ring around the header
+    language toggle on every launch - see gui/focus.py.
     """
+    return (
+        f"{_main_window_qss()}{_tooltip_qss()}{_focus_ring_qss()}"
+        f"{_radio_button_qss()}{_checkbox_qss()}{_spin_box_qss()}"
+        f"{_scroll_bar_qss()}\n    "
+    )
 
 
 def elevation_shadow(
@@ -860,19 +840,17 @@ def gradient_text_pixmap(
     backing stores are allocated at (logical size) * dpr, rounded up, and
     tagged with setDevicePixelRatio(dpr) so the QLabel that displays this
     draws it 1:1 instead of Qt (or Windows, pre-high-DPI-awareness)
-    stretching a 1x raster - this was the one hand-rasterized pixmap in the
-    app and the only one that looked visibly soft, since every other
-    control is drawn from vector QSS or painted directly (see
-    IconTextButton.paintEvent, which was already correct and untouched).
+    stretching a 1x raster into something visibly soft. This is the app's
+    only hand-rasterized pixmap; everything else is drawn from vector QSS
+    or painted directly.
     """
     # A device-aware QFontMetrics, not the bare single-argument form: the
     # single-argument form resolves metrics against the application's
     # default font database, which has no idea this pixmap is destined for
-    # a higher-dpr screen and under-measures accordingly - the same
-    # under-measurement that caused an earlier, unrelated clipped-title
-    # bug on this exact line. A throwaway 1x1 QPixmap carrying the real
-    # dpr gives QFontMetrics a paint device to measure against that
-    # matches what will actually be rendered below.
+    # a higher-dpr screen and under-measures accordingly, which clips the
+    # title. A throwaway 1x1 QPixmap carrying the real dpr gives
+    # QFontMetrics a paint device to measure against that matches what
+    # will actually be rendered below.
     device = QPixmap(1, 1)
     device.setDevicePixelRatio(dpr)
     metrics = QFontMetrics(font, device)
