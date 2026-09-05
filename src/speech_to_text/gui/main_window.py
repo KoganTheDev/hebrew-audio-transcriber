@@ -275,6 +275,31 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        self._build_header(main_layout)
+
+        i18n.language_manager.language_changed.connect(self._on_language_changed)
+
+        # Wizard step indicator - the only on-screen signal of where the
+        # user is in the flow beyond the page heading each step used to
+        # print itself (now removed - see gui/stepper.py's module
+        # docstring for why one indicator replaces two copies of the same
+        # name). Sits between the header and the stacked widget so it
+        # reads as chrome framing the current page, not as part of any one
+        # step's own content.
+        self.step_indicator = StepIndicator()
+        main_layout.addWidget(self.step_indicator)
+
+        self._build_content_area(main_layout)
+        self._build_nav_bar(main_layout)
+
+        self._next_btn_mode = "next"
+        self._retranslate_chrome()
+        self._wire_tab_order()
+
+    def _build_header(self, main_layout):
+        """The 50px title bar: gradient app title, optically centered between
+        the language toggle and a same-width invisible spacer.
+        """
         # Header
         header = QFrame()
         header.setObjectName("header")
@@ -327,18 +352,10 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.lang_btn)
         main_layout.addWidget(header)
 
-        i18n.language_manager.language_changed.connect(self._on_language_changed)
-
-        # Wizard step indicator - the only on-screen signal of where the
-        # user is in the flow beyond the page heading each step used to
-        # print itself (now removed - see gui/stepper.py's module
-        # docstring for why one indicator replaces two copies of the same
-        # name). Sits between the header and the stacked widget so it
-        # reads as chrome framing the current page, not as part of any one
-        # step's own content.
-        self.step_indicator = StepIndicator()
-        main_layout.addWidget(self.step_indicator)
-
+    def _build_content_area(self, main_layout):
+        """The stacked widget holding the three wizard steps, and the wiring
+        that turns each step's own signal into a MainWindow transition.
+        """
         # Content area
         content_widget = QWidget()
         content_widget.setStyleSheet(theme.frame_bg_qss("bg_primary"))
@@ -366,6 +383,10 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.stacked_widget)
         main_layout.addWidget(content_widget)
 
+    def _build_nav_bar(self, main_layout):
+        """The Back/Cancel/Next bar along the bottom, shared by all three
+        steps rather than repeated inside each one.
+        """
         # Navigation bar
         nav_widget = QFrame()
         nav_widget.setObjectName("navBar")
@@ -379,6 +400,18 @@ class MainWindow(QMainWindow):
         # enough for next_btn's longest state too ("New File" + icon).
         nav_btn_size = (130, 36)
 
+        self._build_back_and_cancel(nav_layout, nav_btn_size)
+
+        nav_layout.addStretch()
+
+        self._build_next_button(nav_layout, nav_btn_size)
+
+        main_layout.addWidget(nav_widget)
+
+    def _build_back_and_cancel(self, nav_layout, nav_btn_size):
+        """Back and Cancel share the leading nav slot - only ever one of them
+        is visible - plus the label that explains Cancel's armed state.
+        """
         # Back button (text/icon set per language by _retranslate_chrome).
         # IconTextButton draws its own label so the icon side can be chosen
         # visually, independent of layout direction (see gui/widgets.py).
@@ -422,8 +455,10 @@ class MainWindow(QMainWindow):
         self.cancel_confirm_label.hide()
         nav_layout.addWidget(self.cancel_confirm_label)
 
-        nav_layout.addStretch()
-
+    def _build_next_button(self, nav_layout, nav_btn_size):
+        """The one button that advances the wizard, whatever it currently
+        says.
+        """
         # Next button (text/icon set by _set_next_button_mode)
         self.next_btn = IconTextButton()
         self.next_btn.setFixedSize(*nav_btn_size)
@@ -439,12 +474,6 @@ class MainWindow(QMainWindow):
         self.next_btn.clicked.connect(self._on_next_clicked)
         self.next_btn.setEnabled(False)
         nav_layout.addWidget(self.next_btn)
-
-        main_layout.addWidget(nav_widget)
-
-        self._next_btn_mode = "next"
-        self._retranslate_chrome()
-        self._wire_tab_order()
 
     def _wire_tab_order(self):
         """Explicit Tab chain spanning the whole window, following visual
