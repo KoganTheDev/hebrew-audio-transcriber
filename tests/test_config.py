@@ -5,6 +5,7 @@ Tests for configuration module.
 import os
 
 from speech_to_text import config
+from speech_to_text.config import paths
 
 
 class TestConfig:
@@ -195,7 +196,11 @@ class TestModelDownloadRoot:
         package_dir.mkdir(parents=True)
         beside_package = repo_root / "whisper_models"
         beside_package.mkdir()
-        monkeypatch.setattr(config, "__file__", str(package_dir / "config.py"))
+        # config.paths, not config: the resolution reads the __file__ of the
+        # submodule the function actually lives in, and it walks up from the
+        # package root - so the fake path has to sit in the config/ subpackage
+        # exactly as the real one does.
+        monkeypatch.setattr(paths, "__file__", str(package_dir / "config" / "paths.py"))
 
         # Point the per-user fallback somewhere else entirely, so a wrong
         # answer (falling through instead of finding beside_package) is
@@ -221,7 +226,11 @@ class TestModelDownloadRoot:
         # through to the per-user branch - which must be equally stable.
         package_dir = tmp_path / "fake_pkg" / "speech_to_text"
         package_dir.mkdir(parents=True)
-        monkeypatch.setattr(config, "__file__", str(package_dir / "config.py"))
+        # config.paths, not config: the resolution reads the __file__ of the
+        # submodule the function actually lives in, and it walks up from the
+        # package root - so the fake path has to sit in the config/ subpackage
+        # exactly as the real one does.
+        monkeypatch.setattr(paths, "__file__", str(package_dir / "config" / "paths.py"))
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
 
         cwd_a = tmp_path / "cwd_a"
