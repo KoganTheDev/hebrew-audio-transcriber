@@ -28,6 +28,7 @@ walks the package.
 import ast
 import importlib
 import inspect
+import pathlib
 import pkgutil
 import re
 
@@ -202,3 +203,156 @@ def test_filenames_in_hebrew_strings_are_bidi_isolated():
         assert _LRI + placeholder + _PDI in hebrew, (
             f"{key}: {placeholder} is not wrapped in LRI/PDI. Got: {hebrew!r}"
         )
+
+
+# --- Dead keys, and lookups of keys that don't exist ------------------------
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_SRC = _REPO_ROOT / "src"
+_I18N_PATH = _SRC / "speech_to_text" / "gui" / "i18n.py"
+
+# The prefix document_strings() strips. Spelled out here rather than imported
+# from i18n so this test states the convention it is checking against, and a
+# rename of the private constant shows up as a failure to explain rather than
+# as a silently different check.
+_DOC_PREFIX = "doc_"
+
+# Both halves of the shipped app get searched: the transcript page's own
+# behaviour lives in core/assets/js/*.js, so a Python-only scan would call
+# every key the page script uses - most of the doc_ family - unreferenced.
+_SOURCE_SUFFIXES = (".py", ".js", ".mjs")
+
+
+def _source_haystack() -> str:
+    """
+    Every shipped source file except i18n.py itself, concatenated.
+
+    i18n.py is excluded because it is where the keys are DEFINED - leaving it
+    in would make every key trivially "referenced" by its own table entry.
+    Its own uses of t() are recovered separately by _self_referenced_keys().
+    """
+    texts = []
+    for path in _SRC.rglob("*"):
+        if path.suffix not in _SOURCE_SUFFIXES:
+            continue
+        if path.resolve() == _I18N_PATH.resolve():
+            continue
+        texts.append(path.read_text(encoding="utf-8"))
+    return "\n".join(texts)
+
+
+def _self_referenced_keys() -> set:
+    """
+    Keys i18n.py looks up itself, via a t("literal") call in its own body.
+
+    The dur_* family lives and dies here: format_duration() is its only
+    caller, so a scan that excluded i18n.py wholesale would report all five
+    as dead. Rather than hardcoding a dur_* exemption - which would also
+    excuse a genuinely dead dur_ key, and would say nothing about the next
+    family that ends up in the same position - the exemption is derived from
+    the call sites: an AST walk for t() calls with a string-constant first
+    argument. A key is live if something actually calls t() on it, wherever
+    that call happens to live.
+    """
+    tree = ast.parse(_I18N_PATH.read_text(encoding="utf-8"))
+    keys = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if node.func.id != "t" or not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            keys.add(first.value)
+    return keys
+
+
+def _search_name_for(key: str) -> str:
+    """
+    The name a key is actually referenced BY elsewhere in the tree.
+
+    document_strings() hands the transcript renderer and the page script the
+    doc_ group with the prefix stripped, so doc_help_search_title is spelled
+    "help_search_title" at every one of its call sites and a literal search
+    for the full key finds nothing. Every other key is referenced verbatim.
+    """
+    return key[len(_DOC_PREFIX) :] if key.startswith(_DOC_PREFIX) else key
+
+
+def test_no_string_table_entry_is_referenced_from_nowhere_in_the_shipped_source():
+    """
+    A key nobody looks up is dead weight that still has to be translated,
+    re-read and kept consistent by whoever touches the table next - and the
+    doc_ prefix convention makes dead keys unusually easy to accumulate,
+    because the obvious check (grep for the full key) reports almost the
+    whole doc_ family as unused and is therefore quickly learned to be
+    useless. Searching by the stripped name instead makes the answer
+    trustworthy, which is the only way a check like this survives.
+    """
+    haystack = _source_haystack()
+    self_referenced = _self_referenced_keys()
+    unused = sorted(
+        key
+        for key in STRINGS
+        if _search_name_for(key) not in haystack and key not in self_referenced
+    )
+    assert not unused, (
+        "string table keys nothing in src/ references: "
+        + ", ".join(unused)
+        + " - delete them, or wire up the call site they were added for"
+    )
+
+
+def _gui_t_call_keys():
+    """
+    (module_name, key, lineno) for every t("literal", ...) call in gui/.
+
+    Only string-constant keys: a t(key) on a variable is resolved at runtime
+    and cannot be checked statically.
+    """
+    import speech_to_text.gui as gui_package
+
+    modules = [gui_package]
+    prefix = gui_package.__name__ + "."
+    for info in pkgutil.walk_packages(gui_package.__path__, prefix):
+        modules.append(importlib.import_module(info.name))
+
+    found = []
+    for module in modules:
+        tree = ast.parse(inspect.getsource(module))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                continue
+            if node.func.id != "t" or not node.args:
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                found.append((module.__name__, first.value, node.lineno))
+    return found
+
+
+def test_scan_finds_the_known_gui_translation_call_sites():
+    """
+    Same floor as test_scan_finds_the_known_emission_sites, for the same
+    reason: a walk that quietly stopped matching t() calls would leave the
+    assertion below vacuously true.
+    """
+    calls = _gui_t_call_keys()
+    assert len(calls) >= 50, (
+        f'only found {len(calls)} t("...") call sites in gui/ - the AST walk is '
+        "probably broken, not the GUI shrinking"
+    )
+
+
+def test_every_gui_translation_call_site_names_a_key_that_exists():
+    """
+    The opposite error to a dead key, and a louder one: t() falls back to
+    returning the key itself for an unknown key, so a typo'd lookup ships a
+    literal "nav_cancle" into the interface instead of raising anywhere.
+    """
+    unknown = [
+        f"{module}:{lineno} looks up unknown key {key!r}"
+        for module, key, lineno in _gui_t_call_keys()
+        if key not in STRINGS
+    ]
+    assert not unknown, "\n".join(unknown)
