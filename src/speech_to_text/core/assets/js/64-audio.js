@@ -1,14 +1,5 @@
-  // ------------------------------------------------------------------ audio
-
-  // bindAudio() used to be 222 lines with five nested functions closing over
-  // six independent module-level-looking variables (current, currentSection,
-  // boundEnd, scrubbing, and the since-removed lastSweep/playing pair that
-  // drove the playing-turn highlight) - a module wearing a "binder"
-  // function's name. Pulled apart into this shared, explicit playback-state
-  // object plus a handful of top-level helpers that take the pieces they
-  // need as arguments, so each one's signature says what it touches instead
-  // of a reader having to hold the whole closure in their head. bindAudio()
-  // itself is now just the event wiring.
+  // Playback state, shared explicitly between the helpers below rather than
+  // captured in one large closure, so each signature says what it touches.
   function createPlayerState() {
     return {
       current: null,        // filename of the recording currently loaded
@@ -17,10 +8,8 @@
       // playback is free-running (the reader pressed the toggle, or nothing
       // bounded has been clicked yet).
       boundEnd: null,
-      // Set on the seek input's own 'input' event, read by the throttled
-      // timeupdate sweep so it never overwrites seek.value while a drag is
-      // in progress - the same "don't fight the control the reader's
-      // fingers are on" rule the search box's re-entrancy guard follows.
+      // Set on the seek input's own 'input' event, read by the timeupdate
+      // handler so it never overwrites seek.value mid-drag.
       scrubbing: false,
     };
   }
@@ -44,28 +33,11 @@
 
   // Isolated LTR digits, same shape as format_range()'s "M:SS - M:SS" in
   // core/formatting - a neutral "/" between two LTR runs, inside an RTL
-  // document, needs the same LRI/PDI guard or it can reorder the same way
-  // an un-isolated timestamp used to.
+  // document, needs the same LRI/PDI guard or it can reorder.
   function updatePlayerReadout(audio, timeEl) {
     var duration = isFinite(audio.duration) ? audio.duration : 0;
     timeEl.textContent = '⁦' + formatPlayerTime(audio.currentTime) + ' / ' + formatPlayerTime(duration) + '⁩';
   }
-
-  // highlightPlayingTurn() lived here: a throttled sweep that walked the
-  // current .source roughly four times a second, found the last .turn whose
-  // data-start was at or before the playhead, and moved a data-playing
-  // attribute onto it. The CSS behind it (.turn[data-playing] in
-  // css/48-turn.css - a background wash plus a 4px accent edge) is gone, so
-  // the sweep went with it rather than staying on as a per-tick DOM walk
-  // maintaining an attribute nothing reads. See that stylesheet's own
-  // comment for why the cue was dropped.
-  //
-  // The throttle it needed is gone too. What remains in the timeupdate
-  // handler - the clock, the seek fill, the range-bound stop - was always
-  // unthrottled: each is a couple of number operations, and the range stop
-  // in particular HAD to run every tick (a short turn could otherwise finish
-  // before the 250ms sweep next looked). Nothing left in that handler
-  // touches the DOM per turn, which is what the throttle existed to bound.
 
   // Driven off the audio element's own play/pause events, not off the
   // toggle button's click handler, so the glyph and label are correct
@@ -125,11 +97,9 @@
         pstate.boundEnd = end;
         seek.value = String(audio.currentTime);
         updateSeekFill(seek);
-        // Clicking a timestamp is the one moment the readout has to update
-        // before playback (and therefore the throttled timeupdate handler)
-        // has necessarily started - a reader glancing at "0:32 / 3:11" right
-        // after the click, before any audio has actually played a frame,
-        // should not see a stale "0:00 / 3:11" left over from load.
+        // The one moment the readout has to update before playback, and so
+        // before any timeupdate tick has fired: a reader glancing at the
+        // clock right after the click must not see a stale value from load.
         updatePlayerReadout(audio, timeEl);
         audio.play().catch(function () { /* the error listener handles it */ });
       });
@@ -168,11 +138,9 @@
       // after the first bad file.
       pstate.currentSection.dataset.noAudio = 'true';
 
-      // The CSS strips the button chrome and pointer cursor (see
-      // .source[data-no-audio] .ts), but a visual change alone leaves the
-      // control reachable by Tab and announced as a button to a screen
-      // reader - both would still promise an action that no longer happens.
-      // disabled removes it from the tab order and native click handling;
+      // The CSS strips the button chrome (see .source[data-no-audio] .ts),
+      // but a visual change alone leaves the control reachable by Tab and
+      // announced as a button. disabled takes it out of the tab order;
       // aria-disabled is set alongside it because some assistive tech
       // announces "dimmed"/"unavailable" from aria-disabled specifically.
       pstate.currentSection.querySelectorAll('.ts').forEach(function (btn) {
@@ -193,21 +161,17 @@
     // The range-stop check runs on every timeupdate tick - it is a single
     // number comparison, cheap enough to run every time, and it has to run
     // that often: a short turn can be over in well under a second, so any
-    // coarser sampling would overshoot past its end. (It used to be
-    // contrasted here with the throttled highlight sweep, which is gone -
-    // see highlightPlayingTurn()'s former home above.) A setTimeout timed
-    // to the range's length was the other option and was rejected - it
-    // would race whatever called pause() or changed currentTime in
-    // between, firing a stale stop after a reader had already sought
-    // elsewhere. Overshoot here is bounded by one timeupdate tick, which
-    // reads as "stopped right around there," not as a bug.
+    // coarser sampling would overshoot past its end. A setTimeout timed to
+    // the range's length was the other option and was rejected - it would
+    // race whatever called pause() or changed currentTime in between,
+    // firing a stale stop after a reader had already sought elsewhere.
+    // Overshoot here is bounded by one timeupdate tick, which reads as
+    // "stopped right around there," not as a bug.
     audio.addEventListener('timeupdate', function () {
       updatePlayerReadout(audio, timeEl);
       // Left alone mid-drag: the seek input's own 'input' handler is already
-      // setting audio.currentTime from seek.value, so timeupdate writing
-      // seek.value back from audio.currentTime in the same tick would just
-      // be echoing the drag back at itself - harmless in the best case,
-      // fighting the pointer in the worst.
+      // setting audio.currentTime from seek.value, so writing it back here
+      // in the same tick would just fight the pointer.
       if (!pstate.scrubbing) {
         seek.value = String(audio.currentTime);
         updateSeekFill(seek);
