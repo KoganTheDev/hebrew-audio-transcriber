@@ -85,6 +85,21 @@ class ModelSelectStep(QFrame):
     def __init__(self, hardware: HardwareDetector, parent=None):
         super().__init__(parent)
         self.hardware = hardware
+        self._init_card_state()
+        self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
+
+        layout = self._build_page_layout()
+        self._build_error_banner(layout)
+        self._build_calibration_note(layout)
+        self._build_model_cards(layout)
+        self._build_tab_chain()
+
+    def _init_card_state(self) -> None:
+        """The per-model bookkeeping every card and every refresh reads.
+
+        All of it has to exist before the first card is built, since
+        _create_model_card populates these as it goes.
+        """
         self.audio_duration = 0
         self._desc_labels = {}  # model_name -> QLabel showing "description | Est: ..."
         # model_name -> last computed estimate, in SECONDS. Seconds, not the
@@ -110,12 +125,23 @@ class ModelSelectStep(QFrame):
         self._downloaded = {
             name: _model_is_downloaded(info["repo"]) for name, info in config.MODELS.items()
         }
-        self._error_key = None  # (key, params) of the last shown error, for retranslation
+        # (key, params) of the last shown error, for retranslation. Annotated
+        # rather than left to inference: mypy only widens a bare `= None` to
+        # an optional when the assignment sits in __init__ itself, so moving
+        # this line here would otherwise pin the attribute to None and make
+        # show_error's assignment an error.
+        self._error_key: str | None = None
         self._error_params = {}
         self._user_touched_model = False  # True once the user manually picks a model
         self._syncing = False  # True while we're programmatically re-checking a radio
-        self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
+    def _build_page_layout(self) -> QVBoxLayout:
+        """The step's own vertical layout, on the page with the least room.
+
+        Seven model cards already need a QScrollArea to fit at 650x600, so
+        the spacing and margins here are set tighter than either neighbouring
+        step and are kept in one place rather than tuned per widget.
+        """
         layout = QVBoxLayout(self)
         # Tighter than steps 1/3 (XS, not SM) - every px of vertical gap
         # here is a px the seven-card scroll area doesn't get.
@@ -124,7 +150,7 @@ class ModelSelectStep(QFrame):
         # costs no vertical room, which is the scarce resource on this
         # page). Vertical margin pulled in to SM, tighter than before
         # (was MD) to buy back some of the room the taller DISPLAY heading
-        # spends - see the title comment above on why step 2 stays
+        # spends - see the title comment below on why step 2 stays
         # conservative.
         layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
 
@@ -134,7 +160,10 @@ class ModelSelectStep(QFrame):
         # step that has none to spare (seven model cards already need a
         # QScrollArea to fit at 650x600 - see the room analysis in
         # theme.Spacing's docstring).
+        return layout
 
+    def _build_error_banner(self, layout: QVBoxLayout) -> None:
+        """The inline failure strip at the top of the page."""
         # Error banner - shown inline (instead of a modal popup) if a
         # transcription attempt fails and the user is sent back here to
         # retry. Hidden until show_error() is called.
@@ -169,6 +198,8 @@ class ModelSelectStep(QFrame):
 
         layout.addWidget(self.error_banner)
 
+    def _build_calibration_note(self, layout: QVBoxLayout) -> None:
+        """The "these estimates are guesses so far" line under the banner."""
         # Calibration note - every time estimate on this step is a
         # placeholder (config.SPEED_FACTORS's guessed constants, see
         # HardwareDetector.estimate_transcription_time) until the background
@@ -183,9 +214,11 @@ class ModelSelectStep(QFrame):
         self.calibration_note.setWordWrap(True)
         self.calibration_note.hide()
         layout.addWidget(self.calibration_note)
-        if hardware.tiny_seconds_per_audio_second is None:
+        if self.hardware.tiny_seconds_per_audio_second is None:
             self._set_calibration_note("calibration_pending")
 
+    def _build_model_cards(self, layout: QVBoxLayout) -> None:
+        """The scrollable card list, and the speaker row that feeds it."""
         # The cards used to be laid out directly, sized so all five fit the
         # fixed window without scrolling. Adding the two Hebrew-tuned models
         # broke that: seven cards overflow a 600px window and the last ones
@@ -201,31 +234,12 @@ class ModelSelectStep(QFrame):
         # exist before _desc_text runs.
         speaker_row = self._build_speaker_row()
 
-        models_scroll = QScrollArea()
-        models_scroll.setWidget(models_container)
-        models_scroll.setWidgetResizable(True)
-        models_scroll.setFrameShape(QFrame.NoFrame)
-        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        models_scroll.setStyleSheet("background: transparent;")
-        # setWidgetResizable(True) re-fits the scrolled widget from
-        # QScrollArea's OWN resizeEvent, which fires when the scroll area
-        # changes size - not when the viewport alone shrinks because the
-        # vertical scrollbar just appeared. So a bar that shows up because
-        # the CONTENT grew (the common case here: _on_calibration_done
-        # rewrites every card's estimate once the background benchmark
-        # lands, and a longer line can wrap a card to a second row) narrows
-        # the viewport by the bar's 10px while leaving the container at its
-        # old width. The cards are then 10px wider than what's visible and,
-        # with horizontal scrolling off, their right border is simply
-        # clipped away - the card reads as an unfinished box open on one
-        # side. Watching the viewport's own resize closes that gap; see
-        # _sync_container_width.
-        models_scroll.viewport().installEventFilter(self)
+        models_scroll = self._build_models_scroll(models_container)
 
         # Model selection
         self.model_group = QButtonGroup()
         self.model_radios = {}
-        recommended_model, _ = hardware.recommend_model(self.audio_duration)
+        recommended_model, _ = self.hardware.recommend_model(self.audio_duration)
         self.selected_model = recommended_model
         self._current_recommended = recommended_model
 
@@ -247,13 +261,40 @@ class ModelSelectStep(QFrame):
         # scrolls should still see what the app is recommending.
         self._scroll_area = models_scroll
 
+    def _build_models_scroll(self, models_container: QWidget) -> QScrollArea:
+        """The scroll area wrapping the card list, watching its own viewport."""
+        models_scroll = QScrollArea()
+        models_scroll.setWidget(models_container)
+        models_scroll.setWidgetResizable(True)
+        models_scroll.setFrameShape(QFrame.NoFrame)
+        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        models_scroll.setStyleSheet("background: transparent;")
+        # setWidgetResizable(True) re-fits the scrolled widget from
+        # QScrollArea's OWN resizeEvent, which fires when the scroll area
+        # changes size - not when the viewport alone shrinks because the
+        # vertical scrollbar just appeared. So a bar that shows up because
+        # the CONTENT grew (the common case here: _on_calibration_done
+        # rewrites every card's estimate once the background benchmark
+        # lands, and a longer line can wrap a card to a second row) narrows
+        # the viewport by the bar's 10px while leaving the container at its
+        # old width. The cards are then 10px wider than what's visible and,
+        # with horizontal scrolling off, their right border is simply
+        # clipped away - the card reads as an unfinished box open on one
+        # side. Watching the viewport's own resize closes that gap; see
+        # _sync_container_width.
+        models_scroll.viewport().installEventFilter(self)
+        return models_scroll
+
+    def _build_tab_chain(self) -> None:
+        """Wire Tab to follow the page's visual order, not creation order."""
         # Explicit Tab chain, matching the page's visual top-to-bottom order:
         # every model radio in config.MODELS order, then the speaker-identify
         # checkbox, then the speaker-count spin box below the card list. Not
         # left to Qt's default (creation-order) chain because the speaker row
-        # is built BEFORE the cards (see the comment above speaker_row) so
-        # its widgets would otherwise sit ahead of the cards in the implicit
-        # chain - backwards from how the page reads top to bottom.
+        # is built BEFORE the cards (see the comment above speaker_row in
+        # _build_model_cards) so its widgets would otherwise sit ahead of the
+        # cards in the implicit chain - backwards from how the page reads top
+        # to bottom.
         radios_in_order = [self.model_radios[name] for name in config.MODELS]
         for earlier, later in zip(radios_in_order, radios_in_order[1:]):
             self.setTabOrder(earlier, later)
