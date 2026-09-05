@@ -1,5 +1,3 @@
-  // ------------------------------------------------------------- help & tour
-
   // Shared by the help panel and the tour's caption card: both are modal
   // overlays that have to keep Tab cycling inside themselves rather than
   // leaking focus out to the page underneath. Queried live rather than
@@ -46,10 +44,9 @@
     var tourBtn = document.getElementById('tour-start');
     if (!btn || !panel) { return; }
 
-    // The element focus should return to on close - the toolbar button in
-    // the ordinary case, but captured fresh on every open rather than
-    // hardcoded to `btn` in case some future caller opens help by another
-    // route (a keyboard shortcut, say) with a different element focused.
+    // Where focus returns on close. Captured fresh on every open rather
+    // than hardcoded to `btn`, in case help is ever opened by another route
+    // (a keyboard shortcut, say) with a different element focused.
     var opener = null;
 
     function openHelp() {
@@ -70,10 +67,8 @@
     if (closeBtn) { closeBtn.addEventListener('click', closeHelp); }
 
     // .help-panel is the full-viewport flex container that centres
-    // .help-sheet inside it - a click anywhere in that container that is
-    // NOT on the sheet (or one of the sheet's own children, which never
-    // bubble past it without being handled first) is a click on the scrim
-    // itself, i.e. e.target === panel exactly.
+    // .help-sheet inside it, so a click whose target is the container
+    // itself - and not the sheet or anything inside it - is a scrim click.
     panel.addEventListener('click', function (e) {
       if (e.target === panel) { closeHelp(); }
     });
@@ -98,11 +93,9 @@
   // plain querySelector - see its own comment below. Every other step's
   // `find` is just document.querySelector(selector).
   //
-  // Order matters: it is the order steps are walked in, and it deliberately
-  // matches the page's own top-to-bottom reading order (toolbar/file
-  // context first, then the sidebar, then the reading column's own
-  // affordances in the order a reader meets them), the same choice
-  // _render_help_html() documents for the help panel's own entry order.
+  // Order matters: steps are walked in this order, which matches the page's
+  // own top-to-bottom reading order - the same choice _render_help_html()
+  // documents for the help panel's entry order.
   var TOUR_STEPS = [
     {
       selector: '.file-bar',
@@ -131,13 +124,11 @@
       // Every file in the batch renders its own .speakers strip, but only
       // one is visible at a time once .outline.js-ready is present (see
       // bindOutline() and the .outline.js-ready .speakers:not(.active) rule
-      // in the stylesheet (core/assets/css/)) - a plain document.querySelector('.speakers')
-      // would always land on file 0's strip regardless of which file the
-      // reader is actually looking at, including mid-tour if a reader
-      // scrolled before opening help. .active is preferred; falling back to
-      // the first .speakers covers the (script-disabled-at-render-time,
-      // impossible in practice once this file is running, but cheap to
-      // guard) case where nothing has been marked active yet.
+      // in the stylesheet (core/assets/css/)) - a plain
+      // document.querySelector('.speakers') would always land on file 0's
+      // strip regardless of which file the reader is looking at. The
+      // fallback to the first .speakers covers the case where nothing has
+      // been marked active yet.
       selector: '.speakers',
       find: function () {
         return document.querySelector('.speakers.active') || document.querySelector('.speakers');
@@ -181,21 +172,18 @@
     },
   ];
 
-  // Everything the running tour needs to clean itself up - a single object
-  // rather than a scatter of module-level variables, so endTour() has one
-  // thing to null out and cannot half-forget a piece of it. null whenever no
-  // tour is running, which doubles as the re-entrancy guard in startTour().
+  // Everything the running tour needs to clean itself up, in one object so
+  // endTour() cannot half-forget a piece of it. null whenever no tour is
+  // running, which doubles as the re-entrancy guard in startTour().
   var tour = null;
 
-  // Resolved fresh every time the tour starts, never cached across a
-  // render: which selectors match depends on what this particular document
-  // actually contains (a single file has no .outline; a document rendered
-  // without timestamps has no .ts; a document with one detected speaker has
-  // no .speakers strip at all - see _render_outline_html()'s own docstring
-  // for the conditions). A step whose target is missing is dropped
-  // silently, and the n/total counter is built from what is LEFT, not from
-  // TOUR_STEPS.length - a hardcoded 8 would immediately be wrong on the
-  // first document that omits anything.
+  // Resolved fresh every time the tour starts, never cached: which
+  // selectors match depends on what this document contains (a single file
+  // has no .outline; no timestamps means no .ts; one detected speaker means
+  // no .speakers strip - see _render_outline_html()'s docstring). A step
+  // whose target is missing is dropped silently, and the n/total counter is
+  // built from what is LEFT, not from TOUR_STEPS.length, which would be
+  // wrong on the first document that omits anything.
   function resolveTourSteps() {
     var resolved = [];
     TOUR_STEPS.forEach(function (step) {
@@ -215,25 +203,21 @@
       'aria-modal': 'true',
       'aria-labelledby': 'tour-title',
       // Not part of the normal Tab order (that is what the trap is for) -
-      // this is only so card.focus() below can move the accessibility
-      // focus onto the dialog itself when a step changes, the same "focus
-      // the container, let its aria-labelledby announce the new content"
-      // pattern any dialog that swaps its own content on the fly needs.
+      // only so card.focus() can move accessibility focus onto the dialog
+      // itself when a step changes, letting aria-labelledby announce the
+      // new content.
       tabindex: '-1',
     });
 
     var count = el('p', 'tour-count');
-    // Same bidi shape as .file-position and format_range()'s
-    // "M:SS - M:SS" (see the LRI/PDI comment block in
-    // core/formatting): a neutral "/" sitting between two LTR
-    // digit runs inside an RTL paragraph. Without the isolate
-    // renderTourStep() wraps this in, step one of eight rendered as
-    // "8 / 1" - the slash resolved RTL and swapped which number read
-    // as the position and which read as the total, the exact bug
-    // .file-position already carries a guard against. dir="ltr" is
-    // not sufficient alone: this is a flow child of an RTL card, so
-    // the isolate is what stops the surrounding direction reaching
-    // into the digit runs in the first place.
+    // Same bidi shape as .file-position and format_range()'s "M:SS - M:SS"
+    // (see the LRI/PDI comment block in core/formatting): a neutral "/"
+    // between two LTR digit runs inside an RTL paragraph. Without the
+    // isolate renderTourStep() wraps this in, step one of eight renders as
+    // "8 / 1" - the slash resolves RTL and swaps position with total.
+    // dir="ltr" is not sufficient alone: this is a flow child of an RTL
+    // card, so the isolate is what stops the surrounding direction reaching
+    // into the digit runs at all.
     count.setAttribute('dir', 'ltr');
     var title = el('h2', 'tour-title', { id: 'tour-title' });
     var body = el('p', 'tour-body');
@@ -263,9 +247,8 @@
   }
 
   // Re-measures the current step's target and repaints the ring and card
-  // around it. Cheap enough (one getBoundingClientRect plus
-  // positionDetachedMenu's own couple of reads) to run unthrottled from a
-  // rAF callback rather than needing its own further debounce.
+  // around it. One getBoundingClientRect plus positionDetachedMenu's own
+  // couple of reads, so a rAF callback needs no further debounce.
   function updateTourSpotlight() {
     if (!tour) { return; }
     var entry = tour.steps[tour.index];
@@ -310,10 +293,8 @@
     chrome.backBtn.hidden = index === 0;
 
     // Positioned once immediately, so the ring/card do not flash at (0, 0)
-    // for a frame before the first scroll event lands - then left to the
-    // scroll listener below to keep tracking the target as
-    // scrollIntoView's own (possibly smooth, possibly instant per
-    // scrollBehavior()) animation actually moves it.
+    // for a frame before the first scroll event lands - the scroll listener
+    // then tracks the target as scrollIntoView's own animation moves it.
     updateTourSpotlight();
     entry.el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
 
@@ -336,13 +317,10 @@
     chrome.card.remove();
     tour = null;
 
-    // Always #help, per the tour's own accessibility contract - not
-    // whichever element happened to be focused before the tour started,
-    // which by construction is #help anyway (bindHelp()'s tour-start click
-    // handler closes the help panel, which already returns focus to #help,
-    // immediately before calling startTour()). Naming it explicitly here
-    // rather than relying on that chain means this still does the right
-    // thing if a future caller ever starts the tour some other way.
+    // Always #help, per the tour's own accessibility contract - named
+    // explicitly rather than restored from whatever was focused when the
+    // tour started, so this still lands correctly if a future caller ever
+    // starts the tour some other way.
     var helpBtn = document.getElementById('help');
     if (helpBtn) { helpBtn.focus(); }
   }
@@ -351,18 +329,15 @@
   // auto-launch, no first-visit flag in `state`: a reader who has not asked
   // for the tour must never have it start itself, and nothing about running
   // it may touch localStorage (see the module docstring's autosave
-  // contract) - the tour reads the DOM and getBoundingClientRect(), full
-  // stop, and every handler below is careful never to call save() or reach
-  // into `state`.
+  // contract). The tour reads the DOM and getBoundingClientRect(), and no
+  // handler below calls save() or reaches into `state`.
   function startTour() {
     var steps = resolveTourSteps();
     if (!steps.length) { return; }
-    // Re-entrancy guard: starting the tour again while one is already
-    // running (there is no UI path to do this today, since #tour-start only
-    // exists inside the help panel the tour itself closes, but a future
-    // second entry point should not be able to leak the first run's
-    // overlay) tears the old one down cleanly first rather than stacking a
-    // second scrim/ring/card on top of it.
+    // Re-entrancy guard: a second start tears the first run down rather
+    // than stacking another scrim/ring/card on top of it. No UI path
+    // reaches this today - #tour-start lives inside the help panel the tour
+    // itself closes - but a future entry point must not leak an overlay.
     if (tour) { endTour(); }
 
     var chrome = buildTourChrome();
@@ -385,12 +360,10 @@
       }
     });
 
-    // Capture-phase, like closeMenu()'s own Escape handler and the
-    // scroll-closes-the-swatch-menu listener above - the tour is modal, so
-    // it has to see these keys before any other keydown listener on the
-    // page gets a chance to react to them (bindChrome()'s own "/" focuses
-    // search" handler, for one, would otherwise fire while the tour has the
-    // page pinned behind its scrim).
+    // Capture-phase, like closeMenu()'s own Escape handler: the tour is
+    // modal, so it has to see these keys before any other keydown listener
+    // on the page reacts to them (bindChrome()'s "/" focuses search, for
+    // one, would otherwise fire behind the tour's scrim).
     tour.keydownHandler = function (e) {
       if (e.key === 'Escape') { endTour(); return; }
       // Left/Right-as-next/back is a bonus, not the primary path (Tab to
@@ -408,11 +381,9 @@
     };
     document.addEventListener('keydown', tour.keydownHandler, true);
 
-    // Same rAF-scheduled recompute drives both triggers - a resize and a
-    // scroll (of the window, or of any scrollable ancestor, hence capture:
-    // true, the same reasoning as closeMenu()'s own capture-phase scroll
-    // listener above) are just two different reasons the target's rect
-    // might have changed.
+    // One rAF-scheduled recompute for both triggers: a resize and a scroll
+    // (of the window or of any scrollable ancestor, hence capture: true)
+    // are two different reasons the target's rect might have changed.
     tour.moveHandler = scheduleTourUpdate;
     window.addEventListener('resize', tour.moveHandler);
     document.addEventListener('scroll', tour.moveHandler, true);
