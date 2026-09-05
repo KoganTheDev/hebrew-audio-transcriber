@@ -577,50 +577,26 @@ def result_panel_qss(object_name: str) -> str:
     """
 
 
-def app_stylesheet() -> str:
-    """Application-wide QSS, applied once on the QApplication instance. Holds
-    only defaults that every widget should inherit unless a more specific
-    per-widget setStyleSheet(...) call overrides it (see the ordering rule
-    in the module docstring) - so this stays deliberately small.
-
-    Currently:
-      - the main window background, moved here from the setStyleSheet(...)
-        call MainWindow.__init__ used to make directly (kept as a QSS rule
-        rather than a QPalette tweak so it still cascades the same way).
-      - a QToolTip rule. Nothing in the app sets a tooltip today, so this
-        rule has no visible effect yet - it exists so a later step can add
-        tooltips without also having to invent their styling.
-      - QRadioButton, QCheckBox, QSpinBox and QScrollBar rules. These four
-        are drawn entirely by the native Windows style when unstyled -
-        nothing in this codebase ever touched them before this step - so
-        without a rule here they render as light-blue Windows controls on
-        top of the Catppuccin Mocha ground the rest of the app now uses.
-        They belong here rather than per-widget because every instance of
-        each control should look the same everywhere they appear. The
-        QCheckBox entry is deliberately label-only, though: its indicator
-        is painted by PaintedCheckboxStyle instead, not by QSS - see the
-        QCheckBox comment further down for why the two can't coexist.
-      - a [kbdFocus="true"] rule as the keyboard-focus ring, scoped to that
-        dynamic property rather than the native :focus pseudo-state. Native
-        :focus paints for default and mouse-click focus too - which is what
-        put a sapphire ring around the header language toggle on every
-        launch, before this property existed - so the ring is gated behind
-        gui/focus.py's KeyboardFocusTracker instead, the same "was focus
-        just given by a keyboard" gate the app's own generated HTML
-        transcript already uses via data-kbd (see
-        core/assets/js/94-layout.js's bindKeyboardModality()).
-    """
+def _main_window_qss() -> str:
     return f"""
     QMainWindow {{
         background-color: {COLORS["bg_primary"]};
-    }}
+    }}"""
+
+
+def _tooltip_qss() -> str:
+    return f"""
     QToolTip {{
         background-color: {COLORS["bg_tertiary"]};
         color: {COLORS["text_primary"]};
         border: {Border.HAIRLINE}px solid {COLORS["control_border"]};
         border-radius: {Radius.CONTROL}px;
         padding: {Spacing.XS}px {Spacing.SM}px;
-    }}
+    }}"""
+
+
+def _focus_ring_qss() -> str:
+    return f"""
 
     /* Generic keyboard-focus ring. Qt stylesheets have no CSS 'outline'
        box that sits outside a widget without affecting its layout, so this
@@ -636,7 +612,11 @@ def app_stylesheet() -> str:
        adds dead CSS that looks like it should be doing something. */
     QRadioButton[kbdFocus="true"], QCheckBox[kbdFocus="true"], QSpinBox[kbdFocus="true"] {{
         border-color: {COLORS["focus"]};
-    }}
+    }}"""
+
+
+def _radio_button_qss() -> str:
+    return f"""
 
     /* QRadioButton. Setting any property on ::indicator makes Qt stop
        drawing its native indicator altogether, so every state has to be
@@ -683,7 +663,11 @@ def app_stylesheet() -> str:
     }}
     QRadioButton[kbdFocus="true"]::indicator {{
         border-color: {COLORS["focus"]};
-    }}
+    }}"""
+
+
+def _checkbox_qss() -> str:
+    return f"""
 
     /* QCheckBox. Deliberately NO ::indicator rule of any kind here -
        unlike QRadioButton/QSpinBox above, whose indicators/arrows are
@@ -707,7 +691,11 @@ def app_stylesheet() -> str:
         color: {COLORS["text_primary"]};
         background: transparent;
         spacing: {Spacing.SM}px;
-    }}
+    }}"""
+
+
+def _spin_box_qss() -> str:
+    return f"""
 
     /* QSpinBox. ::up-button/::down-button are styled here even though the
        app's one QSpinBox (speaker count, model_select.py) currently ships
@@ -750,7 +738,11 @@ def app_stylesheet() -> str:
     }}
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
         background-color: {COLORS["control_border"]};
-    }}
+    }}"""
+
+
+def _scroll_bar_qss() -> str:
+    return f"""
 
     /* QScrollBar. Slim and flat, no arrow buttons - the model list on the
        model-select step is the one place this is visible today. Both
@@ -798,8 +790,47 @@ def app_stylesheet() -> str:
     }}
     QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
         background: transparent;
-    }}
+    }}"""
+
+
+def app_stylesheet() -> str:
+    """Application-wide QSS, applied once on the QApplication instance. Holds
+    only defaults that every widget should inherit unless a more specific
+    per-widget setStyleSheet(...) call overrides it (see the ordering rule
+    in the module docstring) - so this stays deliberately small.
+
+    Currently:
+      - the main window background, moved here from the setStyleSheet(...)
+        call MainWindow.__init__ used to make directly (kept as a QSS rule
+        rather than a QPalette tweak so it still cascades the same way).
+      - a QToolTip rule. Nothing in the app sets a tooltip today, so this
+        rule has no visible effect yet - it exists so a later step can add
+        tooltips without also having to invent their styling.
+      - QRadioButton, QCheckBox, QSpinBox and QScrollBar rules. These four
+        are drawn entirely by the native Windows style when unstyled -
+        nothing in this codebase ever touched them before this step - so
+        without a rule here they render as light-blue Windows controls on
+        top of the Catppuccin Mocha ground the rest of the app now uses.
+        They belong here rather than per-widget because every instance of
+        each control should look the same everywhere they appear. The
+        QCheckBox entry is deliberately label-only, though: its indicator
+        is painted by PaintedCheckboxStyle instead, not by QSS - see the
+        QCheckBox comment further down for why the two can't coexist.
+      - a [kbdFocus="true"] rule as the keyboard-focus ring, scoped to that
+        dynamic property rather than the native :focus pseudo-state. Native
+        :focus paints for default and mouse-click focus too - which is what
+        put a sapphire ring around the header language toggle on every
+        launch, before this property existed - so the ring is gated behind
+        gui/focus.py's KeyboardFocusTracker instead, the same "was focus
+        just given by a keyboard" gate the app's own generated HTML
+        transcript already uses via data-kbd (see
+        core/assets/js/94-layout.js's bindKeyboardModality()).
     """
+    return (
+        f"{_main_window_qss()}{_tooltip_qss()}{_focus_ring_qss()}"
+        f"{_radio_button_qss()}{_checkbox_qss()}{_spin_box_qss()}"
+        f"{_scroll_bar_qss()}\n    "
+    )
 
 
 def elevation_shadow(
