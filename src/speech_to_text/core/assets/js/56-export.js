@@ -1,4 +1,3 @@
-  // ----------------------------------------------------------------- export
 
   function exportCopy() {
     clearSearch();
@@ -9,15 +8,13 @@
     // form state has to be written back before it can survive the export.
     bakeFormState();
 
-    // Strip transient view state so the exported file opens in its resting
-    // state rather than frozen mid-session: a half-typed query, a player
-    // pointing at an audio path that only made sense on this machine, panels
-    // left open. None of it is content.
+    // Strip transient view state - a half-typed query, an audio path that only
+    // meant something on this machine - so the copy opens at rest, not frozen
+    // mid-session.
     var restore = resetTransientState();
 
     // The live DOM already holds the edits and names, so serialising it is the
-    // export. The result is itself a working editor with the same doc id, so
-    // editing can continue in the downloaded copy.
+    // export: the copy is a working editor with the same doc id.
     var html = '<!doctype html>\n' + document.documentElement.outerHTML;
     restore();
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -36,22 +33,15 @@
   }
 
   function bakeFormState() {
-    // Without this the exported copy carries speaker names in the turn labels
-    // but an empty name box, and on a machine with no saved state the first
-    // edit would read that empty box and reset the name to its fallback. The
-    // exported file has to stand on its own.
+    // Without this the copy carries speaker names in the turn labels but an
+    // empty name box, and on a machine with no saved state the first edit
+    // would read that empty box and reset the name to its fallback.
     document.querySelectorAll('.speaker-name').forEach(function (input) {
       input.setAttribute('value', input.value);
     });
     // Per-bubble speaker overrides (state.assignLine, js/24-speakers-menus.js)
-    // need no baking here, unlike the name inputs just above: an override
-    // lives entirely as element attributes (.bubble[data-override],
-    // .bubble-spk's data-speaker/data-palette/data-fallback) and a text node
-    // (the chip's own label), all written by paintBubbleOverride() straight
-    // onto the DOM rather than into a JS-only property outerHTML would miss.
-    // document.documentElement.outerHTML in exportCopy() already carries
-    // every one of those verbatim, the same way it already carries a
-    // block's own reassigned .bubble-spk with no baking step of its own.
+    // need no baking: paintBubbleOverride() writes them as attributes and text
+    // nodes, which outerHTML already carries verbatim.
     document.querySelectorAll('.plain input[type="checkbox"]').forEach(function (box) {
       if (box.checked) {
         box.setAttribute('checked', '');
@@ -79,8 +69,6 @@
     // Remove the attribute rather than blanking it: src="" resolves to the
     // document URL, which makes the browser try to play the HTML itself.
     if (audio) { audio.removeAttribute('src'); }
-    // The plain-text panel is always visible now (see _render_plain_html's
-    // docstring) - there is no open/closed state left to reset here.
 
     return function () {
       if (searchInput) { searchInput.value = previous.query; }
