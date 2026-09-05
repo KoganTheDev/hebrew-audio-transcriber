@@ -38,7 +38,7 @@ from speech_to_text.gui.stepper import StepIndicator
 from speech_to_text.gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from speech_to_text.gui.theme import COLORS, Fonts
 from speech_to_text.gui.threads import CalibrationThread, TranscriptionThread
-from speech_to_text.gui.widgets import IconTextButton
+from speech_to_text.gui.widgets import IconTextButton, make_label
 from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
@@ -418,9 +418,7 @@ class MainWindow(QMainWindow):
         # floating in the nav bar rather than a fixed width because there's
         # nothing on its other side to stay symmetric with - Back is
         # already hidden whenever Cancel is visible.
-        self.cancel_confirm_label = QLabel()
-        self.cancel_confirm_label.setFont(Fonts.CAPTION)
-        self.cancel_confirm_label.setStyleSheet(theme.text_qss("error"))
+        self.cancel_confirm_label = make_label(font=Fonts.CAPTION, color="error")
         self.cancel_confirm_label.hide()
         nav_layout.addWidget(self.cancel_confirm_label)
 
