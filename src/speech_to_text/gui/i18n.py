@@ -113,7 +113,7 @@ STRINGS = {
         "he": "לחצו Enter או Space כדי לבחור קובץ, או גררו לכאן קובץ או תיקייה.",
     },
     # Per-file remove button in the selected-files list (file_select.py) -
-    # a bare 20px "x" with no label of any kind before this step. {filename}
+    # a bare 20px "x" with no visible label of its own. {filename}
     # disambiguates which row's button this is once more than one file is
     # queued; a generic "Remove" would be indistinguishable across rows to
     # a screen reader jumping between controls rather than reading linearly.
@@ -172,13 +172,10 @@ STRINGS = {
         "he": "התמלול נכשל: {message}",
     },
     "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
-    # Duration units, for format_duration() below. The model cards' time
-    # estimates used to come out of hardware_detection._format_duration,
-    # which hard-codes "m"/"s"/"h" - so a Hebrew user read "1 דק' 35 שנ'"
-    # for a file's length on step 1 and "משוער: 1m 46s" for the estimate on
-    # step 2, two different notations for the same unit two screens apart.
-    # The unit abbreviations match file_info/files_summary above, which are
-    # the strings those two screens are being compared against.
+    # Duration units, for format_duration() below. The abbreviations match
+    # file_info/files_summary above on purpose: a Hebrew user reading a
+    # file's length on step 1 and the model card's estimate on step 2 sees
+    # one notation for the unit, not "1 דק' 35 שנ'" against "משוער: 1m 46s".
     "dur_s": {"en": "{seconds}s", "he": "{seconds} שנ'"},
     "dur_m": {"en": "{minutes}m", "he": "{minutes} דק'"},
     "dur_ms": {"en": "{minutes}m {seconds}s", "he": "{minutes} דק' {seconds} שנ'"},
@@ -247,11 +244,11 @@ STRINGS = {
     "calculating": {"en": "calculating...", "he": "בחישוב..."},
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
     # Caption shown above the (now single-line, middle-elided) path label -
-    # see TranscriptionStep._render_result_path for why the path stopped
-    # being part of this same string. "saved_to" below is kept as the full,
-    # untruncated "Saved to:\n<path>" text for the tooltip and accessible
-    # description, where there is no width to elide against and the whole
-    # point is to hand back what the on-screen ellipsis hid.
+    # see TranscriptionStep._render_result_path for why the path is not part
+    # of this same string. "saved_to" below is the full, untruncated
+    # "Saved to:\n<path>" text for the tooltip and accessible description,
+    # where there is no width to elide against and the whole point is to
+    # hand back what the on-screen ellipsis hid.
     "saved_to_caption": {"en": "Saved to:", "he": "נשמר אל:"},
     "saved_to": {"en": "Saved to:\n{path}", "he": "נשמר אל:\n" + _RLM + "{path}"},
     "open_transcript": {"en": "Open transcript", "he": "פתיחת התמלול"},
@@ -285,7 +282,7 @@ STRINGS = {
     # and it is rendered in the worker process, which cannot translate. These
     # are collected by TranscriptionThread and passed down as data, exactly
     # like speaker_label and file_failed_notice. Keys must match the ones
-    # core/assets/the page script (core/assets/js/) and core/formatting look up.
+    # core/formatting and the page script (core/assets/js/) look up.
     "doc_toolbar": {"en": "Transcript tools", "he": "כלי תמלול"},
     "doc_search": {"en": "Search transcript", "he": "חיפוש בתמלול"},
     # The #search input's visible placeholder - shorter than doc_search on
@@ -305,9 +302,8 @@ STRINGS = {
     "doc_no_results": {"en": "No results", "he": "אין תוצאות"},
     "doc_show_uncertain": {"en": "Show uncertain words", "he": "הצג מילים לא ודאיות"},
     # Two keys, not one - the button names the action it is about to take, and
-    # that action is the opposite of the current state. The page script (core/assets/js/) swaps
-    # between them on click, alongside the existing aria-pressed/data-theme
-    # handling - "Theme" told the reader nothing about what clicking it did.
+    # that action is the opposite of the current state. The page script swaps
+    # between them on click, alongside the aria-pressed/data-theme handling.
     "doc_theme_light": {"en": "Light mode", "he": "מצב בהיר"},
     "doc_theme_dark": {"en": "Dark mode", "he": "מצב כהה"},
     "doc_toggle_theme": {"en": "Switch colour scheme", "he": "החלפת ערכת צבעים"},
@@ -326,21 +322,17 @@ STRINGS = {
         "en": "Use these names in all files",
         "he": "השתמש בשמות האלה בכל הקבצים",
     },
-    "doc_copy_turn": {"en": "Copy this turn", "he": "העתקת פסקה"},
     "doc_copy_line": {"en": "Copy this sentence", "he": "העתקת המשפט"},
     "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
     "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
-    # The speaker menu's scope group, added once a bubble's own reassignment
-    # control can move either a single sentence or the whole block of
-    # sentences around it (see buildSpeakerMenu() in
-    # js/24-speakers-menus.js) - the cluster header used to be the only way
-    # to reassign a whole block, and that control is gone now that cards are
-    # flat, so this replaces it rather than losing the feature.
+    # The speaker menu's scope group: a bubble's own reassignment control
+    # moves either a single sentence or the whole block of sentences around
+    # it (see buildSpeakerMenu() in js/24-speakers-menus.js).
     "doc_reassign_scope": {"en": "Apply to", "he": "החל על"},
     "doc_reassign_scope_line": {"en": "This sentence", "he": "המשפט הזה"},
     "doc_reassign_scope_block": {"en": "This whole block", "he": "כל הקטע הזה"},
     # Two keys, not one - same "the button names the action it is about to
-    # take" reasoning as doc_theme_light/doc_theme_dark above. The page script (core/assets/js/)
+    # take" reasoning as doc_theme_light/doc_theme_dark above. The page script
     # swaps between them on the audio element's own play/pause events (see
     # bindAudio()), alongside the #i-play/#i-pause glyph swap, so a
     # programmatic pause (the range-bound stop in the timeupdate handler)
@@ -454,7 +446,7 @@ STRINGS = {
         "להעתיק אותה בלחיצה אחת.",
     },
     # --- Guided tour ------------------------------------------------------
-    # Bound entirely in the page script (core/assets/js/) (bindTour()) - #tour-start above is the
+    # Bound entirely in the page script (bindTour()) - #tour-start above is the
     # only server-rendered hook; every spotlight step, its caption card, and
     # this copy are built by script. Steps are worded as direct address
     # ("this sidebar", "click a timestamp") rather than the help panel's
