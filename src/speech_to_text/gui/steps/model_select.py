@@ -25,6 +25,7 @@ from speech_to_text.gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from speech_to_text.gui.i18n import format_duration, is_rtl, model_text, t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
+from speech_to_text.gui.widgets import make_label
 from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
@@ -162,9 +163,7 @@ class ModelSelectStep(QFrame):
         error_icon.setStyleSheet("background: transparent;")
         error_layout.addWidget(error_icon)
 
-        self.error_label = QLabel()
-        self.error_label.setFont(Fonts.CAPTION)
-        self.error_label.setStyleSheet(theme.text_qss("error"))
+        self.error_label = make_label(font=Fonts.CAPTION, color="error")
         self.error_label.setWordWrap(True)
         error_layout.addWidget(self.error_label, 1)
 
@@ -180,9 +179,7 @@ class ModelSelectStep(QFrame):
         # _set_calibration_note, update_audio_duration and
         # mark_calibration_unmeasured for the three states this can be in.
         self._calibration_note_key = None
-        self.calibration_note = QLabel()
-        self.calibration_note.setFont(Fonts.CAPTION)
-        self.calibration_note.setStyleSheet(theme.text_qss("text_tertiary"))
+        self.calibration_note = make_label(font=Fonts.CAPTION, color="text_tertiary")
         self.calibration_note.setWordWrap(True)
         self.calibration_note.hide()
         layout.addWidget(self.calibration_note)
@@ -284,9 +281,9 @@ class ModelSelectStep(QFrame):
         self.identify_speakers_check.setStyleSheet(theme.text_qss("text_primary"))
         layout.addWidget(self.identify_speakers_check)
 
-        self.speaker_count_label = QLabel(t("speaker_count"))
-        self.speaker_count_label.setFont(Fonts.BODY)
-        self.speaker_count_label.setStyleSheet(theme.text_qss("text_secondary"))
+        self.speaker_count_label = make_label(
+            t("speaker_count"), font=Fonts.BODY, color="text_secondary"
+        )
         layout.addWidget(self.speaker_count_label)
 
         self.speaker_count_spin = QSpinBox()
@@ -487,10 +484,12 @@ class ModelSelectStep(QFrame):
         # it each QLabel aligns by its own text's content direction (Latin
         # model names one way, Hebrew descriptions the other), scattering
         # the card's text block in RTL mode.
-        model_label = QLabel(model_text(name, "name"))
-        model_label.setFont(Fonts.BODY_BOLD)
-        model_label.setStyleSheet(theme.text_qss("text_primary"))
-        model_label.setAlignment(self._card_text_alignment())
+        model_label = make_label(
+            model_text(name, "name"),
+            font=Fonts.BODY_BOLD,
+            color="text_primary",
+            align=self._card_text_alignment(),
+        )
         self._name_labels[name] = model_label
 
         # Name row: name label + RECOMMENDED badge, side by side. The badge
@@ -524,10 +523,12 @@ class ModelSelectStep(QFrame):
         text_layout.addLayout(name_row)
 
         # Description + time estimate (kept up to date via update_audio_duration)
-        desc_label = QLabel(self._desc_text(name))
-        desc_label.setFont(Fonts.CAPTION)
-        desc_label.setStyleSheet(theme.text_qss("text_secondary"))
-        desc_label.setAlignment(self._card_text_alignment())
+        desc_label = make_label(
+            self._desc_text(name),
+            font=Fonts.CAPTION,
+            color="text_secondary",
+            align=self._card_text_alignment(),
+        )
         text_layout.addWidget(desc_label)
         self._desc_labels[name] = desc_label
 
