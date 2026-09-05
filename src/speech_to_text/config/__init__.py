@@ -1,15 +1,11 @@
 """Speech-to-Text Application - Configuration Module
 Centralized configuration for the application.
 
-This was one 626-line module doing four unrelated jobs - the model
-catalogue, application/window metadata, path resolution and two sets of
-tuned numeric constants. It is now a package split along those lines
-(app, models, paths, transcription, diarization), and this file re-exports
-every name so `from speech_to_text import config` plus `config.ANYTHING`
-keeps resolving exactly as before. Every caller across core/ and gui/ reads
-config as a flat namespace, so the facade is the whole point of the split:
-the grouping is for whoever edits these constants, not for whoever reads
-them.
+A package split by job (app, models, paths, transcription, diarization),
+with this file re-exporting every name so `from speech_to_text import config`
+plus `config.ANYTHING` resolves as a flat namespace. Every caller across core/
+and gui/ reads config that way, so the facade is the whole point of the split:
+the grouping is for whoever edits these constants, not for whoever reads them.
 """
 
 from speech_to_text.config.app import (

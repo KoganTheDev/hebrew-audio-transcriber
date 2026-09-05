@@ -2,10 +2,6 @@
 
 import os
 
-# ============================================================================
-# Speaker Diarization Configuration
-# ============================================================================
-
 # Speaker identification is a second full pass over the audio, on top of
 # transcription. Measured at ~0.29x realtime on a 4-core CPU with the
 # sherpa-onnx pyannote + campplus models, and scaled by core count where used.
@@ -13,12 +9,11 @@ import os
 # different compute profile.
 DIARIZATION_REALTIME_FACTOR = 0.3
 
-# sherpa-onnx's OfflineSpeakerDiarizationConfig accepts these two knobs but
-# they were never passed, so the library's own defaults applied silently.
-# Named here so the app states its diarization behaviour explicitly instead
-# of inheriting whatever sherpa-onnx happens to default to next release.
-# Kept equal to those defaults for now - this change is about visibility, not
-# behaviour; see core/diarization.py:diarize for how they are wired in.
+# These two are sherpa-onnx's OfflineSpeakerDiarizationConfig knobs, named
+# here so the app states its diarization behaviour explicitly instead of
+# inheriting whatever sherpa-onnx happens to default to next release. They are
+# deliberately held equal to sherpa's current defaults, so passing them changes
+# nothing today; see core/diarization.py:diarize for how they are wired in.
 #
 # min_duration_on drops any speaker span shorter than this many seconds. It
 # is one source of the "no overlap at all" fallback in assign_speakers: a
@@ -29,9 +24,8 @@ DIARIZATION_MIN_DURATION_ON = 0.3
 # Shorter gaps are bridged rather than treated as a speaker change.
 DIARIZATION_MIN_DURATION_OFF = 0.5
 
-# onnxruntime thread count for both diarization models. Left unset until now,
-# so onnxruntime's own default applied - and the default is not the best
-# choice here.
+# onnxruntime thread count for both diarization models, set explicitly because
+# onnxruntime's own default is not the best choice here.
 #
 # Deliberately a small constant rather than os.cpu_count(): the segmentation
 # model is run one 10s window at a time, and un-batched inference does not
@@ -55,10 +49,9 @@ DIARIZATION_PROVIDER = "cpu"
 # --- word-level attribution (core/diarization.py:assign_speakers) ----------
 #
 # These three govern how a per-word speaker vote is smoothed before it is
-# allowed to cut a transcript segment in two. All of them used to be either
-# hardcoded or implicit, and all three biased the same direction - toward
-# whoever was speaking EARLIER - which is what made one speaker appear to
-# absorb the other's turns.
+# allowed to cut a transcript segment in two. Left unsmoothed, all three bias
+# the same direction - toward whoever was speaking EARLIER - which makes one
+# speaker appear to absorb the other's turns.
 
 # A run of words attributed to one speaker has to be at least this long
 # before assign_speakers will cut the segment there. A single stray word
