@@ -1,53 +1,40 @@
-  // ------------------------------------------------------------------ edits
 
   // Edits are stored as an array of plain paragraph strings, never as raw
-  // innerHTML. Markup pasted from another app would otherwise be persisted and
-  // re-injected verbatim on the next load, and a transcript has no use for
-  // rich text - the plain-text panel is the whole point of the document.
+  // innerHTML: markup pasted from another app would otherwise be persisted
+  // and re-injected verbatim on the next load.
   //
-  // A card's body is no longer one bare <p> per paragraph - each sentence is
-  // now wrapped in a <div class="bubble"> that also carries a .ts,
-  // contenteditable="false" (see _render_bubble_html() in
-  // core/formatting/document.py). Reading body.children directly, the way
-  // this used to, would pick up those .bubble wrappers as the "paragraphs"
-  // and bake the timestamp into the saved text. Reading every <p> in the
-  // body instead - not just direct children, since a stray edit could in
-  // principle leave a <p> outside a .bubble - skips that
-  // contenteditable="false" sibling entirely, because it is not a <p>.
+  // A card's body is one <div class="bubble"> per sentence, each carrying a
+  // .ts with contenteditable="false" (see _render_bubble_html() in
+  // core/formatting/document.py). Reading body.children would treat those
+  // wrappers as the paragraphs and bake the timestamp into the saved text;
+  // querySelectorAll('p') skips the .ts sibling because it is not a <p>, and
+  // still catches a stray <p> that ended up outside a bubble.
   function readParagraphs(body) {
     var paras = Array.prototype.slice.call(body.querySelectorAll('p'));
     if (!paras.length) { return [body.textContent]; }
     return paras.map(function (p) { return p.textContent; });
   }
 
-  // Writes paragraph text back into the existing bubbles rather than
-  // rebuilding the body from bare <p> elements - a bubble's wrapper,
-  // data-line, data-start/data-end and .ts are exactly what makes
-  // per-bubble playback and the numbered plain-text panel work, and none of
-  // that survives a "throw the body away and re-create it" write. Only the
-  // sentence text inside each bubble's <p> changes.
+  // Writes text back into the existing bubbles rather than rebuilding the
+  // body from bare <p> elements: the wrapper, data-line, data-start/data-end
+  // and .ts are what make per-bubble playback and the numbered plain-text
+  // panel work, and none of it survives a throw-away-and-recreate write.
   //
-  // The array of paragraphs can come back a different length than the
-  // number of bubbles the card started with - a reader can delete a whole
-  // sentence's text, or merge two lines into one, or paste in an extra line
-  // break. There is no timing to invent for a sentence that did not exist in
-  // the transcript, so the two directions are handled differently:
-  //   - fewer paragraphs than bubbles: the trailing bubbles have nothing
-  //     left to show and are removed outright, rather than left empty with
-  //     stale start/end times.
-  //   - more paragraphs than bubbles: there is nowhere with real timing for
-  //     the overflow to live, so it is folded into the last bubble's text
-  //     (space-joined) instead of fabricating a new bubble with borrowed or
-  //     invented timestamps.
+  // The paragraph count can differ from the bubble count - a reader can
+  // delete a sentence, merge two lines, or paste in a line break - and there
+  // is no timing to invent for a sentence the transcript never had:
+  //   - fewer paragraphs than bubbles: the trailing bubbles are removed
+  //     rather than left empty with stale start/end times.
+  //   - more paragraphs than bubbles: the overflow is space-joined into the
+  //     last bubble rather than given fabricated timestamps.
   function writeParagraphs(body, paragraphs) {
     var bubbles = Array.prototype.slice.call(body.children).filter(function (node) {
       return node.classList && node.classList.contains('bubble');
     });
 
     if (!bubbles.length) {
-      // No bubble wrapper to preserve - falls back to the flat shape this
-      // function used before sentence bubbles existed, so a body that
-      // somehow has none (or none yet) still gets its text written.
+      // No bubble wrapper to preserve, so fall back to a flat run of <p> and
+      // still get the text written.
       body.textContent = '';
       paragraphs.forEach(function (text) {
         var p = document.createElement('p');

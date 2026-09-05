@@ -1,4 +1,3 @@
-  // ------------------------------------------------------------------- init
 
   load();
   bindKeyboardModality();
@@ -14,21 +13,15 @@
   syncToolbarHeight();
   window.addEventListener('resize', syncToolbarHeight);
 
-  // Speaker roster first (added speakers, recolours), then which speaker
-  // each turn belongs to, then text edits, then the labels that read all of
-  // it back - each step depends on the DOM state the one before it left.
+  // Speaker roster first, then which speaker each turn belongs to, then text
+  // edits, then the labels that read all of it back - each step depends on
+  // the DOM state the one before it left.
   applySpeakerState();
   applyAssignments();
-  // Per-bubble overrides are relative to their cluster's speaker (choosing
-  // the cluster's own speaker is what clears one - see reassignLine() in
-  // js/24-speakers-menus.js), so this has to run after applyAssignments()
-  // has already settled every cluster's final speaker for this reload.
+  // A bubble's override is relative to its cluster's speaker, so every
+  // cluster has to be settled by applyAssignments() first.
   applyLineAssignments();
   applyEdits();
-  // applyAssignments() has already replayed any saved reassignments by this
-  // point, so .turn[data-speaker] reflects the real, final state - applying
-  // names now is what makes a reloaded page's labels match a session's own
-  // reassignments from before reload.
   document.querySelectorAll('.speakers').forEach(function (s) {
     applyNames(s.dataset.file);
   });
@@ -47,7 +40,7 @@
   syncThemeLabel();
   if (state.flags) { setFlags(true); }
 
-  // Restored edits are in this browser, not in any file - assume the worst and
-  // say so, rather than opening on a reassuring "Saved" that might be a lie.
+  // Restored edits live in this browser, not in any file, so open on "local"
+  // rather than a reassuring "Saved" that would be a lie.
   exported = !hasLocalChanges();
   setStatus(exported ? 'saved' : 'local');

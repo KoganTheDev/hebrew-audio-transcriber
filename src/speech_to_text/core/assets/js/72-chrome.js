@@ -1,12 +1,8 @@
-  // ----------------------------------------------------------------- chrome
 
-  // The theme actually in effect right now: an explicit data-theme wins
-  // (either restored from a previous session or set by this page's own
-  // toggle); with none set, the page is following the system/browser
-  // preference via the @media(prefers-color-scheme) block in the stylesheet (core/assets/css/),
-  // which this reads back from matchMedia rather than assuming light - the
-  // button's label has to name the *next* state correctly even when nobody
-  // has touched the toggle yet.
+  // An explicit data-theme wins; with none set the page follows
+  // @media(prefers-color-scheme) in core/assets/css/, so this reads matchMedia
+  // back rather than assuming light - the toggle's label has to name the next
+  // state correctly even before anyone touches it.
   function effectiveTheme() {
     var explicit = document.documentElement.dataset.theme;
     if (explicit === 'dark' || explicit === 'light') { return explicit; }
@@ -14,12 +10,10 @@
       ? 'dark' : 'light';
   }
 
-  // The button names the action, not the current state ("מצב כהה" while
-  // light, "מצב בהיר" while dark - see the doc_theme_light/doc_theme_dark
-  // keys in gui/i18n.py), so its label has to flip every time the effective
-  // theme changes: on click, and once on init in case the system preference
-  // was already dark and core/formatting's server-rendered "dark mode" label
-  // guessed wrong.
+  // The button names the action, not the current state ("מצב כהה" while light,
+  // "מצב בהיר" while dark - the doc_theme_light/doc_theme_dark keys in
+  // gui/i18n.py), so the label flips on every theme change, including once on
+  // init in case the server-rendered label guessed the system preference wrong.
   function syncThemeLabel() {
     var btn = document.getElementById('toggle-theme');
     if (!btn) { return; }
@@ -28,9 +22,6 @@
     if (label && next) { label.textContent = next; }
   }
 
-  // bindChrome() used to poke `matchIndex` directly in three places to move
-  // search - nextMatch()/prevMatch() (see the search section) are what it
-  // calls instead now, so how search steps is defined in exactly one place.
   function bindSearchControls() {
     var searchInput = document.getElementById('search');
     if (searchInput) {
@@ -68,9 +59,8 @@
 
   function bindUnloadGuard() {
     window.addEventListener('beforeunload', function (e) {
-      // Only nag when there is real work that no file on disk contains yet.
-      // Renames count as much as text edits - both are lost if this browser's
-      // storage is cleared and no copy was ever exported.
+      // Only nag when there is real work no file on disk contains yet. Renames
+      // count as much as text edits.
       if (!exported && hasLocalChanges()) {
         e.preventDefault();
         e.returnValue = '';
@@ -85,15 +75,13 @@
 
   function bindGlobalShortcuts() {
     document.addEventListener('keydown', function (e) {
-      // Both the event target and the focused element are consulted: the
-      // target can be retargeted (or be the document itself, for a
-      // programmatic dispatch), while activeElement always reflects where the
-      // caret actually is. Getting this wrong swallows a typed "/" mid-word.
+      // The target can be retargeted, or be the document itself for a
+      // programmatic dispatch, while activeElement always reflects where the
+      // caret is. Consulting only one of them swallows a typed "/" mid-word.
       var typing = isTextEntry(e.target) || isTextEntry(document.activeElement);
 
-      // Ctrl/Cmd+S is what everyone's fingers do when they want the file
-      // written. There is no file to write, so it triggers the export, which
-      // is the nearest true thing.
+      // Ctrl/Cmd+S is what fingers do when they want the file written. There is
+      // no file to write, so it exports, which is the nearest true thing.
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         exportCopy();
@@ -108,10 +96,6 @@
     });
   }
 
-  // bindChrome() used to be 79 lines doing four unrelated jobs (search,
-  // flags, theme, the unload guard/keyboard shortcuts) in one function body
-  // - split into the four binders above, each named for the one job it
-  // does, so this is now just the list of what runs on init.
   function bindChrome() {
     bindSearchControls();
 
