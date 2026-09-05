@@ -1,0 +1,119 @@
+"""Speech-to-Text Application - Configuration Module
+Centralized configuration for the application.
+
+This was one 626-line module doing four unrelated jobs - the model
+catalogue, application/window metadata, path resolution and two sets of
+tuned numeric constants. It is now a package split along those lines
+(app, models, paths, transcription, diarization), and this file re-exports
+every name so `from speech_to_text import config` plus `config.ANYTHING`
+keeps resolving exactly as before. Every caller across core/ and gui/ reads
+config as a flat namespace, so the facade is the whole point of the split:
+the grouping is for whoever edits these constants, not for whoever reads
+them.
+"""
+
+from speech_to_text.config.app import (
+    APP_ID,
+    APP_NAME,
+    APP_VERSION,
+    GUI_DROP_ZONE_HEIGHT,
+    GUI_DROP_ZONE_PADDING,
+    GUI_DROP_ZONE_SPACING,
+    GUI_WINDOW_HEIGHT,
+    GUI_WINDOW_MIN_HEIGHT,
+    GUI_WINDOW_MIN_WIDTH,
+    GUI_WINDOW_WIDTH,
+    ICON_PATH,
+    INSTALL_TIMEOUT_SECONDS,
+    REQUIRED_PACKAGES,
+    WINDOW_HEIGHT,
+    WINDOW_WIDTH,
+)
+from speech_to_text.config.diarization import (
+    DIARIZATION_EMBED_MIN_CLEAN_SECONDS,
+    DIARIZATION_ENGINE,
+    DIARIZATION_INTERJECTION_MIN_COVERAGE,
+    DIARIZATION_INTERJECTION_MIN_SECONDS,
+    DIARIZATION_MAX_FILL_GAP_SECONDS,
+    DIARIZATION_MIN_DURATION_OFF,
+    DIARIZATION_MIN_DURATION_ON,
+    DIARIZATION_MIN_SPEAKER_RUN_WORDS,
+    DIARIZATION_NUM_THREADS,
+    DIARIZATION_ONSET,
+    DIARIZATION_OVERLAP_COUNT,
+    DIARIZATION_PROVIDER,
+    DIARIZATION_REALTIME_FACTOR,
+)
+from speech_to_text.config.models import DEFAULT_MODEL, MODELS
+from speech_to_text.config.paths import (
+    CHECKPOINT_FILENAME,
+    MODEL_DOWNLOAD_ROOT,
+    OUTPUT_FILENAME_TEMPLATE,
+    SUPPORTED_FORMATS,
+    TERMS_FILENAME,
+    output_path_for,
+    resolve_model_download_root,
+)
+from speech_to_text.config.transcription import (
+    AUDIO_MINUTES_PER_100MB,
+    BASELINE_CPU_CORES,
+    BEAM_SIZE,
+    COMPUTE_TYPE,
+    FORMAT_OUTPUT,
+    LANGUAGE,
+    SENTENCE_ENDINGS,
+    SPEED_FACTORS,
+    TRANSCRIPTION_OVERHEAD_SECONDS,
+    VAD_FILTER,
+    compute_type_for_device,
+)
+
+__all__ = [
+    "APP_ID",
+    "APP_NAME",
+    "APP_VERSION",
+    "AUDIO_MINUTES_PER_100MB",
+    "BASELINE_CPU_CORES",
+    "BEAM_SIZE",
+    "CHECKPOINT_FILENAME",
+    "COMPUTE_TYPE",
+    "DEFAULT_MODEL",
+    "DIARIZATION_EMBED_MIN_CLEAN_SECONDS",
+    "DIARIZATION_ENGINE",
+    "DIARIZATION_INTERJECTION_MIN_COVERAGE",
+    "DIARIZATION_INTERJECTION_MIN_SECONDS",
+    "DIARIZATION_MAX_FILL_GAP_SECONDS",
+    "DIARIZATION_MIN_DURATION_OFF",
+    "DIARIZATION_MIN_DURATION_ON",
+    "DIARIZATION_MIN_SPEAKER_RUN_WORDS",
+    "DIARIZATION_NUM_THREADS",
+    "DIARIZATION_ONSET",
+    "DIARIZATION_OVERLAP_COUNT",
+    "DIARIZATION_PROVIDER",
+    "DIARIZATION_REALTIME_FACTOR",
+    "FORMAT_OUTPUT",
+    "GUI_DROP_ZONE_HEIGHT",
+    "GUI_DROP_ZONE_PADDING",
+    "GUI_DROP_ZONE_SPACING",
+    "GUI_WINDOW_HEIGHT",
+    "GUI_WINDOW_MIN_HEIGHT",
+    "GUI_WINDOW_MIN_WIDTH",
+    "GUI_WINDOW_WIDTH",
+    "ICON_PATH",
+    "INSTALL_TIMEOUT_SECONDS",
+    "LANGUAGE",
+    "MODELS",
+    "MODEL_DOWNLOAD_ROOT",
+    "OUTPUT_FILENAME_TEMPLATE",
+    "REQUIRED_PACKAGES",
+    "SENTENCE_ENDINGS",
+    "SPEED_FACTORS",
+    "SUPPORTED_FORMATS",
+    "TERMS_FILENAME",
+    "TRANSCRIPTION_OVERHEAD_SECONDS",
+    "VAD_FILTER",
+    "WINDOW_HEIGHT",
+    "WINDOW_WIDTH",
+    "compute_type_for_device",
+    "output_path_for",
+]
