@@ -85,6 +85,21 @@ class ModelSelectStep(QFrame):
     def __init__(self, hardware: HardwareDetector, parent=None):
         super().__init__(parent)
         self.hardware = hardware
+        self._init_card_state()
+        self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
+
+        layout = self._build_page_layout()
+        self._build_error_banner(layout)
+        self._build_calibration_note(layout)
+        self._build_model_cards(layout)
+        self._build_tab_chain()
+
+    def _init_card_state(self) -> None:
+        """The per-model bookkeeping every card and every refresh reads.
+
+        All of it has to exist before the first card is built, since
+        _create_model_card populates these as it goes.
+        """
         self.audio_duration = 0
         self._desc_labels = {}  # model_name -> QLabel showing "description | Est: ..."
         # model_name -> last computed estimate, in SECONDS. Seconds, not the
@@ -110,12 +125,23 @@ class ModelSelectStep(QFrame):
         self._downloaded = {
             name: _model_is_downloaded(info["repo"]) for name, info in config.MODELS.items()
         }
-        self._error_key = None  # (key, params) of the last shown error, for retranslation
+        # (key, params) of the last shown error, for retranslation. Annotated
+        # rather than left to inference: mypy only widens a bare `= None` to
+        # an optional when the assignment sits in __init__ itself, so moving
+        # this line here would otherwise pin the attribute to None and make
+        # show_error's assignment an error.
+        self._error_key: str | None = None
         self._error_params = {}
         self._user_touched_model = False  # True once the user manually picks a model
         self._syncing = False  # True while we're programmatically re-checking a radio
-        self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
+    def _build_page_layout(self) -> QVBoxLayout:
+        """The step's own vertical layout, on the page with the least room.
+
+        Seven model cards already need a QScrollArea to fit at 650x600, so
+        the spacing and margins here are set tighter than either neighbouring
+        step and are kept in one place rather than tuned per widget.
+        """
         layout = QVBoxLayout(self)
         # Tighter than steps 1/3 (XS, not SM) - every px of vertical gap
         # here is a px the seven-card scroll area doesn't get.
@@ -124,7 +150,7 @@ class ModelSelectStep(QFrame):
         # costs no vertical room, which is the scarce resource on this
         # page). Vertical margin pulled in to SM, tighter than before
         # (was MD) to buy back some of the room the taller DISPLAY heading
-        # spends - see the title comment above on why step 2 stays
+        # spends - see the title comment below on why step 2 stays
         # conservative.
         layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
 
@@ -134,7 +160,10 @@ class ModelSelectStep(QFrame):
         # step that has none to spare (seven model cards already need a
         # QScrollArea to fit at 650x600 - see the room analysis in
         # theme.Spacing's docstring).
+        return layout
 
+    def _build_error_banner(self, layout: QVBoxLayout) -> None:
+        """The inline failure strip at the top of the page."""
         # Error banner - shown inline (instead of a modal popup) if a
         # transcription attempt fails and the user is sent back here to
         # retry. Hidden until show_error() is called.
@@ -169,6 +198,8 @@ class ModelSelectStep(QFrame):
 
         layout.addWidget(self.error_banner)
 
+    def _build_calibration_note(self, layout: QVBoxLayout) -> None:
+        """The "these estimates are guesses so far" line under the banner."""
         # Calibration note - every time estimate on this step is a
         # placeholder (config.SPEED_FACTORS's guessed constants, see
         # HardwareDetector.estimate_transcription_time) until the background
@@ -183,9 +214,11 @@ class ModelSelectStep(QFrame):
         self.calibration_note.setWordWrap(True)
         self.calibration_note.hide()
         layout.addWidget(self.calibration_note)
-        if hardware.tiny_seconds_per_audio_second is None:
+        if self.hardware.tiny_seconds_per_audio_second is None:
             self._set_calibration_note("calibration_pending")
 
+    def _build_model_cards(self, layout: QVBoxLayout) -> None:
+        """The scrollable card list, and the speaker row that feeds it."""
         # The cards used to be laid out directly, sized so all five fit the
         # fixed window without scrolling. Adding the two Hebrew-tuned models
         # broke that: seven cards overflow a 600px window and the last ones
@@ -201,31 +234,12 @@ class ModelSelectStep(QFrame):
         # exist before _desc_text runs.
         speaker_row = self._build_speaker_row()
 
-        models_scroll = QScrollArea()
-        models_scroll.setWidget(models_container)
-        models_scroll.setWidgetResizable(True)
-        models_scroll.setFrameShape(QFrame.NoFrame)
-        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        models_scroll.setStyleSheet("background: transparent;")
-        # setWidgetResizable(True) re-fits the scrolled widget from
-        # QScrollArea's OWN resizeEvent, which fires when the scroll area
-        # changes size - not when the viewport alone shrinks because the
-        # vertical scrollbar just appeared. So a bar that shows up because
-        # the CONTENT grew (the common case here: _on_calibration_done
-        # rewrites every card's estimate once the background benchmark
-        # lands, and a longer line can wrap a card to a second row) narrows
-        # the viewport by the bar's 10px while leaving the container at its
-        # old width. The cards are then 10px wider than what's visible and,
-        # with horizontal scrolling off, their right border is simply
-        # clipped away - the card reads as an unfinished box open on one
-        # side. Watching the viewport's own resize closes that gap; see
-        # _sync_container_width.
-        models_scroll.viewport().installEventFilter(self)
+        models_scroll = self._build_models_scroll(models_container)
 
         # Model selection
         self.model_group = QButtonGroup()
         self.model_radios = {}
-        recommended_model, _ = hardware.recommend_model(self.audio_duration)
+        recommended_model, _ = self.hardware.recommend_model(self.audio_duration)
         self.selected_model = recommended_model
         self._current_recommended = recommended_model
 
@@ -247,13 +261,40 @@ class ModelSelectStep(QFrame):
         # scrolls should still see what the app is recommending.
         self._scroll_area = models_scroll
 
+    def _build_models_scroll(self, models_container: QWidget) -> QScrollArea:
+        """The scroll area wrapping the card list, watching its own viewport."""
+        models_scroll = QScrollArea()
+        models_scroll.setWidget(models_container)
+        models_scroll.setWidgetResizable(True)
+        models_scroll.setFrameShape(QFrame.NoFrame)
+        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        models_scroll.setStyleSheet("background: transparent;")
+        # setWidgetResizable(True) re-fits the scrolled widget from
+        # QScrollArea's OWN resizeEvent, which fires when the scroll area
+        # changes size - not when the viewport alone shrinks because the
+        # vertical scrollbar just appeared. So a bar that shows up because
+        # the CONTENT grew (the common case here: _on_calibration_done
+        # rewrites every card's estimate once the background benchmark
+        # lands, and a longer line can wrap a card to a second row) narrows
+        # the viewport by the bar's 10px while leaving the container at its
+        # old width. The cards are then 10px wider than what's visible and,
+        # with horizontal scrolling off, their right border is simply
+        # clipped away - the card reads as an unfinished box open on one
+        # side. Watching the viewport's own resize closes that gap; see
+        # _sync_container_width.
+        models_scroll.viewport().installEventFilter(self)
+        return models_scroll
+
+    def _build_tab_chain(self) -> None:
+        """Wire Tab to follow the page's visual order, not creation order."""
         # Explicit Tab chain, matching the page's visual top-to-bottom order:
         # every model radio in config.MODELS order, then the speaker-identify
         # checkbox, then the speaker-count spin box below the card list. Not
         # left to Qt's default (creation-order) chain because the speaker row
-        # is built BEFORE the cards (see the comment above speaker_row) so
-        # its widgets would otherwise sit ahead of the cards in the implicit
-        # chain - backwards from how the page reads top to bottom.
+        # is built BEFORE the cards (see the comment above speaker_row in
+        # _build_model_cards) so its widgets would otherwise sit ahead of the
+        # cards in the implicit chain - backwards from how the page reads top
+        # to bottom.
         radios_in_order = [self.model_radios[name] for name in config.MODELS]
         for earlier, later in zip(radios_in_order, radios_in_order[1:]):
             self.setTabOrder(earlier, later)
@@ -436,29 +477,50 @@ class ModelSelectStep(QFrame):
         card.setObjectName(object_name)
         # Initially, the recommended model is also the selected one.
         card.setStyleSheet(theme.card_qss(object_name, selected=is_recommended))
-        # Mouse-hover equivalent of the radio's accessible description
-        # above - a sighted mouse user gets the same RAM (and, where it
-        # applies, download) information a screen reader announces, without
-        # any of it costing the caption's width.
+        # Mouse-hover equivalent of the radio's accessible description (set
+        # in _build_card_radio) - a sighted mouse user gets the same RAM
+        # (and, where it applies, download) information a screen reader
+        # announces, without any of it costing the caption's width.
         card.setToolTip(self._info_note(name))
 
         layout = QHBoxLayout(card)
         layout.setContentsMargins(Spacing.MD, Spacing.XS, Spacing.MD, Spacing.XS)
         layout.setSpacing(Spacing.MD)
 
+        layout.addWidget(self._build_card_radio(idx, name, card, is_recommended))
+        layout.addLayout(self._build_card_text(name, is_recommended), 1)
+
+        # +2px over the pre-redesign 56: BODY_BOLD grew a point (11 -> 12pt,
+        # see Fonts) and moved to DemiBold, so the name label needs a
+        # little more room than before. Kept small deliberately - this is
+        # the one step where extra height is not free (each px here is a
+        # px the seven-card scroll area doesn't get - see the class
+        # docstring on why the cards need a QScrollArea at all).
+        card.setFixedHeight(58)
+        self._cards[name] = card
+        return card
+
+    def _build_card_radio(
+        self, idx: int, name: str, card: QFrame, is_recommended: bool
+    ) -> QRadioButton:
+        """The card's radio, and the registrations that let the rest of the
+        step find it again: the button group, model_radios, and the
+        radio -> card mapping the focus ring needs.
+        """
         # Radio button. It carries no text of its own - the model name and
-        # description are separate QLabels beside it (below) - so without
-        # an explicit accessible name a screen reader would announce every
-        # one of these seven radios identically as just "radio button".
+        # description are separate QLabels beside it (see _build_card_text) -
+        # so without an explicit accessible name a screen reader would
+        # announce every one of these seven radios identically as just
+        # "radio button".
         radio = QRadioButton()
         radio.setChecked(is_recommended)
         radio.toggled.connect(lambda checked: self._on_radio_toggled(name, checked))
         radio.setAccessibleName(model_text(name, "name"))
         # RAM (and, when relevant, the pending-download sentence) lives here
-        # and in the card's tooltip below rather than inline in the caption
-        # text - see _desc_text's comment on why: RAM applies to every card,
-        # always, and the caption doesn't have room to spell either out in
-        # full for all seven without overflowing.
+        # and in the card's tooltip (set in _create_model_card) rather than
+        # inline in the caption text - see _desc_text's comment on why: RAM
+        # applies to every card, always, and the caption doesn't have room
+        # to spell either out in full for all seven without overflowing.
         radio.setAccessibleDescription(
             model_text(name, "description") + ". " + self._info_note(name)
         )
@@ -474,8 +536,10 @@ class ModelSelectStep(QFrame):
         # an app-wide QRadioButton color rule (plus the ::indicator rules a
         # per-widget QRadioButton {} sheet couldn't touch anyway), so this
         # would only have duplicated theme.py's COLORS['text_primary'].
-        layout.addWidget(radio)
+        return radio
 
+    def _build_card_text(self, name: str, is_recommended: bool) -> QVBoxLayout:
+        """The two stacked rows beside the radio: name (with badge), caption."""
         # Model name and description
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
@@ -492,19 +556,38 @@ class ModelSelectStep(QFrame):
         )
         self._name_labels[name] = model_label
 
-        # Name row: name label + RECOMMENDED badge, side by side. The badge
-        # used to sit on the OUTER row, at the card's trailing edge, sharing
-        # its width with the caption below via layout.addStretch() - fine
-        # while the caption was short, but adding the RAM/download text (see
-        # _desc_text) pushed the caption's own natural width past what was
-        # left after the badge, on the exact card most likely to carry both:
-        # the RECOMMENDED one. Measured before landing on this fix: on the
-        # Ivrit Turbo card (this app's default recommendation) in English,
-        # and on Ivrit Large in Hebrew, the badge was shoved half off the
-        # visible card - not merely a tight fit, an actual clipped control.
-        # Moving the badge here instead gives the caption row the card's
-        # full width on every card, badge or not - the name row has plenty
-        # of slack a two-or-three-word model name never gets close to using.
+        text_layout.addLayout(self._build_card_name_row(name, model_label, is_recommended))
+
+        # Description + time estimate (kept up to date via update_audio_duration)
+        desc_label = make_label(
+            self._desc_text(name),
+            font=Fonts.CAPTION,
+            color="text_secondary",
+            align=self._card_text_alignment(),
+        )
+        text_layout.addWidget(desc_label)
+        self._desc_labels[name] = desc_label
+
+        return text_layout
+
+    def _build_card_name_row(
+        self, name: str, model_label: QLabel, is_recommended: bool
+    ) -> QHBoxLayout:
+        """The model name and its RECOMMENDED badge, side by side.
+
+        The badge used to sit on the OUTER row, at the card's trailing edge,
+        sharing its width with the caption below via layout.addStretch() -
+        fine while the caption was short, but adding the RAM/download text
+        (see _desc_text) pushed the caption's own natural width past what was
+        left after the badge, on the exact card most likely to carry both:
+        the RECOMMENDED one. Measured before landing on this fix: on the
+        Ivrit Turbo card (this app's default recommendation) in English, and
+        on Ivrit Large in Hebrew, the badge was shoved half off the visible
+        card - not merely a tight fit, an actual clipped control. Moving the
+        badge onto this name row instead gives the caption row the card's
+        full width on every card, badge or not - the name row has plenty of
+        slack a two-or-three-word model name never gets close to using.
+        """
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
         name_row.setSpacing(Spacing.XS)
@@ -520,33 +603,11 @@ class ModelSelectStep(QFrame):
         name_row.addStretch()
         self._badges[name] = badge
 
-        text_layout.addLayout(name_row)
-
-        # Description + time estimate (kept up to date via update_audio_duration)
-        desc_label = make_label(
-            self._desc_text(name),
-            font=Fonts.CAPTION,
-            color="text_secondary",
-            align=self._card_text_alignment(),
-        )
-        text_layout.addWidget(desc_label)
-        self._desc_labels[name] = desc_label
-
-        layout.addLayout(text_layout, 1)
-
-        # +2px over the pre-redesign 56: BODY_BOLD grew a point (11 -> 12pt,
-        # see Fonts) and moved to DemiBold, so the name label needs a
-        # little more room than before. Kept small deliberately - this is
-        # the one step where extra height is not free (each px here is a
-        # px the seven-card scroll area doesn't get - see the class
-        # docstring on why the cards need a QScrollArea at all).
-        card.setFixedHeight(58)
-        self._cards[name] = card
-        return card
+        return name_row
 
     def eventFilter(self, obj, event):
         """Watches every model radio's own FocusIn/FocusOut (installed in
-        _create_model_card), so the surrounding card can react to a focus
+        _build_card_radio), so the surrounding card can react to a focus
         change that lands on its child rather than on itself - see
         _sync_card_focus_ring for why that indirection is needed at all.
         Never claims the event: Tab navigation and the radio's own focus
@@ -716,7 +777,8 @@ class ModelSelectStep(QFrame):
             size = config.MODELS[name]["download_size"]
             # RAM (relevant to every card, always) lives in the card's
             # tooltip/accessible description instead of this line (see
-            # _create_model_card) - putting both there and here was measured
+            # _create_model_card and _build_card_radio) - putting both there
+            # and here was measured
             # to overflow the caption's ~520px budget on the recommended
             # card in Hebrew. Download size stays inline because it's the
             # one fact that changes a decision RIGHT NOW, for the one or two
