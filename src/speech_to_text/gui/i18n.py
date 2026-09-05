@@ -326,7 +326,6 @@ STRINGS = {
         "en": "Use these names in all files",
         "he": "השתמש בשמות האלה בכל הקבצים",
     },
-    "doc_copy_turn": {"en": "Copy this turn", "he": "העתקת פסקה"},
     "doc_copy_line": {"en": "Copy this sentence", "he": "העתקת המשפט"},
     "doc_turn_text": {"en": "Turn text", "he": "טקסט הפסקה"},
     "doc_play_from": {"en": "Play from {t}", "he": "נגן מ־{t}"},
