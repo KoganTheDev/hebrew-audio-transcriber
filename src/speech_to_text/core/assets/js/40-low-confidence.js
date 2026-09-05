@@ -1,4 +1,3 @@
-  // ------------------------------------------------- low-confidence shading
 
   function flagTurn(turn) {
     if (turn.dataset.edited === 'true') { return; }

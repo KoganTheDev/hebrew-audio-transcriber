@@ -1,4 +1,3 @@
-  // ----------------------------------------------------------------- search
 
   var NIKUD = /[֑-ׇ]/g;
   var FINALS = { 'ך': 'כ', 'ם': 'מ', 'ן': 'נ',
@@ -79,10 +78,8 @@
     updateCount();
   }
 
-  // Small step-by-one API over focusMatch(), so callers outside this
-  // section (bindChrome()'s next/prev buttons and its Enter/Shift+Enter
-  // handler) never have to read or write `matchIndex` themselves - it used
-  // to be poked directly from three different places in bindChrome(), which
-  // meant "how search advances" was defined partly here and partly there.
+  // A step-by-one API over focusMatch(), so callers elsewhere (the next/prev
+  // buttons, the Enter/Shift+Enter handler) never touch `matchIndex` and how
+  // search advances stays defined in one place.
   function nextMatch() { focusMatch(matchIndex + 1); }
   function prevMatch() { focusMatch(matchIndex - 1); }
