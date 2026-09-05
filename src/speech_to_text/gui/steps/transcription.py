@@ -35,6 +35,36 @@ class TranscriptionStep(QFrame):
         super().__init__(parent)
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
+        layout = self._build_page_layout()
+
+        # No page title here any more - "Transcribing" is now carried by
+        # the wizard step indicator above the stacked widget (see
+        # gui/stepper.py). File info becomes the first thing on the page.
+        self._build_file_info(layout)
+        self._build_batch_strip(layout)
+
+        layout.addSpacing(Spacing.LG)
+
+        self._build_progress_bar(layout)
+        self._build_status_and_times(layout)
+
+        layout.addSpacing(Spacing.LG)
+
+        self._build_result_panel(layout)
+
+        layout.addStretch()
+
+        self._init_run_state()
+
+    def _build_page_layout(self):
+        """The page's own QVBoxLayout, spaced and stretched before any child
+        goes into it.
+
+        Split out on its own because the two decisions encoded here - a
+        deliberately tight blanket spacing, and a stretch at BOTH ends - are
+        the ones that every widget added later silently depends on, and both
+        were arrived at by measurement rather than taste.
+        """
         layout = QVBoxLayout(self)
         # Step 3 has a large empty middle at 650x600 (see the room analysis
         # in theme.Spacing's docstring) - the most slack of any of the
@@ -79,14 +109,16 @@ class TranscriptionStep(QFrame):
         # stretch is what had been overriding it in practice.
         layout.addStretch()
 
-        # No page title here any more - "Transcribing" is now carried by
-        # the wizard step indicator above the stacked widget (see
-        # gui/stepper.py). File info becomes the first thing on the page.
+        return layout
 
+    def _build_file_info(self, layout):
+        """The "<file> - <model>" line, the first thing on the page."""
         # File info
         self.file_info = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
         layout.addWidget(self.file_info)
 
+    def _build_batch_strip(self, layout):
+        """The batch progress strip, plus the state the strip is rebuilt from."""
         # Batch strip: "3 / 10" plus one small segment per file, shown only
         # for a batch (n > 1 - see set_batch_files). A single ten-file run
         # used to have no on-screen answer to "which file is running" beyond
@@ -102,9 +134,10 @@ class TranscriptionStep(QFrame):
         # ordinary SM inter-item spacing rather than its own explicit
         # addSpacing(): the two existing addSpacing(LG) calls in this
         # layout are reserved for "generous gap before a major section" (see
-        # the layout-spacing comment above) - inserting a third would widen
-        # the file_info-to-progress-bar gap for every run, batch or not,
-        # not just add room for this one new, usually-hidden widget.
+        # the layout-spacing comment in _build_page_layout) - inserting a
+        # third would widen the file_info-to-progress-bar gap for every run,
+        # batch or not, not just add room for this one new, usually-hidden
+        # widget.
         self.batch_strip = QFrame()
         self.batch_strip.setStyleSheet("background: transparent;")
         batch_layout = QVBoxLayout(self.batch_strip)
@@ -131,8 +164,8 @@ class TranscriptionStep(QFrame):
         self._batch_filenames: list[str] = []
         self._batch_segment_frames: list[QFrame] = []
 
-        layout.addSpacing(Spacing.LG)
-
+    def _build_progress_bar(self, layout):
+        """The progress bar and the animation that smooths its value changes."""
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(theme.progress_bar_qss())
@@ -153,6 +186,10 @@ class TranscriptionStep(QFrame):
         self._progress_animation.setDuration(500)
         self._progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
+    def _build_status_and_times(self, layout):
+        """The two lines under the bar that actually carry the numbers, since
+        the bar itself draws no text (see _build_progress_bar).
+        """
         # Status and times
         self.status_label = make_label(
             t("w_initializing"),
@@ -166,8 +203,10 @@ class TranscriptionStep(QFrame):
         self.time_label = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
         layout.addWidget(self.time_label)
 
-        layout.addSpacing(Spacing.LG)
-
+    def _build_result_panel(self, layout):
+        """The completion panel: checkmark, success message, saved path, and
+        the two actions that open it. Hidden until show_result().
+        """
         # Result display (hidden until done)
         self.result_widget = QFrame()
         self.result_widget.setObjectName("resultPanel")
@@ -203,8 +242,8 @@ class TranscriptionStep(QFrame):
         # wrapped two-line string. They used to be a single QLabel with an
         # explicit "\n" and setWordWrap(True), which made the label's height
         # a function of its width (Qt's heightForWidth). That interacted
-        # badly with this layout's Qt.AlignCenter (see the __init__-level
-        # comment above and show_result()'s note on the batch-strip removal,
+        # badly with this layout's Qt.AlignCenter (see _build_page_layout's
+        # comment and show_result()'s note on the batch-strip removal,
         # the same failure mode caught twice): minimumSizeHint() reported
         # 50px for "Saved to:\n<long path>" at its real width, but the
         # allocated height was 37px - 13px short, with hundreds of spare
@@ -233,6 +272,15 @@ class TranscriptionStep(QFrame):
         self.result_path.setWordWrap(False)
         result_layout.addWidget(self.result_path)
 
+        result_layout.addLayout(self._build_result_actions_row())
+
+        self.result_widget.hide()
+        layout.addWidget(self.result_widget)
+
+    def _build_result_actions_row(self):
+        """The "Open transcript" / "Show in folder" pair, centered by a
+        stretch on either side.
+        """
         # The output stopped being a text file and became a small application:
         # it is editable, it names speakers, it exports. Ending the run by
         # printing a path and leaving the user to find it in Explorer wastes
@@ -266,13 +314,12 @@ class TranscriptionStep(QFrame):
         open_row.addWidget(self.folder_button)
 
         open_row.addStretch()
-        result_layout.addLayout(open_row)
+        return open_row
 
-        self.result_widget.hide()
-        layout.addWidget(self.result_widget)
-
-        layout.addStretch()
-
+    def _init_run_state(self):
+        """The non-widget state a run reads and writes, plus the heartbeat
+        timer that keeps the page moving between backend messages.
+        """
         self.start_time = None
         self._last_percentage = 0
         self._last_percent_change_time = None
