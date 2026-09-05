@@ -45,34 +45,51 @@ class FileSelectStep(QFrame):
         self.hardware = hardware
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
+        layout = self._build_page_layout()
+        self._build_hardware_section(layout)
+        self._build_drop_zone(layout)
+        self._build_selected_files_list(layout)
+        self._init_selection_state()
+
+    def _build_page_layout(self) -> QVBoxLayout:
+        """The step's own vertical layout, tuned for a page that overflows.
+
+        Its spacing and margins are the single biggest lever on whether this
+        step fits, so they are set here in one place rather than tweaked
+        alongside the widgets.
+        """
         layout = QVBoxLayout(self)
         # Blanket spacing cut LG -> XS. This step turned out NOT to have the
         # slack the original room analysis assumed (it counted the empty
         # band at the bottom without accounting for the trailing stretch and
         # the drop zone's old fixed height - see the setMinimumHeight note
-        # below), and layout.setSpacing() multiplies across every one of
-        # this layout's seven gaps: at LG that was 112px before a single
-        # widget was drawn, which is what pushed the step from marginally
-        # tight to actually overflowing (measured with probe.py: 84px over
-        # the 471px this step gets). Kept tight; the explicit addSpacing()
-        # calls below put deliberate air back only at the two section
-        # boundaries that read as a break, the same technique used to fix
-        # step 3's equivalent overflow.
+        # in _build_drop_zone), and layout.setSpacing() multiplies across
+        # every one of this layout's seven gaps: at LG that was 112px before
+        # a single widget was drawn, which is what pushed the step from
+        # marginally tight to actually overflowing (measured with probe.py:
+        # 84px over the 471px this step gets). Kept tight; the explicit
+        # addSpacing() call in _build_hardware_section puts deliberate air
+        # back only at the section boundary that reads as a break, the same
+        # technique used to fix step 3's equivalent overflow.
         layout.setSpacing(Spacing.XS)
         # Horizontal margins stay generous at XXL - side padding is free
         # here (it doesn't compete with any other widget for vertical room)
         # and is where the "elevated and generous" direction actually reads
         # on this step.
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
+        return layout
 
-        # No page title here any more - "Specs" is now carried by the
-        # wizard step indicator above the stacked widget (see
-        # gui/stepper.py and MainWindow._init_ui), which already prints
-        # this step's name once. A second DISPLAY heading here would say
-        # the same thing again in the same place on screen; see the
-        # stepper's module docstring for the full reasoning. The hardware
-        # table below is now the first thing on the page.
+    def _build_hardware_section(self, layout: QVBoxLayout) -> None:
+        """The specs table that opens the page, plus the break below it.
 
+        No page title here any more - "Specs" is now carried by the
+        wizard step indicator above the stacked widget (see
+        gui/stepper.py and MainWindow._init_ui), which already prints
+        this step's name once. A second DISPLAY heading here would say
+        the same thing again in the same place on screen; see the
+        stepper's module docstring for the full reasoning. The hardware
+        table is now the first thing on the page.
+        """
         # System info table - shown here (above the drop zone) since it's
         # relevant context before the user even picks a file or model.
         hw_table = self._create_hardware_table()
@@ -82,6 +99,8 @@ class FileSelectStep(QFrame):
         # title.
         layout.addSpacing(Spacing.SM)
 
+    def _build_drop_zone(self, layout: QVBoxLayout) -> None:
+        """The file picker: a subheading and the clickable drop target."""
         # Subheading for the drop zone below.
         self.file_heading = make_label(
             t("select_audio_file"), font=Fonts.SUBTITLE_BOLD, color="text_primary"
@@ -122,6 +141,12 @@ class FileSelectStep(QFrame):
         # back as the list grows.
         self.drop_zone.setMinimumHeight(config.GUI_DROP_ZONE_HEIGHT)
 
+        self._build_drop_zone_contents()
+
+        layout.addWidget(self.drop_zone, 1)
+
+    def _build_drop_zone_contents(self) -> None:
+        """The icon and the three lines of prompt text inside the drop zone."""
         drop_layout = QVBoxLayout(self.drop_zone)
         drop_layout.setSpacing(config.GUI_DROP_ZONE_SPACING)
         drop_layout.setContentsMargins(
@@ -170,8 +195,8 @@ class FileSelectStep(QFrame):
         )
         drop_layout.addWidget(self.alt_text)
 
-        layout.addWidget(self.drop_zone, 1)
-
+    def _build_selected_files_list(self, layout: QVBoxLayout) -> None:
+        """The summary line and the scrollable list of chosen files."""
         # Selected-files summary line, above the scrollable list.
         self.summary_label = make_label(
             t("no_file_selected"), font=Fonts.BODY, color="text_secondary"
@@ -214,6 +239,12 @@ class FileSelectStep(QFrame):
         # stretch items would split the slack between them and halve the
         # effect.
 
+    def _init_selection_state(self) -> None:
+        """The per-file bookkeeping that starts empty, plus the tab anchor.
+
+        Runs last because _last_tab_widget points at the drop zone, which
+        _build_drop_zone has to have created first.
+        """
         # Parallel to each other and to the row widgets, all keyed by path -
         # simpler than one struct per file given how small this state is.
         self.selected_files: list[str] = []
