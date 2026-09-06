@@ -6,9 +6,47 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from speech_to_text.core.log_bidi import VisualOrderFormatter
+
+# Driven by TestBackgroundWorkStopsBeforeExit. Kept at module level rather than
+# inline so the quoting stays readable.
+SPY_SCRIPT = """
+from PyQt5.QtWidgets import QApplication
+import speech_to_text.gui.main_window as mw
+
+seen = {}
+real_init = mw.MainWindow.__init__
+
+
+def spy_init(self, *a, **k):
+    real_init(self, *a, **k)
+    seen['w'] = self
+
+
+mw.MainWindow.__init__ = spy_init
+QApplication.exec_ = lambda self: 0
+
+import speech_to_text.main as main_module
+
+try:
+    main_module.main()
+except SystemExit:
+    pass
+
+w = seen['w']
+t = getattr(w, 'calibration_thread', None)
+print('THREAD_PRESENT=%s' % (t is not None))
+try:
+    running = t is not None and t.isRunning()
+except RuntimeError:
+    # "wrapped C/C++ object has been deleted" - Qt already disposed of it,
+    # which is a stronger guarantee than "not running", not a failure.
+    running = False
+print('THREAD_RUNNING=%s' % running)
+"""
 
 
 class TestMain:
@@ -242,4 +280,53 @@ class TestShippedEntryPointAppliesStylesheet:
             "speech_to_text.main.main() produced a QApplication with an "
             "empty styleSheet() - the shipped entry point is not applying "
             "theme.app_stylesheet() to the real application object."
+        )
+
+
+class TestBackgroundWorkStopsBeforeExit:
+    """
+    main() must not return while the calibration thread is still running.
+
+    The failure this guards is an access violation (exit 3221225477) with an
+    empty stderr, seen on 5 of 28 Windows CI runs. Its log ends with main()'s
+    own "Application shutdown sequence completed", 9ms after "Starting
+    background hardware calibration" - so main() finished cleanly and the
+    process died during interpreter teardown, with a QThread and the
+    multiprocessing child it was still spawning both in flight. A Python spawn
+    takes far longer than 9ms, so a slow runner exits mid-spawn.
+
+    MainWindow._detach_calibration_thread already handles this, but only from
+    closeEvent. This path never closes the window: exec_() returns and main()
+    falls straight through to sys.exit. A fresh CI runner has no
+    whisper_models/.calibration.json, so the thread always starts there, which
+    is why CI sees this and a developer machine with a warm cache almost never
+    does.
+    """
+
+    def test_main_does_not_return_with_a_live_calibration_thread(self):
+        repo_root = Path(__file__).resolve().parent.parent
+        script = SPY_SCRIPT
+        env = dict(os.environ)
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        env["PYTHONPATH"] = str(repo_root / "src")
+        # An empty cwd, so there is no calibration cache to load and the thread
+        # actually starts - the CI runner's situation, reproduced deliberately.
+        with tempfile.TemporaryDirectory() as cold:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=cold,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=180,
+            )
+        assert result.returncode == 0, (
+            f"subprocess failed (exit {result.returncode}):"
+            f"\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        assert "THREAD_PRESENT=True" in result.stdout, (
+            "the calibration thread never started, so this proves nothing: " + result.stdout
+        )
+        assert "THREAD_RUNNING=False" in result.stdout, (
+            "main() returned with the calibration thread still running: " + result.stdout
         )

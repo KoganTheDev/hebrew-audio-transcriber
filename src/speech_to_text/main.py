@@ -145,6 +145,17 @@ def main():
 
         exit_code = app.exec_()
         logger.info(f"Application event loop exited with code: {exit_code}")
+
+        # Stop background work before returning, NOT only in closeEvent.
+        # closeEvent covers the ordinary path where the user closes the window,
+        # but the loop can also end without it - app.quit(), a session logout,
+        # or the faked exec_() the tests use. On that path main() used to fall
+        # straight through to sys.exit with the calibration QThread still
+        # running and its multiprocessing child still spawning, and the
+        # process died in interpreter teardown with an access violation and no
+        # traceback. Idempotent, so the usual close-then-quit order is fine.
+        window.shutdown()
+
         sys.exit(exit_code)
 
     except OSError as e:

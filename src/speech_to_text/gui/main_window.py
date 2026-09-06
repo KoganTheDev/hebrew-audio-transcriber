@@ -930,6 +930,19 @@ class MainWindow(QMainWindow):
         # own flag, so this waits for that poll, not for the benchmark.
         self.calibration_thread.wait()
 
+    def shutdown(self) -> None:
+        """Stop everything running in the background. Safe to call twice.
+
+        closeEvent does this for the ordinary path, but the event loop can end
+        without the window ever being closed - app.quit(), a session logout, or
+        a test that fakes exec_(). main() calls this after exec_() returns so
+        that path is covered too; both helpers below are idempotent.
+        """
+        self._detach_calibration_thread()
+        if self.transcription_thread:
+            self.transcription_thread.stop()
+            self.transcription_thread.wait()
+
     def closeEvent(self, event):
         """Stop any running transcription before the window closes.
 
