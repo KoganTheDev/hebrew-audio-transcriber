@@ -1330,7 +1330,7 @@ class TestModelSelectStepCardWidth:
     """
 
     def test_container_is_clamped_to_the_viewport_on_a_viewport_resize(
-        self, qapp, model_hardware_stub
+        self, qapp, qtbot, model_hardware_stub
     ):
         from PyQt5.QtGui import QResizeEvent
         from PyQt5.QtWidgets import QWIDGETSIZE_MAX
@@ -1338,6 +1338,7 @@ class TestModelSelectStepCardWidth:
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
         step.resize(600, 320)
         step.show()
         qapp.processEvents()
@@ -1383,7 +1384,7 @@ class TestModelSelectStepEstimateLanguage:
     come from the string table at render time.
     """
 
-    def test_toggling_the_language_re_renders_the_estimate(self, qapp, model_hardware_stub):
+    def test_toggling_the_language_re_renders_the_estimate(self, qtbot, model_hardware_stub):
         from speech_to_text.gui import i18n
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
@@ -1391,6 +1392,7 @@ class TestModelSelectStepEstimateLanguage:
         try:
             i18n.set_language("en", save=False)
             step = ModelSelectStep(model_hardware_stub)
+            qtbot.addWidget(step)
             english = step._desc_labels["tiny"].text()
 
             i18n.set_language("he", save=False)
@@ -1416,18 +1418,20 @@ class TestModelSelectStepCalibrationNote:
     just taking a while.
     """
 
-    def test_note_is_shown_while_calibration_is_unmeasured(self, qapp, model_hardware_stub):
+    def test_note_is_shown_while_calibration_is_unmeasured(self, qtbot, model_hardware_stub):
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
 
         assert not step.calibration_note.isHidden()
         assert step.calibration_note.text()  # not just visible, actually says something
 
-    def test_note_is_cleared_once_calibration_lands(self, qapp, model_hardware_stub):
+    def test_note_is_cleared_once_calibration_lands(self, qtbot, model_hardware_stub):
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
         assert not step.calibration_note.isHidden()
 
         # Simulate MainWindow._on_calibration_done: the hardware object now
@@ -1439,7 +1443,7 @@ class TestModelSelectStepCalibrationNote:
         assert step.calibration_note.isHidden()
 
     def test_update_audio_duration_does_not_clear_the_note_while_still_unmeasured(
-        self, qapp, model_hardware_stub
+        self, qtbot, model_hardware_stub
     ):
         """
         update_audio_duration also runs on every step-1-to-2 advance
@@ -1450,14 +1454,16 @@ class TestModelSelectStepCalibrationNote:
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
         step.update_audio_duration(120)
 
         assert not step.calibration_note.isHidden()
 
-    def test_failed_calibration_shows_a_different_permanent_note(self, qapp, model_hardware_stub):
+    def test_failed_calibration_shows_a_different_permanent_note(self, qtbot, model_hardware_stub):
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
         pending_text = step.calibration_note.text()
 
         step.mark_calibration_unmeasured()
@@ -1467,13 +1473,14 @@ class TestModelSelectStepCalibrationNote:
         assert step._calibration_note_key == "calibration_unmeasured"
 
     def test_note_hidden_from_the_start_once_calibration_is_already_known(
-        self, qapp, model_hardware_stub
+        self, qtbot, model_hardware_stub
     ):
         """The common case: calibration usually finishes before step 2 is ever built."""
         from speech_to_text.gui.steps.model_select import ModelSelectStep
 
         model_hardware_stub.tiny_seconds_per_audio_second = 0.5
         step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
 
         assert step.calibration_note.isHidden()
 
@@ -1594,7 +1601,7 @@ class TestMakeLabelFactory:
     that it produces exactly what the hand-written four lines produced -
     including leaving properties untouched when an argument is omitted."""
 
-    def test_a_label_built_with_every_argument_matches_the_hand_written_four_liner(self, qapp):
+    def test_a_label_built_with_every_argument_matches_the_hand_written_four_liner(self, qtbot):
         from PyQt5.QtWidgets import QLabel
 
         from speech_to_text.gui import theme
@@ -1602,6 +1609,7 @@ class TestMakeLabelFactory:
         from speech_to_text.gui.widgets import make_label
 
         expected = QLabel("hello")
+        qtbot.addWidget(expected)
         expected.setFont(Fonts.BODY_BOLD)
         expected.setStyleSheet(theme.text_qss("text_primary"))
         expected.setAlignment(Qt.AlignCenter)
@@ -1609,38 +1617,44 @@ class TestMakeLabelFactory:
         built = make_label(
             "hello", font=Fonts.BODY_BOLD, color="text_primary", align=Qt.AlignCenter
         )
+        qtbot.addWidget(built)
 
         assert built.text() == expected.text()
         assert built.font() == expected.font()
         assert built.styleSheet() == expected.styleSheet()
         assert built.alignment() == expected.alignment()
 
-    def test_omitted_arguments_leave_the_label_at_the_qt_defaults(self, qapp):
+    def test_omitted_arguments_leave_the_label_at_the_qt_defaults(self, qtbot):
         from PyQt5.QtWidgets import QLabel
 
         from speech_to_text.gui.widgets import make_label
 
         plain = QLabel()
         built = make_label()
+        qtbot.addWidget(plain)
+        qtbot.addWidget(built)
 
         assert built.text() == ""
         assert built.styleSheet() == plain.styleSheet()
         assert built.alignment() == plain.alignment()
         assert built.font() == plain.font()
 
-    def test_the_colour_argument_is_a_theme_key_routed_through_text_qss(self, qapp):
+    def test_the_colour_argument_is_a_theme_key_routed_through_text_qss(self, qtbot):
         """Colour keys must not become a second vocabulary: whatever
         theme.text_qss returns for a key is what the label gets, verbatim."""
         from speech_to_text.gui import theme
         from speech_to_text.gui.widgets import make_label
 
         for key in ("text_primary", "text_secondary", "text_tertiary", "error", "success"):
-            assert make_label(color=key).styleSheet() == theme.text_qss(key)
+            label = make_label(color=key)
+            qtbot.addWidget(label)
+            assert label.styleSheet() == theme.text_qss(key)
 
-    def test_a_parent_passed_to_the_factory_really_becomes_the_labels_parent(self, qapp):
+    def test_a_parent_passed_to_the_factory_really_becomes_the_labels_parent(self, qtbot):
         from PyQt5.QtWidgets import QWidget
 
         from speech_to_text.gui.widgets import make_label
 
         parent = QWidget()
+        qtbot.addWidget(parent)
         assert make_label("x", parent=parent).parent() is parent
