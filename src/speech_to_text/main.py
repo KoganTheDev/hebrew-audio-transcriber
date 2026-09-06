@@ -31,7 +31,10 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # this is the only remaining reason for it - a real console's WriteConsoleW
 # path doesn't need it at all.
 try:
-    sys.stdout.reconfigure(errors="backslashreplace")
+    # typeshed types sys.stdout as TextIO, which has no reconfigure(); only
+    # the concrete TextIOWrapper does. The except clause below already covers
+    # the case where it genuinely is not there.
+    sys.stdout.reconfigure(errors="backslashreplace")  # type: ignore[union-attr]
 except (AttributeError, ValueError):
     # AttributeError: sys.stdout is None (e.g. a windowed build with no
     # console) or something else stood in for it before this ran.
@@ -60,7 +63,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     logger.info("=" * 70)
     logger.info(f"Starting {config.APP_NAME} v{config.APP_VERSION}")

@@ -134,7 +134,7 @@ class _FontsMeta(type):
         "CAPTION_BOLD": (9, True),
     }
 
-    def __getattr__(cls, name):
+    def __getattr__(cls, name: str) -> QFont:
         try:
             size, demibold = cls._SPECS[name]
         except KeyError:
@@ -867,18 +867,18 @@ def gradient_text_pixmap(
 
     mask = QPixmap(pixel_width, pixel_height)
     mask.setDevicePixelRatio(dpr)
-    mask.fill(Qt.transparent)
+    mask.fill(Qt.GlobalColor.transparent)
     painter = QPainter(mask)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setRenderHint(QPainter.TextAntialiasing)
     painter.setFont(font)
     painter.setPen(QColor("white"))
-    painter.drawText(logical_rect, Qt.AlignCenter, text)
+    painter.drawText(logical_rect, Qt.AlignmentFlag.AlignCenter, text)
     painter.end()
 
     result = QPixmap(pixel_width, pixel_height)
     result.setDevicePixelRatio(dpr)
-    result.fill(Qt.transparent)
+    result.fill(Qt.GlobalColor.transparent)
     result_painter = QPainter(result)
     result_painter.drawPixmap(0, 0, mask)
     result_painter.setCompositionMode(QPainter.CompositionMode_SourceIn)

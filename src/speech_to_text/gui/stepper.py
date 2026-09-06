@@ -21,7 +21,7 @@ Hebrew is RTL) with no direction-specific code needed here, the same
 """
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 from speech_to_text.gui import theme
 from speech_to_text.gui.i18n import t
@@ -61,7 +61,7 @@ _CHECK_ICON_SIZE = 12
 class StepIndicator(QFrame):
     """Three-segment "where am I" strip: a number/check badge plus a label per step."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setStyleSheet(theme.frame_bg_qss("bg_secondary"))
         self._current_step = Step.FILE_SELECT
@@ -96,7 +96,7 @@ class StepIndicator(QFrame):
         for i, (_step, key) in enumerate(_STEP_LABELS):
             badge = QLabel()
             badge.setFixedSize(_BADGE_SIZE, _BADGE_SIZE)
-            badge.setAlignment(Qt.AlignCenter)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(badge)
             self._badges.append(badge)
 

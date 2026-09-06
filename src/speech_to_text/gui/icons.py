@@ -101,7 +101,7 @@ def svg_to_pixmap(
     renderer = QSvgRenderer(QByteArray(svg_with_color.encode()))
     pixel_size = math.ceil(size * dpr)
     pixmap = QPixmap(pixel_size, pixel_size)
-    pixmap.fill(Qt.transparent)
+    pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
