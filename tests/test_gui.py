@@ -39,10 +39,12 @@ def hardware_stub():
 
 
 @pytest.fixture
-def file_select_step(qapp, hardware_stub):
+def file_select_step(qtbot, hardware_stub):
     from speech_to_text.gui.steps.file_select import FileSelectStep
 
-    return FileSelectStep(hardware_stub)
+    step = FileSelectStep(hardware_stub)
+    qtbot.addWidget(step)
+    return step
 
 
 class TestGUI:
@@ -313,10 +315,12 @@ class TestTranscriptionStepOpenButton:
     """
 
     @pytest.fixture
-    def step(self, qapp):
+    def step(self, qtbot):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
 
-        return TranscriptionStep()
+        s = TranscriptionStep()
+        qtbot.addWidget(s)
+        return s
 
     def test_open_button_is_hidden_until_a_run_finishes(self, step):
         assert step.result_widget.isHidden()
@@ -370,10 +374,12 @@ class TestTranscriptionStepFolderButton:
     """
 
     @pytest.fixture
-    def step(self, qapp):
+    def step(self, qtbot):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
 
-        return TranscriptionStep()
+        s = TranscriptionStep()
+        qtbot.addWidget(s)
+        return s
 
     def test_opens_the_containing_folder(self, step):
         step.show_result("C:/tmp/meeting/meeting_transcription.html")
@@ -434,10 +440,11 @@ class TestTranscriptionStepResultPathElision:
     """
 
     @pytest.fixture
-    def step(self, qapp):
+    def step(self, qtbot):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
 
         s = TranscriptionStep()
+        qtbot.addWidget(s)
         # show() matters here, not just resize(): an un-shown top-level
         # widget's resize() sets its own geometry but Qt doesn't cascade a
         # real QResizeEvent down to children without a window handle, so
@@ -535,10 +542,12 @@ class TestTranscriptionStepBatchStrip:
     """
 
     @pytest.fixture
-    def step(self, qapp):
+    def step(self, qtbot):
         from speech_to_text.gui.steps.transcription import TranscriptionStep
 
-        return TranscriptionStep()
+        s = TranscriptionStep()
+        qtbot.addWidget(s)
+        return s
 
     @staticmethod
     def _batch_files(n):
