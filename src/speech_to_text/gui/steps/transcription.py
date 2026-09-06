@@ -7,8 +7,8 @@ import webbrowser
 from pathlib import Path
 
 from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
-from PyQt5.QtGui import QDesktopServices, QFontMetrics
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout
+from PyQt5.QtGui import QDesktopServices, QFontMetrics, QResizeEvent
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from speech_to_text.core.formatting import format_mmss
 from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
@@ -31,7 +31,7 @@ class TranscriptionStep(QFrame):
     # honest "calculating..." instead of trusting it past this point.
     STALL_SECONDS = 5
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
 
@@ -56,7 +56,7 @@ class TranscriptionStep(QFrame):
 
         self._init_run_state()
 
-    def _build_page_layout(self):
+    def _build_page_layout(self) -> QVBoxLayout:
         """The page's own QVBoxLayout, spaced and stretched before any child
         goes into it.
 
@@ -92,7 +92,7 @@ class TranscriptionStep(QFrame):
         # one gap, not eight.
         layout.setSpacing(Spacing.SM)
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setAlignment(Qt.AlignCenter)  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
 
         # Leading stretch, paired with the trailing one added after
         # result_widget below. With only a trailing stretch, every pixel of
@@ -111,13 +111,17 @@ class TranscriptionStep(QFrame):
 
         return layout
 
-    def _build_file_info(self, layout):
+    def _build_file_info(self, layout: QVBoxLayout) -> None:
         """The "<file> - <model>" line, the first thing on the page."""
         # File info
-        self.file_info = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
+        self.file_info = make_label(
+            font=Fonts.BODY,
+            color="text_secondary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        )
         layout.addWidget(self.file_info)
 
-    def _build_batch_strip(self, layout):
+    def _build_batch_strip(self, layout: QVBoxLayout) -> None:
         """The batch progress strip, plus the state the strip is rebuilt from."""
         # Batch strip: "3 / 10" plus one small segment per file, shown only
         # for a batch (n > 1 - see set_batch_files). A single ten-file run
@@ -145,7 +149,9 @@ class TranscriptionStep(QFrame):
         batch_layout.setSpacing(Spacing.XS)
 
         self.batch_readout = make_label(
-            font=Fonts.CAPTION_BOLD, color="text_secondary", align=Qt.AlignCenter
+            font=Fonts.CAPTION_BOLD,
+            color="text_secondary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         batch_layout.addWidget(self.batch_readout)
 
@@ -164,7 +170,7 @@ class TranscriptionStep(QFrame):
         self._batch_filenames: list[str] = []
         self._batch_segment_frames: list[QFrame] = []
 
-    def _build_progress_bar(self, layout):
+    def _build_progress_bar(self, layout: QVBoxLayout) -> None:
         """The progress bar and the animation that smooths its value changes."""
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -186,7 +192,7 @@ class TranscriptionStep(QFrame):
         self._progress_animation.setDuration(500)
         self._progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
-    def _build_status_and_times(self, layout):
+    def _build_status_and_times(self, layout: QVBoxLayout) -> None:
         """The two lines under the bar that actually carry the numbers, since
         the bar itself draws no text (see _build_progress_bar).
         """
@@ -195,15 +201,19 @@ class TranscriptionStep(QFrame):
             t("w_initializing"),
             font=Fonts.BODY_BOLD_SMALL,
             color="text_primary",
-            align=Qt.AlignCenter,
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         layout.addWidget(self.status_label)
 
         # Time info
-        self.time_label = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
+        self.time_label = make_label(
+            font=Fonts.BODY,
+            color="text_secondary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        )
         layout.addWidget(self.time_label)
 
-    def _build_result_panel(self, layout):
+    def _build_result_panel(self, layout: QVBoxLayout) -> None:
         """The completion panel: checkmark, success message, saved path, and
         the two actions that open it. Hidden until show_result().
         """
@@ -226,7 +236,7 @@ class TranscriptionStep(QFrame):
         )
         result_icon.setPixmap(result_pixmap)
         result_icon.setStyleSheet("background: transparent;")
-        result_icon.setAlignment(Qt.AlignCenter)
+        result_icon.setAlignment(Qt.AlignCenter)  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         result_layout.addWidget(result_icon)
 
         # Success message
@@ -234,7 +244,7 @@ class TranscriptionStep(QFrame):
             t("transcription_complete"),
             font=Fonts.SUBTITLE_BOLD,
             color="success",
-            align=Qt.AlignCenter,
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         result_layout.addWidget(self.success_msg)
 
@@ -264,11 +274,18 @@ class TranscriptionStep(QFrame):
         # description (set in _render_result_path), and via "Show in
         # folder" / "Open transcript" right below it.
         self.result_saved_caption = make_label(
-            t("saved_to_caption"), font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter
+            t("saved_to_caption"),
+            font=Fonts.BODY,
+            color="text_secondary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         result_layout.addWidget(self.result_saved_caption)
 
-        self.result_path = make_label(font=Fonts.BODY, color="text_secondary", align=Qt.AlignCenter)
+        self.result_path = make_label(
+            font=Fonts.BODY,
+            color="text_secondary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        )
         self.result_path.setWordWrap(False)
         result_layout.addWidget(self.result_path)
 
@@ -277,7 +294,7 @@ class TranscriptionStep(QFrame):
         self.result_widget.hide()
         layout.addWidget(self.result_widget)
 
-    def _build_result_actions_row(self):
+    def _build_result_actions_row(self) -> QHBoxLayout:
         """The "Open transcript" / "Show in folder" pair, centered by a
         stretch on either side.
         """
@@ -294,7 +311,7 @@ class TranscriptionStep(QFrame):
         self.open_button.set_icon_spec("file", "left")
         self.open_button.set_text_colors(COLORS["bg_primary"], disabled=COLORS["text_tertiary"])
         self.open_button.setStyleSheet(theme.button_primary_qss())
-        self.open_button.setCursor(Qt.PointingHandCursor)
+        self.open_button.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # Qt.CursorShape
         self.open_button.clicked.connect(self._open_result)
         open_row.addWidget(self.open_button)
 
@@ -309,26 +326,27 @@ class TranscriptionStep(QFrame):
         self.folder_button.set_icon_spec("folder", "left")
         self.folder_button.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
         self.folder_button.setStyleSheet(theme.button_secondary_qss())
-        self.folder_button.setCursor(Qt.PointingHandCursor)
+        self.folder_button.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # Qt.CursorShape
         self.folder_button.clicked.connect(self._open_folder)
         open_row.addWidget(self.folder_button)
 
         open_row.addStretch()
         return open_row
 
-    def _init_run_state(self):
+    def _init_run_state(self) -> None:
         """The non-widget state a run reads and writes, plus the heartbeat
         timer that keeps the page moving between backend messages.
         """
-        self.start_time = None
+        self.start_time: float | None = None
         self._last_percentage = 0
-        self._last_percent_change_time = None
+        self._last_percent_change_time: float | None = None
         # Status text is stored as an i18n key + params (not rendered text)
         # so a mid-run language toggle can re-render the live status.
         self._status_key = "w_initializing"
-        self._status_params = {}
-        self._file_info_args = None  # (filename, model) once a run starts
-        self._result_path_value = None
+        self._status_params: dict[str, object] = {}
+        # (filename, model) once a run starts
+        self._file_info_args: tuple[str, str] | None = None
+        self._result_path_value: str | None = None
         self._dot_phase = 0
         # Ticks once a second so the elapsed/remaining time and a "still
         # working" heartbeat keep moving even during real backend gaps with
@@ -340,7 +358,7 @@ class TranscriptionStep(QFrame):
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick)
 
-    def set_file_info(self, filename: str, model: str):
+    def set_file_info(self, filename: str, model: str) -> None:
         """Set file and model info for display."""
         self._file_info_args = (filename, model)
         self.file_info.setText(t("file_model_info", filename=filename, model=model.title()))
@@ -372,6 +390,12 @@ class TranscriptionStep(QFrame):
         # the row would just accumulate.
         while self._batch_segments_row.count():
             item = self._batch_segments_row.takeAt(0)
+            # takeAt() is Optional: count() and takeAt() are separate calls,
+            # so nothing in the type system ties one to the other. Stopping
+            # is the only safe response - continuing would spin forever on a
+            # count that never drops.
+            if item is None:
+                break
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -430,7 +454,7 @@ class TranscriptionStep(QFrame):
                 f"background-color: {fill}; border: {theme.Border.HAIRLINE}px solid {border};"
             )
 
-    def start(self):
+    def start(self) -> None:
         """Reset the display for a fresh run and start the elapsed-time ticker."""
         self.start_time = time.time()
         self._last_percentage = 0
@@ -444,11 +468,11 @@ class TranscriptionStep(QFrame):
         self.result_widget.hide()
         self._timer.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the elapsed-time ticker (run finished, failed, or was cancelled)."""
         self._timer.stop()
 
-    def _tick(self):
+    def _tick(self) -> None:
         if self.start_time is None:
             return
         # Cycle a trailing "", ".", "..", "..." suffix on the status text as
@@ -461,7 +485,7 @@ class TranscriptionStep(QFrame):
     def _render_status(self) -> str:
         return t(self._status_key, **self._status_params)
 
-    def update_progress(self, status_key: str, params: dict, percentage: int):
+    def update_progress(self, status_key: str, params: dict[str, object], percentage: int) -> None:
         """Update status text and, for real percentage updates, the progress
         bar and elapsed/estimated-remaining time.
 
@@ -550,7 +574,7 @@ class TranscriptionStep(QFrame):
                 )
             )
 
-    def show_result(self, file_path: str):
+    def show_result(self, file_path: str) -> None:
         """Show completion result."""
         self._result_path_value = os.path.abspath(file_path)
         # "Which file is running" stops being a meaningful question once
@@ -596,12 +620,18 @@ class TranscriptionStep(QFrame):
         # actual width.
         available = self.result_path.width() or self.result_widget.width()
         metrics = QFontMetrics(self.result_path.font())
-        self.result_path.setText(metrics.elidedText(path, Qt.ElideMiddle, available))
+        self.result_path.setText(
+            metrics.elidedText(
+                path,
+                Qt.ElideMiddle,  # type: ignore[attr-defined]  # Qt.TextElideMode in the stubs
+                available,
+            )
+        )
         full_text = t("saved_to", path=path)
         self.result_path.setToolTip(full_text)
         self.result_path.setAccessibleDescription(full_text)
 
-    def resizeEvent(self, event) -> None:
+    def resizeEvent(self, event: QResizeEvent | None) -> None:
         """Keep the elided path in sync with the panel's actual width - see
         _render_result_path's docstring. A no-op whenever there is no
         result yet (the guard inside _render_result_path), so this costs
@@ -611,7 +641,7 @@ class TranscriptionStep(QFrame):
         super().resizeEvent(event)
         self._render_result_path()
 
-    def _open_result(self):
+    def _open_result(self) -> None:
         """Open the finished transcript in the default browser.
 
         webbrowser rather than os.startfile: the output is HTML, and the
@@ -627,7 +657,7 @@ class TranscriptionStep(QFrame):
         except Exception as e:
             logger.warning(f"Could not open transcript in a browser: {e}")
 
-    def _open_folder(self):
+    def _open_folder(self) -> None:
         """Reveal the transcript's containing folder in the OS file manager.
 
         QDesktopServices.openUrl rather than webbrowser: a directory has no
@@ -648,7 +678,7 @@ class TranscriptionStep(QFrame):
         except Exception as e:
             logger.warning(f"Could not open containing folder: {e}")
 
-    def retranslate(self):
+    def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""
         self.success_msg.setText(t("transcription_complete"))
         self.result_saved_caption.setText(t("saved_to_caption"))
