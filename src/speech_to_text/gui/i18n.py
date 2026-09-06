@@ -10,8 +10,15 @@ Nothing in speech_to_text.core may import this module.
 """
 
 import logging
+from typing import TYPE_CHECKING, cast
 
 from PyQt5.QtCore import QObject, QSettings, pyqtSignal
+
+if TYPE_CHECKING:
+    # Type-only: neither name is needed at import time, and the layout
+    # direction helper deliberately imports Qt lazily inside its body.
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QGuiApplication
 
 logger = logging.getLogger(__name__)
 
@@ -596,7 +603,9 @@ STRINGS = {
 # identifiers, like the Whisper model names they map to). Only "name" and
 # "description" are rendered in the GUI today; the rest mirror
 # config.MODELS so any future card expansion is already translated.
-MODEL_STRINGS = {
+# dict[str, str] values are a single per-language string; the
+# list[dict[str, str]] ones (pros, cons) hold one such dict per bullet.
+MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
     "tiny": {
         "name": {"en": "Tiny", "he": "Tiny"},
         "description": {
@@ -802,11 +811,11 @@ def is_rtl() -> bool:
     return _current_lang == "he"
 
 
-def layout_direction():
+def layout_direction() -> "Qt.LayoutDirection":
     """Qt layout direction matching the current UI language."""
     from PyQt5.QtCore import Qt
 
-    return Qt.RightToLeft if is_rtl() else Qt.LeftToRight
+    return Qt.LayoutDirection.RightToLeft if is_rtl() else Qt.LayoutDirection.LeftToRight
 
 
 def _settings() -> QSettings:
@@ -819,7 +828,7 @@ def load_saved_language() -> str:
     return lang if lang in SUPPORTED_LANGUAGES else "en"
 
 
-def apply_saved_language(app) -> None:
+def apply_saved_language(app: "QGuiApplication") -> None:
     """Bootstrap the persisted UI language onto a fresh QApplication, before
     any widget is built: loads the saved choice (English on first-ever
     launch), sets it without re-saving, and applies the matching app-wide
@@ -844,7 +853,7 @@ def set_language(lang: str, save: bool = True) -> None:
     language_manager.language_changed.emit(lang)
 
 
-def t(key: str, **fmt) -> str:
+def t(key: str, **fmt: object) -> str:
     """Translate a key in the current language, applying str.format params.
     Falls back to English if the key has no entry for the current language,
     and to the bare key if it's unknown entirely (visible, but non-fatal).
@@ -860,7 +869,7 @@ def t(key: str, **fmt) -> str:
 _DOC_PREFIX = "doc_"
 
 
-def document_strings() -> dict:
+def document_strings() -> dict[str, str]:
     """Every string the generated transcript page needs, in the current language.
 
     Returned with the "doc_" prefix stripped, because the keys the renderer
@@ -899,9 +908,19 @@ def format_duration(seconds: int, elide_zero: bool = True) -> str:
     return t("dur_hm", hours=hours, minutes=minutes)
 
 
-def model_text(model: str, field: str, index: int = None) -> str:
-    """Translated text for a config.MODELS-derived field (e.g. card description)."""
-    entry = MODEL_STRINGS[model][field]
-    if index is not None:
-        entry = entry[index]
+def model_text(model: str, field: str, index: int | None = None) -> str:
+    """Translated text for a config.MODELS-derived field (e.g. card description).
+
+    `index` picks one bullet out of a list-valued field (pros, cons); every
+    other field holds a single per-language dict and takes no index. Which
+    fields are lists is a fixed property of the table above, so the pairing
+    is a fact about the call site rather than something to re-check at
+    runtime - hence casts rather than isinstance guards.
+    """
+    value = MODEL_STRINGS[model][field]
+    entry = (
+        cast("list[dict[str, str]]", value)[index]
+        if index is not None
+        else cast("dict[str, str]", value)
+    )
     return entry.get(_current_lang) or entry["en"]

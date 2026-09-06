@@ -35,7 +35,7 @@ which QCheckBox already gets right).
 
 from PyQt5.QtCore import QRectF, Qt
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
-from PyQt5.QtWidgets import QCheckBox, QProxyStyle, QStyle
+from PyQt5.QtWidgets import QCheckBox, QProxyStyle, QStyle, QStyleOption, QWidget
 
 from speech_to_text.gui.theme import COLORS, Border, Radius
 
@@ -77,13 +77,27 @@ class PaintedCheckboxStyle(QProxyStyle):
     # asymmetry this class exists to fix, so it was never in contention.
     _TICK_WEIGHT = 0.165
 
-    def pixelMetric(self, metric, option=None, widget=None):
-        if metric in (QStyle.PM_IndicatorWidth, QStyle.PM_IndicatorHeight):
+    def pixelMetric(
+        self,
+        metric: QStyle.PixelMetric,
+        option: QStyleOption | None = None,
+        widget: QWidget | None = None,
+    ) -> int:
+        if metric in (
+            QStyle.PixelMetric.PM_IndicatorWidth,
+            QStyle.PixelMetric.PM_IndicatorHeight,
+        ):
             return self.SIZE
         return super().pixelMetric(metric, option, widget)
 
-    def drawPrimitive(self, element, option, painter, widget=None):
-        if element == QStyle.PE_FrameFocusRect and isinstance(widget, QCheckBox):
+    def drawPrimitive(
+        self,
+        element: QStyle.PrimitiveElement,
+        option: QStyleOption | None,
+        painter: QPainter | None,
+        widget: QWidget | None = None,
+    ) -> None:
+        if element == QStyle.PrimitiveElement.PE_FrameFocusRect and isinstance(widget, QCheckBox):
             # Swallowed, not drawn. Qt's default focus frame is a white dotted
             # rectangle around the label, and it only started appearing here
             # when the indicator moved off QSS: QStyleSheetStyle was suppressing
@@ -93,14 +107,23 @@ class PaintedCheckboxStyle(QProxyStyle):
             # language everywhere else - and visually wrong for a dark themed
             # UI, where a dotted system rectangle reads as a stray artifact.
             return
-        if element != QStyle.PE_IndicatorCheckBox:
+        # option/painter are typed Optional because QStyle's C++ signature
+        # takes pointers; Qt never delivers null ones for a primitive it is
+        # asking to be drawn. Handing anything unexpected straight to the
+        # wrapped style is the safe fallback, and is what the non-checkbox
+        # path does anyway.
+        if (
+            element != QStyle.PrimitiveElement.PE_IndicatorCheckBox
+            or option is None
+            or painter is None
+        ):
             super().drawPrimitive(element, option, painter, widget)
             return
 
         rect = option.rect
-        on = bool(option.state & QStyle.State_On)
-        enabled = bool(option.state & QStyle.State_Enabled)
-        hover = bool(option.state & QStyle.State_MouseOver)
+        on = bool(option.state & QStyle.StateFlag.State_On)
+        enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
         # kbdFocus is a dynamic property gui/focus.py stamps on whichever
         # widget currently owns the keyboard-focus ring (see that module's
         # docstring for why native :focus can't be used instead - it paints
@@ -110,7 +133,7 @@ class PaintedCheckboxStyle(QProxyStyle):
         kbd_focus = bool(widget is not None and widget.property("kbdFocus"))
 
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         # Border/fill selection mirrors the QCheckBox::indicator rules this
         # class replaces, state for state - see theme.app_stylesheet()'s
@@ -159,10 +182,10 @@ class PaintedCheckboxStyle(QProxyStyle):
             # for disabled; the tick itself never did.
             pen = QPen(QColor(COLORS["accent_text"]))
             pen.setWidthF(width * self._TICK_WEIGHT)
-            pen.setCapStyle(Qt.RoundCap)
-            pen.setJoinStyle(Qt.RoundJoin)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             # Geometry - not the stroke weight - is the other half of what
             # the user reviewed and approved; kept exactly as rendered in
             # the prototype rather than re-derived from the SVG.
