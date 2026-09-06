@@ -273,9 +273,7 @@ class ModelSelectStep(QFrame):
         models_scroll.setWidget(models_container)
         models_scroll.setWidgetResizable(True)
         models_scroll.setFrameShape(QFrame.NoFrame)
-        models_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAlwaysOff  # type: ignore[attr-defined]  # Qt.ScrollBarPolicy in the stubs
-        )
+        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         models_scroll.setStyleSheet("background: transparent;")
         # setWidgetResizable(True) re-fits the scrolled widget from
         # QScrollArea's OWN resizeEvent, which fires when the scroll area
@@ -400,9 +398,7 @@ class ModelSelectStep(QFrame):
         # empty space beside it. That read as an unfinished control once the
         # stepper buttons stopped filling that space. Centring is
         # direction-neutral, so it needs no RTL counterpart.
-        self.speaker_count_spin.setAlignment(
-            Qt.AlignCenter  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
-        )
+        self.speaker_count_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout.addStretch()
 
@@ -627,12 +623,10 @@ class ModelSelectStep(QFrame):
         """
         if obj is None or event is None:
             return super().eventFilter(obj, event)
-        # QEvent.FocusIn/FocusOut/Resize are scoped under QEvent.Type in the
-        # stubs; bound here once so the suppression is stated three times
-        # rather than six.
-        focus_in = QEvent.FocusIn  # type: ignore[attr-defined]
-        focus_out = QEvent.FocusOut  # type: ignore[attr-defined]
-        resize = QEvent.Resize  # type: ignore[attr-defined]
+        # Bound once rather than repeated in both branches below.
+        focus_in = QEvent.Type.FocusIn
+        focus_out = QEvent.Type.FocusOut
+        resize = QEvent.Type.Resize
         card = self._radio_cards.get(obj)
         if card is not None and event.type() in (focus_in, focus_out):
             self._sync_card_focus_ring(card, focused_in=event.type() == focus_in)
@@ -774,7 +768,7 @@ class ModelSelectStep(QFrame):
         self._scroll_to_recommended()
         radio = self.model_radios.get(self.selected_model)
         if radio is not None:
-            radio.setFocus(Qt.OtherFocusReason)  # type: ignore[attr-defined]  # Qt.FocusReason
+            radio.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _scroll_to_recommended(self) -> None:
         card = self._cards.get(self._current_recommended)
@@ -828,12 +822,12 @@ class ModelSelectStep(QFrame):
         and Hebrew descriptions end up on different sides (verified
         empirically).
         """
-        # The four flags below are scoped under Qt.AlignmentFlag in PyQt5's
-        # stubs, which is the only thing wrong with this expression.
         side: Qt.AlignmentFlag = (
-            Qt.AlignRight if is_rtl() else Qt.AlignLeft  # type: ignore[attr-defined]
+            Qt.AlignmentFlag.AlignRight if is_rtl() else Qt.AlignmentFlag.AlignLeft
         )
-        extra: Qt.AlignmentFlag = Qt.AlignAbsolute | Qt.AlignVCenter  # type: ignore[attr-defined]
+        extra = cast(
+            Qt.AlignmentFlag, Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter
+        )
         # cast, not Qt.Alignment(...): PyQt5's stubs model each flag as a
         # plain int subclass and never give it an __or__ returning the flag
         # type, so an OR of two of them widens to int. The runtime value is

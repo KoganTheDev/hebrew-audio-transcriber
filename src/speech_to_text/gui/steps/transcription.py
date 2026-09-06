@@ -92,7 +92,7 @@ class TranscriptionStep(QFrame):
         # one gap, not eight.
         layout.setSpacing(Spacing.SM)
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
-        layout.setAlignment(Qt.AlignCenter)  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Leading stretch, paired with the trailing one added after
         # result_widget below. With only a trailing stretch, every pixel of
@@ -104,7 +104,7 @@ class TranscriptionStep(QFrame):
         # its default size. Two zero-stretch spacers split whatever slack
         # exists evenly between them instead, so the whole block - file
         # info through the result panel - stays vertically centered as the
-        # window grows, which is what layout.setAlignment(Qt.AlignCenter)
+        # window grows, which is what layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # above was already declaring as the intent; a lone trailing
         # stretch is what had been overriding it in practice.
         layout.addStretch()
@@ -117,7 +117,7 @@ class TranscriptionStep(QFrame):
         self.file_info = make_label(
             font=Fonts.BODY,
             color="text_secondary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         layout.addWidget(self.file_info)
 
@@ -151,7 +151,7 @@ class TranscriptionStep(QFrame):
         self.batch_readout = make_label(
             font=Fonts.CAPTION_BOLD,
             color="text_secondary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         batch_layout.addWidget(self.batch_readout)
 
@@ -201,7 +201,7 @@ class TranscriptionStep(QFrame):
             t("w_initializing"),
             font=Fonts.BODY_BOLD_SMALL,
             color="text_primary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         layout.addWidget(self.status_label)
 
@@ -209,7 +209,7 @@ class TranscriptionStep(QFrame):
         self.time_label = make_label(
             font=Fonts.BODY,
             color="text_secondary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         layout.addWidget(self.time_label)
 
@@ -236,7 +236,7 @@ class TranscriptionStep(QFrame):
         )
         result_icon.setPixmap(result_pixmap)
         result_icon.setStyleSheet("background: transparent;")
-        result_icon.setAlignment(Qt.AlignCenter)  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        result_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         result_layout.addWidget(result_icon)
 
         # Success message
@@ -244,7 +244,7 @@ class TranscriptionStep(QFrame):
             t("transcription_complete"),
             font=Fonts.SUBTITLE_BOLD,
             color="success",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         result_layout.addWidget(self.success_msg)
 
@@ -252,7 +252,7 @@ class TranscriptionStep(QFrame):
         # wrapped two-line string. They used to be a single QLabel with an
         # explicit "\n" and setWordWrap(True), which made the label's height
         # a function of its width (Qt's heightForWidth). That interacted
-        # badly with this layout's Qt.AlignCenter (see _build_page_layout's
+        # badly with this layout's Qt.AlignmentFlag.AlignCenter (see _build_page_layout's
         # comment and show_result()'s note on the batch-strip removal,
         # the same failure mode caught twice): minimumSizeHint() reported
         # 50px for "Saved to:\n<long path>" at its real width, but the
@@ -277,14 +277,14 @@ class TranscriptionStep(QFrame):
             t("saved_to_caption"),
             font=Fonts.BODY,
             color="text_secondary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         result_layout.addWidget(self.result_saved_caption)
 
         self.result_path = make_label(
             font=Fonts.BODY,
             color="text_secondary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         self.result_path.setWordWrap(False)
         result_layout.addWidget(self.result_path)
@@ -311,7 +311,7 @@ class TranscriptionStep(QFrame):
         self.open_button.set_icon_spec("file", "left")
         self.open_button.set_text_colors(COLORS["bg_primary"], disabled=COLORS["text_tertiary"])
         self.open_button.setStyleSheet(theme.button_primary_qss())
-        self.open_button.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # Qt.CursorShape
+        self.open_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.open_button.clicked.connect(self._open_result)
         open_row.addWidget(self.open_button)
 
@@ -326,7 +326,7 @@ class TranscriptionStep(QFrame):
         self.folder_button.set_icon_spec("folder", "left")
         self.folder_button.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
         self.folder_button.setStyleSheet(theme.button_secondary_qss())
-        self.folder_button.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # Qt.CursorShape
+        self.folder_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.folder_button.clicked.connect(self._open_folder)
         open_row.addWidget(self.folder_button)
 
@@ -623,7 +623,7 @@ class TranscriptionStep(QFrame):
         self.result_path.setText(
             metrics.elidedText(
                 path,
-                Qt.ElideMiddle,  # type: ignore[attr-defined]  # Qt.TextElideMode in the stubs
+                Qt.TextElideMode.ElideMiddle,
                 available,
             )
         )

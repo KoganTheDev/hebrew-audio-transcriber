@@ -118,7 +118,7 @@ class FileSelectStep(QFrame):
         self.drop_zone.setObjectName("dropZone")
         self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=False))
         self.drop_zone.setAcceptDrops(True)
-        self.drop_zone.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # PyQt5 stubs scope this under Qt.CursorShape
+        self.drop_zone.setCursor(Qt.CursorShape.PointingHandCursor)
         self.drop_zone.setAccessibleName(t("drop_zone_name"))
         self.drop_zone.setAccessibleDescription(t("drop_zone_desc"))
         self.drop_zone.setToolTip(t("drop_zone_desc"))
@@ -173,7 +173,7 @@ class FileSelectStep(QFrame):
         )
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
-        icon_label.setAlignment(Qt.AlignCenter)  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         drop_layout.addWidget(icon_label)
 
         # Main text. No setMaximumHeight - see the note above
@@ -189,7 +189,7 @@ class FileSelectStep(QFrame):
             t("drop_main"),
             font=Fonts.BODY_BOLD,
             color="text_primary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         drop_layout.addWidget(self.main_text)
 
@@ -198,7 +198,7 @@ class FileSelectStep(QFrame):
             t("drop_formats"),
             font=Fonts.CAPTION,
             color="text_secondary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         drop_layout.addWidget(self.formats_text)
 
@@ -207,7 +207,7 @@ class FileSelectStep(QFrame):
             t("drop_alt"),
             font=Fonts.CAPTION,
             color="text_tertiary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         drop_layout.addWidget(self.alt_text)
 
@@ -233,9 +233,7 @@ class FileSelectStep(QFrame):
         self._rows_scroll.setWidget(self._rows_container)
         self._rows_scroll.setWidgetResizable(True)
         self._rows_scroll.setFrameShape(QFrame.NoFrame)
-        self._rows_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAlwaysOff  # type: ignore[attr-defined]  # Qt.ScrollBarPolicy in the stubs
-        )
+        self._rows_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._rows_scroll.setStyleSheet("background: transparent;")
         self._rows_scroll.setMaximumHeight(140)
         # Stretch here as well as on the drop zone: the two share the step's
@@ -429,8 +427,8 @@ class FileSelectStep(QFrame):
             )
         )
         remove_btn.setFixedSize(20, 20)
-        remove_btn.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # Qt.CursorShape
-        remove_btn.setFocusPolicy(Qt.StrongFocus)  # type: ignore[attr-defined]  # Qt.FocusPolicy
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         hover_bg = COLORS["bg_tertiary"]
         remove_btn.setStyleSheet(
             "QPushButton { background: transparent; border: none; }"
@@ -591,7 +589,7 @@ class FileSelectStep(QFrame):
         actual Tab press earns it.
         """
         super().showEvent(event)
-        self.drop_zone.setFocus(Qt.OtherFocusReason)  # type: ignore[attr-defined]  # Qt.FocusReason
+        self.drop_zone.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""
@@ -666,7 +664,7 @@ class FileSelectStep(QFrame):
             t(label_key),
             font=Fonts.CAPTION,
             color="text_tertiary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         cell_layout.addWidget(label_widget)
         self._hw_header_labels[label_key] = label_widget
@@ -677,7 +675,7 @@ class FileSelectStep(QFrame):
             value,
             font=Fonts.BODY_BOLD,
             color="text_primary",
-            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         cell_layout.addWidget(value_widget)
         if label_key == "hw_gpu":
