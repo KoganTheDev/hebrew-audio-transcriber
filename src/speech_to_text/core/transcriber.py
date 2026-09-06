@@ -3,7 +3,8 @@ Handles the actual transcription process.
 """
 
 import logging
-from typing import Any, Callable, Optional, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 from speech_to_text import config
 from speech_to_text.core.formatting import format_mmss
@@ -32,11 +33,11 @@ class Transcriber:
         model_size: str = config.DEFAULT_MODEL,
         device: str = "cpu",
         language: str = config.LANGUAGE,
-        progress_callback: Optional[Callable] = None,
-        compute_type: Optional[str] = None,
-        beam_size: Optional[int] = None,
-        cpu_threads: Optional[int] = None,
-        num_workers: Optional[int] = None,
+        progress_callback: Callable | None = None,
+        compute_type: str | None = None,
+        beam_size: int | None = None,
+        cpu_threads: int | None = None,
+        num_workers: int | None = None,
     ):
         self.model_size = model_size
         self.device = device
@@ -181,7 +182,7 @@ class Transcriber:
 
     def transcribe(
         self, audio_file: Any, total_duration_seconds: float = 0
-    ) -> Optional[list[Segment]]:
+    ) -> list[Segment] | None:
         """Transcribe audio to structured segments.
 
         Args:

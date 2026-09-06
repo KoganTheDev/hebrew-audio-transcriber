@@ -26,7 +26,7 @@ unknown permutation: "is anyone speaking" and "how many".
 """
 
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -160,7 +160,7 @@ def aggregate_invariants(
     marginals: np.ndarray,
     starts: Sequence[int],
     onset: float,
-    num_samples: Optional[int] = None,
+    num_samples: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Fold overlapping windows into two global tracks that survive permutation.
 
@@ -217,7 +217,7 @@ def _grid_base(window_start: int) -> int:
     return int(round(window_start / FRAME_SHIFT_SAMPLES))
 
 
-def _grid_size(starts: Sequence[int], num_samples: Optional[int]) -> int:
+def _grid_size(starts: Sequence[int], num_samples: int | None) -> int:
     by_windows = _grid_base(starts[-1]) + FRAMES_PER_WINDOW
     if num_samples is None:
         return by_windows

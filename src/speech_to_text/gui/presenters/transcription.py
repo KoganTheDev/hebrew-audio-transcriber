@@ -20,9 +20,9 @@ stub and asserts on the key and params.
 """
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 from speech_to_text.core.options import TranscriptionOptions
 

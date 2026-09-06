@@ -34,7 +34,6 @@ import logging
 import os
 import re
 from collections.abc import Iterator, Sequence
-from typing import Optional
 
 from speech_to_text.core.hebrew_text import CLITICS, normalize_word
 from speech_to_text.core.segments import Segment, Word
@@ -113,7 +112,7 @@ def clitic_splits(word: str) -> list[tuple[str, str]]:
     return [(word[:i], word[i:]) for i in range(max_strip + 1)]
 
 
-def weighted_distance(a: str, b: str, cutoff: Optional[float] = None) -> float:
+def weighted_distance(a: str, b: str, cutoff: float | None = None) -> float:
     """Levenshtein distance with Hebrew-aware substitution costs.
 
     Insertions and deletions cost 1.0; substitutions cost less for commonly
@@ -195,7 +194,7 @@ class TermList:
                 continue
             yield prefix + original_term, distance
 
-    def _rank(self, word: str) -> tuple[Optional[tuple[str, float]], float]:
+    def _rank(self, word: str) -> tuple[tuple[str, float] | None, float]:
         """Score every clitic reading of `word`, returning ((replacement,
         distance) or None, runner-up distance).
 
@@ -207,7 +206,7 @@ class TermList:
         A second match producing the *same* replacement text is not a
         runner-up: two readings agreeing is confirmation, not ambiguity.
         """
-        best: Optional[tuple[str, float]] = None
+        best: tuple[str, float] | None = None
         runner_up = float("inf")
 
         for candidate_prefix, candidate in clitic_splits(normalize_word(word)):
@@ -223,7 +222,7 @@ class TermList:
 
         return best, runner_up
 
-    def best_match(self, word: str) -> Optional[tuple[str, float, float]]:
+    def best_match(self, word: str) -> tuple[str, float, float] | None:
         """Find the term this word was most likely meant to be.
 
         Returns (term, distance, margin) or None when nothing is close enough
@@ -245,7 +244,7 @@ class TermList:
 
 def _correction_for(
     word: Word, terms: TermList, confidence_threshold: float
-) -> Optional[tuple[str, str]]:
+) -> tuple[str, str] | None:
     """Decide what one word should be replaced with, or None to leave it alone.
 
     Returns (original, replacement) with the surrounding whitespace stripped -

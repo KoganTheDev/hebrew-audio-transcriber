@@ -1,6 +1,6 @@
 # Hebrew Audio Transcriber
 
-![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![PyQt5](https://img.shields.io/badge/PyQt5-GUI-orange)
@@ -92,7 +92,7 @@ This is not a spell checker, and adding ordinary vocabulary makes it worse rathe
 
 ## Installation
 
-**Requirements:** Python 3.9+, pip, Windows (primary target platform).
+**Requirements:** Python 3.10+, pip, Windows (primary target platform).
 
 ```bash
 git clone https://github.com/KoganTheDev/hebrew-audio-transcriber.git

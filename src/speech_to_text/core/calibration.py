@@ -22,7 +22,6 @@ import struct
 import tempfile
 import time
 import wave
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ RELATIVE_COMPUTE_COST = {
 }
 
 
-def load_cached_tiny_rtf(cpu_cores: int) -> Optional[float]:
+def load_cached_tiny_rtf(cpu_cores: int) -> float | None:
     """Return the cached seconds-per-audio-second factor, if valid for this CPU core count."""
     if not os.path.exists(CALIBRATION_CACHE_PATH):
         return None

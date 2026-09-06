@@ -97,9 +97,9 @@ def _json_payload(data: dict) -> str:
 
 
 def _build_payload(
-    speaker_label: Optional[str],
-    title: Optional[str],
-    ui_strings: Optional[dict[str, str]],
+    speaker_label: str | None,
+    title: str | None,
+    ui_strings: dict[str, str] | None,
 ) -> tuple:
     """The page's data island, before any document has rendered.
 
@@ -128,7 +128,7 @@ def _build_payload(
     return payload, strings
 
 
-def _render_head_html(doc_id: str, title: Optional[str]) -> list[str]:
+def _render_head_html(doc_id: str, title: str | None) -> list[str]:
     """The <!doctype> through the closing </head>.
 
     data-doc-id on <html> is the key the page script stores and reloads its
@@ -160,7 +160,7 @@ def _render_script_html() -> str:
     return "<script>(function () {\n  'use strict';\n\n" + _asset_dir("js") + "\n})();</script>"
 
 
-def _render_backdrop_html(vista: Optional[str]) -> list[str]:
+def _render_backdrop_html(vista: str | None) -> list[str]:
     """The photographic backdrop for this render: a per-document <style> block
     plus the <div> it paints onto.
 
@@ -215,13 +215,13 @@ def _render_backdrop_html(vista: Optional[str]) -> list[str]:
 
 def render_html(
     documents: list[TranscriptDocument],
-    speaker_label: Optional[str] = None,
+    speaker_label: str | None = None,
     timestamps: bool = True,
-    failed_label: Optional[str] = None,
-    title: Optional[str] = None,
-    ui_strings: Optional[dict[str, str]] = None,
-    doc_id: Optional[str] = None,
-    vista: Optional[str] = None,
+    failed_label: str | None = None,
+    title: str | None = None,
+    ui_strings: dict[str, str] | None = None,
+    doc_id: str | None = None,
+    vista: str | None = None,
 ) -> str:
     """Render one or more transcripts into a single, self-contained RTL HTML
     document that can be read, corrected and exported.

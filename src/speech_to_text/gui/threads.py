@@ -8,7 +8,6 @@ signals - neither does any heavy lifting itself.
 import logging
 import multiprocessing
 import queue
-from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -44,8 +43,8 @@ class TranscriptionThread(QThread):
         audio_files: list[str],
         model_size: str,
         device: str,
-        durations: Optional[list[float]] = None,
-        options: Optional[TranscriptionOptions] = None,
+        durations: list[float] | None = None,
+        options: TranscriptionOptions | None = None,
     ):
         super().__init__()
         self.audio_files = audio_files
@@ -70,7 +69,7 @@ class TranscriptionThread(QThread):
         if self.options.terms_file is None:
             self.options.terms_file = config.TERMS_FILENAME
         self._is_running = True
-        self._process: Optional[multiprocessing.Process] = None
+        self._process: multiprocessing.Process | None = None
         logger.debug(f"TranscriptionThread created: {len(audio_files)} file(s)")
 
     @property
@@ -204,7 +203,7 @@ class CalibrationThread(QThread):
         super().__init__()
         self.cpu_cores = cpu_cores
         self._is_running = True
-        self._process: Optional[multiprocessing.Process] = None
+        self._process: multiprocessing.Process | None = None
 
     def run(self):
         logger.info("Starting background hardware calibration...")

@@ -13,7 +13,6 @@ adds no new requirement.
 """
 
 import logging
-from typing import Optional
 
 import numpy as np
 
@@ -191,7 +190,7 @@ def is_true_stereo(channels: list[np.ndarray], sample_rate: int = SAMPLE_RATE) -
     return bool(ratio >= MIN_EXCLUSIVE_FRAME_RATIO)
 
 
-def load(path: str) -> tuple[Optional[list[np.ndarray]], bool]:
+def load(path: str) -> tuple[list[np.ndarray] | None, bool]:
     """Decode a file and classify it, tolerating failure.
 
     Returns (channels, is_two_party). channels is None if decoding failed, in

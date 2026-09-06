@@ -260,7 +260,6 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Optional
 
 from speech_to_text import config as app_config
 from speech_to_text.core.worker import _RETRY_LOG_PATTERNS
@@ -453,7 +452,7 @@ class _RetryCollector(logging.Handler):
             return
 
 
-def _sample_cpu_performance_once() -> Optional[float]:
+def _sample_cpu_performance_once() -> float | None:
     """
     One reading of `\\Processor Information(_Total)\\% Processor Performance`
     via PowerShell's Get-Counter, as a fraction-of-base-clock percentage
@@ -511,7 +510,7 @@ class _CpuSampler(threading.Thread):
                 self.samples.append(value)
             self._stop_event.wait(self.interval)
 
-    def stop_and_summarize(self) -> dict[str, Optional[float]]:
+    def stop_and_summarize(self) -> dict[str, float | None]:
         self._stop_event.set()
         # ident is None until start() has actually run - guards a caller
         # (or a unit test) that summarizes a sampler it never started.
@@ -532,9 +531,7 @@ class _CpuSampler(threading.Thread):
         }
 
 
-def compute_normalized_seconds(
-    wall_seconds: Optional[float], mean_pct: Optional[float]
-) -> Optional[float]:
+def compute_normalized_seconds(wall_seconds: float | None, mean_pct: float | None) -> float | None:
     """
     ESTIMATE, not a measurement - see module docstring item 5. Scales
     observed wall time by the mean clock-performance reading during that
@@ -616,7 +613,7 @@ def compute_baseline_drift(
     unit-testable without spawning a subprocess or a model.
     """
 
-    def pct_delta(a: Optional[float], b: Optional[float]) -> Optional[float]:
+    def pct_delta(a: float | None, b: float | None) -> float | None:
         if not a or b is None:
             return None
         return round((b - a) / a * 100.0, 1)
@@ -687,8 +684,8 @@ def run_config(
     overrides: dict,
     samples,
     duration: float,
-    reference: Optional[str],
-    baseline_text: Optional[str],
+    reference: str | None,
+    baseline_text: str | None,
 ) -> dict:
     """
     Run one named config over `samples` and collect every metric this
@@ -971,10 +968,10 @@ def run_single_config_subprocess(args: argparse.Namespace) -> int:
 def _spawn_single_config(
     name: str,
     audio_path: str,
-    reference_path: Optional[str],
+    reference_path: str | None,
     start: float,
     seconds: float,
-    baseline_text_file: Optional[str],
+    baseline_text_file: str | None,
     result_file: str,
 ) -> None:
     """
@@ -1017,7 +1014,7 @@ def _spawn_single_config(
 def run_target(  # noqa: C901 - dev harness, not shipped code
     label: str,
     audio_path: str,
-    reference_path: Optional[str],
+    reference_path: str | None,
     config_names: list[str],
     start: float,
     seconds: float,
@@ -1063,8 +1060,8 @@ def run_target(  # noqa: C901 - dev harness, not shipped code
             )
 
     results: list[dict] = []
-    baseline_first_result: Optional[dict] = None
-    baseline_text_file: Optional[str] = None
+    baseline_first_result: dict | None = None
+    baseline_text_file: str | None = None
     tmp_dir = tempfile.mkdtemp(prefix="compare_transcription_")
     try:
         for idx, (name, role) in enumerate(run_plan):

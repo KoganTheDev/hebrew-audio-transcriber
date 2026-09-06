@@ -14,7 +14,6 @@ vocabulary type cannot belong to either side.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -50,7 +49,7 @@ class Segment:
     # 0-based speaker index. None means speaker identification did not run,
     # or ran and could not attribute this segment - both render without a
     # speaker label rather than guessing.
-    speaker: Optional[int] = None
+    speaker: int | None = None
 
     @property
     def duration(self) -> float:

@@ -4,7 +4,6 @@
 
 import logging
 import sys
-from typing import Optional
 
 from PyQt5.QtCore import Qt, QThread, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
@@ -123,13 +122,13 @@ class MainWindow(QMainWindow):
 
         self.hardware = HardwareDetector()
         self.current_step = Step.FILE_SELECT
-        self.transcription_thread: Optional[QThread] = None
+        self.transcription_thread: QThread | None = None
         self.selected_files: list[str] = []
-        self.selected_model: Optional[str] = None
+        self.selected_model: str | None = None
         # Total across every selected file - what should drive the model
         # recommendation, since the estimate has to cover the whole batch.
         self.audio_duration: int = 0
-        self.calibration_thread: Optional[QThread] = None
+        self.calibration_thread: QThread | None = None
 
         # Two-press Cancel state (see _on_cancel_clicked). A single-shot
         # timer rather than something driven off _tick or similar: arming

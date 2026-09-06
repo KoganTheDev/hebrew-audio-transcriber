@@ -6,7 +6,6 @@ only in the child, as an error nobody can trace back to this file.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from speech_to_text import config
 
@@ -34,8 +33,8 @@ class TranscriptionOptions:
     # only safe as None when no file in the batch fails. ui_strings holds the
     # transcript page's own chrome, and missing keys fall back to English
     # inside the page rather than rendering blank.
-    speaker_label: Optional[str] = None
-    failed_label: Optional[str] = None
+    speaker_label: str | None = None
+    failed_label: str | None = None
     ui_strings: dict[str, str] = field(default_factory=dict)
 
     identify_speakers: bool = True
@@ -50,7 +49,7 @@ class TranscriptionOptions:
     # Absent or empty means the correction pass does nothing, which is the
     # intended default - see core/hebrew_correct.py for why a general
     # dictionary would make Hebrew transcripts worse rather than better.
-    terms_file: Optional[str] = None
+    terms_file: str | None = None
 
     @property
     def total_duration(self) -> float:

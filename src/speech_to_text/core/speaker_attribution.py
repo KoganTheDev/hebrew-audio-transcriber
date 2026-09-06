@@ -11,7 +11,7 @@ model file.
 """
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from speech_to_text import config
 from speech_to_text.core.segments import Segment, Word
@@ -123,7 +123,7 @@ def _split_segment(
 
 
 def _label_coverage(
-    spans: Sequence["SpeakerSpan"], label: Optional[int], start: float, end: float
+    spans: Sequence["SpeakerSpan"], label: int | None, start: float, end: float
 ) -> float:
     """How much of [start, end) the given speaker's spans cover, in seconds."""
     if label is None:
@@ -131,7 +131,7 @@ def _label_coverage(
     return sum(span.overlap(start, end) for span in spans if span.speaker == label)
 
 
-def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> list[Optional[int]]:
+def _fill_unmatched(labels: Sequence[int | None], words: Sequence[Word]) -> list[int | None]:
     """Carry a real label over words that overlap no span, from whichever
     labelled neighbour is nearer IN TIME - and only across a short gap.
 
@@ -149,13 +149,13 @@ def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> l
     Attributing across a two-second silence is guessing, and an unattributed
     word renders without a speaker rather than under the wrong one.
     """
-    filled: list[Optional[int]] = list(labels)
+    filled: list[int | None] = list(labels)
 
     # Nearest real label to each side, indices into the ORIGINAL labels.
     n = len(labels)
-    left_of: list[Optional[int]] = [None] * n
-    right_of: list[Optional[int]] = [None] * n
-    seen: Optional[int] = None
+    left_of: list[int | None] = [None] * n
+    right_of: list[int | None] = [None] * n
+    seen: int | None = None
     for i in range(n):
         left_of[i] = seen
         if labels[i] is not None:
@@ -194,7 +194,7 @@ def _fill_unmatched(labels: Sequence[Optional[int]], words: Sequence[Word]) -> l
     return filled
 
 
-def _runs(labels: Sequence[Optional[int]]) -> list[list]:
+def _runs(labels: Sequence[int | None]) -> list[list]:
     """Consecutive equal-label stretches, as mutable [start, end, label]."""
     runs: list[list] = []
     start = 0
@@ -237,7 +237,7 @@ def _is_real_interjection(
 
 def _run_support(
     run: Sequence,
-    label: Optional[int],
+    label: int | None,
     words: Sequence[Word],
     spans: Sequence["SpeakerSpan"],
 ) -> float:
@@ -255,7 +255,7 @@ def _weakest_mergeable(
     min_words: int,
     words: Sequence[Word],
     spans: Sequence["SpeakerSpan"],
-) -> Optional[int]:
+) -> int | None:
     """Index of the shortest run that is too short to stand on its own, if any.
 
     Shortest first, ties by position, so which run gets absorbed is driven by
@@ -279,7 +279,7 @@ def _fold_left(
     index: int,
     words: Sequence[Word],
     spans: Sequence["SpeakerSpan"],
-) -> Optional[bool]:
+) -> bool | None:
     """Which neighbour run at `index` to fold into: True left, False right.
 
     None means neither neighbour is eligible - absent or None-labelled - so the
@@ -366,7 +366,7 @@ def _coalesce_adjacent(runs: list[list]) -> list[list]:
     return out
 
 
-def _best_speaker(spans: Sequence["SpeakerSpan"], start: float, end: float) -> Optional[int]:
+def _best_speaker(spans: Sequence["SpeakerSpan"], start: float, end: float) -> int | None:
     """The speaker whose spans overlap [start, end] the most, if any."""
     totals: dict[int, float] = {}
     for span in spans:

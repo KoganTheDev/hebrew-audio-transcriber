@@ -5,7 +5,7 @@ Detects CPU/GPU specs and calculates estimated transcription time.
 import logging
 import platform
 import subprocess
-from typing import Optional, cast
+from typing import cast
 
 from speech_to_text import config
 from speech_to_text.core.calibration import RELATIVE_COMPUTE_COST, load_cached_tiny_rtf
@@ -85,7 +85,7 @@ class HardwareDetector:
         # estimate_transcription_time instead of guessed constants. None
         # until a calibration benchmark has run - see set_calibration() and
         # speech_to_text.core.calibration.
-        self.tiny_seconds_per_audio_second: Optional[float] = load_cached_tiny_rtf(self.cpu_count)
+        self.tiny_seconds_per_audio_second: float | None = load_cached_tiny_rtf(self.cpu_count)
 
         logger.info(f"Hardware: OS={self.os_name}, GPU={'Yes' if self.has_gpu else 'No'}")
         if self.has_gpu:
@@ -117,7 +117,7 @@ class HardwareDetector:
             logger.warning(f"Error checking for GPU: {e}")
             return False
 
-    def _get_gpu_name(self) -> Optional[str]:
+    def _get_gpu_name(self) -> str | None:
         """Get GPU model name."""
         if not self.has_gpu:
             return None

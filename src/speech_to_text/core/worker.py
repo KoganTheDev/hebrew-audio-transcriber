@@ -18,8 +18,9 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from speech_to_text.core import power
 from speech_to_text.core.progress_scale import (
@@ -165,7 +166,7 @@ class _BatchRender:
     output_file: str
     options: "TranscriptionOptions"
     doc_id: str
-    vista: Optional[str]
+    vista: str | None
     documents: list["TranscriptDocument"] = field(default_factory=list)
 
     def render(self) -> str:
@@ -526,12 +527,12 @@ def _file_local_emitter(emit_progress: _Emitter) -> _Emitter:
 
 
 def _start_overlapped_diarization(
-    channels: Optional[list],
+    channels: list | None,
     two_party: bool,
     options: "TranscriptionOptions",
     progress_queue: "multiprocessing.Queue",
     result: dict,
-) -> tuple[Optional[Any], Optional["threading.Thread"]]:
+) -> tuple[Any | None, Optional["threading.Thread"]]:
     """Downmix to mono and kick diarization off before transcription starts.
 
     Returns (mono, thread), either of which is None when there is nothing to
@@ -581,12 +582,12 @@ def _start_overlapped_diarization(
 def _decode_transcript(
     transcriber: "Transcriber",
     audio_file: str,
-    channels: Optional[list],
-    mono: Optional[Any],
+    channels: list | None,
+    mono: Any | None,
     two_party: bool,
     file_duration: float,
     diarization_thread: Optional["threading.Thread"],
-) -> Optional[list["Segment"]]:
+) -> list["Segment"] | None:
     """Produce this file's segments, joining the diarization thread either way.
 
     try/finally, not a bare call followed by a join: transcriber.transcribe()
@@ -622,7 +623,7 @@ def _transcribe_one(
     file_duration: float,
     emit_progress: _Emitter,
     progress_queue: "multiprocessing.Queue",
-) -> Optional[list["Segment"]]:
+) -> list["Segment"] | None:
     """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
 
     emit_progress here is already file-local (0-100 covering just this file's
@@ -676,7 +677,7 @@ def _prepare_audio(
     options: "TranscriptionOptions",
     file_duration: float,
     emit_progress: _Emitter,
-) -> tuple[Optional[list], bool]:
+) -> tuple[list | None, bool]:
     """Decode the file and decide which speaker-separation path applies.
 
     Returns (channels, two_party). Decoding is skipped entirely when speaker
@@ -851,7 +852,7 @@ def _finish_identify_speakers(
 
 
 def _correct_hebrew(
-    segments: Optional[list["Segment"]],
+    segments: list["Segment"] | None,
     options: "TranscriptionOptions",
     emit_progress: _Emitter,
 ) -> None:

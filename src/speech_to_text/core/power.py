@@ -37,7 +37,6 @@ import contextlib
 import logging
 import sys
 from collections.abc import Iterator
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,7 @@ ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 
 
-def _set_thread_execution_state(flags: int) -> Optional[int]:
+def _set_thread_execution_state(flags: int) -> int | None:
     """Call SetThreadExecutionState, or return None where that is impossible.
 
     Split out so the failure paths are testable without a Windows kernel:

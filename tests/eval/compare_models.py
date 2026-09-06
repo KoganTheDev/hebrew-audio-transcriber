@@ -42,7 +42,6 @@ import os
 import statistics
 import sys
 import time
-from typing import Optional
 
 from speech_to_text import config
 
@@ -53,9 +52,7 @@ DEFAULT_MODELS = ["medium", "ivrit-turbo"]
 OUTPUT_DIR = "eval_output"
 
 
-def transcribe_once(
-    model_size: str, samples, duration: float, language: Optional[str] = None
-) -> dict:
+def transcribe_once(model_size: str, samples, duration: float, language: str | None = None) -> dict:
     """
     Run one model over the audio and collect metrics alongside the text.
 
@@ -157,7 +154,7 @@ def write_side_by_side(results: list[dict], path: str) -> None:
             handle.write("\n\n\n")
 
 
-def print_table(results: list[dict], reference: Optional[str]) -> None:
+def print_table(results: list[dict], reference: str | None) -> None:
     rows = [r for r in results if "error" not in r]
     if not rows:
         print("\nNo model produced a transcript.")
@@ -211,10 +208,10 @@ def print_table(results: list[dict], reference: Optional[str]) -> None:
 
 def build_configs(
     models: list[str],
-    compute_types: list[Optional[str]],
-    beam_sizes: list[Optional[int]],
-    cpu_threads_list: list[Optional[int]],
-    num_workers_list: list[Optional[int]],
+    compute_types: list[str | None],
+    beam_sizes: list[int | None],
+    cpu_threads_list: list[int | None],
+    num_workers_list: list[int | None],
     devices: list[str],
 ) -> list[dict]:
     """
@@ -292,7 +289,7 @@ MIN_TRUSTWORTHY_REPEATS = 5
 REALTIME_SANITY_FACTOR = 1.0
 
 
-def _noise_hint(cv: float, realtime_factor: Optional[float]) -> Optional[str]:
+def _noise_hint(cv: float, realtime_factor: float | None) -> str | None:
     """
     One extra sentence for the NOISE WARNING machinery: a high cv or an
     unexpectedly bad realtime factor both have the same likely explanation
@@ -318,7 +315,7 @@ def run_config(
     duration: float,
     warmup: bool,
     repeats: int,
-    language: Optional[str] = None,
+    language: str | None = None,
 ) -> dict:
     """
     Load once, optionally warm up once (untimed, discarded), then time

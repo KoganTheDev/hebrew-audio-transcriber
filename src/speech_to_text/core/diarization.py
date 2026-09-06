@@ -22,7 +22,7 @@ import os
 import shutil
 import tarfile
 import urllib.request
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import numpy as np
 
@@ -72,7 +72,7 @@ def models_present() -> bool:
     return os.path.exists(_SEGMENTATION_MODEL) and os.path.exists(_EMBEDDING_MODEL)
 
 
-def ensure_models(progress: Optional[Callable[[int, int], None]] = None) -> None:
+def ensure_models(progress: Callable[[int, int], None] | None = None) -> None:
     """Download the ONNX models on first use.
 
     sherpa-onnx ships no weights of its own, so this has to happen once. ~36 MB
@@ -113,7 +113,7 @@ def _safe_extract(tar: tarfile.TarFile, target_dir: str) -> None:
     tar.extractall(target_dir)
 
 
-def _download(url: str, destination: str, progress: Optional[Callable[[int, int], None]]) -> None:
+def _download(url: str, destination: str, progress: Callable[[int, int], None] | None) -> None:
     logger.info(f"Downloading {os.path.basename(destination)} ...")
     partial = destination + ".part"
     try:
@@ -142,7 +142,7 @@ def diarize(
     samples: np.ndarray,
     sample_rate: int = 16000,
     num_speakers: int = 2,
-    progress: Optional[Callable[[int, int], None]] = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> list["SpeakerSpan"]:
     """Label who is speaking across a mono recording.
 

@@ -13,7 +13,6 @@ import base64
 import random
 from functools import cache
 from pathlib import Path
-from typing import Optional
 
 # Inlined rather than linked because the app's premise is offline operation:
 # nothing here ever references an external URL, font or script. The only src
@@ -84,7 +83,7 @@ def _vista_names() -> tuple:
     )
 
 
-def _vista_portrait_name(landscape_name: str) -> Optional[str]:
+def _vista_portrait_name(landscape_name: str) -> str | None:
     """The portrait art-direction crop for a chosen landscape backdrop, e.g.
     "vista-07.webp" -> "vista-07-portrait.webp", or None if that photo has no
     portrait crop on disk.
@@ -116,7 +115,7 @@ def _data_uri(name: str) -> str:
     return f"data:image/webp;base64,{encoded}"
 
 
-def _vista_data_uris(vista: Optional[str]) -> Optional[tuple]:
+def _vista_data_uris(vista: str | None) -> tuple | None:
     """Choose a backdrop and return (landscape_uri, portrait_uri_or_None).
 
     vista=None (the default) picks uniformly at random from whatever exists.

@@ -12,7 +12,6 @@ document.py imports from here and never the other way round, so no cycle.
 import html
 import re
 from functools import partial
-from typing import Optional
 
 from .timecode import LRI, PDI
 
@@ -74,12 +73,12 @@ def _speaker_fallback(speaker_label: str, speaker: int) -> str:
 
 
 def _button(
-    label: Optional[str],
+    label: str | None,
     *,
-    id_attr: Optional[str] = None,
+    id_attr: str | None = None,
     css_class: str = "tb-btn",
-    icon: Optional[str] = None,
-    aria_label: Optional[str] = None,
+    icon: str | None = None,
+    aria_label: str | None = None,
     extra: str = "",
     wrap_label: bool = True,
 ) -> str:

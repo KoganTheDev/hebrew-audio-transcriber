@@ -10,7 +10,6 @@ duplicated here.
 
 import html
 from functools import partial
-from typing import Optional
 
 from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
 from speech_to_text.core.segments import TranscriptDocument
@@ -66,9 +65,9 @@ def _render_document_html(
     index: int,
     total: int,
     turns: list[Turn],
-    speaker_label: Optional[str],
+    speaker_label: str | None,
     timestamps: bool,
-    failed_label: Optional[str],
+    failed_label: str | None,
     strings: dict[str, str],
     payload: dict,
 ) -> list[str]:
@@ -188,9 +187,9 @@ def _render_speakers_html(
 
 def _render_outline_html(
     documents: list[TranscriptDocument],
-    speaker_label: Optional[str],
+    speaker_label: str | None,
     strings: dict[str, str],
-) -> Optional[str]:
+) -> str | None:
     """The sidebar: which file is which, and each file's speaker roster.
 
     Both belong to "where am I, who is this" rather than to the transcript
@@ -274,8 +273,8 @@ def _render_bubble_html(
     line_id: str,
     turn_id: str,
     timestamps: bool,
-    speaker_label: Optional[str],
-    speaker: Optional[int],
+    speaker_label: str | None,
+    speaker: int | None,
     strings: dict[str, str],
 ) -> str:
     """One <div class="bubble">: a full-width card for one sentence.
@@ -371,7 +370,7 @@ def _render_turn_html(
     turn: Turn,
     turn_id: str,
     sentences: list[Sentence],
-    speaker_label: Optional[str],
+    speaker_label: str | None,
     timestamps: bool,
     strings: dict[str, str],
 ) -> str:
@@ -480,7 +479,7 @@ def _render_plain_line_html(
 def _render_plain_html(
     turns: list[Turn],
     turn_ids: list[str],
-    speaker_label: Optional[str],
+    speaker_label: str | None,
     timestamps: bool,
     strings: dict[str, str],
 ) -> str:

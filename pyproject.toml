@@ -7,12 +7,15 @@ name = "speech-to-text-transcriber"
 version = "2.0.0"
 description = "Professional GUI application for audio transcription"
 readme = "README.md"
-requires-python = ">=3.9"
+# 3.10, not 3.9. Python 3.9 reached end of life in October 2025, and nothing
+# in this toolchain can verify a 3.9 claim any more: mypy 2.x refuses to
+# analyse anything below 3.10 outright, so the type checker and the metadata
+# were asserting different things. Raising the floor makes them agree.
+requires-python = ">=3.10"
 authors = [{name = "Development Team", email = "dev@example.com"}]
 license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: MIT License",
@@ -96,7 +99,7 @@ include = ["speech_to_text*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 src = ["src", "tests", "tools"]
 
 [tool.ruff.lint]
@@ -116,6 +119,13 @@ ignore = [
     # and a missing full stop change nothing for a reader, and enforcing them
     # across ~500 docstrings would bury the real documentation work in churn.
     "D400", "D401", "D403", "D415", "D417",
+    # zip() without strict=. Surfaced by the move to py310 and left off
+    # deliberately: strict=True would raise where the code currently truncates,
+    # and strict=False just silences the check without saying anything. Which
+    # is right differs per call site - several of these pair sequences that are
+    # equal-length by construction and would benefit from strict=True, which is
+    # a behaviour change worth making deliberately rather than by bulk fix.
+    "B905",
     # ruff format already enforces the line length for code. What is left over
     # is prose inside comments and docstrings, which the formatter will not
     # rewrap, and data it must not touch - gui/icons.py holds a 547-character
@@ -152,10 +162,6 @@ max-complexity = 10
 docstring-code-format = true
 
 [tool.mypy]
-# 3.10, not the 3.9 in requires-python: mypy 2.x refuses to analyse anything
-# below 3.10 outright ("Python 3.9 is not supported"), so the old value meant
-# the type checker degraded rather than ran. See requires-python - the two
-# genuinely disagree, and 3.9 has been end-of-life since October 2025.
 python_version = "3.10"
 # src-layout: without this mypy cannot find the package at all and stops with
 # "Can't find package 'speech_to_text'" before checking a single file. CI's

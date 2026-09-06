@@ -45,8 +45,8 @@ real speaker, and it would be easy to misread one as evidence of the other.
 """
 
 import logging
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -63,8 +63,8 @@ def diarize_powerset(
     samples: np.ndarray,
     sample_rate: int = 16000,
     num_speakers: int = 2,
-    progress: Optional[Callable[[int, int], None]] = None,
-    onset: Optional[float] = None,
+    progress: Callable[[int, int], None] | None = None,
+    onset: float | None = None,
     mask_overlap: bool = False,
 ) -> list["SpeakerSpan"]:
     """Label who is speaking, decoding the segmentation model directly.
@@ -139,7 +139,7 @@ def _providers(name: str) -> list[str]:
 def _infer_with_progress(
     session: Any,
     samples: np.ndarray,
-    progress: Optional[Callable[[int, int], None]],
+    progress: Callable[[int, int], None] | None,
 ) -> tuple[np.ndarray, list[int]]:
     """infer_marginals, reporting progress per window.
 
