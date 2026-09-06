@@ -156,6 +156,19 @@ def main():
         # traceback. Idempotent, so the usual close-then-quit order is fine.
         window.shutdown()
 
+        # Tear the widget tree down while the QApplication is still alive.
+        # Both are locals here, so without this Python drops them at
+        # interpreter shutdown in refcount order, and Qt objects outliving
+        # their QApplication is the classic PyQt exit crash - an access
+        # violation with no traceback. close() + deleteLater() queues the
+        # deletion, processEvents() runs it, and only then does the
+        # application go.
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+        del window
+        app.processEvents()
+
         sys.exit(exit_code)
 
     except OSError as e:
