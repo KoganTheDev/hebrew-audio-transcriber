@@ -93,3 +93,27 @@ test('a query under two characters clears any previous search rather than matchi
 
   window.close();
 });
+
+test('the match counter is bidi-isolated so "1 / 3" does not render as "3 / 1"', async () => {
+  // The counter is an LTR run ("1 / 3") sitting inside a dir="rtl" document.
+  // The slash between two digit runs is a neutral, so without an isolate the
+  // Unicode bidi algorithm lays the whole thing out right to left and the
+  // reader sees "3 / 1" - the counter claims match 3 of 1. This is the same
+  // failure the file-position span already guards against with LRI/PDI plus
+  // dir="ltr" (see _render_file_bar_html in core/formatting/document.py);
+  // #search-count was simply missed.
+  const { window, document } = buildWindow(getFixtureHtml('full'));
+  const box = document.getElementById('search');
+
+  input(box, 'שלום');
+  await wait(300);
+
+  const count = document.getElementById('search-count');
+  assert.ok(/\d+ \/ \d+/.test(count.textContent), `expected an "n / m" counter, got ${JSON.stringify(count.textContent)}`);
+  assert.ok(
+    count.textContent.startsWith('\u2066') && count.textContent.endsWith('\u2069'),
+    `counter must be wrapped in LRI/PDI, got ${JSON.stringify(count.textContent)}`
+  );
+
+  window.close();
+});

@@ -63,8 +63,13 @@
   function updateCount() {
     var count = document.getElementById('search-count');
     if (!count) { return; }
+    // Isolated, because "1 / 3" is an LTR run inside a dir="rtl" document and
+    // the slash between two digit runs is a neutral: without LRI/PDI the bidi
+    // algorithm lays it out right to left and the reader sees "3 / 1". The
+    // file-position span guards the same thing (_render_file_bar_html). The
+    // no-results string is translated prose, so it is left alone.
     count.textContent = matches.length
-      ? (matchIndex + 1) + ' / ' + matches.length
+      ? PLAIN_LRI + (matchIndex + 1) + ' / ' + matches.length + PLAIN_PDI
       : t('no_results', 'No results');
   }
 
