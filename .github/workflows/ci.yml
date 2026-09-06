@@ -36,11 +36,18 @@ jobs:
         # module form exits 0 without checking anything.
         run: lint-imports
 
-      - name: Types (mypy)
-        # Advisory for now. core/ is held to disallow_untyped_defs and is not
-        # there yet, and gui/ carries errors that are PyQt5's missing type
-        # information rather than defects. Each refactor package drives its own
-        # files to zero; this becomes blocking once they have.
+      - name: Types (mypy, blocking where it is clean)
+        # core/, config/, the presenters and hardware_detection are at zero and
+        # must stay there - this step FAILS the build. They are the parts held
+        # to disallow_untyped_defs, and the parts where a type error costs a
+        # real transcription run.
+        run: mypy -p speech_to_text.core -p speech_to_text.config -p speech_to_text.gui.presenters -p speech_to_text.hardware_detection
+
+      - name: Types (mypy, whole package, advisory)
+        # gui/ still reports 74, nearly all of them PyQt5 shipping no type
+        # information rather than defects ("type[Qt] has no attribute
+        # RightToLeft"). Reported so the number is visible and can be driven
+        # down, not gated, so the gate above stays meaningful.
         continue-on-error: true
         run: mypy -p speech_to_text
 
@@ -49,7 +56,7 @@ jobs:
         # there is no display on a runner.
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest --cov=speech_to_text --cov-branch --cov-fail-under=76
+        run: pytest --cov=speech_to_text --cov-branch --cov-fail-under=80
 
       - name: Documentation density
         # Reported, never gated - no tool can judge whether a given paragraph

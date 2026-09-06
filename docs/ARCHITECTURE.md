@@ -55,8 +55,10 @@ src/speech_to_text/
     formatting/          renders those into the self-contained HTML transcript
     assets/css|js        the transcript's own front-end, concatenated in order
   gui/                 PyQt5. Runs in the main process.
+    presenters/          decisions, with NO Qt import - see below
     main_window.py       the 3-step wizard shell, navigation, thread wiring
     steps/               file select, model select, transcription
+    widgets.py           DropZone, IconTextButton, and the make_label factory
     theme.py             Catppuccin palette + QSS builders
     i18n.py              English/Hebrew strings and RTL handling
     threads.py           QThread wrappers that own the worker subprocess
@@ -65,6 +67,16 @@ src/speech_to_text/
 The dependency direction is one-way: `gui/` may import `core/`, never the
 reverse. `core/segments.py` is the shared vocabulary both sides agree on, and it
 depends on nothing.
+
+**`gui/presenters/` extends that rule one layer outward.** It holds the
+decisions a view has to make - what the file summary should say, which device
+to run on, what options to build - as pure functions over a frozen dataclass,
+and it imports no Qt at all. That is what makes those decisions testable
+without a `QApplication`: `tests/test_presenters.py` runs in 0.2s with no
+display and no platform plugin. Note that `gui/i18n.py` DOES import PyQt5
+(`QObject`/`QSettings`/`pyqtSignal` back the language state), so a presenter
+takes a `translate` callable rather than importing `t` directly. A second
+import-linter contract pins the rule.
 
 ## 3. Runtime: one transcription
 

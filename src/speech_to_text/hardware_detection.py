@@ -5,7 +5,7 @@ Detects CPU/GPU specs and calculates estimated transcription time.
 import logging
 import platform
 import subprocess
-from typing import Optional
+from typing import Optional, cast
 
 from speech_to_text import config
 from speech_to_text.core.calibration import RELATIVE_COMPUTE_COST, load_cached_tiny_rtf
@@ -64,7 +64,7 @@ def _required_ram_gb(model_size: str, default: int = 5) -> int:
 class HardwareDetector:
     """Detects hardware specs and estimates processing time."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         logger.debug("Initializing HardwareDetector...")
 
         if psutil:
@@ -216,7 +216,12 @@ class HardwareDetector:
         )
 
         ordered = sorted(
-            config.MODELS.items(), key=lambda kv: kv[1]["accuracy_score"], reverse=True
+            config.MODELS.items(),
+            # cast, not float(): config.MODELS is typed dict[str, dict[str, object]],
+            # so the score reads as object and is not comparable. This is a typing
+            # assertion with no runtime effect, rather than a conversion.
+            key=lambda kv: cast(float, kv[1]["accuracy_score"]),
+            reverse=True,
         )
 
         for model_name, _ in ordered:
