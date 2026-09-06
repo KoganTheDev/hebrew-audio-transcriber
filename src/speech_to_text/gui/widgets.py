@@ -1,7 +1,7 @@
 """Custom widgets used by the main window."""
 
 from PyQt5.QtCore import QEvent, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QIcon, QPainter
+from PyQt5.QtGui import QColor, QFont, QIcon, QKeyEvent, QPainter, QPaintEvent, QPixmap
 from PyQt5.QtWidgets import (
     QFrame,
     QLabel,
@@ -9,13 +9,21 @@ from PyQt5.QtWidgets import (
     QStyle,
     QStyleOptionButton,
     QStylePainter,
+    QWidget,
 )
 
 from speech_to_text.gui import theme
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 
 
-def make_label(text="", *, font=None, color=None, align=None, parent=None) -> QLabel:
+def make_label(
+    text: str = "",
+    *,
+    font: QFont | None = None,
+    color: str | None = None,
+    align: Qt.Alignment | Qt.AlignmentFlag | None = None,
+    parent: QWidget | None = None,
+) -> QLabel:
     """Build a styled QLabel in one call instead of four statements.
 
     Almost every label in this app is the same four-line shape - construct
@@ -80,11 +88,11 @@ class DropZone(QFrame):
     # the identical QFileDialog rather than two subtly different ones.
     activated = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-    def event(self, event):
+    def event(self, a0: QEvent | None) -> bool:
         # A plain QShortcut for the window-level "Enter advances" binding
         # (see MainWindow) would otherwise steal Return/Enter before this
         # widget's own keyPressEvent ever saw it - Qt asks the focused
@@ -94,21 +102,34 @@ class DropZone(QFrame):
         # about is what lets "Enter opens the browse dialog while the drop
         # zone is focused" win over "Enter advances to the next step"
         # instead of the two racing.
-        if event.type() == QEvent.ShortcutOverride and event.key() in (
-            Qt.Key_Space,
-            Qt.Key_Return,
-            Qt.Key_Enter,
+        # isinstance rather than a cast: only QKeyEvent carries key(), and
+        # a ShortcutOverride always is one. The None arm exists because the
+        # override signature permits it, not because Qt sends it.
+        if (
+            a0 is not None
+            and a0.type() == QEvent.Type.ShortcutOverride
+            and isinstance(a0, QKeyEvent)
+            and a0.key()
+            in (
+                Qt.Key.Key_Space,
+                Qt.Key.Key_Return,
+                Qt.Key.Key_Enter,
+            )
         ):
-            event.accept()
+            a0.accept()
             return True
-        return super().event(event)
+        return super().event(a0)
 
-    def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+    def keyPressEvent(self, a0: QKeyEvent | None) -> None:
+        if a0 is not None and a0.key() in (
+            Qt.Key.Key_Space,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+        ):
             self.activated.emit()
-            event.accept()
+            a0.accept()
             return
-        super().keyPressEvent(event)
+        super().keyPressEvent(a0)
 
 
 class IconTextButton(QPushButton):
@@ -127,18 +148,18 @@ class IconTextButton(QPushButton):
 
     GAP = 8  # px between icon and text
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._icon_name = None
+        self._icon_name: str | None = None
         self._icon_side = "left"  # visual side: "left" | "right"
         self._icon_px = 16
         self._color_normal = "#ffffff"
-        self._color_hover = None  # None: no hover color change
-        self._color_disabled = None  # None: use the normal color
+        self._color_hover: str | None = None  # None: no hover color change
+        self._color_disabled: str | None = None  # None: use the normal color
         # paintEvent runs on every hover change and repaint - rasterizing
         # the SVG each time (XML parse + render) is wasteful, so pixmaps
         # are cached per (icon, size, color); at most one entry per state.
-        self._pixmap_cache = {}
+        self._pixmap_cache: dict[tuple[str, int, str, float], QPixmap] = {}
 
     def set_icon_spec(self, icon_name: str, side: str) -> None:
         """Set which ICONS entry to draw and on which visual side."""
@@ -146,7 +167,9 @@ class IconTextButton(QPushButton):
         self._icon_side = side
         self.update()
 
-    def set_text_colors(self, normal: str, hover: str = None, disabled: str = None) -> None:
+    def set_text_colors(
+        self, normal: str, hover: str | None = None, disabled: str | None = None
+    ) -> None:
         """Colors for text and icon per widget state (hex strings)."""
         self._color_normal = normal
         self._color_hover = hover
@@ -160,7 +183,7 @@ class IconTextButton(QPushButton):
             return self._color_hover
         return self._color_normal
 
-    def paintEvent(self, event):
+    def paintEvent(self, a0: QPaintEvent | None) -> None:
         # Frame/background from QSS, with text and icon blanked out - the
         # label content is drawn manually below.
         opt = QStyleOptionButton()
@@ -168,7 +191,7 @@ class IconTextButton(QPushButton):
         opt.text = ""
         opt.icon = QIcon()
         style_painter = QStylePainter(self)
-        style_painter.drawControl(QStyle.CE_PushButton, opt)
+        style_painter.drawControl(QStyle.ControlElement.CE_PushButton, opt)
         style_painter.end()
 
         color = self._current_color()
