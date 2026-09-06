@@ -18,12 +18,11 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
 from PyQt5.QtCore import Qt, QThread, pyqtSignal  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
 
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
+# No local `qapp` fixture here on purpose: these tests take pytest-qt's
+# session-scoped one. A local definition shadows it, and a module-scoped
+# QApplication fixture in this suite once broke unrelated tests outright.
+# Read "The shared QApplication" in docs/TESTING.md before adding one back.
 
 
 @pytest.fixture

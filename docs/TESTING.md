@@ -79,6 +79,51 @@ worse than no marker, because it reads like a working switch.
     pytest -m integration        # the six that exercise modules together
     pytest -m "not integration"  # everything else
 
+## The shared QApplication
+
+GUI tests take pytest-qt's built-in `qapp` fixture. **Do not define a local
+`qapp` fixture in a test module.** A local definition shadows pytest-qt's, and
+unless it is session-scoped it reintroduces a bug this suite has already been
+bitten by once.
+
+pytest-qt's `qapp` is session-scoped *and* stores the application it creates in
+a module-level global (`pytestqt.plugin._qapp_instance`), so a Python reference
+to it is held for the life of the whole run. That is exactly the property that
+matters here.
+
+**The incident.** Qt allows one `QApplication` per process, and
+`QApplication.instance()` hands back whatever currently exists. A module-scoped
+fixture that constructed the application and then tore down at the end of its
+module dropped the only Python reference to it. `QApplication.instance()` then
+came back as a fresh, distinct application for the next module, and every
+QObject implicitly tied to the original was left invalid - including
+`i18n.language_manager`, a module-level singleton constructed once at import
+time. Symptom, reproduced and confirmed by bisection: `RuntimeError: wrapped
+C/C++ object of type LanguageManager has been deleted`, raised deep inside
+*unrelated* tests in `test_gui.py`. The fix was session scope.
+
+The bug is ordering-dependent, which is why it hid for a while:
+`test_checkbox_style.py` collects and tears its fixtures down before
+`test_gui.py` alphabetically, so it was the file that happened to construct the
+application first and destroy it first. A green single-file run proves nothing
+about it - re-run the full suite, and `test_checkbox_style.py` followed by
+`test_gui.py` in that order.
+
+The same reference-lifetime trap applies to anything Qt takes C++ ownership of
+while leaving the Python wrapper's lifetime to you - see the `painted_style`
+fixture in `tests/test_checkbox_style.py` for the `QProxyStyle` version of the
+same story.
+
+`qapp` is a *bare* `QApplication`: it does not run `configure_application`, so
+there is no stylesheet, no saved-language load and no process-wide keyboard
+focus tracker. Tests needing any of those install them themselves.
+
+**Binding pin.** `pytest.ini` sets `qt_api = pyqt5`. Left to guess, pytest-qt
+picks the first binding it can import in the order PySide6, PyQt6, PyQt5 - and
+PyQt6 is installed in the usual dev environment even though this app is PyQt5.
+Unpinned, `qapp` builds a PyQt6 `QApplication` inside a PyQt5 process and the
+interpreter aborts, mid-run, with no traceback. Do not remove that line.
+
 ## Conventions
 
 Test names are full sentences describing the behaviour, not the function under

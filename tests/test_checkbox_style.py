@@ -11,9 +11,9 @@ regression the rewrite itself was fixing (see checkbox_style.py's module
 docstring: the old bug was a rendered stroke coming out at uneven weights,
 which no method-existence test would ever catch).
 
-qapp here is a bare QApplication (tests/test_gui.py's module-scoped `qapp`
-fixture, shared via conftest-less same-directory collection is NOT reused
-on purpose - see the local `qapp` fixture below) - it does not run
+qapp here is pytest-qt's session-scoped `qapp` fixture, a bare
+QApplication (no module in this suite defines its own - see "The shared
+QApplication" in docs/TESTING.md for why). It does not run
 configure_application, so PaintedCheckboxStyle is not installed on it by
 default. These tests install it directly on the checkbox's QApplication
 instance rather than calling configure_application, because
@@ -34,7 +34,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest  # noqa: E402
 from PyQt5.QtGui import QColor, QPainter, QPixmap  # noqa: E402
 from PyQt5.QtWidgets import (  # noqa: E402
-    QApplication,
     QCheckBox,
     QProxyStyle,
     QStyle,
@@ -74,34 +73,12 @@ def _color_close(actual: QColor, expected_hex: str, tolerance: int = _TOLERANCE)
     )
 
 
-@pytest.fixture(scope="session")
-def qapp():
-    """
-    A bare QApplication, same construction as test_gui.py's own `qapp`
-    fixture - deliberately NOT running configure_application. See this
-    module's docstring for why the style is installed directly instead.
-
-    Session-scoped, not module-scoped, and this matters: this file collects
-    (and, alphabetically, tears down its fixtures) before test_gui.py's own
-    module-scoped `qapp` fixture ever runs. QApplication.instance() is
-    reused by both, but each file's fixture is its own distinct Python
-    object caching its own reference to it. Tried module-scoped first: when
-    THIS file was the very first to construct the QApplication (via
-    `QApplication([])`) and then tear down its fixture at the end of this
-    module, that teardown dropped the only Python reference to it - Qt's
-    "one QApplication instance" rule then had `QApplication.instance()` come
-    back as a fresh, distinct application when test_gui.py's fixture ran
-    next, and every QObject implicitly tied to the original instance
-    (including i18n.language_manager, a module-level singleton constructed
-    once at import time) was left invalid. Symptom, reproduced and
-    confirmed by bisection: `RuntimeError: wrapped C/C++ object of type
-    LanguageManager has been deleted` deep inside unrelated tests in
-    test_gui.py. Session scope keeps this fixture's reference alive for the
-    life of the whole pytest run, well past test_gui.py's own use of the
-    same singleton, so the QApplication is never allowed to drop to a zero
-    refcount mid-session.
-    """
-    return QApplication.instance() or QApplication([])
+# `qapp` is pytest-qt's own session-scoped fixture. It must stay session-scoped
+# and must not be shadowed by a local definition here: a module-scoped
+# QApplication fixture in this file once dropped the last Python reference to
+# the application at the end of this module and left unrelated tests in
+# test_gui.py failing. The full incident is written up under "The shared
+# QApplication" in docs/TESTING.md.
 
 
 @pytest.fixture(scope="session")
@@ -113,8 +90,9 @@ def painted_style(qapp):
     or replace it afterwards.
 
     Two other shapes were tried first and both corrupted the process rather
-    than just this test's own state - see the `qapp` fixture above for the
-    matching story on the QApplication singleton itself:
+    than just this test's own state - see "The shared QApplication" in
+    docs/TESTING.md for the matching story on the QApplication singleton
+    itself:
 
     1. Module-scoped, wrapping `qapp.style()` (the app's live, shared
        style), attached per-widget via QWidget.setStyle() instead of
