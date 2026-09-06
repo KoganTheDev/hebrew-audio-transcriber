@@ -658,6 +658,51 @@ class TestDropZoneEventPath:
         qapp.sendEvent(file_select_step.drop_zone, enter)
         assert not enter.isAccepted()
 
+    def test_a_drag_carrying_no_mime_data_at_all_is_refused_rather_than_crashing(
+        self, qapp, file_select_step
+    ):
+        """
+        QDragEnterEvent.mimeData() is Optional in Qt's own API, and a drag
+        really can arrive with none - the event object below is built the
+        same way Qt builds one, just without mime data. _drag_enter used to
+        call event.mimeData().hasUrls() unconditionally, so this path raised
+        AttributeError inside a Qt event handler, where the traceback goes to
+        stderr and the drop zone is simply left stuck in its drag-active
+        styling with no visible explanation.
+        """
+        from PyQt5.QtCore import QPoint, Qt
+        from PyQt5.QtGui import QDragEnterEvent
+
+        enter = QDragEnterEvent(QPoint(10, 10), Qt.CopyAction, None, Qt.LeftButton, Qt.NoModifier)
+        qapp.sendEvent(file_select_step.drop_zone, enter)
+        assert not enter.isAccepted()
+
+    def test_a_drop_carrying_no_mime_data_at_all_selects_nothing_rather_than_crashing(
+        self, file_select_step
+    ):
+        """
+        The _drag_enter case above, one event later: _drop iterated
+        event.mimeData().urls() with the same unconditional dereference, so a
+        drop whose mime data is gone raised AttributeError instead of simply
+        selecting nothing.
+
+        Calls _drop directly rather than sending the event, matching the other
+        drop tests in this file: Qt will not deliver a bare QDropEvent to a
+        widget that is not already mid-drag, so sending one here would pass
+        without ever reaching the handler under test.
+        """
+        from PyQt5.QtCore import QPoint, Qt
+        from PyQt5.QtGui import QDropEvent
+
+        received = []
+        file_select_step.files_selected.connect(lambda paths, seconds: received.append(paths))
+
+        drop = QDropEvent(QPoint(10, 10), Qt.CopyAction, None, Qt.LeftButton, Qt.NoModifier)
+        file_select_step._drop(drop)
+
+        assert file_select_step.selected_files == []
+        assert received == []
+
 
 class TestDropZoneKeyboardAccess:
     """
