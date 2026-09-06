@@ -4,9 +4,10 @@
 
 import logging
 import sys
+from typing import cast
 
-from PyQt5.QtCore import Qt, QThread, QTimer
-from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QCloseEvent, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -70,12 +71,12 @@ logger = logging.getLogger(__name__)
 # module import time, exactly once (Python's module cache guarantees that),
 # is the one place that is guaranteed to run first for all of them without
 # duplicating this call at every call site.
-QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
+QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
 
-def _is_text_entry_widget(widget) -> bool:
+def _is_text_entry_widget(widget: QWidget | None) -> bool:
     """True for any widget where Enter means "confirm what I just typed here",
     not "advance to the next step" - the window-level Enter shortcut below
     checks this before acting. The speaker-count QSpinBox on step 2 is the
@@ -98,7 +99,7 @@ class MainWindow(QMainWindow):
     # dangerous indefinitely.
     CANCEL_ARM_TIMEOUT_MS = 3000
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         logger.info("Initializing MainWindow...")
 
@@ -122,13 +123,13 @@ class MainWindow(QMainWindow):
 
         self.hardware = HardwareDetector()
         self.current_step = Step.FILE_SELECT
-        self.transcription_thread: QThread | None = None
+        self.transcription_thread: TranscriptionThread | None = None
         self.selected_files: list[str] = []
         self.selected_model: str | None = None
         # Total across every selected file - what should drive the model
         # recommendation, since the estimate has to cover the whole batch.
         self.audio_duration: int = 0
-        self.calibration_thread: QThread | None = None
+        self.calibration_thread: CalibrationThread | None = None
 
         # Two-press Cancel state (see _on_cancel_clicked). A single-shot
         # timer rather than something driven off _tick or similar: arming
@@ -161,13 +162,13 @@ class MainWindow(QMainWindow):
 
         logger.info("✓ MainWindow ready")
 
-    def _on_calibration_done(self, tiny_seconds_per_audio_second: float):
+    def _on_calibration_done(self, tiny_seconds_per_audio_second: float) -> None:
         """Apply a finished background calibration and refresh any visible estimates."""
         self.hardware.set_calibration(tiny_seconds_per_audio_second)
         self.model_step.update_audio_duration(self.audio_duration)
         logger.debug("Refreshed model time estimates with calibrated values")
 
-    def _on_calibration_failed(self, message: str):
+    def _on_calibration_failed(self, message: str) -> None:
         logger.warning(f"Hardware calibration failed, keeping placeholder estimates: {message}")
         # The "still measuring" note on step 2 (see ModelSelectStep) would
         # otherwise stay up forever, quietly promising a real number that's
@@ -175,7 +176,7 @@ class MainWindow(QMainWindow):
         # for a permanent, honest "these are rough" resting state instead.
         self.model_step.mark_calibration_unmeasured()
 
-    def center_on_screen(self):
+    def center_on_screen(self) -> None:
         """Center window on screen."""
         screen = QDesktopWidget().screenGeometry()
         x = (screen.width() - self.width()) // 2
@@ -183,7 +184,7 @@ class MainWindow(QMainWindow):
         self.move(x, y)
         logger.debug(f"Window centered at ({x}, {y})")
 
-    def _init_shortcuts(self):
+    def _init_shortcuts(self) -> None:
         """Window-level keyboard shortcuts. Each is a QShortcut parented to
         the window with the default Qt.WindowShortcut context, so it fires
         whenever this window (or a descendant) has focus, regardless of
@@ -205,20 +206,20 @@ class MainWindow(QMainWindow):
         # Return AND Enter - the numpad key sends Qt.Key_Enter, the main
         # keyboard's sends Qt.Key_Return, and QKeySequence("Return") only
         # matches one of them.
-        self._shortcut_advance_return = QShortcut(QKeySequence(Qt.Key_Return), self)
+        self._shortcut_advance_return = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
         self._shortcut_advance_return.activated.connect(self._on_advance_shortcut)
-        self._shortcut_advance_enter = QShortcut(QKeySequence(Qt.Key_Enter), self)
+        self._shortcut_advance_enter = QShortcut(QKeySequence(Qt.Key.Key_Enter), self)
         self._shortcut_advance_enter.activated.connect(self._on_advance_shortcut)
 
-        self._shortcut_back = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._shortcut_back = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._shortcut_back.activated.connect(self._on_escape_shortcut)
 
-    def _on_browse_shortcut(self):
+    def _on_browse_shortcut(self) -> None:
         """Ctrl+O: open the file-picker dialog. Only meaningful on step 1."""
         if self.current_step == Step.FILE_SELECT:
             self.file_step.browse_for_files()
 
-    def _on_advance_shortcut(self):
+    def _on_advance_shortcut(self) -> None:
         """Enter/Return: equivalent to clicking Next, guarded against firing
         while the user is mid-entry in a text field (see
         _is_text_entry_widget - the speaker-count QSpinBox on step 2 is the
@@ -242,7 +243,7 @@ class MainWindow(QMainWindow):
         if self.next_btn.isVisible() and self.next_btn.isEnabled():
             self.next_btn.click()
 
-    def _on_escape_shortcut(self):
+    def _on_escape_shortcut(self) -> None:
         """Escape: go Back on step 2 (Choose Model); on step 3 (Transcribing),
         drive the same two-press Cancel confirmation the button itself
         uses (see _on_cancel_clicked).
@@ -265,7 +266,7 @@ class MainWindow(QMainWindow):
         elif self.current_step == Step.TRANSCRIPTION:
             self._on_cancel_clicked()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         """Initialize UI."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -295,7 +296,7 @@ class MainWindow(QMainWindow):
         self._retranslate_chrome()
         self._wire_tab_order()
 
-    def _build_header(self, main_layout):
+    def _build_header(self, main_layout: QVBoxLayout) -> None:
         """The 50px title bar: gradient app title, optically centered between
         the language toggle and a same-width invisible spacer.
         """
@@ -319,7 +320,7 @@ class MainWindow(QMainWindow):
             )
         )
         self.title_label.setStyleSheet("background: transparent;")
-        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # EN/HE toggle at the trailing edge of the header (label shows the
         # TARGET language). A same-width invisible spacer at the leading edge
@@ -329,7 +330,7 @@ class MainWindow(QMainWindow):
         self.lang_btn.setFixedSize(lang_btn_width, 30)
         self.lang_btn.setFont(Fonts.CAPTION_BOLD)
         self.lang_btn.setStyleSheet(theme.button_secondary_qss(padding="2px 4px"))
-        self.lang_btn.setCursor(Qt.PointingHandCursor)
+        self.lang_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # Icon-only in effect: its visible text is a language code ("EN" /
         # "עב"), the TARGET language, which reads fine next to the app's
         # current language but says nothing about what clicking it does to
@@ -351,7 +352,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.lang_btn)
         main_layout.addWidget(header)
 
-    def _build_content_area(self, main_layout):
+    def _build_content_area(self, main_layout: QVBoxLayout) -> None:
         """The stacked widget holding the three wizard steps, and the wiring
         that turns each step's own signal into a MainWindow transition.
         """
@@ -382,7 +383,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.stacked_widget)
         main_layout.addWidget(content_widget)
 
-    def _build_nav_bar(self, main_layout):
+    def _build_nav_bar(self, main_layout: QVBoxLayout) -> None:
         """The Back/Cancel/Next bar along the bottom, shared by all three
         steps rather than repeated inside each one.
         """
@@ -407,7 +408,9 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(nav_widget)
 
-    def _build_back_and_cancel(self, nav_layout, nav_btn_size):
+    def _build_back_and_cancel(
+        self, nav_layout: QHBoxLayout, nav_btn_size: tuple[int, int]
+    ) -> None:
         """Back and Cancel share the leading nav slot - only ever one of them
         is visible - plus the label that explains Cancel's armed state.
         """
@@ -454,7 +457,7 @@ class MainWindow(QMainWindow):
         self.cancel_confirm_label.hide()
         nav_layout.addWidget(self.cancel_confirm_label)
 
-    def _build_next_button(self, nav_layout, nav_btn_size):
+    def _build_next_button(self, nav_layout: QHBoxLayout, nav_btn_size: tuple[int, int]) -> None:
         """The one button that advances the wizard, whatever it currently
         says.
         """
@@ -474,7 +477,7 @@ class MainWindow(QMainWindow):
         self.next_btn.setEnabled(False)
         nav_layout.addWidget(self.next_btn)
 
-    def _wire_tab_order(self):
+    def _wire_tab_order(self) -> None:
         """Explicit Tab chain spanning the whole window, following visual
         order top to bottom: header language toggle, then each step's own
         internal chain (each step already wires its own controls in
@@ -502,7 +505,7 @@ class MainWindow(QMainWindow):
         self.setTabOrder(self.transcription_step.folder_button, self.next_btn)
         self.setTabOrder(self.next_btn, self.lang_btn)
 
-    def _retranslate_chrome(self):
+    def _retranslate_chrome(self) -> None:
         """(Re-)apply window title, header, and nav button text/icons/directions."""
         self.setWindowTitle(t("app_title"))
         self.title_label.setPixmap(
@@ -535,7 +538,7 @@ class MainWindow(QMainWindow):
 
         self._set_next_button_mode(self._next_btn_mode)
 
-    def _set_next_button_mode(self, mode: str):
+    def _set_next_button_mode(self, mode: str) -> None:
         """Configure next_btn for its current role: "next" (forward arrow on
         the trailing side, pointing along the reading direction) or
         "new_file" (reset action after completion - plus-file icon on the
@@ -557,39 +560,56 @@ class MainWindow(QMainWindow):
                 "arrow_left" if rtl else "arrow_right", side="left" if rtl else "right"
             )
 
-    def _toggle_language(self):
+    def _toggle_language(self) -> None:
         i18n.set_language("he" if i18n.get_language() == "en" else "en")
 
-    def _on_language_changed(self, lang: str):
+    def _on_language_changed(self, lang: str) -> None:
         """Apply app-wide layout direction and re-render every visible string."""
         from PyQt5.QtWidgets import QApplication
 
-        QApplication.instance().setLayoutDirection(
-            Qt.RightToLeft if lang == "he" else Qt.LeftToRight
-        )
+        # isinstance, not "is not None": instance() is typed as the
+        # QCoreApplication base, which has no layout direction at all. A
+        # console-only application could never be running this window.
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            app.setLayoutDirection(
+                Qt.LayoutDirection.RightToLeft if lang == "he" else Qt.LayoutDirection.LeftToRight
+            )
         self._retranslate_chrome()
         self.step_indicator.retranslate()
         for i in range(self.stacked_widget.count()):
-            self.stacked_widget.widget(i).retranslate()
+            # Every page in this stack is one of the three wizard steps (see
+            # _build_content_area) and each defines retranslate(); they share
+            # no base class beyond QFrame, and widget() is typed Optional only
+            # because its C++ signature returns a pointer.
+            page = cast(
+                "FileSelectStep | ModelSelectStep | TranscriptionStep",
+                self.stacked_widget.widget(i),
+            )
+            page.retranslate()
         # The RTL/LTR flip relocates the buttons (the toggle jumps to the
         # opposite side of the header) without Qt sending them a Leave
         # event, so the clicked button keeps its :hover styling until the
         # mouse happens to pass over it again. Clear the stale under-mouse
         # flag and re-polish so hover state matches reality.
         for btn in self.findChildren(QPushButton):
-            btn.setAttribute(Qt.WA_UnderMouse, False)
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
+            btn.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
+            # style() is typed Optional and is only ever None for a widget
+            # whose C++ side is already gone - nothing to re-polish there.
+            style = btn.style()
+            if style is not None:
+                style.unpolish(btn)
+                style.polish(btn)
             btn.update()
 
-    def _on_files_selected(self, file_paths: list, total_duration: int):
+    def _on_files_selected(self, file_paths: list[str], total_duration: int) -> None:
         """Handle the file list changing (add, remove, or a folder drop)."""
         self.selected_files = list(file_paths)
         self.audio_duration = total_duration
         self.next_btn.setEnabled(bool(self.selected_files))
         logger.debug(f"Files selected: {len(self.selected_files)} file(s), {total_duration}s total")
 
-    def _on_model_selected(self, model: str):
+    def _on_model_selected(self, model: str) -> None:
         """Handle model selection."""
         self.selected_model = model
         self.next_btn.setEnabled(True)
@@ -604,7 +624,7 @@ class MainWindow(QMainWindow):
         next_visible: bool,
         next_enabled: bool = False,
         next_mode: str = "next",
-        focus_widget=None,
+        focus_widget: QWidget | None = None,
     ) -> None:
         """Single funnel for every wizard-navigation transition. Owns exactly
         the bookkeeping that was previously hand-written in five separate
@@ -646,12 +666,12 @@ class MainWindow(QMainWindow):
         self.next_btn.setEnabled(next_enabled)
 
         if focus_widget is not None:
-            focus_widget.setFocus(Qt.OtherFocusReason)
+            focus_widget.setFocus(Qt.FocusReason.OtherFocusReason)
 
         self.step_indicator.set_current(step)
         logger.debug(f"Navigated to: {step}")
 
-    def _on_next_clicked(self):
+    def _on_next_clicked(self) -> None:
         """next_btn's one and only clicked connection (see _init_ui) -
         dispatches on the button's current role instead of the
         disconnect/reconnect-a-different-slot dance this used to require.
@@ -664,7 +684,7 @@ class MainWindow(QMainWindow):
         else:
             self._go_next()
 
-    def _go_back(self):
+    def _go_back(self) -> None:
         """Go to previous step."""
         if self.current_step == Step.MODEL_SELECT:
             self._set_step(
@@ -675,7 +695,7 @@ class MainWindow(QMainWindow):
                 next_enabled=bool(self.selected_files),
             )
 
-    def _go_next(self):
+    def _go_next(self) -> None:
         """Go to next step."""
         if self.current_step == Step.FILE_SELECT:
             # Refresh time estimates in place instead of rebuilding the widget.
@@ -701,7 +721,7 @@ class MainWindow(QMainWindow):
             # Proceed to transcription once the model is selected.
             self._start_transcription()
 
-    def _start_transcription(self):
+    def _start_transcription(self) -> None:
         """Start transcription thread."""
         self.model_step.clear_error()
         # Steps 1 and 2 seed a sensible Tab starting point in their own
@@ -732,9 +752,14 @@ class MainWindow(QMainWindow):
         # gui/presenters/transcription.py). What is left below is only
         # widget and thread work. t is passed in rather than imported there
         # because gui.i18n imports PyQt5.
+        # _go_next is the only caller and it returns early - with the "no
+        # model selected" warning - when selected_model is unset, so it is a
+        # str by the time execution reaches here. The attribute itself has to
+        # stay str | None for the window between _reset and step 2.
+        model = cast(str, self.selected_model)
         request = build_transcription_request(
             files=self.selected_files,
-            model=self.selected_model,
+            model=model,
             durations=self.file_step.durations,
             hardware=self.hardware,
             identify_speakers=self.model_step.identify_speakers,
@@ -742,7 +767,7 @@ class MainWindow(QMainWindow):
             translate=t,
         )
 
-        self.transcription_step.set_file_info(request.file_summary, self.selected_model)
+        self.transcription_step.set_file_info(request.file_summary, model)
         # Filenames for the batch strip's tooltips come from here, not from
         # the worker - see TranscriptionStep.set_batch_files's docstring
         # for why. self.selected_files is exactly the list FileSelectStep
@@ -767,7 +792,7 @@ class MainWindow(QMainWindow):
         self.transcription_thread.error.connect(self._on_transcription_error)
         self.transcription_thread.start()
 
-    def _on_transcription_complete(self, output_file: str):
+    def _on_transcription_complete(self, output_file: str) -> None:
         """Handle transcription completion."""
         logger.info(f"Transcription complete: {output_file}")
         self.transcription_step.stop()
@@ -788,7 +813,7 @@ class MainWindow(QMainWindow):
             next_mode="new_file",
         )
 
-    def _on_transcription_error(self, error_key: str, error_params: dict):
+    def _on_transcription_error(self, error_key: str, error_params: dict[str, object]) -> None:
         """Handle a genuine transcription failure (not a user cancel - that's
         handled separately by _cancel_transcription).
 
@@ -803,7 +828,7 @@ class MainWindow(QMainWindow):
         self.model_step.show_error(error_key, error_params)
         self._return_to_model_select()
 
-    def _on_cancel_clicked(self):
+    def _on_cancel_clicked(self) -> None:
         """Cancel's actual clicked/Escape handler - a two-press control rather
         than the single click _cancel_transcription used to be wired
         directly to.
@@ -827,12 +852,12 @@ class MainWindow(QMainWindow):
         self._set_cancel_armed_visual(False)
         self._cancel_transcription()
 
-    def _arm_cancel(self):
+    def _arm_cancel(self) -> None:
         self._cancel_armed = True
         self._set_cancel_armed_visual(True)
         self._cancel_arm_timer.start()
 
-    def _disarm_cancel(self):
+    def _disarm_cancel(self) -> None:
         """Revert Cancel to its resting state - called by the arm timer's own
         timeout, and unconditionally by _set_step on every navigation (see
         its comment) so an armed state never survives leaving step 3.
@@ -843,7 +868,7 @@ class MainWindow(QMainWindow):
         self._cancel_armed = False
         self._set_cancel_armed_visual(False)
 
-    def _set_cancel_armed_visual(self, armed: bool):
+    def _set_cancel_armed_visual(self, armed: bool) -> None:
         """Paint cancel_btn/cancel_confirm_label for `armed` - see _on_cancel_clicked."""
         if armed:
             self.cancel_btn.setStyleSheet(theme.button_danger_qss())
@@ -854,7 +879,7 @@ class MainWindow(QMainWindow):
             self.cancel_btn.set_text_colors(COLORS["text_primary"], hover=COLORS["accent"])
             self.cancel_confirm_label.hide()
 
-    def _cancel_transcription(self):
+    def _cancel_transcription(self) -> None:
         """Stop a running transcription and return to Choose Model."""
         logger.info("Transcription cancelled by user")
         self.transcription_step.stop()
@@ -869,7 +894,7 @@ class MainWindow(QMainWindow):
             self.transcription_thread.wait()
         self._return_to_model_select()
 
-    def _return_to_model_select(self):
+    def _return_to_model_select(self) -> None:
         """Go back to the Choose Model step, keeping the selected file/model."""
         self._set_step(
             Step.MODEL_SELECT,
@@ -879,7 +904,7 @@ class MainWindow(QMainWindow):
             next_enabled=self.selected_model is not None,
         )
 
-    def _reset(self):
+    def _reset(self) -> None:
         """Reset to file selection."""
         self.model_step.clear_error()
         self.selected_files = []
@@ -895,7 +920,7 @@ class MainWindow(QMainWindow):
         self.file_step.reset()
         logger.debug("Reset to file selection step")
 
-    def _detach_calibration_thread(self):
+    def _detach_calibration_thread(self) -> None:
         """Unwire and stop the background calibration, on the way out.
 
         The calibration thread outlives nothing gracefully on its own: it
@@ -942,7 +967,7 @@ class MainWindow(QMainWindow):
             self.transcription_thread.stop()
             self.transcription_thread.wait()
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0: QCloseEvent | None) -> None:
         """Stop any running transcription before the window closes.
 
         Deliberately NOT routed through the two-press arm/confirm flow
@@ -975,7 +1000,10 @@ class MainWindow(QMainWindow):
             self.transcription_thread.wait()
         self._detach_calibration_thread()
         logger.info("Application closed by user")
-        event.accept()
+        # Optional in the override signature only because the C++ one takes
+        # a pointer; Qt always delivers a real event to a closing window.
+        if a0 is not None:
+            a0.accept()
 
 
 def configure_application(app: QApplication) -> None:
@@ -1034,10 +1062,12 @@ def configure_application(app: QApplication) -> None:
         # Attribute name is a contract, not an implementation detail:
         # ModelSelectStep._sync_card_focus_ring reads it back off the
         # application to decide whether a model card should show its ring.
-        app._kbd_focus_tracker = KeyboardFocusTracker(app)
+        # QApplication has no such attribute in the stubs, by construction:
+        # this is the dynamic attribute the comment above describes.
+        app._kbd_focus_tracker = KeyboardFocusTracker(app)  # type: ignore[attr-defined]
 
 
-def main():
+def main() -> None:
     """Entry point for GUI."""
     from PyQt5.QtWidgets import QApplication
 
