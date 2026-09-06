@@ -20,7 +20,8 @@ that merely received default or mouse-click focus.
 import logging
 
 from PyQt5.QtCore import QEvent, QObject, Qt
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QKeyEvent
+from PyQt5.QtWidgets import QApplication, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class KeyboardFocusTracker(QObject):
     driving", not "something happens to have focus".
     """
 
-    def __init__(self, app: QApplication):
+    def __init__(self, app: QApplication) -> None:
         super().__init__(app)
         self._keyboard_active = False
         app.installEventFilter(self)
@@ -81,8 +82,12 @@ class KeyboardFocusTracker(QObject):
 
     def _detach(self) -> None:
         """Stop observing, on the way out. Safe to call more than once."""
+        # isinstance rather than "is not None": QApplication.instance() is
+        # typed as the QCoreApplication base, which has no focusChanged. A
+        # console-only QCoreApplication could never have got here anyway, so
+        # narrowing to the type this code actually needs is the honest guard.
         app = QApplication.instance()
-        if app is None:
+        if not isinstance(app, QApplication):
             return
         app.removeEventFilter(self)
         try:
@@ -91,11 +96,19 @@ class KeyboardFocusTracker(QObject):
             # Already disconnected - _detach ran twice, which is fine.
             pass
 
-    def eventFilter(self, obj, event):
-        event_type = event.type()
-        if event_type == QEvent.KeyPress and event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
+        if a1 is None:
+            return False
+        event_type = a1.type()
+        # isinstance narrows QEvent to the subclass that actually has key();
+        # a KeyPress is always a QKeyEvent, so this never rejects a real one.
+        if (
+            event_type == QEvent.Type.KeyPress
+            and isinstance(a1, QKeyEvent)
+            and a1.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)
+        ):
             self._keyboard_active = True
-        elif event_type == QEvent.MouseButtonPress:
+        elif event_type == QEvent.Type.MouseButtonPress:
             self._keyboard_active = False
             # Clearing the flag is not enough on its own. The property lives
             # on the focused widget and is only rewritten by focusChanged, so
@@ -115,7 +128,7 @@ class KeyboardFocusTracker(QObject):
         # no filter installed at all.
         return False
 
-    def _on_focus_changed(self, old, new):
+    def _on_focus_changed(self, old: QWidget | None, new: QWidget | None) -> None:
         if old is not None:
             self._set_property(old, False)
         if new is not None and self._keyboard_active:
@@ -144,7 +157,7 @@ class KeyboardFocusTracker(QObject):
         return self._keyboard_active
 
     @staticmethod
-    def _set_property(widget, value: bool) -> None:
+    def _set_property(widget: QWidget, value: bool) -> None:
         """Restyle exactly the one widget whose focus state changed, not the
         whole application - unpolish()/polish() forces Qt to re-evaluate
         that widget's QSS against its (now different) dynamic property,
@@ -152,6 +165,11 @@ class KeyboardFocusTracker(QObject):
         for.
         """
         widget.setProperty(PROPERTY, value)
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
+        style = widget.style()
+        # style() is typed Optional and is genuinely None for a widget whose
+        # C++ side has already gone; skipping the repaint is the right answer
+        # there, since there is nothing left to paint.
+        if style is not None:
+            style.unpolish(widget)
+            style.polish(widget)
         widget.update()
