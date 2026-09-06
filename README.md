@@ -121,6 +121,12 @@ file actually read at install time; edit them there.
 python -m speech_to_text.main
 ```
 
+That needs the package installed (`pip install -e .` above), because it lives under `src/` and is
+deliberately not importable from the repo root - a src-layout, so a broken packaging config fails
+immediately rather than at the point someone installs the wheel. If you would rather not install,
+`run.ps1` and `run.bat` point `PYTHONPATH` at `src/` for you, which is what makes them a
+double-click affair with no install step.
+
 
 The window is resizable, and a step indicator across the top of the wizard always shows which of the three steps you're on.
 
@@ -148,19 +154,25 @@ Actual processing time isn't fixed: it's estimated from a one-time benchmark run
 ## Project Structure
 
 ```
-speech_to_text/
+src/speech_to_text/             # src-layout: the package is not importable from the repo root
 ├── main.py                     # Entry point: logging setup, dependency checks, launches the GUI
-├── config.py                   # Model definitions and app-wide constants
 ├── hardware_detection.py       # CPU/RAM/GPU probing, model recommendation, time estimation
-├── core/
+├── config/                     # Grouped by what each constant is FOR, not where it was declared
+│   ├── app.py                  # Metadata, window geometry, dependency list
+│   ├── models.py               # The MODELS table and the default
+│   ├── paths.py                # Model-download root, output filenames, supported formats
+│   ├── transcription.py        # Language, beam size, compute type, speed factors
+│   └── diarization.py          # Tuned constants, each with the AMI measurement behind it
+├── core/                       # Runs in the worker process. Never imports PyQt5 - see below
 │   ├── transcriber.py          # Wraps faster_whisper.WhisperModel
 │   ├── segments.py             # Structured transcript: timings, per-word confidence, speaker
 │   ├── progress_scale.py       # Named boundaries for the progress bar's 3 coordinate systems
-│   ├── formatting/             # Turn merging & self-contained RTL HTML rendering (package: timecode/turns/assets/chrome/document)
-│   ├── assets/                 # css/ and js/ fragment directories, numbered and concatenated at render time, inlined into the output
+│   ├── formatting/             # Turn merging & self-contained RTL HTML rendering (timecode/turns/assets/chrome/document)
+│   ├── assets/                 # css/ and js/ fragment directories, numbered and concatenated at render time
 │   ├── options.py              # Settings for one run, passed to the worker process
 │   ├── audio_source.py         # PyAV decoding and one-speaker-per-channel detection
-│   ├── diarization.py          # sherpa-onnx speaker identification and span assignment
+│   ├── diarization.py          # sherpa-onnx model lifecycle and engine dispatch
+│   ├── speaker_attribution.py  # Deciding which speaker each word belongs to
 │   ├── diarization_powerset.py # Diarization on our own powerset decode (the "powerset" engine)
 │   ├── segmentation.py         # Powerset decoding of the pyannote segmentation-3.0 ONNX model
 │   ├── hebrew_correct.py       # Confidence-gated correction against a user term list
@@ -170,10 +182,11 @@ speech_to_text/
 │   ├── worker.py               # Runs transcription in a separate OS process
 │   ├── calibration.py          # One-time hardware benchmark (also runs out-of-process)
 │   └── dependencies.py         # Installs missing runtime dependencies on first launch
-└── gui/
+└── gui/                        # PyQt5, main process
+    ├── presenters/             # The decisions a view makes, with NO Qt import - testable without a QApplication
     ├── main_window.py          # Main window, wizard navigation, transcription lifecycle
     ├── i18n.py                 # English/Hebrew string table, language state, persistence
-    ├── widgets.py              # IconTextButton: direction-independent icon+text nav button
+    ├── widgets.py              # DropZone, IconTextButton, and the make_label factory
     ├── threads.py              # QThread bridge between the GUI and the background process
     ├── steps/                  # One module per wizard step (file select / model select / transcribe)
     ├── stepper.py              # 3-step wizard indicator shown above the stacked widget
@@ -183,21 +196,52 @@ speech_to_text/
     ├── icons.py                # Tabler icon SVGs, rendered to QPixmap
     └── audio_utils.py          # Real audio/video duration probing (via PyAV)
 
-tests/                          # pytest suite covering config, hardware detection, transcriber, and integration
+tests/                          # pytest suite, plus tests/js/ (jsdom) and tests/eval/ (dev harnesses)
+tools/
+├── build_vistas.py             # Downscales the backdrop photos shipped with the transcript
+└── doc_density.py              # Measures how much of a file is prose rather than code
 docs/
+├── ARCHITECTURE.md             # Constraints, building blocks, the runtime flow, cross-cutting concerns
+├── TESTING.md                  # Test strategy: levels, what the contract tests encode, coverage policy
 ├── architecture.drawio         # Editable source for the architecture diagram
 ├── architecture.jpg            # Rendered diagram (embedded above)
-├── transcript-manual-checks.md # Manual QA checklist for the generated transcript page
-└── unused-files-report.md      # Dead-file / disk-usage audit
+└── transcript-manual-checks.md # Manual QA checklist for the generated transcript page
 ```
+
+**Two structural rules are enforced rather than documented.** `core/` may never import
+PyQt5 or the GUI - on Windows, PyQt5 and faster-whisper/ctranslate2 bundle conflicting
+copies of `MSVCP140.dll`, and loading both into one process crashes intermittently with no
+Python traceback, which is why transcription runs in a separate process. `gui/presenters/`
+extends the same rule outward so the decisions a view makes are testable with no display.
+Both are checked by `tests/test_layering.py` at test time and by `import-linter` at lint
+time. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Testing
 
 ```bash
-pytest                                    # full suite
+pytest                                    # full suite: 684 tests, ~50s
 pytest --cov=speech_to_text --cov-report=html   # with coverage report
 pytest tests/test_transcriber.py -v       # a single module
 ```
+
+Alongside the tests, four checks run in CI (`.github/workflows/ci.yml`, on Windows - PyQt5, the
+PowerShell launcher and a path-resolution branch all target it):
+
+```bash
+ruff check src tests tools                # lint, including a McCabe complexity ceiling of 10
+ruff format --check src tests tools       # formatting
+lint-imports                              # the two architecture contracts described above
+mypy -p speech_to_text.core -p speech_to_text.config      -p speech_to_text.gui.presenters -p speech_to_text.hardware_detection
+```
+
+That mypy invocation is deliberately scoped. Those packages are at zero errors under
+`disallow_untyped_defs` and CI fails if that changes. The whole-package run is reported but not
+gated, because `gui/` still carries errors that are PyQt5 shipping no type information rather than
+defects. Branch coverage is gated at 80%.
+
+Note if you run pytest-qt yourself: `pytest.ini` pins `qt_api = pyqt5`. Both PyQt5 and PyQt6 may be
+installed, pytest-qt guesses PyQt6 first, and a PyQt6 `QApplication` inside this PyQt5 process
+aborts the interpreter with no traceback.
 
 The transcript document's JavaScript - editing, autosave, speaker renaming, search, audio, export,
 help panel, guided tour - is covered by a jsdom behavioural suite at `tests/js/`, run with Node
@@ -215,8 +259,18 @@ or `node_modules/` hasn't been installed.
 The stylesheet and script are no longer single files: `core/assets/css/` and `core/assets/js/` are
 each a directory of numerically-prefixed fragments, concatenated in sorted filename order at render
 time (`_asset_dir()` in `core/formatting/assets.py`). The JS fragments are bare bodies of one shared
-IIFE - the wrapper and `'use strict'` are emitted once by Python - so `node --check` on a single
-fragment fails by design; only the concatenation the app actually renders is valid JS.
+IIFE - the wrapper and `'use strict'` are emitted once by Python.
+
+That numbering is correctness, not tidiness: `00-preamble.js` opens with a `return` guard that has
+to run first, and `99-init.js` initialises against handlers every earlier fragment defined.
+`tests/test_asset_order.py` enforces it - first, last, every fragment numbered, no duplicate
+prefixes.
+
+A fragment does still pass `node --check` on its own, which is misleading: Node treats a `.js` file
+as CommonJS and wraps it in a function, so even the top-level `return` in `00-preamble.js` is legal
+there (as ESM it is an "Illegal return statement"). Syntax checking one fragment therefore proves
+very little - a fragment references names other fragments define, so only the concatenation the app
+renders is meaningful. `tests/test_js_behaviour.py` checks that concatenation.
 
 Even with the jsdom suite, one gap remains: jsdom implements no real layout and no `matchMedia`
 (the harness stubs it to "no preference"), so responsive breakpoints, the tour spotlight's on-screen
