@@ -2,8 +2,10 @@
 
 import logging
 import os
+from typing import cast
 
-from PyQt5.QtCore import QEvent, Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, QObject, Qt, pyqtSignal
+from PyQt5.QtGui import QShowEvent
 from PyQt5.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -82,7 +84,7 @@ class ModelSelectStep(QFrame):
 
     model_selected = pyqtSignal(str)  # model_size
 
-    def __init__(self, hardware: HardwareDetector, parent=None):
+    def __init__(self, hardware: HardwareDetector, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.hardware = hardware
         self._init_card_state()
@@ -101,20 +103,21 @@ class ModelSelectStep(QFrame):
         _create_model_card populates these as it goes.
         """
         self.audio_duration = 0
-        self._desc_labels = {}  # model_name -> QLabel showing "description | Est: ..."
+        self._desc_labels: dict[str, QLabel] = {}  # model -> "description | Est: ..."
         # model_name -> last computed estimate, in SECONDS. Seconds, not the
         # rendered string: the units are translated (see i18n.format_duration),
         # so a cached string would survive a language toggle - retranslate()
         # deliberately re-renders text without recomputing estimates, and
         # would have left every card reading "Est: 1m 46s" in a Hebrew UI.
-        self._time_secs = {}
-        self._name_labels = {}  # model_name -> QLabel showing the model name
-        self._cards = {}  # model_name -> QFrame card
-        self._radio_cards = {}  # QRadioButton -> its own QFrame card, for
+        self._time_secs: dict[str, int] = {}
+        self._name_labels: dict[str, QLabel] = {}  # model_name -> the model name QLabel
+        self._cards: dict[str, QFrame] = {}  # model_name -> QFrame card
+        self._radio_cards: dict[QObject, QFrame] = {}  # radio -> its own card, for
         # _sync_card_focus_ring below - see that method's docstring for why
         # the card (not the radio Qt actually focuses) needs its own
         # keyboard-focus ring.
-        self._badges = {}  # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
+        # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
+        self._badges: dict[str, QLabel] = {}
         # Computed once at construction, not re-checked per card render: a
         # download completing mid-session (this app's own transcription run
         # is the only thing that would trigger one) is already covered by a
@@ -122,8 +125,11 @@ class ModelSelectStep(QFrame):
         # there's no live event this would need to react to. See
         # _model_is_downloaded's docstring for what "downloaded" means here
         # and why it's guesswork, not a guarantee.
+        # str(): config.MODELS is a heterogeneous dict literal, so mypy
+        # infers its value type as `object` and "repo" arrives untyped here.
+        # Every entry is a string by construction (see config/models.py).
         self._downloaded = {
-            name: _model_is_downloaded(info["repo"]) for name, info in config.MODELS.items()
+            name: _model_is_downloaded(str(info["repo"])) for name, info in config.MODELS.items()
         }
         # (key, params) of the last shown error, for retranslation. Annotated
         # rather than left to inference: mypy only widens a bare `= None` to
@@ -131,7 +137,7 @@ class ModelSelectStep(QFrame):
         # this line here would otherwise pin the attribute to None and make
         # show_error's assignment an error.
         self._error_key: str | None = None
-        self._error_params = {}
+        self._error_params: dict[str, object] = {}
         self._user_touched_model = False  # True once the user manually picks a model
         self._syncing = False  # True while we're programmatically re-checking a radio
 
@@ -209,7 +215,7 @@ class ModelSelectStep(QFrame):
         # user reaches this step), shown otherwise; see
         # _set_calibration_note, update_audio_duration and
         # mark_calibration_unmeasured for the three states this can be in.
-        self._calibration_note_key = None
+        self._calibration_note_key: str | None = None
         self.calibration_note = make_label(font=Fonts.CAPTION, color="text_tertiary")
         self.calibration_note.setWordWrap(True)
         self.calibration_note.hide()
@@ -238,7 +244,7 @@ class ModelSelectStep(QFrame):
 
         # Model selection
         self.model_group = QButtonGroup()
-        self.model_radios = {}
+        self.model_radios: dict[str, QRadioButton] = {}
         recommended_model, _ = self.hardware.recommend_model(self.audio_duration)
         self.selected_model = recommended_model
         self._current_recommended = recommended_model
@@ -267,7 +273,9 @@ class ModelSelectStep(QFrame):
         models_scroll.setWidget(models_container)
         models_scroll.setWidgetResizable(True)
         models_scroll.setFrameShape(QFrame.NoFrame)
-        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        models_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff  # type: ignore[attr-defined]  # Qt.ScrollBarPolicy in the stubs
+        )
         models_scroll.setStyleSheet("background: transparent;")
         # setWidgetResizable(True) re-fits the scrolled widget from
         # QScrollArea's OWN resizeEvent, which fires when the scroll area
@@ -282,7 +290,9 @@ class ModelSelectStep(QFrame):
         # clipped away - the card reads as an unfinished box open on one
         # side. Watching the viewport's own resize closes that gap; see
         # _sync_container_width.
-        models_scroll.viewport().installEventFilter(self)
+        viewport = models_scroll.viewport()
+        if viewport is not None:
+            viewport.installEventFilter(self)
         return models_scroll
 
     def _build_tab_chain(self) -> None:
@@ -390,7 +400,9 @@ class ModelSelectStep(QFrame):
         # empty space beside it. That read as an unfinished control once the
         # stepper buttons stopped filling that space. Centring is
         # direction-neutral, so it needs no RTL counterpart.
-        self.speaker_count_spin.setAlignment(Qt.AlignCenter)
+        self.speaker_count_spin.setAlignment(
+            Qt.AlignCenter  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
+        )
 
         layout.addStretch()
 
@@ -414,7 +426,7 @@ class ModelSelectStep(QFrame):
     def num_speakers(self) -> int:
         return self.speaker_count_spin.value()
 
-    def show_error(self, key: str, params: dict) -> None:
+    def show_error(self, key: str, params: dict[str, object]) -> None:
         """Show an inline failure banner (used instead of a modal popup).
         Takes an i18n key + params (see TranscriptionThread.error) so the
         banner can be re-rendered if the language is toggled while shown.
@@ -605,7 +617,7 @@ class ModelSelectStep(QFrame):
 
         return name_row
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj: QObject | None, event: QEvent | None) -> bool:
         """Watches every model radio's own FocusIn/FocusOut (installed in
         _build_card_radio), so the surrounding card can react to a focus
         change that lands on its child rather than on itself - see
@@ -613,10 +625,18 @@ class ModelSelectStep(QFrame):
         Never claims the event: Tab navigation and the radio's own focus
         handling must proceed exactly as if this filter didn't exist.
         """
+        if obj is None or event is None:
+            return super().eventFilter(obj, event)
+        # QEvent.FocusIn/FocusOut/Resize are scoped under QEvent.Type in the
+        # stubs; bound here once so the suppression is stated three times
+        # rather than six.
+        focus_in = QEvent.FocusIn  # type: ignore[attr-defined]
+        focus_out = QEvent.FocusOut  # type: ignore[attr-defined]
+        resize = QEvent.Resize  # type: ignore[attr-defined]
         card = self._radio_cards.get(obj)
-        if card is not None and event.type() in (QEvent.FocusIn, QEvent.FocusOut):
-            self._sync_card_focus_ring(card, focused_in=event.type() == QEvent.FocusIn)
-        elif event.type() == QEvent.Resize:
+        if card is not None and event.type() in (focus_in, focus_out):
+            self._sync_card_focus_ring(card, focused_in=event.type() == focus_in)
+        elif event.type() == resize:
             scroll = getattr(self, "_scroll_area", None)
             # getattr, not a plain attribute: the filter is installed while
             # the scroll area is still a local in __init__, so the first
@@ -637,7 +657,9 @@ class ModelSelectStep(QFrame):
         """
         container = self._scroll_area.widget()
         viewport = self._scroll_area.viewport()
-        if container is None:
+        # Both are Optional as far as Qt is concerned. There is nothing to
+        # size against without a viewport, so bail rather than dereference.
+        if container is None or viewport is None:
             return
         # A ceiling, not just a resize. QScrollArea's own updateScrollBars()
         # sizes the scrolled widget to the scroll area first and only then
@@ -689,11 +711,15 @@ class ModelSelectStep(QFrame):
             tracker = getattr(QApplication.instance(), "_kbd_focus_tracker", None)
             show_ring = bool(tracker is not None and tracker.is_keyboard_active())
         card.setProperty(KBD_FOCUS_PROPERTY, show_ring)
-        card.style().unpolish(card)
-        card.style().polish(card)
+        # QWidget.style() is Optional (a widget with no style has nothing to
+        # re-polish), so the repaint below is conditional on there being one.
+        style = card.style()
+        if style is not None:
+            style.unpolish(card)
+            style.polish(card)
         card.update()
 
-    def _set_calibration_note(self, key) -> None:
+    def _set_calibration_note(self, key: str | None) -> None:
         """Show `key`'s text as the calibration note, or hide it when key is None."""
         self._calibration_note_key = key
         if key is None:
@@ -731,7 +757,7 @@ class ModelSelectStep(QFrame):
         recommended_model, _ = self.hardware.recommend_model(seconds)
         self._apply_recommendation(recommended_model)
 
-    def showEvent(self, event) -> None:
+    def showEvent(self, event: QShowEvent | None) -> None:
         """Bring the recommended card into view whenever this step is shown.
 
         With seven cards behind a scroll area the recommendation can start off
@@ -748,7 +774,7 @@ class ModelSelectStep(QFrame):
         self._scroll_to_recommended()
         radio = self.model_radios.get(self.selected_model)
         if radio is not None:
-            radio.setFocus(Qt.OtherFocusReason)
+            radio.setFocus(Qt.OtherFocusReason)  # type: ignore[attr-defined]  # Qt.FocusReason
 
     def _scroll_to_recommended(self) -> None:
         card = self._cards.get(self._current_recommended)
@@ -794,7 +820,7 @@ class ModelSelectStep(QFrame):
             label.setText(self._desc_text(name))
 
     @staticmethod
-    def _card_text_alignment():
+    def _card_text_alignment() -> Qt.Alignment:
         """Visual (absolute) alignment that puts card text next to the radio
         button in the current language: right in Hebrew's mirrored layout,
         left in English. AlignLeading doesn't work here - QLabel resolves
@@ -802,8 +828,18 @@ class ModelSelectStep(QFrame):
         and Hebrew descriptions end up on different sides (verified
         empirically).
         """
-        side = Qt.AlignRight if is_rtl() else Qt.AlignLeft
-        return side | Qt.AlignAbsolute | Qt.AlignVCenter
+        # The four flags below are scoped under Qt.AlignmentFlag in PyQt5's
+        # stubs, which is the only thing wrong with this expression.
+        side: Qt.AlignmentFlag = (
+            Qt.AlignRight if is_rtl() else Qt.AlignLeft  # type: ignore[attr-defined]
+        )
+        extra: Qt.AlignmentFlag = Qt.AlignAbsolute | Qt.AlignVCenter  # type: ignore[attr-defined]
+        # cast, not Qt.Alignment(...): PyQt5's stubs model each flag as a
+        # plain int subclass and never give it an __or__ returning the flag
+        # type, so an OR of two of them widens to int. The runtime value is
+        # already exactly what setAlignment wants - only the static type is
+        # lost - so this stays a compile-time statement with no new call.
+        return cast(Qt.Alignment, side | extra)
 
     def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""
