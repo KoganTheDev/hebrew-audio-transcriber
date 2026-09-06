@@ -6,7 +6,7 @@ import logging
 import os
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QIcon, QShowEvent
 from PyQt5.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -40,7 +40,7 @@ class FileSelectStep(QFrame):
 
     files_selected = pyqtSignal(list, int)  # [file_path, ...], total duration_seconds
 
-    def __init__(self, hardware: HardwareDetector, parent=None):
+    def __init__(self, hardware: HardwareDetector, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.hardware = hardware
         self.setStyleSheet(theme.frame_bg_qss("bg_primary"))
@@ -118,14 +118,21 @@ class FileSelectStep(QFrame):
         self.drop_zone.setObjectName("dropZone")
         self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=False))
         self.drop_zone.setAcceptDrops(True)
-        self.drop_zone.setCursor(Qt.PointingHandCursor)
+        self.drop_zone.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # PyQt5 stubs scope this under Qt.CursorShape
         self.drop_zone.setAccessibleName(t("drop_zone_name"))
         self.drop_zone.setAccessibleDescription(t("drop_zone_desc"))
         self.drop_zone.setToolTip(t("drop_zone_desc"))
-        self.drop_zone.dragEnterEvent = self._drag_enter
-        self.drop_zone.dragLeaveEvent = lambda e: self._reset_drop_zone()
-        self.drop_zone.dropEvent = self._drop
-        self.drop_zone.mousePressEvent = lambda e: self._browse()
+        # Swapping handlers onto the instance is the whole point here (see
+        # the comment above and DropZone's docstring), so the ignores below
+        # are the deliberate idiom rather than an oversight. mypy reports
+        # "assignment" alongside "method-assign" for the two named handlers
+        # because it compares a bound method against the stub's unbound
+        # "def dragEnterEvent(self, a0: ...)" - the same complaint twice,
+        # not a second, real mismatch.
+        self.drop_zone.dragEnterEvent = self._drag_enter  # type: ignore[method-assign,assignment]
+        self.drop_zone.dragLeaveEvent = lambda a0: self._reset_drop_zone()  # type: ignore[method-assign]
+        self.drop_zone.dropEvent = self._drop  # type: ignore[method-assign,assignment]
+        self.drop_zone.mousePressEvent = lambda a0: self._browse()  # type: ignore[method-assign]
         self.drop_zone.activated.connect(self._browse)
         # A minimum plus a layout stretch factor, not a fixed height, and the
         # minimum has to sit AT the content floor rather than above it. A
@@ -166,7 +173,7 @@ class FileSelectStep(QFrame):
         )
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
-        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setAlignment(Qt.AlignCenter)  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         drop_layout.addWidget(icon_label)
 
         # Main text. No setMaximumHeight - see the note above
@@ -179,19 +186,28 @@ class FileSelectStep(QFrame):
         # just reintroduce the same clipping the next time a font metric
         # shifts.
         self.main_text = make_label(
-            t("drop_main"), font=Fonts.BODY_BOLD, color="text_primary", align=Qt.AlignCenter
+            t("drop_main"),
+            font=Fonts.BODY_BOLD,
+            color="text_primary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         drop_layout.addWidget(self.main_text)
 
         # Supported formats
         self.formats_text = make_label(
-            t("drop_formats"), font=Fonts.CAPTION, color="text_secondary", align=Qt.AlignCenter
+            t("drop_formats"),
+            font=Fonts.CAPTION,
+            color="text_secondary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         drop_layout.addWidget(self.formats_text)
 
         # Alt text
         self.alt_text = make_label(
-            t("drop_alt"), font=Fonts.CAPTION, color="text_tertiary", align=Qt.AlignCenter
+            t("drop_alt"),
+            font=Fonts.CAPTION,
+            color="text_tertiary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         drop_layout.addWidget(self.alt_text)
 
@@ -217,7 +233,9 @@ class FileSelectStep(QFrame):
         self._rows_scroll.setWidget(self._rows_container)
         self._rows_scroll.setWidgetResizable(True)
         self._rows_scroll.setFrameShape(QFrame.NoFrame)
-        self._rows_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._rows_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff  # type: ignore[attr-defined]  # Qt.ScrollBarPolicy in the stubs
+        )
         self._rows_scroll.setStyleSheet("background: transparent;")
         self._rows_scroll.setMaximumHeight(140)
         # Stretch here as well as on the drop zone: the two share the step's
@@ -271,18 +289,32 @@ class FileSelectStep(QFrame):
         """Per-file durations, in the same order as selected_files."""
         return [self._durations[path] for path in self.selected_files]
 
-    def _reset_drop_zone(self):
+    def _reset_drop_zone(self) -> None:
         """Reset drop zone to its normal (non-drag) styling."""
         self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=False))
 
-    def _drag_enter(self, event: QDragEnterEvent):
-        """Handle drag enter event over the drop zone."""
-        if event.mimeData().hasUrls():
+    def _drag_enter(self, event: QDragEnterEvent | None) -> None:
+        """Handle drag enter event over the drop zone.
+
+        Both the event and its mime data are Optional as far as Qt is
+        concerned, and a drag carrying no mime data is a real (if rare)
+        thing on some platforms - dereferencing either unconditionally is
+        an AttributeError waiting for the wrong drag source.
+        """
+        if event is None:
+            return
+        mime = event.mimeData()
+        if mime is not None and mime.hasUrls():
             event.acceptProposedAction()
             self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=True))
 
-    def _drop(self, event: QDropEvent):
+    def _drop(self, event: QDropEvent | None) -> None:
         self._reset_drop_zone()
+        if event is None:
+            return
+        mime = event.mimeData()
+        if mime is None:
+            return
         paths = []
         # Names skipped on THIS drop specifically, not a running total - see
         # _update_summary. A folder drop is filtered by _expand_directory
@@ -290,7 +322,7 @@ class FileSelectStep(QFrame):
         # so nothing from inside a folder ever lands here; this only ever
         # catches a file dropped directly that isn't one this app can open.
         skipped_names = []
-        for url in event.mimeData().urls():
+        for url in mime.urls():
             local_path = url.toLocalFile()
             if not local_path:
                 continue
@@ -334,7 +366,7 @@ class FileSelectStep(QFrame):
             found.extend(glob.glob(os.path.join(dir_path, pattern)))
         return sorted(found)
 
-    def _browse(self):
+    def _browse(self) -> None:
         file_filter = t("file_dialog_filter") + " (" + " ".join(config.SUPPORTED_FORMATS) + ")"
         file_paths, _ = QFileDialog.getOpenFileNames(self, t("file_dialog_title"), "", file_filter)
         if file_paths:
@@ -397,8 +429,8 @@ class FileSelectStep(QFrame):
             )
         )
         remove_btn.setFixedSize(20, 20)
-        remove_btn.setCursor(Qt.PointingHandCursor)
-        remove_btn.setFocusPolicy(Qt.StrongFocus)
+        remove_btn.setCursor(Qt.PointingHandCursor)  # type: ignore[attr-defined]  # Qt.CursorShape
+        remove_btn.setFocusPolicy(Qt.StrongFocus)  # type: ignore[attr-defined]  # Qt.FocusPolicy
         hover_bg = COLORS["bg_tertiary"]
         remove_btn.setStyleSheet(
             "QPushButton { background: transparent; border: none; }"
@@ -427,7 +459,21 @@ class FileSelectStep(QFrame):
         row = self._rows.get(path)
         if row is None:
             return
-        label = row.layout().itemAt(1).widget()
+        # row.layout(), itemAt() and widget() are each Optional, and the
+        # row is built by _add_row with exactly [icon, label, remove] - so
+        # anything missing here means the row was torn down under us, and
+        # there is nothing left to render into.
+        row_layout = row.layout()
+        if row_layout is None:
+            return
+        label_item = row_layout.itemAt(1)
+        remove_item = row_layout.itemAt(2)
+        if label_item is None or remove_item is None:
+            return
+        label = label_item.widget()
+        remove_btn = remove_item.widget()
+        if not isinstance(label, QLabel) or not isinstance(remove_btn, QPushButton):
+            return
         duration = self._durations[path]
         size_mb = os.path.getsize(path) / (1024 * 1024)
         filename = os.path.basename(path)
@@ -440,7 +486,6 @@ class FileSelectStep(QFrame):
                 size=f"{size_mb:.1f}",
             )
         )
-        remove_btn = row.layout().itemAt(2).widget()
         remove_label = t("remove_file", filename=filename)
         remove_btn.setAccessibleName(remove_label)
         remove_btn.setToolTip(remove_label)
@@ -517,7 +562,7 @@ class FileSelectStep(QFrame):
             )
         self.summary_label.setText(text)
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear every selected file and restore the placeholder label."""
         for row in self._rows.values():
             self._rows_layout.removeWidget(row)
@@ -532,7 +577,7 @@ class FileSelectStep(QFrame):
         # file added would try to chain onto a widget mid-deleteLater().
         self._last_tab_widget = self.drop_zone
 
-    def showEvent(self, event) -> None:
+    def showEvent(self, event: QShowEvent | None) -> None:
         """Seed a sensible Tab starting point whenever this step becomes
         visible: the drop zone, since it's both the first thing on the page
         and, on a fresh run, the only way to make any progress at all (see
@@ -546,9 +591,9 @@ class FileSelectStep(QFrame):
         actual Tab press earns it.
         """
         super().showEvent(event)
-        self.drop_zone.setFocus(Qt.OtherFocusReason)
+        self.drop_zone.setFocus(Qt.OtherFocusReason)  # type: ignore[attr-defined]  # Qt.FocusReason
 
-    def retranslate(self):
+    def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""
         self.file_heading.setText(t("select_audio_file"))
         self.main_text.setText(t("drop_main"))
@@ -587,8 +632,8 @@ class FileSelectStep(QFrame):
         gpu_text = hw_info["gpu_name"] if hw_info["has_gpu"] else t("hw_no_gpu")
         # Header labels are keyed by i18n key so retranslate() can re-render
         # them; the GPU value cell is also tracked because "No GPU" is text.
-        self._hw_header_labels = {}
-        self._hw_gpu_value_label = None
+        self._hw_header_labels: dict[str, QLabel] = {}
+        self._hw_gpu_value_label: QLabel | None = None
         columns = [
             ("hw_cpu_cores", str(hw_info["cpu_cores"])),
             ("hw_ram", f"{hw_info['ram_gb']} GB"),
@@ -618,7 +663,10 @@ class FileSelectStep(QFrame):
         cell_layout.setSpacing(Spacing.XS)
 
         label_widget = make_label(
-            t(label_key), font=Fonts.CAPTION, color="text_tertiary", align=Qt.AlignCenter
+            t(label_key),
+            font=Fonts.CAPTION,
+            color="text_tertiary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         cell_layout.addWidget(label_widget)
         self._hw_header_labels[label_key] = label_widget
@@ -626,7 +674,10 @@ class FileSelectStep(QFrame):
         cell_layout.addWidget(self._hline())
 
         value_widget = make_label(
-            value, font=Fonts.BODY_BOLD, color="text_primary", align=Qt.AlignCenter
+            value,
+            font=Fonts.BODY_BOLD,
+            color="text_primary",
+            align=Qt.AlignCenter,  # type: ignore[attr-defined]  # Qt.AlignmentFlag in the stubs
         )
         cell_layout.addWidget(value_widget)
         if label_key == "hw_gpu":
