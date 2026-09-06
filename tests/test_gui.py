@@ -863,7 +863,7 @@ class TestMainWindowKeyboardGuards:
     """
 
     @pytest.fixture
-    def main_window(self, qapp, monkeypatch):
+    def main_window(self, qtbot, monkeypatch):
         from speech_to_text.gui import main_window as main_window_module
 
         hw = MagicMock()
@@ -884,6 +884,7 @@ class TestMainWindowKeyboardGuards:
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
         window = main_window_module.MainWindow()
+        qtbot.addWidget(window)
         window.show()
         yield window
         window.close()
@@ -939,7 +940,7 @@ class TestMainWindowStepNavigation:
     """
 
     @pytest.fixture
-    def main_window(self, qapp, monkeypatch):
+    def main_window(self, qtbot, monkeypatch):
         from speech_to_text.gui import main_window as main_window_module
 
         hw = MagicMock()
@@ -960,6 +961,7 @@ class TestMainWindowStepNavigation:
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
         window = main_window_module.MainWindow()
+        qtbot.addWidget(window)
         window.show()
         yield window
         window.close()
@@ -1048,7 +1050,7 @@ class TestMainWindowCancelConfirm:
     """
 
     @pytest.fixture
-    def main_window(self, qapp, monkeypatch):
+    def main_window(self, qtbot, monkeypatch):
         from speech_to_text.gui import main_window as main_window_module
         from speech_to_text.gui.steps import Step
 
@@ -1068,6 +1070,7 @@ class TestMainWindowCancelConfirm:
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
         window = main_window_module.MainWindow()
+        qtbot.addWidget(window)
         window.show()
         # Simulate being mid-run on step 3, with a live thread stub so
         # _cancel_transcription's disconnect/stop/wait calls have something
@@ -1142,7 +1145,7 @@ class TestMainWindowResizing:
     """
 
     @pytest.fixture
-    def main_window(self, qapp, monkeypatch):
+    def main_window(self, qtbot, monkeypatch):
         from speech_to_text.gui import main_window as main_window_module
 
         hw = MagicMock()
@@ -1163,6 +1166,7 @@ class TestMainWindowResizing:
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
         window = main_window_module.MainWindow()
+        qtbot.addWidget(window)
         window.show()
         yield window
         window.close()
@@ -1524,7 +1528,7 @@ class TestCalibrationThreadTeardown:
     """
 
     @pytest.fixture
-    def uncalibrated_window(self, qapp, monkeypatch):
+    def uncalibrated_window(self, qtbot, monkeypatch):
         from speech_to_text.gui import main_window as main_window_module
 
         hw = MagicMock()
@@ -1547,6 +1551,7 @@ class TestCalibrationThreadTeardown:
         monkeypatch.setattr(main_window_module, "CalibrationThread", _FakeCalibrationThread)
 
         window = main_window_module.MainWindow()
+        qtbot.addWidget(window)
         window.show()
         yield window
         window.close()
