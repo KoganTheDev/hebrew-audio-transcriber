@@ -38,11 +38,19 @@ class TestTranscriber:
         assert transcriber.language == "he"
         assert transcriber.model is None
 
-    def test_transcriber_default_callback(self):
-        """Test default progress callback."""
+    def test_the_default_callback_accepts_the_key_and_params_shape_the_app_emits(self):
+        """
+        The default callback has to swallow what the real call sites pass.
+
+        Every production call passes a (key, params) tuple - see transcriber's
+        own progress_callback(("w_starting", {}), ...) and worker.py's
+        emit_progress - because the worker process cannot render translated
+        text itself and hands the key across the process boundary instead.
+        This test used to pass a bare string, a shape nothing produces.
+        """
         transcriber = Transcriber()
-        # Should not raise
-        transcriber.progress_callback("Test message", 50)
+        # Should not raise.
+        transcriber.progress_callback(("w_starting", {}), 50)
 
     def test_transcriber_custom_callback(self):
         """Test custom progress callback."""

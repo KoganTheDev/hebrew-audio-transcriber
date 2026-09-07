@@ -231,7 +231,7 @@ def _brute_force_mapping(
     speakers and keep the one with the largest total matched overlap. See
     the module docstring for why this replaces a real Hungarian solver here.
     """
-    candidates = list(hyp_speakers)
+    candidates: list[str | None] = list(hyp_speakers)
     # A hypothesis speaker can be left unmatched (padding with None), but a
     # reference speaker with no hypothesis speaker at all can't be matched to
     # one - pad the candidate pool up to the reference count so

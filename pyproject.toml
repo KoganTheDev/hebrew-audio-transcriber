@@ -187,6 +187,24 @@ disallow_incomplete_defs = true
 module = ["speech_to_text.gui.*"]
 disallow_untyped_defs = false
 
+# tests/ and tools/ are configured for an on-demand `mypy tests tools`, and are
+# deliberately NOT gated in CI.
+#
+# The value is real but narrow: it catches a test that calls production code
+# with a shape the app never produces. One such test was passing a bare string
+# to a callback that every real call site hands a (key, params) tuple, so it was
+# asserting against a shape the worker cannot emit. That is worth finding.
+#
+# What is not worth chasing is test-double noise. Most of what remains is a fake
+# passed where the real type is declared - FakeQueue against Queue[Any] in
+# test_worker - which is exactly what a test double is for, and mypy cannot know
+# it duck-types on purpose. Suppressing arg-type would silence that noise and
+# the genuine finding above with it, so the run stays ungated instead.
+[[tool.mypy.overrides]]
+module = ["tests.*", "tools.*"]
+disallow_untyped_defs = false
+disable_error_code = ["var-annotated", "no-untyped-def", "method-assign", "attr-defined"]
+
 [tool.importlinter]
 root_packages = ["speech_to_text"]
 # Required to forbid an external package (PyQt5) rather than only first-party
