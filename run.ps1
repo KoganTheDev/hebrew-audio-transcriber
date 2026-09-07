@@ -29,6 +29,34 @@ try {
     Set-Location $root
     Write-Host 'Starting Hebrew Audio Transcriber...' -ForegroundColor Green
 
+    # Check the package is actually here before handing over to Python.
+    # Without this the failure is "ImportError: cannot import name 'config'
+    # from 'speech_to_text' (unknown location)", which means Python found a
+    # DIRECTORY called speech_to_text with no __init__.py in it and treated it
+    # as a namespace package. That is what an incomplete copy looks like - a
+    # half-finished OneDrive sync, a partial download, or a folder copied
+    # while files were open - and the raw traceback tells a user nothing.
+    $pkgInit = Join-Path $root 'src\speech_to_text\__init__.py'
+    if (-not (Test-Path $pkgInit)) {
+        $stale = Join-Path $root 'speech_to_text'
+        $hint = if (Test-Path $stale) {
+            "There is an old 'speech_to_text' folder here from a previous version, but the current 'src\speech_to_text' is missing."
+        } else {
+            "Expected to find: $pkgInit"
+        }
+        Fail @"
+This copy of the app is incomplete - the program files are missing.
+
+$hint
+
+To fix it, get a fresh copy of the whole folder:
+  - If you downloaded a ZIP, download it again and extract ALL of it.
+  - If OneDrive is still syncing, wait for it to finish (the folder icon
+    should be a green tick, not blue arrows), then try again.
+  - If you use git: run 'git pull' inside this folder.
+"@
+    }
+
     # 1st choice: the Windows "py" launcher - always points at a real Python.
     # 2nd choice: "python" on PATH, unless it is the Store alias.
     # 3rd choice: a python.exe from the standard per-user install location.
