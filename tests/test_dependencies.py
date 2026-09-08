@@ -2,8 +2,6 @@
 Tests for dependency management.
 """
 
-from unittest.mock import MagicMock, patch
-
 from speech_to_text.core.dependencies import ensure_dependencies
 
 
@@ -20,23 +18,35 @@ class TestDependencies:
         result = ensure_dependencies(packages)
         assert result is True
 
-    @patch("builtins.__import__")
-    def test_ensure_dependencies_missing(self, mock_import):
-        """Test when dependencies are missing."""
+    def test_a_missing_package_is_reported_rather_than_installed(self):
+        """
+        The check must never install anything, and must say False.
 
-        def import_side_effect(name, *args, **kwargs):
-            if name in ["pytest", "setuptools"]:
-                raise ImportError(f"No module named '{name}'")
-            return MagicMock()
+        It used to pip install into sys.executable with the output captured,
+        which on a launcher-picked system Python meant minutes of invisible
+        work mutating the user's GLOBAL interpreter, followed by a crash
+        anyway. Installing belongs to the installer.
+        """
+        packages = {"definitely_not_installed_xyz": "ghost-package"}
+        assert ensure_dependencies(packages) is False
 
-        mock_import.side_effect = import_side_effect
+    def test_the_check_does_not_import_the_packages_it_checks(self):
+        """
+        Availability is decided with find_spec, never by importing.
 
-        with patch("speech_to_text.core.dependencies.subprocess.run") as mock_subprocess:
-            packages = {"pytest": "pytest", "setuptools": "setuptools"}
-            ensure_dependencies(packages)
+        main.py imports faster_whisper BEFORE PyQt5 deliberately, because the
+        two ship conflicting MSVCP140.dll copies on Windows and whichever
+        loads first wins. A check that imported its way down the dict would
+        hand that decision to dict insertion order and silently undo the fix.
+        """
+        import sys
 
-            # Should attempt to install missing packages
-            assert mock_subprocess.call_count == 2
+        for name in ("PyQt5", "faster_whisper"):
+            sys.modules.pop(name, None)
+
+        assert ensure_dependencies({"PyQt5": "PyQt5", "faster_whisper": "faster-whisper"}) is True
+        assert "PyQt5" not in sys.modules, "the check imported PyQt5"
+        assert "faster_whisper" not in sys.modules, "the check imported faster_whisper"
 
     def test_ensure_dependencies_returns_true_for_installed(self):
         """Test that True is returned for installed dependencies."""

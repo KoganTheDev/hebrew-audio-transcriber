@@ -57,13 +57,28 @@ To fix it, get a fresh copy of the whole folder:
 "@
     }
 
-    # 1st choice: the Windows "py" launcher - always points at a real Python.
-    # 2nd choice: "python" on PATH, unless it is the Store alias.
-    # 3rd choice: a python.exe from the standard per-user install location.
+    # The project's own virtual environment comes first, always. Without this
+    # the launcher picks a system Python that has none of the dependencies,
+    # and the failure is bewildering: the startup check only looks for PyQt5
+    # and tqdm, so it quietly pip-installs those into whatever interpreter it
+    # found - polluting the user's global Python - and then dies on
+    # "import faster_whisper", which it never checked for. A user who followed
+    # the README and made a .venv would have had every dependency sitting
+    # right there.
+    $venvPython = Join-Path $root '.venv\Scripts\python.exe'
+
     $exe = $null
     $exeArgs = @()
 
-    $py = Get-Command py -ErrorAction SilentlyContinue
+    if (Test-Path $venvPython) {
+        $exe = $venvPython
+    }
+
+    # 1st choice: the Windows "py" launcher - always points at a real Python.
+    # 2nd choice: "python" on PATH, unless it is the Store alias.
+    # 3rd choice: a python.exe from the standard per-user install location.
+
+    $py = if ($exe) { $null } else { Get-Command py -ErrorAction SilentlyContinue }
     if ($py) {
         $exe = $py.Source
         $exeArgs = @('-3')

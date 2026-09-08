@@ -1,70 +1,66 @@
-"""Dependency Management Module
-Automatically installs required packages.
+"""Checking that the runtime dependencies are actually importable.
+
+This used to pip install whatever was missing, into sys.executable, with the
+output captured. That was actively harmful rather than merely unhelpful: the
+launcher can pick a system interpreter, so the install landed in the user's
+GLOBAL Python rather than the project's virtual environment, took minutes with
+no visible sign it was doing anything, and still ended in a crash because the
+package list it worked from did not include faster-whisper.
+
+Installing is the installer's job. This reports.
+
+It checks with importlib.util.find_spec rather than by importing. That is not a
+detail: main.py imports faster_whisper BEFORE PyQt5 on purpose, because the two
+ship conflicting copies of MSVCP140.dll on Windows and whichever loads first
+wins. A check that imported its way down a dict would decide that order by
+dict insertion order instead, and silently reintroduce the access violation
+that comment exists to prevent. find_spec locates a module without executing
+it, so no DLL is loaded here at all.
 """
 
+import importlib.util
 import logging
-import subprocess
 import sys
-
-from speech_to_text import config
 
 logger = logging.getLogger(__name__)
 
 
 def ensure_dependencies(packages: dict[str, str]) -> bool:
-    """Check and install required packages.
+    """Report whether every runtime dependency can be imported.
 
     Args:
-        packages: Dict of {import_name: pip_name}
+        packages: {import name: pip name}
 
     Returns:
-        True if all dependencies available, False otherwise
+        True when all are importable. False after logging what is missing and
+        how to fix it - the caller exits, rather than this function trying to
+        repair the environment behind the user's back.
 
     """
-    logger.info(f"Checking {len(packages)} required packages...")
-    missing = []
-
+    missing: list[tuple[str, str]] = []
     for import_name, pip_name in packages.items():
         try:
-            __import__(import_name)
-            logger.debug(f"✓ Package available: {import_name}")
-        except ImportError:
-            logger.warning(f"✗ Package missing: {import_name} (pip: {pip_name})")
-            missing.append(pip_name)
+            found = importlib.util.find_spec(import_name) is not None
+        except (ImportError, ValueError):
+            found = False
+        if not found:
+            missing.append((import_name, pip_name))
 
     if not missing:
-        logger.info("All required packages are available")
+        logger.info(f"All {len(packages)} required packages are available")
         return True
 
-    logger.warning(f"{len(missing)} missing package(s) will be installed: {missing}")
-
-    for package in missing:
-        logger.info(f"Installing package: {package}")
-        try:
-            # Use subprocess with timeout and proper output redirection
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", package, "-q"],
-                capture_output=True,
-                timeout=config.INSTALL_TIMEOUT_SECONDS,
-                check=True,
-            )
-            logger.info(f"✓ Successfully installed: {package}")
-        except subprocess.TimeoutExpired:
-            logger.error(
-                f"✗ Installation timeout for {package} (exceeded {config.INSTALL_TIMEOUT_SECONDS}s)"
-            )
-            logger.info(f"Please install manually: pip install {package}")
-            return False
-        except subprocess.CalledProcessError as e:
-            logger.error(f"✗ Installation failed for {package}")
-            logger.debug(f"Return code: {e.returncode}")
-            if e.stderr:
-                logger.debug(f"Error output: {e.stderr.decode()}")
-            logger.info(f"Please install manually: pip install {package}")
-            return False
-        except Exception as e:
-            logger.error(f"✗ Unexpected error installing {package}: {e}", exc_info=True)
-            return False
-
-    logger.info(f"✓ All {len(missing)} missing package(s) installed successfully")
-    return True
+    logger.error("Missing required packages: %s", ", ".join(n for n, _ in missing))
+    logger.error("Python being used: %s", sys.executable)
+    logger.error("")
+    logger.error("This usually means the app is running on the wrong Python -")
+    logger.error("one without the project's dependencies installed.")
+    logger.error("")
+    logger.error("To fix it, from the project folder:")
+    logger.error("    python -m venv .venv")
+    logger.error(r"    .venv\Scripts\activate")
+    logger.error("    pip install -e .")
+    logger.error("")
+    logger.error("Then start the app with run.bat or run.ps1, which prefer .venv")
+    logger.error("over any system Python.")
+    return False

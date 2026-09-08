@@ -72,16 +72,24 @@ class TestConfig:
         assert len(config.SUPPORTED_FORMATS) > 0
         assert all(fmt.startswith("*.") for fmt in config.SUPPORTED_FORMATS)
 
-    def test_required_packages(self):
-        """Test that required packages are defined."""
-        required_packages = config.REQUIRED_PACKAGES
-        # faster_whisper is lazy-loaded to avoid torch DLL issues
-        # psutil is optional for hardware detection
-        assert "PyQt5" in required_packages
-        assert "tqdm" in required_packages
-        # These should NOT be in required_packages (lazy/optional)
-        assert "faster_whisper" not in required_packages
-        assert "psutil" not in required_packages
+    def test_required_packages_covers_every_import_the_app_cannot_start_without(self):
+        """
+        The list has to be complete, or the startup check is worse than absent.
+
+        It used to hold only PyQt5 and tqdm, on the reasoning that
+        faster_whisper was "lazy-loaded". It is not lazy: main.py imports it
+        during startup, before PyQt5, to fix a DLL load order. So the check
+        passed on an interpreter with no faster-whisper and the app died
+        moments later on the import, having first pip-installed PyQt5 into
+        whatever Python it happened to be running on.
+
+        Nothing here is imported to check it - see
+        core/dependencies.ensure_dependencies, which uses find_spec precisely
+        so that this list cannot dictate the DLL load order.
+        """
+        required = config.REQUIRED_PACKAGES
+        for name in ("PyQt5", "faster_whisper", "sherpa_onnx", "av", "psutil", "tqdm"):
+            assert name in required, f"{name} is imported at startup but not checked for"
 
     def test_transcription_settings(self):
         """Test transcription configuration."""

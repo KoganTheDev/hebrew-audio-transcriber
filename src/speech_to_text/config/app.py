@@ -14,8 +14,18 @@ ICON_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon.ico"
 )
 
+# Every runtime import the app cannot start without, as {import name: pip name}.
+#
+# This used to list only PyQt5 and tqdm, which made the startup check worse than
+# useless: it reported success on an interpreter missing faster-whisper, and
+# main.py then died on "import faster_whisper" with a bare exit. The check has
+# to cover everything, or it is just a slower way of failing later.
 REQUIRED_PACKAGES = {
     "PyQt5": "PyQt5",
+    "faster_whisper": "faster-whisper",
+    "sherpa_onnx": "sherpa-onnx",
+    "av": "av",
+    "psutil": "psutil",
     "tqdm": "tqdm",
 }
 
