@@ -150,6 +150,92 @@ class Transcriber:
             self.progress_callback(("w_error_loading", {"detail": str(e)}), 0)
             return False
 
+    def _fetch_weights(self) -> str | None:
+        """Download the model, reporting progress, and return its local path.
+
+        Returns None to mean "carry on as before": WhisperModel does its own
+        download, silently, exactly as it did before this existed.
+
+        Why this exists. WhisperModel's constructor pulls 1.6 GB for
+        ivrit-turbo or 3.1 GB for ivrit-large through huggingface_hub, which
+        gives the caller no progress callback at all. The bar therefore sat at
+        TRANSCRIBER_LOAD_START_PERCENT for anywhere from ten minutes to the
+        better part of an hour on a first run, under a status line that only
+        ever said "loading". A user watching that screen concludes the app has
+        hung, and kills it.
+
+        Why the progress is a FILE COUNT and not a percentage of bytes, which
+        is what anyone would rather show. Two better-looking approaches were
+        measured and both fail for structural reasons:
+
+        - snapshot_download takes a tqdm_class, which looks like the hook for
+          byte counts. It only ever receives the outer "Fetching N files" bar,
+          unit "it". The per-file byte bars come from huggingface_hub's own
+          internal hf_tqdm and are not overridable by a caller. Probed
+          directly against 0.36: the only bar handed to tqdm_class reports 6
+          units total for faster-whisper-tiny.
+        - Summing bytes on disk under the cache directory reads a flat 3 MB of
+          76 for the whole of a cold tiny download. huggingface_hub stages the
+          large blobs outside the cache through its xet backend and moves them
+          into place at the end, so there is no growing file in the cache to
+          watch.
+
+        So the file count is what is actually available. It is coarse - a
+        model is mostly one big weights file - but it moves, and it is paired
+        with the total download size from config.MODELS so the message says
+        how much is coming. That is the difference between a screen that looks
+        frozen and one that does not, which is the whole point.
+
+        Everything is wrapped: any failure falls back to the plain path rather
+        than taking transcription down with it.
+        """
+        try:
+            from huggingface_hub import snapshot_download
+            from tqdm.auto import tqdm as _tqdm
+        except Exception as e:  # pragma: no cover - only if the hub/tqdm move
+            logger.debug(f"Progress-reporting download unavailable ({e}); using the plain path")
+            return None
+
+        entry = config.MODELS.get(self.model_size) or {}
+        size_text = cast(str, entry.get("download_size") or "")
+        emit = self.progress_callback
+
+        class _ReportingTqdm(_tqdm):  # type: ignore[misc]  # tqdm ships no types
+            def update(self, n: int | None = 1) -> bool | None:
+                out: bool | None = super().update(n)
+                try:
+                    total = int(self.total or 0)
+                    if total > 0:
+                        emit(
+                            (
+                                "w_downloading_model",
+                                {
+                                    "done": int(self.n or 0),
+                                    "total": total,
+                                    "size": size_text,
+                                },
+                            ),
+                            TRANSCRIBER_LOAD_START_PERCENT,
+                        )
+                except Exception:  # pragma: no cover - never break a download
+                    pass
+                return out
+
+        try:
+            return snapshot_download(
+                repo_id=config.hf_repo_id(self.model_repo),
+                cache_dir=config.MODEL_DOWNLOAD_ROOT,
+                tqdm_class=_ReportingTqdm,
+            )
+        except Exception as e:
+            # Not fatal on its own: WhisperModel gets its turn next and may
+            # succeed from a partial cache, and huggingface_hub keeps its
+            # partial files so a retry resumes rather than starting over.
+            logger.warning(
+                f"Progress-reporting download did not finish ({e}); using the plain path"
+            )
+            return None
+
     def _load_on(self, device: str) -> None:
         """Construct WhisperModel for the given device, resolving every knob
         that is None to its production default. Split out of load_model() so
@@ -178,7 +264,10 @@ class Transcriber:
         if self.num_workers is not None:
             kwargs["num_workers"] = self.num_workers
 
-        self.model = WhisperModel(self.model_repo, **kwargs)
+        # A local path when the progress-reporting download ran, otherwise the
+        # repo id, leaving WhisperModel to fetch it exactly as it always has.
+        target = self._fetch_weights() or self.model_repo
+        self.model = WhisperModel(target, **kwargs)
 
     def transcribe(
         self, audio_file: Any, total_duration_seconds: float = 0

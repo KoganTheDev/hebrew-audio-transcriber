@@ -40,7 +40,7 @@ from speech_to_text.config.diarization import (
     DIARIZATION_PROVIDER,
     DIARIZATION_REALTIME_FACTOR,
 )
-from speech_to_text.config.models import DEFAULT_MODEL, MODELS
+from speech_to_text.config.models import DEFAULT_MODEL, MODELS, hf_repo_id
 from speech_to_text.config.paths import (
     CHECKPOINT_FILENAME,
     MODEL_DOWNLOAD_ROOT,
@@ -111,5 +111,6 @@ __all__ = [
     "WINDOW_HEIGHT",
     "WINDOW_WIDTH",
     "compute_type_for_device",
+    "hf_repo_id",
     "output_path_for",
 ]

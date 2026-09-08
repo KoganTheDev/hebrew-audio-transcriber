@@ -533,6 +533,26 @@ STRINGS = {
     "w_starting_thread": {"en": "Starting...", "he": "מתחיל..."},
     "w_initializing": {"en": "Initializing...", "he": "מאתחל..."},
     "w_loading_model": {"en": "Loading {model} model...", "he": "טוען מודל {model}..."},
+    # First run only: the weights are 1.6-3.1 GB and this can take tens of
+    # minutes. The MB figures are Latin quantities inside Hebrew text, so
+    # they are isolated the same way every other number in this table is.
+    # First run only: the weights are 1.6-3.1 GB and this can take tens of
+    # minutes. The progress is a FILE count, not a percentage of bytes -
+    # see Transcriber._fetch_weights for why that is the only signal
+    # huggingface_hub exposes to a caller. {size} carries the total so the
+    # message still says how much is coming. Latin quantities inside Hebrew
+    # text are isolated, like every other number in this table.
+    "w_downloading_model": {
+        "en": "Downloading model ({size}, one time): file {done} of {total}",
+        "he": "מוריד מודל ("
+        + _LRI
+        + "{size}"
+        + _PDI
+        + ", חד-פעמי): קובץ "
+        + _LRI
+        + "{done} מתוך {total}"
+        + _PDI,
+    },
     "w_model_loaded": {"en": "Model loaded: {model}", "he": "המודל {model} נטען"},
     "w_error_loading": {
         "en": "Error loading model: {detail}",

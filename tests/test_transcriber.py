@@ -389,3 +389,84 @@ class TestTranscriber:
 
 # Transcript rendering is covered in tests/test_formatting.py - it grew its own
 # module once timestamps, turn merging and bidi control characters arrived.
+
+
+class TestFetchWeights:
+    """
+    _fetch_weights runs the model download itself so it can report progress.
+
+    Every other test in the suite has it stubbed out by the autouse
+    never_download_model_weights fixture in conftest, so these opt back in and
+    stub huggingface_hub instead - the point is the reporting and the
+    fallbacks, not the network.
+    """
+
+    def _transcriber(self, monkeypatch, seen):
+        monkeypatch.undo()
+        from speech_to_text.core.transcriber import Transcriber
+
+        return Transcriber(model_size="ivrit-turbo", progress_callback=lambda m, p: seen.append(m))
+
+    def test_a_download_reports_progress_and_returns_the_local_path(self, monkeypatch):
+        """The caller gets a path, and the user gets told what is happening."""
+        seen: list = []
+        transcriber = self._transcriber(monkeypatch, seen)
+
+        def fake_snapshot_download(repo_id, cache_dir, tqdm_class):
+            # huggingface_hub drives the bar; mimic two of its ticks.
+            bar = tqdm_class(total=6)
+            bar.update(1)
+            bar.update(3)
+            return r"C:\models\snapshot"
+
+        import huggingface_hub
+
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+
+        assert transcriber._fetch_weights() == r"C:\models\snapshot"
+
+        updates = [params for key, params in seen if key == "w_downloading_model"]
+        assert updates, "the download reported no progress at all"
+        assert updates[-1]["done"] == 4
+        assert updates[-1]["total"] == 6
+        assert updates[-1]["size"] == "1.6 GB", "the message must say how large the download is"
+
+    def test_the_repo_id_is_resolved_not_passed_through_raw(self, monkeypatch):
+        """A bare Whisper size is not a HuggingFace address."""
+        seen: list = []
+        monkeypatch.undo()
+        from speech_to_text.core.transcriber import Transcriber
+
+        transcriber = Transcriber(model_size="tiny", progress_callback=lambda m, p: seen.append(m))
+        captured = {}
+
+        def fake_snapshot_download(repo_id, cache_dir, tqdm_class):
+            captured["repo_id"] = repo_id
+            return "/tmp/x"
+
+        import huggingface_hub
+
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+        transcriber._fetch_weights()
+
+        assert captured["repo_id"] == "Systran/faster-whisper-tiny"
+
+    def test_a_failed_download_falls_back_instead_of_raising(self, monkeypatch):
+        """
+        A network failure here must not end the run.
+
+        Returning None puts WhisperModel back in charge of fetching, which is
+        what happened before this method existed, and huggingface_hub keeps its
+        partial files so a retry resumes.
+        """
+        seen: list = []
+        transcriber = self._transcriber(monkeypatch, seen)
+
+        def boom(repo_id, cache_dir, tqdm_class):
+            raise OSError("network is down")
+
+        import huggingface_hub
+
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", boom)
+
+        assert transcriber._fetch_weights() is None
