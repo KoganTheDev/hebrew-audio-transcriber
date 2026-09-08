@@ -370,6 +370,31 @@ _TRANSCRIBE_KEYS = (
 # actually passed, and cross-check it against this comment, not just the
 # config name.
 # =============================================================================
+# MEASURED, 2026-09-08, so nobody re-runs this hoping for a speedup.
+#
+# batched_4/8/16 against the no_condition control (the right comparison, per
+# the paragraph above), ivrit-turbo, int8, 4-core CPU, 120s of tesr1.wav:
+#
+#     no_condition   xRT 0.934  and  1.256      <- SAME config, twice
+#     batched_16     xRT 1.038
+#     batched_4      xRT 1.089
+#     batched_8      xRT 1.082  and  1.151
+#
+# There is no batching speedup here, and the interesting part is why the
+# result is stated that weakly. Running one config twice spans 1.34x - more
+# than the entire spread between configs - so this measurement cannot resolve
+# the difference between batched and unbatched at all. What it CAN rule out is
+# the reason anyone would try: a 2-4x win would sit far outside that noise
+# band, and it is not there. Word count (271 vs 272) and mean confidence
+# (0.9598 vs 0.9614) are unchanged, so nothing is being traded either way.
+#
+# The likely cause is that batching fills parallel capacity, and on 4 int8 CPU
+# cores there is none spare - CPU utilisation was 69-73% in every run,
+# batched or not. It is worth re-measuring on a GPU or a many-core machine,
+# where the premise actually holds.
+#
+# Anyone repeating this on a laptop: raise --repeat well above 2 and lengthen
+# --cooldown first. Thermal drift on this hardware swamps a sub-40% effect.
 CONFIGS: dict[str, dict] = {
     "baseline": {},
     "crt_2.6": {"compression_ratio_threshold": 2.6},
