@@ -124,6 +124,12 @@ STRINGS = {
     # disambiguates which row's button this is once more than one file is
     # queued; a generic "Remove" would be indistinguishable across rows to
     # a screen reader jumping between controls rather than reading linearly.
+    # Shown on a file whose container PyAV could not open. Deliberately
+    # hedged - a probe failure is not proof faster-whisper will fail too.
+    "file_unreadable_tip": {
+        "en": "This file could not be read, so its length is a guess. It may fail to transcribe.",
+        "he": "לא ניתן לקרוא את הקובץ, ולכן אורכו הוא הערכה בלבד. ייתכן שהתמלול שלו ייכשל.",
+    },
     "remove_file": {"en": "Remove {filename}", "he": "הסרת {filename}"},
     "file_info": {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",

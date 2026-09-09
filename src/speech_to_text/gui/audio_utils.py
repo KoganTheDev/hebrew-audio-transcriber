@@ -8,7 +8,7 @@ from speech_to_text import config
 logger = logging.getLogger(__name__)
 
 
-def get_audio_duration(file_path: str) -> int:
+def get_audio_duration(file_path: str) -> tuple[int, bool]:
     """Get the real audio/video duration in seconds by reading container
     metadata - not an estimate.
 
@@ -19,6 +19,20 @@ def get_audio_duration(file_path: str) -> int:
     to a rough file-size-based guess only if the file can't be opened at all
     (e.g. corrupt/unsupported file) - that fallback is clearly logged as an
     estimate, since it is one.
+
+    Returns:
+        (seconds, probed). `probed` is False when the container could not be
+        read and the duration is the size-based guess.
+
+        The flag matters because a file PyAV cannot open is usually one
+        faster-whisper cannot decode either, and this is the only point in the
+        app that learns it. Returning a bare int threw that away: the file was
+        accepted with an invented duration that also fed the batch time
+        estimate, and the failure surfaced inside the worker after the model
+        had loaded - minutes later for a single file, and as a bare "the
+        transcription failed" with no reason. Caller decides what to do; this
+        just stops discarding what it knows.
+
     """
     try:
         import av
@@ -28,14 +42,14 @@ def get_audio_duration(file_path: str) -> int:
             if container.duration is not None:
                 duration = int(container.duration / av.time_base)
                 logger.debug(f"Got exact duration from container metadata: {duration}s")
-                return duration
+                return duration, True
             # Some containers don't set an overall duration; fall back to the
             # longest individual stream's duration (still exact, not a guess).
             for stream in container.streams:
                 if stream.duration is not None and stream.time_base is not None:
                     duration = int(stream.duration * stream.time_base)
                     logger.debug(f"Got exact duration from stream metadata: {duration}s")
-                    return duration
+                    return duration, True
         finally:
             container.close()
     except Exception as e:
@@ -49,4 +63,4 @@ def get_audio_duration(file_path: str) -> int:
         f"Using ESTIMATED duration (file could not be probed): "
         f"{estimated_seconds}s ({estimated_seconds // 60}m {estimated_seconds % 60}s)"
     )
-    return estimated_seconds
+    return estimated_seconds, False

@@ -265,6 +265,9 @@ class FileSelectStep(QFrame):
         # simpler than one struct per file given how small this state is.
         self.selected_files: list[str] = []
         self._durations: dict[str, int] = {}
+        # Files PyAV could not open. Their duration is a size-based guess, and
+        # they are the ones most likely to fail once transcription starts.
+        self._unprobed: set[str] = set()
         self._rows: dict[str, QFrame] = {}
         # Basenames skipped by the most recent drop (see _drop) - rendered
         # into the summary line by _update_summary until the next drop
@@ -381,7 +384,10 @@ class FileSelectStep(QFrame):
             if path in self.selected_files:
                 continue
             self.selected_files.append(path)
-            self._durations[path] = get_audio_duration(path)
+            duration, probed = get_audio_duration(path)
+            self._durations[path] = duration
+            if not probed:
+                self._unprobed.add(path)
             self._add_row(path)
             changed = True
 
@@ -484,6 +490,16 @@ class FileSelectStep(QFrame):
                 size=f"{size_mb:.1f}",
             )
         )
+        if path in self._unprobed:
+            # Warned, not rejected. A probe failure is not proof that
+            # faster-whisper cannot decode the file - PyAV and ffmpeg do not
+            # accept exactly the same set of containers - so blocking it would
+            # refuse files that work. The point is that the duration shown is
+            # a guess and this is the file to suspect if the run fails.
+            label.setText("\u26a0 " + label.text())
+            label.setToolTip(t("file_unreadable_tip"))
+            label.setStyleSheet(theme.text_qss("warn"))
+
         remove_label = t("remove_file", filename=filename)
         remove_btn.setAccessibleName(remove_label)
         remove_btn.setToolTip(remove_label)
@@ -494,6 +510,7 @@ class FileSelectStep(QFrame):
             self._rows_layout.removeWidget(row)
             row.deleteLater()
         self._durations.pop(path, None)
+        self._unprobed.discard(path)
         if path in self.selected_files:
             self.selected_files.remove(path)
 
@@ -567,6 +584,7 @@ class FileSelectStep(QFrame):
             row.deleteLater()
         self._rows.clear()
         self._durations.clear()
+        self._unprobed.clear()
         self.selected_files.clear()
         self._skipped_last_drop = []
         self._update_summary()

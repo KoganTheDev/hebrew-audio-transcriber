@@ -98,7 +98,7 @@ class TestFileSelectStepFileList:
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 30)
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (30, True))
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
         f1.write_bytes(b"")
@@ -120,7 +120,7 @@ class TestFileSelectStepFileList:
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 10)
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (10, True))
 
         f = tmp_path / "one.wav"
         f.write_bytes(b"")
@@ -135,7 +135,7 @@ class TestFileSelectStepFileList:
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 10)
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (10, True))
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
         f1.write_bytes(b"")
@@ -157,7 +157,7 @@ class TestFileSelectStepFileList:
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 90)
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (90, True))
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
         f1.write_bytes(b"")
@@ -171,7 +171,7 @@ class TestFileSelectStepFileList:
     def test_reset_clears_the_list(self, file_select_step, tmp_path, monkeypatch):
         from speech_to_text.gui.steps import file_select as file_select_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 10)
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (10, True))
 
         f = tmp_path / "one.wav"
         f.write_bytes(b"")
@@ -200,7 +200,7 @@ class TestFileSelectStepSummaryPlurals:
         from speech_to_text.gui import i18n
 
         monkeypatch.setattr(
-            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: 65
+            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: (65, True)
         )
         one = tmp_path / "clip.wav"
         one.write_bytes(b"x")
@@ -220,7 +220,7 @@ class TestFileSelectStepSummaryPlurals:
         from speech_to_text.gui import i18n
 
         monkeypatch.setattr(
-            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: 65
+            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: (65, True)
         )
         paths = []
         for i in range(3):
@@ -248,7 +248,7 @@ class TestFileSelectStepDirectDropFiltering:
     ):
         from speech_to_text.gui.steps import file_select as file_select_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: 30)
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (30, True))
 
         mp3 = tmp_path / "meeting.mp3"
         txt = tmp_path / "notes.txt"
@@ -1703,3 +1703,65 @@ class TestMakeLabelFactory:
         parent = QWidget()
         qtbot.addWidget(parent)
         assert make_label("x", parent=parent).parent() is parent
+
+
+class TestUnreadableFileIsFlagged:
+    """
+    A file PyAV cannot open is marked in the list, not silently accepted.
+
+    Before this, get_audio_duration swallowed the probe failure and returned a
+    size-based guess as if it were measured. The file joined the batch with an
+    invented duration that also fed the time estimate, and the only signal
+    anything was wrong arrived inside the worker after the model had loaded -
+    surfacing, for a single-file run, as "the transcription failed" with no
+    reason attached.
+    """
+
+    def test_a_file_that_cannot_be_probed_is_marked_in_the_list(
+        self, qtbot, file_select_step, monkeypatch, tmp_path
+    ):
+        from speech_to_text.gui.steps import file_select as file_select_module
+
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (120, False))
+        bad = tmp_path / "corrupt.wav"
+        bad.write_bytes(b"not really a wav")
+
+        file_select_step._add_files([str(bad)])
+
+        assert str(bad) in file_select_step._unprobed
+        row = file_select_step._rows[str(bad)]
+        label = row.layout().itemAt(1).widget()
+        assert "\u26a0" in label.text(), f"expected a warning marker, got {label.text()!r}"
+        assert label.toolTip(), "the marker needs a tooltip explaining what it means"
+
+    def test_a_file_that_probes_cleanly_carries_no_warning(
+        self, qtbot, file_select_step, monkeypatch, tmp_path
+    ):
+        """The marker has to distinguish, or it says nothing."""
+        from speech_to_text.gui.steps import file_select as file_select_module
+
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (120, True))
+        good = tmp_path / "fine.wav"
+        good.write_bytes(b"pretend audio")
+
+        file_select_step._add_files([str(good)])
+
+        assert str(good) not in file_select_step._unprobed
+        row = file_select_step._rows[str(good)]
+        label = row.layout().itemAt(1).widget()
+        assert "\u26a0" not in label.text()
+
+    def test_removing_the_file_forgets_that_it_was_unreadable(
+        self, qtbot, file_select_step, monkeypatch, tmp_path
+    ):
+        """Otherwise a re-added path inherits a stale warning."""
+        from speech_to_text.gui.steps import file_select as file_select_module
+
+        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (120, False))
+        bad = tmp_path / "corrupt.wav"
+        bad.write_bytes(b"not really a wav")
+
+        file_select_step._add_files([str(bad)])
+        file_select_step._remove_file(str(bad))
+
+        assert str(bad) not in file_select_step._unprobed
