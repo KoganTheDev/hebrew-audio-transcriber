@@ -40,9 +40,11 @@ from speech_to_text.core.speaker_attribution import (
 
 logger = logging.getLogger(__name__)
 
-# Cache next to whisper_models/, which Transcriber already uses as its
-# download_root. Both are gitignored.
-MODELS_DIR = "./diarization_models"
+# Absolute, resolved once at import, next to whisper_models/ which Transcriber
+# uses as its download_root. Both are gitignored. See
+# config.resolve_diarization_models_root for why this is not the bare relative
+# path it used to be.
+MODELS_DIR = config.DIARIZATION_MODELS_ROOT
 
 _SEGMENTATION_ARCHIVE = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/"

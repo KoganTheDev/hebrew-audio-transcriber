@@ -259,3 +259,68 @@ class TestModelDownloadRoot:
     def test_module_level_constant_is_absolute(self):
         """MODEL_DOWNLOAD_ROOT (computed once at import time) must already be absolute."""
         assert os.path.isabs(config.MODEL_DOWNLOAD_ROOT)
+
+
+class TestDiarizationModelsRoot:
+    """
+    The speaker-model cache must not depend on the working directory.
+
+    It was a bare relative "./diarization_models", so it resolved against
+    wherever the process happened to start. run.bat and run.ps1 cd to the
+    project first, which hid it - but the console script declared in
+    pyproject.toml does not, so `speech-to-text` launched from anywhere else
+    re-downloaded 36 MB into that directory, or failed on a read-only one.
+    The Whisper cache had the same bug and was fixed; this half was missed.
+    """
+
+    def test_the_root_is_absolute(self):
+        assert os.path.isabs(config.DIARIZATION_MODELS_ROOT)
+
+    def test_the_root_does_not_move_with_the_working_directory(self, tmp_path, monkeypatch):
+        """The whole point: same answer from anywhere."""
+        from speech_to_text.config.paths import resolve_diarization_models_root
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_DIARIZATION_DIR", raising=False)
+        here = os.getcwd()
+        try:
+            first = resolve_diarization_models_root()
+            os.chdir(tmp_path)
+            second = resolve_diarization_models_root()
+        finally:
+            os.chdir(here)
+
+        assert first == second, "the cache location changed with the working directory"
+
+    def test_an_explicit_override_wins_and_is_made_absolute(self, tmp_path, monkeypatch):
+        """A relative override is still the caller's mistake to be protected from."""
+        from speech_to_text.config.paths import resolve_diarization_models_root
+
+        monkeypatch.setenv("SPEECH_TO_TEXT_DIARIZATION_DIR", str(tmp_path / "elsewhere"))
+        resolved = resolve_diarization_models_root()
+
+        assert resolved == str(tmp_path / "elsewhere")
+        assert os.path.isabs(resolved)
+
+    def test_the_module_uses_the_resolved_root(self):
+        """diarization.py must read the resolved value, not re-derive one."""
+        from speech_to_text.core import diarization
+
+        assert diarization.MODELS_DIR == config.DIARIZATION_MODELS_ROOT
+        assert os.path.isabs(diarization._SEGMENTATION_MODEL)
+        assert os.path.isabs(diarization._EMBEDDING_MODEL)
+
+    def test_resolving_does_not_create_the_directory(self, tmp_path, monkeypatch):
+        """
+        Diarization is optional, so importing must not litter.
+
+        Unlike the Whisper root, which makedirs on import because a
+        transcription always needs it, ensure_models() creates this one only
+        when it actually fetches something.
+        """
+        from speech_to_text.config.paths import resolve_diarization_models_root
+
+        target = tmp_path / "not_yet"
+        monkeypatch.setenv("SPEECH_TO_TEXT_DIARIZATION_DIR", str(target))
+        resolve_diarization_models_root()
+
+        assert not target.exists(), "resolving a path should not create it"

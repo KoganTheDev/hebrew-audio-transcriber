@@ -43,6 +43,7 @@ from speech_to_text.config.diarization import (
 from speech_to_text.config.models import DEFAULT_MODEL, MODELS, hf_repo_id
 from speech_to_text.config.paths import (
     CHECKPOINT_FILENAME,
+    DIARIZATION_MODELS_ROOT,
     MODEL_DOWNLOAD_ROOT,
     OUTPUT_FILENAME_TEMPLATE,
     SUPPORTED_FORMATS,
@@ -65,6 +66,7 @@ from speech_to_text.config.transcription import (
 )
 
 __all__ = [
+    "DIARIZATION_MODELS_ROOT",
     "APP_ID",
     "APP_NAME",
     "APP_VERSION",

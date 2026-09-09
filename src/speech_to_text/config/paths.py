@@ -46,19 +46,26 @@ import os
 # gui/theme.py's glyph cache uses exactly that API for the same kind of
 # per-user-directory question. This has to stay plain os / os.path so
 # core/transcriber.py can import it too.
-def _default_model_download_root() -> str:
-    """Where to put models when SPEECH_TO_TEXT_MODEL_DIR isn't set - see above."""
+def _cache_root(dir_name: str) -> str:
+    """An existing model cache of that name beside the package, or a per-user path.
+
+    Shared by both caches. They are separate downloads with separate
+    environment overrides, but "where does a model cache live" has one answer
+    and it should not be written twice - the diarization cache spent a long
+    time as a bare relative "./diarization_models" precisely because this
+    reasoning lived only in the Whisper half.
+    """
     # dirname twice: this module lives in the config/ subpackage, so the
     # package root - speech_to_text/, the directory the ancestor walk below is
     # written in terms of - is one further up than this file's own directory.
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     # Two levels, not one. Under the src-layout the package sits at
     # <repo>/src/speech_to_text/, so its immediate parent is src/ - while the
-    # 5.9 GB of already-downloaded models live at <repo>/whisper_models, one
-    # level further up. Checking only the immediate parent would silently miss
-    # them and re-download everything into src/.
+    # already-downloaded models live at <repo>/<dir_name>, one level further
+    # up. Checking only the immediate parent would silently miss them and
+    # re-download everything into src/.
     for ancestor in (os.path.dirname(package_dir), os.path.dirname(os.path.dirname(package_dir))):
-        beside = os.path.join(ancestor, "whisper_models")
+        beside = os.path.join(ancestor, dir_name)
         if os.path.isdir(beside):
             return beside
 
@@ -66,7 +73,12 @@ def _default_model_download_root() -> str:
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
     else:
         base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    return os.path.join(base, "speech-to-text", "whisper_models")
+    return os.path.join(base, "speech-to-text", dir_name)
+
+
+def _default_model_download_root() -> str:
+    """Where to put Whisper models when SPEECH_TO_TEXT_MODEL_DIR isn't set."""
+    return _cache_root("whisper_models")
 
 
 def resolve_model_download_root() -> str:
@@ -85,6 +97,34 @@ def resolve_model_download_root() -> str:
 
 
 MODEL_DOWNLOAD_ROOT = resolve_model_download_root()
+
+
+def resolve_diarization_models_root() -> str:
+    """Absolute path for the sherpa-onnx speaker models.
+
+    This was a bare relative "./diarization_models" in core/diarization.py, so
+    it resolved against the process working directory. The launchers cd to the
+    project first, which hid it - but the console-script entry point declared
+    in pyproject.toml does not, so running `speech-to-text` from anywhere else
+    re-downloaded 36 MB into whatever directory the user happened to be in, or
+    failed outright on a read-only one. Exactly the bug the Whisper cache had,
+    and the reasoning for that fix is directly above.
+
+    No makedirs here, unlike the Whisper root: diarization is optional, and
+    ensure_models() creates the directory when it actually fetches something.
+    Creating an empty folder on import for every user who never turns speaker
+    identification on would be litter.
+    """
+    override = os.environ.get("SPEECH_TO_TEXT_DIARIZATION_DIR")
+    root = override if override else _cache_root("diarization_models")
+    # abspath for the same reason MODEL_DOWNLOAD_ROOT does it: a user-supplied
+    # override could itself be relative, and this is the one place that
+    # guarantee has to hold whatever the input.
+    return os.path.abspath(root)
+
+
+DIARIZATION_MODELS_ROOT = resolve_diarization_models_root()
+
 
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
 
