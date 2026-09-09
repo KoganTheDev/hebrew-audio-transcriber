@@ -219,7 +219,7 @@ test('editing the plain panel never bakes the line-number lead-in into the card 
 // rebuildPlain() regenerating numbers when a card edit changes the panel.
 // -----------------------------------------------------------------------
 
-test('editing a card renumbers the plain panel to match its new paragraph count', () => {
+test('editing a card renumbers the plain panel to match its new paragraph count', async () => {
   const { window, document } = buildWindow(getFixtureHtml('full'));
   const turn = document.querySelector('.turn[data-turn="0-0"]');
   const body = turn.querySelector('.body');
@@ -230,6 +230,10 @@ test('editing a card renumbers the plain panel to match its new paragraph count'
   // one, and the deleted sentence's own .plain-line must disappear too.
   turn.querySelector('.bubble[data-line="0-0-1"]').remove();
   body.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+  // The rebuild is deferred so a keystroke does not pay for a walk over every
+  // turn and bubble in the section - see schedulePlain() in js/32-plain-text.js.
+  await wait(300);
 
   assert.equal(document.querySelector('.plain-line[data-line="0-0-1"]'), null,
     'the removed sentence\'s own line must be gone, not just skipped');
@@ -397,6 +401,30 @@ test('the plain panel\'s "copy all" keeps the sentence numbers - that is the poi
   assert.equal(writes.length, 1);
   assert.ok(writes[0].includes(`${LRI}1${PDI}. ${LRI}[0:00 - 0:01]${PDI} `), 'expected the first sentence\'s number and range to survive into the copy');
   assert.ok(writes[0].includes(`${LRI}2${PDI}. ${LRI}[0:01 - 0:03]${PDI} `), 'expected the second sentence\'s number and range too');
+
+  window.close();
+});
+
+test('a rebuild still pending when the copy is exported is flushed first', async () => {
+  // The export serialises the live DOM (js/56-export.js), so a panel rebuild
+  // that is still sitting on its debounce timer would be missing from the
+  // saved copy - the edit would be in the cards and stale in the plain text.
+  const { window, document } = buildWindow(getFixtureHtml('full'));
+  const turn = document.querySelector('.turn[data-turn="0-0"]');
+  const body = turn.querySelector('.body');
+
+  turn.querySelector('.bubble[data-line="0-0-1"]').remove();
+  body.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+  // Deliberately do NOT wait: export immediately, while the rebuild is pending.
+  // jsdom implements neither half of the Blob URL API.
+  window.URL.createObjectURL = () => 'blob:stub';
+  window.URL.revokeObjectURL = () => {};
+  document.getElementById('export').click();
+  await wait(50);
+
+  assert.equal(document.querySelector('.plain-line[data-line="0-0-1"]'), null,
+    'export must flush the pending rebuild, not serialise a stale panel');
 
   window.close();
 });

@@ -165,6 +165,37 @@
   // an already-attached element via container.appendChild() moves it to its new
   // position without losing focus or listeners, which is what lets one forward
   // pass over every sentence produce the whole panel's final DOM order.
+  // Deferred rebuilds. rebuildPlain() walks every .turn in a section and every
+  // .bubble inside each one, so on a three-hour recording it is thousands of
+  // nodes. The edit handler used to call it synchronously on every input
+  // event, which put that walk between the keystroke and the character
+  // appearing - in the one place this whole app exists for, someone
+  // proofreading Hebrew a character at a time.
+  //
+  // Coalesced on a short timer rather than requestAnimationFrame: rAF does not
+  // run in a background tab, and the panel has to be correct before anything
+  // reads it, not merely before the next paint. flushPlain() is that
+  // guarantee - js/56-export.js calls it before serialising the DOM, because
+  // a pending rebuild would otherwise be missing from the exported copy.
+  var plainTimer = null;
+  var plainPending = [];
+
+  function schedulePlain(section) {
+    if (!section) { return; }
+    if (plainPending.indexOf(section) === -1) { plainPending.push(section); }
+    clearTimeout(plainTimer);
+    plainTimer = setTimeout(flushPlain, 120);
+  }
+
+  function flushPlain() {
+    clearTimeout(plainTimer);
+    plainTimer = null;
+    if (!plainPending.length) { return; }
+    var sections = plainPending;
+    plainPending = [];
+    sections.forEach(function (section) { rebuildPlain(section); });
+  }
+
   function rebuildPlain(section) {
     if (!section) { return; }
     var panel = section.querySelector('.plain');

@@ -6,6 +6,9 @@
 
     // Serialising reads attributes, but typing only updates properties, so
     // form state has to be written back before it can survive the export.
+    // Any keystroke-deferred panel rebuild has to land before the DOM is
+    // serialised, or the exported copy carries a stale plain-text panel.
+    flushPlain();
     bakeFormState();
 
     // Strip transient view state - a half-typed query, an audio path that only

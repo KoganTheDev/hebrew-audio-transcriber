@@ -68,7 +68,10 @@
         // Confidence shading describes what the model produced, not what the
         // user has since typed, so an edited card stops being shaded.
         unflagTurn(turn);
-        rebuildPlain(turn.closest('.source'));
+        // Deferred, not immediate - see schedulePlain() in
+        // js/32-plain-text.js for why a keystroke must not pay for a full
+        // panel rebuild.
+        schedulePlain(turn.closest('.source'));
         save();
       });
 
