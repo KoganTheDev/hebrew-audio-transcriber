@@ -362,6 +362,16 @@ STRINGS = {
     "doc_opt_speakers": {"en": "Speaker names", "he": "שמות דוברים"},
     "doc_copy_all": {"en": "Copy all", "he": "העתקת הכול"},
     "doc_confidence": {"en": "confidence", "he": "ביטחון"},
+    # Shown as a toast when localStorage refuses a write, which in practice
+    # means the quota is full. Chrome pools every file:// document into one
+    # origin, so this page shares a few megabytes with every transcript ever
+    # opened on the machine. Names the way out rather than just reporting
+    # the failure, because the edits are still in memory at this point and
+    # exporting a copy saves them.
+    "doc_save_failed": {
+        "en": 'Could not save in the browser - use "Save a copy" to keep your edits.',
+        "he": 'לא ניתן לשמור בדפדפן - השתמשו ב"שמירת עותק" כדי לשמור את השינויים.',
+    },
     "doc_copied": {"en": "Copied", "he": "הועתק"},
     "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},

@@ -16,6 +16,10 @@
       || Object.keys(state.assignLine).length > 0;
   }
 
+  // Set once the browser has refused a write, so the warning is shown a single
+  // time rather than on every debounce tick from then on.
+  var saveFailedWarned = false;
+
   function save() {
     setStatus('saving');
     clearTimeout(saveTimer);
@@ -26,7 +30,23 @@
         exported = false;
         setStatus('local');
       } catch (e) {
+        // Almost always the quota. Chrome pools every file:// document into
+        // one origin, so this page shares a few megabytes with every other
+        // transcript ever opened on this machine, and nothing evicts the
+        // older ones - each run mints a fresh doc id and its own key.
+        //
+        // The status box alone is not enough here. It swaps one pre-rendered
+        // label for another in a corner, and the reader is looking at the text
+        // they are editing. Losing an afternoon's proofreading to a colour
+        // change is the one failure this document cannot afford, so it also
+        // says so out loud and names the way out: export a copy, which writes
+        // a real file and does not touch the quota.
         setStatus('error');
+        if (!saveFailedWarned) {
+          saveFailedWarned = true;
+          showToast(t('save_failed',
+            'Could not save in the browser - use "Save a copy" to keep your edits.'));
+        }
       }
     }, 400);
   }
