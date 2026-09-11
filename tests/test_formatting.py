@@ -1206,6 +1206,7 @@ class TestVistaBackdrop:
         formatting._vista_names.cache_clear()
         formatting._asset_bytes.cache_clear()
         formatting._asset.cache_clear()
+        formatting.assets._data_uri.cache_clear()
         try:
             out = render_html([doc("a.wav", [seg(0, 1)])], vista="vista-01.webp")
             assert 'class="backdrop"' in out
@@ -1224,6 +1225,7 @@ class TestVistaBackdrop:
             formatting._vista_names.cache_clear()
             formatting._asset_bytes.cache_clear()
             formatting._asset.cache_clear()
+            formatting.assets._data_uri.cache_clear()
 
 
 class TestRemovedIdentifiersNeverReappear:
@@ -1457,3 +1459,45 @@ class TestPlainPanelCheckboxesMatchTheRender:
             render_html([doc("a.wav", [seg(0, 1, "אחד.", speaker=0)])], speaker_label="Speaker {n}")
         )
         assert "checked" in re.search(r'<input[^>]*class="opt-spk"[^>]*>', with_label).group(0)
+
+
+class TestEveryAssetReaderIsCached:
+    """
+    A batch re-renders the whole document after every file, so anything the
+    renderer reads or encodes is paid for once per file rather than once per
+    run. Three of the four readers were cached and _data_uri was not.
+
+    Small in absolute terms - measured at 2.5ms and 1.4 MB of string per
+    render - so this is a consistency rule, not a speed-up. It is pinned
+    because "three of these four are cached" is exactly the kind of asymmetry
+    that gets re-introduced by accident.
+    """
+
+    def test_the_readers_and_the_encoder_all_cache(self):
+        from speech_to_text.core import formatting
+
+        for reader in (
+            formatting._asset,
+            formatting._asset_dir,
+            formatting._asset_bytes,
+            formatting._vista_names,
+            formatting.assets._data_uri,
+        ):
+            assert hasattr(reader, "cache_clear"), f"{reader.__name__} is not cached"
+
+    def test_encoding_the_same_backdrop_twice_does_the_work_once(self):
+        from speech_to_text.core import formatting
+
+        names = formatting._vista_names()
+        if not names:
+            pytest.skip("no vistas shipped in this checkout")
+
+        formatting.assets._data_uri.cache_clear()
+        try:
+            first = formatting.assets._data_uri(names[0])
+            second = formatting.assets._data_uri(names[0])
+
+            assert first is second, "the encoded URI was rebuilt rather than reused"
+            assert formatting.assets._data_uri.cache_info().hits == 1
+        finally:
+            formatting.assets._data_uri.cache_clear()
