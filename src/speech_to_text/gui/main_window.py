@@ -788,6 +788,12 @@ class MainWindow(QMainWindow):
             options=request.options,
         )
         self.transcription_thread.progress.connect(self.transcription_step.update_progress)
+        # The bar and the clock are fed separately on purpose: a percentage and
+        # a count of audio-seconds answer different questions, and turning one
+        # back into the other is what made the old time estimate wrong (see
+        # gui/presenters/time_estimate.py).
+        self.transcription_thread.work.connect(self.transcription_step.update_work)
+        self.transcription_thread.phase.connect(self.transcription_step.update_phase)
         self.transcription_thread.finished.connect(self._on_transcription_complete)
         self.transcription_thread.error.connect(self._on_transcription_error)
         self.transcription_thread.start()
