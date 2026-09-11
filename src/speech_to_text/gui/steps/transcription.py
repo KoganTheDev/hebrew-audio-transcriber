@@ -523,7 +523,15 @@ class TranscriptionStep(QFrame):
         has been fully counted, so nothing would otherwise account for it, and
         it is the phase that put 280s of frozen bar at the end of a real run.
         """
+        # Any phase at all anchors the rate's clock: the first one to arrive is
+        # this batch's first file being decoded or VAD-scanned, which is the
+        # moment work on audio actually begins. Before that the run is loading
+        # a model, and charging that to audio-seconds would wreck the rate.
+        self._estimator.note_work_started(sent_at)
+
         if name != WORK_PHASE_DIARIZE_WAIT:
+            if self.start_time is not None:
+                self._refresh_time_label(time.time() - self.start_time)
             return
         if seconds == PHASE_STARTED_SECONDS:
             self._estimator.note_wait_started(sent_at)

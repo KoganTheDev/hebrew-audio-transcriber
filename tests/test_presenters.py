@@ -312,8 +312,11 @@ class TestTimeEstimatorHasNothingToSayYet:
         clock = FakeClock()
         estimator = TimeEstimator()
         estimator.note_file_started(1)
+        # The batch starts working, THEN audio comes in - the real order, and
+        # the one that leaves a measured interval to divide by.
+        estimator.note_work_started(clock.now)
+        clock.advance(900.0)
         estimator.note_work(900.0, 900.0, clock.now)
-        clock.advance(1000.0)
         assert estimator.remaining(clock.now) is not None
 
         estimator.note_wait_started(clock.now)
@@ -589,3 +592,79 @@ class TestAgainstARealRun:
             assert error + truth >= 0.0, "the estimate went negative"
             if truth < 10.0:
                 assert error < 60.0
+
+
+class TestSegmentsArriveInBursts:
+    """
+    faster-whisper decodes a whole 30s window and then yields every segment in
+    it at once, so audio_done jumps and then sits still for seconds at a time.
+
+    Both of the defects pinned here were invisible in the unit tests and in the
+    replay of logged timings, and showed up the first time the real pipeline
+    was run end to end: the replay interpolates segment arrivals evenly, which
+    is exactly the assumption that hides them.
+    """
+
+    @staticmethod
+    def _mid_run(clock):
+        """Anchored, with one burst of 60s of audio 30s ago, 240s still to go."""
+        estimator = TimeEstimator()
+        estimator.note_file_started(1)
+        estimator.note_work_started(clock.now)
+        clock.advance(30.0)
+        estimator.note_work(60.0, 300.0, clock.now)
+        return estimator
+
+    def test_the_rate_does_not_drift_between_bursts(self):
+        """
+        Measured against "now" the rate climbs through every gap and drops
+        back on each burst, because the clock moves while audio_done does not.
+        Seen live, the readout counted UP from 1:43 to 2:00 and then fell to
+        0:52 on the next burst. A rate is a measurement over completed work,
+        so the window ends where the work ended.
+        """
+        clock = FakeClock()
+        estimator = self._mid_run(clock)
+
+        first = estimator.rate(clock.now)
+        clock.advance(10.0)
+        assert estimator.rate(clock.now) == first
+        clock.advance(10.0)
+        assert estimator.rate(clock.now) == first
+
+    def test_the_readout_still_counts_down_inside_a_gap(self):
+        """
+        A rate that ignores the gap must not leave the number frozen between
+        bursts - it would step every 10 or 15 seconds and look stuck in
+        between. Time already spent on the chunk being decoded is time served
+        against it, so it comes off the estimate second by second.
+        """
+        clock = FakeClock()
+        estimator = self._mid_run(clock)
+
+        first = estimator.remaining(clock.now)
+        clock.advance(10.0)
+        second = estimator.remaining(clock.now)
+
+        assert second == pytest.approx(first - 10.0, abs=0.01)
+
+    def test_a_tail_inside_the_gap_is_not_mistaken_for_decoding(self):
+        """
+        A file's tail falls between its last work report and the next file's
+        first one, so it lands squarely in that gap. Counted as time served,
+        a 280s diarization wait knocked 280s off the estimate the instant it
+        ended - the estimate fell by more than four minutes for work that had
+        not happened.
+        """
+        clock = FakeClock()
+        estimator = self._mid_run(clock)
+        before = estimator.remaining(clock.now)
+
+        estimator.note_wait_started(clock.now)
+        clock.advance(280.0)
+        estimator.note_wait_finished(280.0)
+
+        after = estimator.remaining(clock.now)
+        # The decode half of the estimate is untouched by the wait; only the
+        # tail term, now measured, is added to it.
+        assert after >= before

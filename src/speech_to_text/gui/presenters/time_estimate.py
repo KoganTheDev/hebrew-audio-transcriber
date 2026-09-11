@@ -92,10 +92,21 @@ class TimeEstimator:
     audio_total: float = 0.0
     audio_done: float = 0.0
 
-    # Monotonic reading at the first work report. Not the run's start: model
-    # loading sits before it and can be twenty minutes on a first download or
-    # two seconds on a warm cache, so folding it into a per-audio-second rate
-    # would poison every number derived from it.
+    # Monotonic reading at the moment this batch began working on its first
+    # file. Not the run's start: model loading sits before it and is anywhere
+    # from two seconds on a warm cache to tens of minutes on a first download,
+    # so folding it into a per-audio-second rate would poison every number
+    # derived from it. It happens once, and no amount of audio pays for it.
+    #
+    # It is also NOT the first work report, which is where this was anchored
+    # first and is subtly wrong: faster-whisper releases its first segments in
+    # a burst after decoding a whole 30s window, so by the time that report
+    # arrives half a minute of audio is already done. Measuring from there
+    # while still dividing by ALL the audio counts that half-minute as free -
+    # two errors that happen to point opposite ways and cancel by luck rather
+    # than by reasoning. Anchoring at the start of the work instead makes the
+    # rate mean what it says: every second spent decoding, over every second
+    # of audio decoded.
     _decoding_started_at: float | None = None
 
     # Audio position when the current file began, so the file's own length is
@@ -104,6 +115,23 @@ class TimeEstimator:
     # source for what counts as done and it cannot disagree with itself.
     _current_file_audio_start: float = 0.0
     _current_file_index: int | None = None
+
+    # When audio_done last actually moved. The rate is measured to HERE, not
+    # to the caller's "now", because faster-whisper releases its segments in
+    # bursts: it decodes a whole 30s window and then yields everything in it
+    # at once. Measured against "now", the rate therefore climbs through every
+    # gap between bursts and drops back on each one, and the readout visibly
+    # counts UP before snapping down - seen live at 1:43 climbing to 2:00 and
+    # then falling to 0:52 on the next burst. Dividing only by work that has
+    # actually completed makes the rate a measurement again; the gap since is
+    # handled by counting down through it, below.
+    _last_work_at: float | None = None
+    # Tail seconds already measured when audio_done last moved. Everything in
+    # _waits.seconds beyond this happened AFTER the last work report, which
+    # puts it in the gap since - so it must not be charged to decoding at
+    # either end: not subtracted from the rate's window (it is outside it) and
+    # not counted as time served against the next chunk (no decoding happened).
+    _waited_at_last_work: float = 0.0
 
     _waits: _WaitMeasurement = field(default_factory=_WaitMeasurement)
     # (started_at, audio position when it started) while a tail is being
@@ -122,16 +150,34 @@ class TimeEstimator:
         """
         return max(self.audio_total - self._waits.audio, 0.0)
 
-    def note_work(self, audio_done: float, audio_total: float, now: float) -> None:
-        """Record an audio position reported by the worker."""
+    def note_work_started(self, now: float) -> None:
+        """The batch has begun working on audio, whether or not any is done yet.
+
+        Called for the first phase of the first file - decoding it, or
+        faster-whisper's VAD pass over it - which is the first moment after
+        the model is loaded that time starts being spent on this batch's
+        audio. Everything before it is one-time setup that no amount of audio
+        should be charged for.
+        """
         if self._decoding_started_at is None:
             self._decoding_started_at = now
+
+    def note_work(self, audio_done: float, audio_total: float, now: float) -> None:
+        """Record an audio position reported by the worker."""
+        # Fallback anchor. A caller that only feeds work reports still gets a
+        # rate, just one that reads the first burst's audio as free - see
+        # _decoding_started_at for why that is the worse of the two.
+        self.note_work_started(now)
         # max(), not plain assignment: messages cross a process boundary and a
         # position that went backwards would make the rate jump rather than
         # settle. The worker guarantees monotonicity; this makes the estimate
         # not depend on that guarantee holding.
+        before = self.audio_done
         self.audio_done = max(self.audio_done, audio_done)
         self.audio_total = max(self.audio_total, audio_total)
+        if self.audio_done > before:
+            self._last_work_at = now
+            self._waited_at_last_work = self._waits.seconds
 
     def note_file_started(self, index: int) -> None:
         """Record that file `index` (1-based) is now the one running."""
@@ -168,17 +214,21 @@ class TimeEstimator:
     def rate(self, now: float) -> float | None:
         """Seconds spent DECODING per second of audio, or None if not yet known.
 
+        Measured over completed work only: from the start of the batch's first
+        file to the last moment audio_done actually moved, over the audio done
+        by then. `now` is accepted but deliberately not used as the end of the
+        window - see _last_work_at for the burst behaviour that makes using it
+        produce a rate that saws up and down rather than settling.
+
         Tails are subtracted out rather than averaged in, so this stays a
         measure of decoding alone and the tail term can be added separately
         without charging the same seconds twice (see the module docstring).
-
-        Takes `now` rather than reading a clock, so the whole estimator can be
-        driven by a fake one in tests - and so the rate and the estimate built
-        from it are always read at the same instant.
         """
         if self._decoding_started_at is None or self.audio_done < MIN_AUDIO_FOR_A_RATE:
             return None
-        elapsed = now - self._decoding_started_at - self._time_spent_waiting(now)
+        if self._last_work_at is None:
+            return None
+        elapsed = self._last_work_at - self._decoding_started_at - self._waited_at_last_work
         if elapsed <= 0:
             return None
         return elapsed / self.audio_done
@@ -208,7 +258,7 @@ class TimeEstimator:
                 # diarization finishing underneath transcription every time,
                 # which is the common case) or the first one has not happened
                 # yet. Nothing to add, and nothing to apologise for.
-                return estimate
+                return max(estimate - self._time_since_work_moved(now), 0.0)
             # A tail IS running and this run has never measured one. Its
             # length could be seconds or minutes - on a real batch it was
             # 280s - so any number here would be an invention, and a number
@@ -221,7 +271,27 @@ class TimeEstimator:
         # because the prediction comes from a different file and can simply be
         # short; a countdown running past zero into negative numbers would be
         # a worse lie than an optimistic one.
-        return estimate + max(owed - self._time_in_current_wait(now), 0.0)
+        tail = max(owed - self._time_in_current_wait(now), 0.0)
+        return max(estimate - self._time_since_work_moved(now), 0.0) + tail
+
+    def _time_since_work_moved(self, now: float) -> float:
+        """Time spent DECODING since audio_done last moved.
+
+        This is time already served against the chunk currently being decoded,
+        which `remaining_audio * rate` charges for in full. Counting it off is
+        what turns a number that only steps on each burst into one that ticks
+        down every second, without letting the gap inflate the rate itself.
+
+        Any tail inside the gap is excluded, whether it is still running or
+        has just finished. Without that exclusion a 280s diarization wait was
+        read as 280s of decoding already done and knocked the estimate down by
+        the same amount the moment the wait ended.
+        """
+        if self._last_work_at is None:
+            return 0.0
+        waited_since = self._waits.seconds - self._waited_at_last_work
+        gap = now - self._last_work_at - waited_since - self._time_in_current_wait(now)
+        return max(gap, 0.0)
 
     def _time_in_current_wait(self, now: float) -> float:
         if self._active_wait is None:
