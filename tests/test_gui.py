@@ -1765,3 +1765,72 @@ class TestUnreadableFileIsFlagged:
         file_select_step._remove_file(str(bad))
 
         assert str(bad) not in file_select_step._unprobed
+
+
+class TestWorkStreamRelay:
+    """
+    TranscriptionThread relays the worker's measurements; it computes nothing.
+
+    The arithmetic belongs in the GUI, where the clock is (see
+    core/progress_scale.py's work-stream section). What is pinned here is that
+    the numbers survive the crossing intact, and that the one thing the queue
+    can express but a pyqtSignal cannot - "this phase has begun, duration
+    unknown" - is translated at exactly this boundary and nowhere else.
+    """
+
+    @staticmethod
+    def _thread():
+        from speech_to_text.gui.main_window import TranscriptionThread
+
+        return TranscriptionThread(
+            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+        )
+
+    def test_a_work_message_arrives_unchanged(self, qtbot):
+        thread = self._thread()
+
+        with qtbot.waitSignal(thread.work, timeout=1000) as caught:
+            thread._relay_progress_message("work", [42.5, 120.0, 1234.0])
+
+        assert caught.args == [42.5, 120.0, 1234.0]
+
+    def test_a_finished_phase_carries_its_measured_duration(self, qtbot):
+        thread = self._thread()
+
+        with qtbot.waitSignal(thread.phase, timeout=1000) as caught:
+            thread._relay_progress_message("phase", ["diarize", 163.04, 1234.0])
+
+        assert caught.args == ["diarize", 163.04, 1234.0]
+
+    def test_a_started_phase_becomes_the_sentinel(self, qtbot):
+        """
+        The worker says None. pyqtSignal's type list has no optional float, so
+        the None becomes PHASE_STARTED_SECONDS here rather than an Optional
+        leaking through every slot downstream. Negative, because every real
+        value on this channel is a measured duration.
+        """
+        from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
+
+        thread = self._thread()
+
+        with qtbot.waitSignal(thread.phase, timeout=1000) as caught:
+            thread._relay_progress_message("phase", ["diarize_wait", None, 1234.0])
+
+        assert caught.args == ["diarize_wait", PHASE_STARTED_SECONDS, 1234.0]
+        assert PHASE_STARTED_SECONDS < 0
+
+    def test_work_and_progress_stay_on_separate_signals(self, qtbot):
+        """
+        A message that moves the bar and a message that moves the clock are
+        independently routable on purpose: the bar's percentage and the
+        clock's audio-seconds answer different questions and neither can be
+        derived from the other.
+        """
+        thread = self._thread()
+        progress_seen: list = []
+        thread.progress.connect(lambda *args: progress_seen.append(args))
+
+        thread._relay_progress_message("work", [1.0, 2.0, 3.0])
+        thread._relay_progress_message("phase", ["render", 0.1, 3.0])
+
+        assert progress_seen == []

@@ -4,6 +4,7 @@ Tests for transcriber module.
 
 from unittest.mock import MagicMock, patch
 
+from speech_to_text.core import progress_scale as ps
 from speech_to_text.core.hebrew_text import PDI, RLI
 from speech_to_text.core.segments import plain_text
 from speech_to_text.core.transcriber import Transcriber
@@ -470,3 +471,128 @@ class TestFetchWeights:
         monkeypatch.setattr(huggingface_hub, "snapshot_download", boom)
 
         assert transcriber._fetch_weights() is None
+
+
+class TestWorkStream:
+    """
+    What Transcriber reports for the time estimate, as opposed to for the bar.
+
+    The percentage it already emitted was derived from exactly these numbers
+    and then rounded into a 0-100 band (see core/progress_scale.py). Turning
+    that percentage back into a time was the bug; sending the numbers on
+    unrounded, in audio-seconds, is the fix.
+    """
+
+    @staticmethod
+    def _transcriber(mock_whisper_model_class, segments, work, phases):
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = (segments, MagicMock())
+        mock_whisper_model_class.return_value = mock_model
+
+        transcriber = Transcriber(
+            work_callback=lambda done, total: work.append((done, total)),
+            phase_callback=lambda name, seconds: phases.append((name, seconds)),
+        )
+        transcriber.load_model()
+        return transcriber
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_each_segment_reports_where_it_ended_in_the_audio(self, mock_whisper_model_class):
+        work: list = []
+        phases: list = []
+        segments = [
+            fake_segment("one", start=0.0, end=30.0),
+            fake_segment("two", start=30.0, end=95.5),
+        ]
+        transcriber = self._transcriber(mock_whisper_model_class, segments, work, phases)
+
+        transcriber.transcribe("a.wav", total_duration_seconds=120.0)
+
+        assert [done for done, _total in work][:2] == [30.0, 95.5]
+        assert all(total == 120.0 for _done, total in work)
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_the_file_is_closed_out_at_its_full_length(self, mock_whisper_model_class):
+        """
+        VAD trims trailing silence, so a recording that ends quietly stops
+        yielding segments well short of its own length - here the last segment
+        ends at 95.5s of a 120s file. Without a closing report the batch's
+        audio_done would never reach audio_total and the estimate would keep a
+        phantom tail that never counts down.
+        """
+        work: list = []
+        segments = [fake_segment("one", start=0.0, end=95.5)]
+        transcriber = self._transcriber(mock_whisper_model_class, segments, work, [])
+
+        transcriber.transcribe("a.wav", total_duration_seconds=120.0)
+
+        assert work[-1] == (120.0, 120.0)
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_no_duration_means_no_work_reported(self, mock_whisper_model_class):
+        """
+        total_duration_seconds=0 is the "could not probe this file" case (see
+        gui/audio_utils.py). There is no denominator, so there is no rate to
+        measure, and reporting a position against a guess would produce a
+        confidently wrong ETA rather than none at all.
+        """
+        work: list = []
+        segments = [fake_segment("one", start=0.0, end=30.0)]
+        transcriber = self._transcriber(mock_whisper_model_class, segments, work, [])
+
+        transcriber.transcribe("a.wav", total_duration_seconds=0)
+
+        assert work == []
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_a_segment_with_no_end_reports_no_position(self, mock_whisper_model_class):
+        """
+        faster-whisper's segment type has changed shape across releases. A
+        missing end is already tolerated for the percentage (it falls back to a
+        soft per-segment estimate); the work stream has no such fallback,
+        because an invented position is worse than a stale one.
+        """
+        work: list = []
+        segment = fake_segment("one", start=0.0)
+        segment.end = None
+        transcriber = self._transcriber(mock_whisper_model_class, [segment], work, [])
+
+        transcriber.transcribe("a.wav", total_duration_seconds=120.0)
+
+        # Only the closing report at the end, not one for the segment itself.
+        assert work == [(120.0, 120.0)]
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_the_wait_before_the_first_segment_is_timed(self, mock_whisper_model_class):
+        """
+        model.transcribe() runs VAD over the whole file and decodes the first
+        window before yielding anything. Measured at 67s on a 15-minute file -
+        the longest stretch of a run with nothing to report. It is announced
+        when it starts and measured when it ends, so the GUI can name it
+        instead of showing a bar that has stopped.
+        """
+        phases: list = []
+        segments = [fake_segment("one", start=0.0, end=30.0)]
+        transcriber = self._transcriber(mock_whisper_model_class, segments, [], phases)
+
+        transcriber.transcribe("a.wav", total_duration_seconds=120.0)
+
+        prepare = [seconds for name, seconds in phases if name == ps.WORK_PHASE_PREPARE]
+        assert len(prepare) == 2, "prepare should be announced once and measured once"
+        assert prepare[0] is ps.WORK_PHASE_STARTED
+        assert prepare[1] >= 0
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_a_caller_that_wants_none_of_this_is_unaffected(self, mock_whisper_model_class):
+        """
+        Both callbacks default to a no-op, so the eval harness and every other
+        existing caller construct a Transcriber exactly as before.
+        """
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = ([fake_segment("one")], MagicMock())
+        mock_whisper_model_class.return_value = mock_model
+
+        transcriber = Transcriber()
+        transcriber.load_model()
+
+        assert transcriber.transcribe("a.wav", total_duration_seconds=120.0) is not None

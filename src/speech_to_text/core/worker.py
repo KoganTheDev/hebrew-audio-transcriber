@@ -39,6 +39,14 @@ from speech_to_text.core.progress_scale import (
     FILE_LOCAL_TRANSCRIBE_START,
     TRANSCRIBER_MODEL_LOADED_PERCENT,
     TRANSCRIBER_TRANSCRIBE_SPAN,
+    WORK_PHASE_ASSIGN,
+    WORK_PHASE_CORRECT,
+    WORK_PHASE_DECODE,
+    WORK_PHASE_DIARIZE,
+    WORK_PHASE_DIARIZE_WAIT,
+    WORK_PHASE_RENDER,
+    WORK_PHASE_STARTED,
+    WORK_PHASE_TRANSCRIBE,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
@@ -57,8 +65,8 @@ _Message = tuple[str, dict[str, Any]]
 _Emitter = Callable[[_Message, int], None]
 
 
-def _log_phase(phase: str, start: float) -> None:
-    """Emit one phase's wall-clock cost at DEBUG.
+def _log_phase(progress_queue: "multiprocessing.Queue", phase: str, start: float) -> None:
+    """Report one phase's wall-clock cost - to the log, and to the GUI.
 
     Without this, decode, transcribe, diarize, assign_speakers, Hebrew
     correction and HTML render are indistinguishable in the log, and "what's
@@ -67,8 +75,48 @@ def _log_phase(phase: str, start: float) -> None:
     backwards on an NTP correction - deliberately not the choice
     tests/eval/compare_models.py and core/calibration.py make for their own
     reasons.
+
+    The same measurement now also goes on progress_queue, because the GUI's
+    time estimate needs exactly these numbers and they were already being
+    taken: the cost of diarization on file 1 is what predicts the tail on
+    file 2 (see core/progress_scale.py's work-stream section). Sending it
+    rather than re-deriving it in the GUI keeps one measurement, not two
+    numbers that can disagree.
     """
-    logger.debug(f"phase timing: {phase} took {time.perf_counter() - start:.3f}s")
+    elapsed = time.perf_counter() - start
+    logger.debug(f"phase timing: {phase} took {elapsed:.3f}s")
+    _report_phase(progress_queue, phase, elapsed)
+
+
+def _report_phase(
+    progress_queue: "multiprocessing.Queue", phase: str, seconds: float | None
+) -> None:
+    """Put one phase fact on the queue. seconds=WORK_PHASE_STARTED means "begun".
+
+    Split from _log_phase because a phase STARTING has nothing to log - there
+    is no duration yet - but is the whole point for a phase that reports no
+    progress of its own while it runs.
+    """
+    progress_queue.put(("phase", phase, seconds, time.monotonic()))
+
+
+def _work_emitter(
+    progress_queue: "multiprocessing.Queue", done_before: float, total_duration: float
+) -> Callable[[float, float], None]:
+    """Lift one file's audio position onto the batch's.
+
+    Transcriber reports file-local audio-seconds (it transcribes one thing and
+    knows nothing about batches - see its work_callback). The batch total is
+    the sum of every file's probed duration, so a file's contribution is just
+    its own position offset by everything already finished. No scale, no
+    remapping: unlike the percentage bands above, audio-seconds add up.
+    """
+
+    def emit_work(audio_done: float, audio_total: float) -> None:
+        del audio_total  # the file's own total; the batch's is what the GUI needs
+        progress_queue.put(("work", done_before + audio_done, total_duration, time.monotonic()))
+
+    return emit_work
 
 
 # faster-whisper decodes each ~30s audio window internally, retrying at
@@ -262,6 +310,7 @@ def _transcribe_to_document(
     file_duration: float,
     emit_local: _Emitter,
     progress_queue: "multiprocessing.Queue",
+    work_callback: Callable[[float, float], None],
 ) -> "TranscriptDocument":
     """Transcribe one file into a document, turning any failure into a marked one.
 
@@ -275,7 +324,13 @@ def _transcribe_to_document(
     source_name = os.path.basename(audio_file)
     try:
         segments = _transcribe_one(
-            audio_file, transcriber, options, file_duration, emit_local, progress_queue
+            audio_file,
+            transcriber,
+            options,
+            file_duration,
+            emit_local,
+            progress_queue,
+            work_callback,
         )
     except Exception as e:
         logger.error(f"Transcription failed for {audio_file}: {e}", exc_info=True)
@@ -286,7 +341,9 @@ def _transcribe_to_document(
     return TranscriptDocument(source_name=source_name, segments=segments)
 
 
-def _write_checkpoint(batch: _BatchRender, audio_file: str) -> None:
+def _write_checkpoint(
+    batch: _BatchRender, audio_file: str, progress_queue: "multiprocessing.Queue"
+) -> None:
     """Render and atomically rewrite the output after one file.
 
     Transcription is by far the most expensive step in this pipeline, so the
@@ -311,7 +368,7 @@ def _write_checkpoint(batch: _BatchRender, audio_file: str) -> None:
     try:
         render_start = time.perf_counter()
         checkpoint_html = batch.render()
-        _log_phase("HTML render (checkpoint)", render_start)
+        _log_phase(progress_queue, WORK_PHASE_RENDER, render_start)
         _atomic_write_html(batch.output_file, checkpoint_html)
     except Exception as e:
         logger.warning(f"Checkpoint write failed after {audio_file}: {e}", exc_info=True)
@@ -363,8 +420,15 @@ def _transcribe_all(
             emit_local = _batch_scale_emitter(
                 progress_queue, done_duration, file_duration, total_duration
             )
+            emit_work = _work_emitter(progress_queue, done_duration, total_duration)
             document = _transcribe_to_document(
-                audio_file, transcriber, options, file_duration, emit_local, progress_queue
+                audio_file,
+                transcriber,
+                options,
+                file_duration,
+                emit_local,
+                progress_queue,
+                emit_work,
             )
             batch.documents.append(document)
             if not document.failed:
@@ -378,7 +442,7 @@ def _transcribe_all(
             # on disk. Once at least one file has succeeded, every subsequent
             # checkpoint (successful or not) rewrites the full picture so far.
             if succeeded > 0:
-                _write_checkpoint(batch, audio_file)
+                _write_checkpoint(batch, audio_file, progress_queue)
 
             done_duration += file_duration
     finally:
@@ -387,7 +451,9 @@ def _transcribe_all(
     return succeeded
 
 
-def _write_final_document(batch: _BatchRender, emit_progress: _Emitter) -> None:
+def _write_final_document(
+    batch: _BatchRender, emit_progress: _Emitter, progress_queue: "multiprocessing.Queue"
+) -> None:
     """Render the combined document once more and write it for the last time.
 
     Unlike the per-file checkpoints, this write is not allowed to fail
@@ -401,7 +467,7 @@ def _write_final_document(batch: _BatchRender, emit_progress: _Emitter) -> None:
     emit_progress(("w_formatting", {}), BATCH_FORMATTING_PERCENT)
     render_start = time.perf_counter()
     rendered = batch.render()
-    _log_phase("HTML render (final)", render_start)
+    _log_phase(progress_queue, WORK_PHASE_RENDER, render_start)
 
     emit_progress(("w_saving", {}), BATCH_SAVING_PERCENT)
     _atomic_write_html(batch.output_file, rendered)
@@ -484,7 +550,7 @@ def run_transcription_process(
                 result_queue.put(("error", "err_transcription_failed", {}))
                 return
 
-            _write_final_document(batch, emit_progress)
+            _write_final_document(batch, emit_progress, progress_queue)
             result_queue.put(("finished", output_file))
 
         except Exception as e:
@@ -587,6 +653,7 @@ def _decode_transcript(
     two_party: bool,
     file_duration: float,
     diarization_thread: Optional["threading.Thread"],
+    progress_queue: "multiprocessing.Queue",
 ) -> list["Segment"] | None:
     """Produce this file's segments, joining the diarization thread either way.
 
@@ -609,11 +676,22 @@ def _decode_transcript(
         source = mono if mono is not None else audio_file
         transcribe_start = time.perf_counter()
         segments = transcriber.transcribe(source, total_duration_seconds=file_duration)
-        _log_phase("transcribe", transcribe_start)
+        _log_phase(progress_queue, WORK_PHASE_TRANSCRIBE, transcribe_start)
         return segments
     finally:
         if diarization_thread is not None:
+            # Timed, and announced before it blocks. This join is where a run
+            # spends its most conspicuously silent stretch: measured on this
+            # machine, 280s and 222s on the two files of one batch, all of it
+            # after the last segment arrived and with nothing moving. It is not
+            # idle - diarization is still running - but it reports no progress
+            # of its own by design (see _start_diarization), so saying "this
+            # phase has started" is the only honest thing available until it
+            # returns.
+            join_start = time.perf_counter()
+            _report_phase(progress_queue, WORK_PHASE_DIARIZE_WAIT, WORK_PHASE_STARTED)
             diarization_thread.join()
+            _log_phase(progress_queue, WORK_PHASE_DIARIZE_WAIT, join_start)
 
 
 def _transcribe_one(
@@ -623,6 +701,7 @@ def _transcribe_one(
     file_duration: float,
     emit_progress: _Emitter,
     progress_queue: "multiprocessing.Queue",
+    work_callback: Callable[[float, float], None],
 ) -> list["Segment"] | None:
     """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
 
@@ -642,8 +721,18 @@ def _transcribe_one(
     losing the rest of the batch.
     """
     transcriber.progress_callback = _file_local_emitter(emit_progress)
+    # Same reassign-per-file arrangement as progress_callback above, for the
+    # same reason: one loaded Transcriber serves the whole batch, so what
+    # changes per file is only where its reports are routed. The two-party
+    # path transcribes each channel over the same file_duration, so its work
+    # would otherwise be counted twice - _work_emitter is told the true
+    # denominator instead (see _transcribe_per_channel).
+    transcriber.work_callback = work_callback
+    transcriber.phase_callback = lambda name, seconds: _report_phase(progress_queue, name, seconds)
 
-    channels, two_party = _prepare_audio(audio_file, options, file_duration, emit_progress)
+    channels, two_party = _prepare_audio(
+        audio_file, options, file_duration, emit_progress, progress_queue
+    )
 
     diarization_result: dict = {}
     mono, diarization_thread = _start_overlapped_diarization(
@@ -658,15 +747,16 @@ def _transcribe_one(
         two_party,
         file_duration,
         diarization_thread,
+        progress_queue,
     )
 
     if segments is None:
         return None
 
     if not two_party:
-        _finish_identify_speakers(segments, diarization_result, emit_progress)
+        _finish_identify_speakers(segments, diarization_result, emit_progress, progress_queue)
 
-    _correct_hebrew(segments, options, emit_progress)
+    _correct_hebrew(segments, options, emit_progress, progress_queue)
 
     emit_progress(("w_transcription_done", {}), FILE_LOCAL_MAX)
     return segments
@@ -677,6 +767,7 @@ def _prepare_audio(
     options: "TranscriptionOptions",
     file_duration: float,
     emit_progress: _Emitter,
+    progress_queue: "multiprocessing.Queue",
 ) -> tuple[list | None, bool]:
     """Decode the file and decide which speaker-separation path applies.
 
@@ -692,7 +783,7 @@ def _prepare_audio(
 
     decode_start = time.perf_counter()
     channels, two_party = audio_source.load(audio_file)
-    _log_phase("audio decode", decode_start)
+    _log_phase(progress_queue, WORK_PHASE_DECODE, decode_start)
     if two_party:
         emit_progress(("w_stereo_detected", {}), FILE_LOCAL_TRANSCRIBE_START)
     return channels, two_party
@@ -709,8 +800,28 @@ def _transcribe_per_channel(
     wall-clock time, which the GUI's estimate accounts for.
     """
     collected: list[Segment] = []
-    for index, channel in enumerate(channels[:2]):
-        segments = transcriber.transcribe(channel, total_duration_seconds=file_duration)
+    # Two passes over one file's worth of audio, so each pass is half of this
+    # file's contribution to the batch. Without folding them the reported
+    # position would climb to the file's full duration, drop back to zero for
+    # channel 2 and climb again - and audio_done running backwards would make
+    # the time estimate jump rather than converge. The audio TOTAL is untouched:
+    # the batch denominator is the sum of real file durations, and this file is
+    # still one file long however many times it is decoded.
+    per_channel = list(channels[:2])
+    channel_count = max(len(per_channel), 1)
+    file_work_callback = transcriber.work_callback
+
+    for index, channel in enumerate(per_channel):
+        offset = index * file_duration / channel_count
+
+        def channel_work(done: float, total: float, _offset: float = offset) -> None:
+            file_work_callback(_offset + done / channel_count, total)
+
+        transcriber.work_callback = channel_work
+        try:
+            segments = transcriber.transcribe(channel, total_duration_seconds=file_duration)
+        finally:
+            transcriber.work_callback = file_work_callback
         if not segments:
             continue
         for segment in segments:
@@ -778,7 +889,7 @@ def _start_diarization(
                 # the user this phase is under way.
                 progress=None,
             )
-            _log_phase("diarize", diarize_start)
+            _log_phase(progress_queue, WORK_PHASE_DIARIZE, diarize_start)
             result["spans"] = spans
         except Exception as e:
             result["error"] = e
@@ -789,7 +900,10 @@ def _start_diarization(
 
 
 def _finish_identify_speakers(
-    segments: list["Segment"], result: dict, emit_progress: _Emitter
+    segments: list["Segment"],
+    result: dict,
+    emit_progress: _Emitter,
+    progress_queue: "multiprocessing.Queue",
 ) -> None:
     """Attach speakers once both transcription and the overlapped diarization
     thread (see _start_diarization) have finished. assign_speakers is the one
@@ -832,7 +946,7 @@ def _finish_identify_speakers(
         # list object with those splits in it.
         assign_start = time.perf_counter()
         segments[:] = diarization.assign_speakers(segments, spans)
-        _log_phase("assign_speakers", assign_start)
+        _log_phase(progress_queue, WORK_PHASE_ASSIGN, assign_start)
 
         # A real percentage, not just the status message _start_diarization
         # sent during the overlap window (see its comment for why that one
@@ -855,6 +969,7 @@ def _correct_hebrew(
     segments: list["Segment"] | None,
     options: "TranscriptionOptions",
     emit_progress: _Emitter,
+    progress_queue: "multiprocessing.Queue",
 ) -> None:
     """Fix misrecognised domain terms, in place.
 
@@ -877,7 +992,7 @@ def _correct_hebrew(
         emit_progress(("w_correcting_terms", {}), FILE_LOCAL_CORRECTING_PERCENT)
         correct_start = time.perf_counter()
         changes = hebrew_correct.correct(segments, terms)
-        _log_phase("Hebrew correction", correct_start)
+        _log_phase(progress_queue, WORK_PHASE_CORRECT, correct_start)
         if changes:
             logger.info(f"Applied {len(changes)} Hebrew term correction(s)")
 
