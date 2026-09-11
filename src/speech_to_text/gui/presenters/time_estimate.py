@@ -203,22 +203,15 @@ class TimeEstimator:
         self._waits.seconds += seconds
         self._waits.audio += file_audio
 
-    def _time_spent_waiting(self, now: float) -> float:
-        """Wall clock this run has spent in tails, including one in progress."""
-        active = 0.0
-        if self._active_wait is not None:
-            started_at, _audio = self._active_wait
-            active = max(now - started_at, 0.0)
-        return self._waits.seconds + active
-
     def rate(self, now: float) -> float | None:
         """Seconds spent DECODING per second of audio, or None if not yet known.
 
         Measured over completed work only: from the start of the batch's first
         file to the last moment audio_done actually moved, over the audio done
-        by then. `now` is accepted but deliberately not used as the end of the
-        window - see _last_work_at for the burst behaviour that makes using it
-        produce a rate that saws up and down rather than settling.
+        by then. `now` is accepted so this reads like remaining() and can be
+        driven by the same fake clock, but it is deliberately NOT the end of
+        the window - see _last_work_at for the burst behaviour that makes
+        using it produce a rate that saws up and down rather than settling.
 
         Tails are subtracted out rather than averaged in, so this stays a
         measure of decoding alone and the tail term can be added separately
