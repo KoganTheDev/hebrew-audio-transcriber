@@ -48,12 +48,31 @@ rather than through a live window.
 
 from dataclasses import dataclass, field
 
-# Below this much decoded audio a rate is noise rather than a measurement:
-# faster-whisper emits its first segments in a burst once the first 30s
-# window finishes, so a rate taken from the very first report reflects the
-# burst, not the pace. Two windows is the same threshold core/calibration.py
-# settled on, for the same reason.
+# How much audio has to be decoded before a rate is worth projecting from.
+# Three numbers rather than one, because two different things make an early
+# rate untrustworthy and they pull opposite ways.
+#
+# The floor: faster-whisper emits its first segments in a burst once the
+# first 30s window finishes, so a rate taken from the very first report
+# reflects that burst and not the pace. Two windows is the same threshold
+# core/calibration.py settled on, for the same reason.
 MIN_AUDIO_FOR_A_RATE = 60.0
+
+# The share: a tenth of the batch, because early decoding is genuinely slower
+# than late decoding. Diarization runs on a thread alongside transcription and
+# competes for the same cores until it finishes, so the first stretch of the
+# first file is the least representative part of a run. Measured on a real
+# 1665s batch: the rate read 1.838 after 85s of audio, 1.159 after 287s, and
+# 1.056 by the end. Projecting from the 85s reading put the first number a
+# user saw at 48:13 against a true 26:26 - honest arithmetic over data that
+# was not yet representative, which is its own kind of confidently wrong.
+# A tenth pushes that first number to 30:14, still high but no longer absurd.
+MIN_SHARE_FOR_A_RATE = 0.10
+
+# The ceiling on that share, so a long batch does not stay silent for an hour
+# waiting to reach a tenth of itself. Five minutes of audio is enough to have
+# averaged over the contended opening whatever the batch's total length.
+MAX_AUDIO_BEFORE_A_RATE = 300.0
 
 
 @dataclass
@@ -203,6 +222,11 @@ class TimeEstimator:
         self._waits.seconds += seconds
         self._waits.audio += file_audio
 
+    def _audio_needed_for_a_rate(self) -> float:
+        """How much audio must be decoded before projecting from the rate."""
+        share = min(self.audio_total * MIN_SHARE_FOR_A_RATE, MAX_AUDIO_BEFORE_A_RATE)
+        return max(MIN_AUDIO_FOR_A_RATE, share)
+
     def rate(self, now: float) -> float | None:
         """Seconds spent DECODING per second of audio, or None if not yet known.
 
@@ -217,7 +241,9 @@ class TimeEstimator:
         measure of decoding alone and the tail term can be added separately
         without charging the same seconds twice (see the module docstring).
         """
-        if self._decoding_started_at is None or self.audio_done < MIN_AUDIO_FOR_A_RATE:
+        if self._decoding_started_at is None:
+            return None
+        if self.audio_done < self._audio_needed_for_a_rate():
             return None
         if self._last_work_at is None:
             return None

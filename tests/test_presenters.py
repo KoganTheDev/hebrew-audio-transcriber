@@ -668,3 +668,65 @@ class TestSegmentsArriveInBursts:
         # The decode half of the estimate is untouched by the wait; only the
         # tail term, now measured, is added to it.
         assert after >= before
+
+
+class TestItWaitsForEnoughWorkToBeRepresentative:
+    """
+    Honest arithmetic over unrepresentative data is its own kind of wrong.
+
+    Early decoding is genuinely slower than late decoding: diarization runs on
+    a thread alongside transcription and competes for the same cores until it
+    finishes, so the opening of the first file is the least representative
+    stretch of a run. Measured on a real 1665s batch, the rate read 1.838
+    after 85s of audio and 1.056 by the end - and projecting from the 85s
+    reading put the first number the user saw at 48:13 against a true 26:26.
+
+    Nothing about that number was miscalculated. There was simply not yet
+    enough of the batch behind it to project from, which is a thing the
+    estimator can check.
+    """
+
+    @staticmethod
+    def _decoded(audio_total, audio_done, clock):
+        estimator = TimeEstimator()
+        estimator.note_file_started(1)
+        estimator.note_work_started(clock.now)
+        clock.advance(audio_done)
+        estimator.note_work(audio_done, audio_total, clock.now)
+        return estimator
+
+    def test_a_sliver_of_a_long_batch_is_not_enough(self):
+        clock = FakeClock()
+        # 85s of a 1665s batch: the reading that produced 48:13.
+        estimator = self._decoded(1665.0, 85.0, clock)
+
+        assert estimator.rate(clock.now) is None
+        assert estimator.remaining(clock.now) is None
+
+    def test_a_tenth_of_the_batch_is(self):
+        clock = FakeClock()
+        estimator = self._decoded(1665.0, 200.0, clock)
+
+        assert estimator.remaining(clock.now) is not None
+
+    def test_a_short_batch_is_held_to_the_floor_not_the_share(self):
+        """
+        A tenth of a four-minute batch is 24 seconds, which is less than one
+        of faster-whisper's 30s windows - the burst problem the floor exists
+        for. The floor wins whenever it is the larger of the two.
+        """
+        clock = FakeClock()
+        assert self._decoded(270.0, 40.0, clock).remaining(clock.now) is None
+
+        clock = FakeClock()
+        assert self._decoded(270.0, 70.0, clock).remaining(clock.now) is not None
+
+    def test_a_very_long_batch_does_not_stay_silent_for_an_hour(self):
+        """
+        A tenth of ten hours of audio is an hour, and an hour of "calculating"
+        would be worse than an imperfect number. The share is capped.
+        """
+        clock = FakeClock()
+        estimator = self._decoded(36000.0, 310.0, clock)
+
+        assert estimator.remaining(clock.now) is not None
