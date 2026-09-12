@@ -241,7 +241,9 @@ class TimeEstimator:
             return None
 
         remaining_audio = max(self.audio_total - self.audio_done, 0.0)
-        estimate = remaining_audio * rate
+        # Less whatever of the chunk now being decoded is already paid for, so
+        # the number ticks down between bursts instead of stepping on each one.
+        decoding_left = max(remaining_audio * rate - self._time_since_work_moved(now), 0.0)
 
         wait_rate = self._waits.rate
         if wait_rate is None:
@@ -251,7 +253,7 @@ class TimeEstimator:
                 # diarization finishing underneath transcription every time,
                 # which is the common case) or the first one has not happened
                 # yet. Nothing to add, and nothing to apologise for.
-                return max(estimate - self._time_since_work_moved(now), 0.0)
+                return decoding_left
             # A tail IS running and this run has never measured one. Its
             # length could be seconds or minutes - on a real batch it was
             # 280s - so any number here would be an invention, and a number
@@ -265,7 +267,7 @@ class TimeEstimator:
         # short; a countdown running past zero into negative numbers would be
         # a worse lie than an optimistic one.
         tail = max(owed - self._time_in_current_wait(now), 0.0)
-        return max(estimate - self._time_since_work_moved(now), 0.0) + tail
+        return decoding_left + tail
 
     def _time_since_work_moved(self, now: float) -> float:
         """Time spent DECODING since audio_done last moved.
