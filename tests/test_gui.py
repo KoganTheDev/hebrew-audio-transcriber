@@ -9,6 +9,8 @@ widget, and mocking around it would just re-describe the implementation.
 """
 
 import os
+import threading
+import time
 
 # Must be set before PyQt5 is imported - Qt reads the platform plugin at import
 # time, so the noqa: E402 below is load-bearing, not a style waiver.
@@ -18,6 +20,7 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
 from PyQt5.QtCore import Qt, QThread, pyqtSignal  # noqa: E402
+from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 # No local `qapp` fixture here on purpose: these tests take pytest-qt's
 # session-scoped one. A local definition shadows it, and a module-scoped
@@ -38,13 +41,34 @@ def hardware_stub():
     return hw
 
 
+def settle(step, timeout_ms=5000):
+    """Wait for a step's background duration probing to finish.
+
+    Probing moved off the GUI thread (see DurationProbeThread), so a dropped
+    file gets its row immediately and its length a moment later. Every
+    assertion about durations, totals or the summary line has to wait for
+    that - the same wait the user sees, just made explicit.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while step.is_probing and time.monotonic() < deadline:
+        for probe in list(step._probes):
+            probe.wait(50)
+        QApplication.processEvents()
+    assert not step.is_probing, "duration probing did not finish"
+
+
 @pytest.fixture
 def file_select_step(qtbot, hardware_stub):
     from speech_to_text.gui.steps.file_select import FileSelectStep
 
     step = FileSelectStep(hardware_stub)
     qtbot.addWidget(step)
-    return step
+    yield step
+    # A probe thread still running when qtbot destroys the widget delivers
+    # its next signal into a half-destroyed QObject, which on Windows is an
+    # access violation rather than an exception - the same lifetime trap
+    # docs/TESTING.md records for the shared QApplication.
+    step.stop_probing()
 
 
 class TestGUI:
@@ -96,9 +120,9 @@ class TestFileSelectStepFileList:
     def test_files_selected_signal_carries_paths_and_total_duration(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (30, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
         f1.write_bytes(b"")
@@ -110,37 +134,53 @@ class TestFileSelectStepFileList:
         )
         file_select_step._add_files([str(f1), str(f2)])
 
-        assert len(received) == 1
-        paths, total = received[0]
+        # The list is complete the moment the files are added, before any
+        # length is known: that is the whole point of probing off the GUI
+        # thread, and it is why durations reads 0 here rather than raising.
+        assert received[0][0] == [str(f1), str(f2)]
+        assert received[0][1] == 0
+        assert file_select_step.is_probing
+
+        settle(file_select_step)
+
+        # Re-emitted as each length lands, so the model recommendation and its
+        # estimate sharpen instead of sitting wrong until the last file is in.
+        assert len(received) == 3
+        paths, total = received[-1]
         assert paths == [str(f1), str(f2)]
         assert total == 60
+        assert not file_select_step.is_probing
 
     def test_a_second_drop_of_the_same_file_does_not_duplicate(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (10, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (10, True))
 
         f = tmp_path / "one.wav"
         f.write_bytes(b"")
 
         file_select_step._add_files([str(f)])
+
+        settle(file_select_step)
         file_select_step._add_files([str(f)])  # dropped again
+        settle(file_select_step)
 
         assert file_select_step.selected_files == [str(f)]
 
     def test_removing_a_file_updates_the_list_and_re_emits(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (10, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (10, True))
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
         f1.write_bytes(b"")
         f2.write_bytes(b"")
         file_select_step._add_files([str(f1), str(f2)])
+        settle(file_select_step)
 
         received = []
         file_select_step.files_selected.connect(
@@ -155,27 +195,29 @@ class TestFileSelectStepFileList:
     def test_multi_file_summary_shows_count_and_total_duration(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (90, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (90, True))
 
         f1, f2 = tmp_path / "one.wav", tmp_path / "two.wav"
         f1.write_bytes(b"")
         f2.write_bytes(b"")
         file_select_step._add_files([str(f1), str(f2)])
+        settle(file_select_step)
 
         summary = file_select_step.summary_label.text()
         assert "2" in summary  # file count
         assert "3" in summary  # 180s total -> 3m
 
     def test_reset_clears_the_list(self, file_select_step, tmp_path, monkeypatch):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (10, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (10, True))
 
         f = tmp_path / "one.wav"
         f.write_bytes(b"")
         file_select_step._add_files([str(f)])
+        settle(file_select_step)
 
         file_select_step.reset()
 
@@ -199,9 +241,7 @@ class TestFileSelectStepSummaryPlurals:
     ):
         from speech_to_text.gui import i18n
 
-        monkeypatch.setattr(
-            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: (65, True)
-        )
+        monkeypatch.setattr("speech_to_text.gui.threads.get_audio_duration", lambda _p: (65, True))
         one = tmp_path / "clip.wav"
         one.write_bytes(b"x")
         try:
@@ -209,6 +249,7 @@ class TestFileSelectStepSummaryPlurals:
                 i18n.set_language(lang)
                 file_select_step.reset()
                 file_select_step._add_files([str(one)])
+                settle(file_select_step)
                 text = file_select_step.summary_label.text()
                 assert forbidden not in text, (
                     f"{lang}: plural form used for a single file: {text!r}"
@@ -219,9 +260,7 @@ class TestFileSelectStepSummaryPlurals:
     def test_several_files_still_read_plural(self, file_select_step, tmp_path, monkeypatch):
         from speech_to_text.gui import i18n
 
-        monkeypatch.setattr(
-            "speech_to_text.gui.steps.file_select.get_audio_duration", lambda _p: (65, True)
-        )
+        monkeypatch.setattr("speech_to_text.gui.threads.get_audio_duration", lambda _p: (65, True))
         paths = []
         for i in range(3):
             p = tmp_path / f"clip_{i}.wav"
@@ -230,6 +269,7 @@ class TestFileSelectStepSummaryPlurals:
         i18n.set_language("en")
         file_select_step.reset()
         file_select_step._add_files(paths)
+        settle(file_select_step)
         assert "3 files" in file_select_step.summary_label.text()
 
 
@@ -246,9 +286,9 @@ class TestFileSelectStepDirectDropFiltering:
     def test_unsupported_direct_drop_is_skipped_supported_one_is_kept(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (30, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
 
         mp3 = tmp_path / "meeting.mp3"
         txt = tmp_path / "notes.txt"
@@ -1720,13 +1760,15 @@ class TestUnreadableFileIsFlagged:
     def test_a_file_that_cannot_be_probed_is_marked_in_the_list(
         self, qtbot, file_select_step, monkeypatch, tmp_path
     ):
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (120, False))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (120, False))
         bad = tmp_path / "corrupt.wav"
         bad.write_bytes(b"not really a wav")
 
         file_select_step._add_files([str(bad)])
+
+        settle(file_select_step)
 
         assert str(bad) in file_select_step._unprobed
         row = file_select_step._rows[str(bad)]
@@ -1738,13 +1780,15 @@ class TestUnreadableFileIsFlagged:
         self, qtbot, file_select_step, monkeypatch, tmp_path
     ):
         """The marker has to distinguish, or it says nothing."""
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (120, True))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (120, True))
         good = tmp_path / "fine.wav"
         good.write_bytes(b"pretend audio")
 
         file_select_step._add_files([str(good)])
+
+        settle(file_select_step)
 
         assert str(good) not in file_select_step._unprobed
         row = file_select_step._rows[str(good)]
@@ -1755,13 +1799,15 @@ class TestUnreadableFileIsFlagged:
         self, qtbot, file_select_step, monkeypatch, tmp_path
     ):
         """Otherwise a re-added path inherits a stale warning."""
-        from speech_to_text.gui.steps import file_select as file_select_module
+        from speech_to_text.gui import threads as threads_module
 
-        monkeypatch.setattr(file_select_module, "get_audio_duration", lambda path: (120, False))
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (120, False))
         bad = tmp_path / "corrupt.wav"
         bad.write_bytes(b"not really a wav")
 
         file_select_step._add_files([str(bad)])
+
+        settle(file_select_step)
         file_select_step._remove_file(str(bad))
 
         assert str(bad) not in file_select_step._unprobed
@@ -2105,3 +2151,170 @@ class TestAFinishedRunIsNotReportedAsAFailure:
         thread._drain_final_result(progress, result)
 
         assert seen == [("w_complete", {}, 100)]
+
+
+class TestProbingDoesNotBlockTheWindow:
+    """
+    get_audio_duration used to run inline in the drop handler, once per file.
+
+    A dropped folder of thirty recordings therefore did thirty blocking
+    container opens with the event loop stopped, and on a OneDrive cloud-only
+    placeholder each open waits for Windows to hydrate the file, which can
+    mean pulling it down in full. The window simply stopped repainting, with
+    nothing on screen to say why.
+    """
+
+    def test_the_drop_handler_returns_before_any_file_is_probed(
+        self, file_select_step, tmp_path, monkeypatch
+    ):
+        """The property the fix is actually about: the handler does not wait."""
+        from speech_to_text.gui import threads as threads_module
+
+        released = threading.Event()
+        probed_one = threading.Event()
+
+        def slow_probe(path):
+            probed_one.set()
+            released.wait(5)
+            return 42, True
+
+        monkeypatch.setattr(threads_module, "get_audio_duration", slow_probe)
+
+        paths = []
+        for i in range(3):
+            p = tmp_path / f"clip_{i}.wav"
+            p.write_bytes(b"x")
+            paths.append(str(p))
+
+        started = time.monotonic()
+        file_select_step._add_files(paths)
+        handler_took = time.monotonic() - started
+
+        try:
+            assert handler_took < 1.0, (
+                f"_add_files blocked for {handler_took:.2f}s on a probe that "
+                "had not finished - it is supposed to hand off and return"
+            )
+            # Every file is listed and answerable for immediately, even
+            # though not one of them has a real length yet.
+            assert file_select_step.selected_files == paths
+            assert file_select_step.durations == [0, 0, 0]
+            assert file_select_step.is_probing
+            assert probed_one.wait(5), "the background probe never started"
+        finally:
+            released.set()
+            settle(file_select_step)
+
+        assert file_select_step.durations == [42, 42, 42]
+
+    def test_a_row_says_it_is_still_reading_the_length(
+        self, file_select_step, tmp_path, monkeypatch
+    ):
+        """A row with no number yet has to say so, not show a wrong one."""
+        from speech_to_text.gui import threads as threads_module
+
+        released = threading.Event()
+        monkeypatch.setattr(
+            threads_module,
+            "get_audio_duration",
+            lambda path: (released.wait(5), (99, True))[1],
+        )
+
+        clip = tmp_path / "clip.wav"
+        clip.write_bytes(b"x")
+        file_select_step._add_files([str(clip)])
+
+        try:
+            label = _row_label(file_select_step, str(clip))
+            assert "clip.wav" in label.text()
+            assert "0m 0s" not in label.text(), "a placeholder duration was shown as real"
+        finally:
+            released.set()
+            settle(file_select_step)
+
+        assert "1m 39s" in _row_label(file_select_step, str(clip)).text()
+
+    def test_a_result_for_a_removed_file_is_ignored(self, file_select_step, tmp_path, monkeypatch):
+        """
+        A probe queued before the user removed a file would otherwise
+        resurrect its duration into the totals after it had gone.
+        """
+        from speech_to_text.gui import threads as threads_module
+
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
+        clip = tmp_path / "clip.wav"
+        clip.write_bytes(b"x")
+
+        file_select_step._add_files([str(clip)])
+        settle(file_select_step)
+        file_select_step._remove_file(str(clip))
+
+        file_select_step._on_probed(str(clip), 30, True)
+
+        assert file_select_step.selected_files == []
+        assert file_select_step.total_duration == 0
+
+    def test_probing_can_be_abandoned(self, file_select_step, tmp_path, monkeypatch):
+        """
+        reset() and window teardown both have to be able to walk away from a
+        queue that may be blocked on a file being downloaded.
+        """
+        from speech_to_text.gui import threads as threads_module
+
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
+        for i in range(3):
+            (tmp_path / f"c{i}.wav").write_bytes(b"x")
+        paths = [str(tmp_path / f"c{i}.wav") for i in range(3)]
+
+        file_select_step._add_files(paths)
+        file_select_step.stop_probing()
+
+        assert not file_select_step.is_probing
+        assert file_select_step._probes == []
+
+
+class TestNextWaitsForRealDurations:
+    """
+    A run started while a length is still a placeholder would weight its
+    progress, and size its time estimate, against a zero.
+    """
+
+    def test_next_is_disabled_until_every_length_has_landed(self, qtbot, tmp_path, monkeypatch):
+        from speech_to_text.gui import threads as threads_module
+        from speech_to_text.gui.main_window import MainWindow
+
+        released = threading.Event()
+        monkeypatch.setattr(
+            threads_module,
+            "get_audio_duration",
+            lambda path: (released.wait(5), (30, True))[1],
+        )
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        try:
+            clip = tmp_path / "clip.wav"
+            clip.write_bytes(b"x")
+            window.file_step._add_files([str(clip)])
+
+            assert window.selected_files == [str(clip)]
+            assert not window.next_btn.isEnabled(), (
+                "Next was live while the file's length was still a placeholder"
+            )
+        finally:
+            released.set()
+            settle(window.file_step)
+
+        assert window.next_btn.isEnabled()
+        window.shutdown()
+
+
+def _row_label(step, path):
+    from PyQt5.QtWidgets import QLabel
+
+    row = step._rows[path]
+    return (
+        row.layout().itemAt(1).widget()
+        if isinstance(row.layout().itemAt(1).widget(), QLabel)
+        else None
+    )

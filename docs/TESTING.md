@@ -7,7 +7,7 @@ actually keep true.
 ## Running
 
 ```
-pytest                       # everything, with coverage, ~50s
+pytest                       # everything, with coverage, ~40s
 pytest -q --no-cov           # faster when iterating
 QT_QPA_PLATFORM=offscreen pytest    # required with no display (CI does this)
 ```
@@ -60,8 +60,15 @@ reader would otherwise have to be told:
 
 ## Coverage
 
-Branch coverage, gated in CI at **76%** against a measured 76.83%. The gate
+Branch coverage, gated in CI at **83%** against a measured 83.47%. The gate
 ratchets upward and must never be lowered to make a change fit.
+
+It had drifted three ways at once: CI enforced 80, this line said 76, and the
+suite measured 83. Worse, `pytest.ini` was missing `--cov-branch` while CI
+passed it, so a local run reported 86% for the same code CI scored 83% - a
+number that looked like headroom and was not. The flag now lives in
+`pytest.ini`, so running `pytest` locally reports exactly what CI enforces, and
+the ratchet has one number to move.
 
 Coverage is not uniform by design: `core/` carries the logic a wrong answer
 actually costs something, and is held higher than `gui/` construction code.
