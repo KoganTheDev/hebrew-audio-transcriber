@@ -799,6 +799,7 @@ class MainWindow(QMainWindow):
         # gui/presenters/time_estimate.py).
         self.transcription_thread.work.connect(self.transcription_step.update_work)
         self.transcription_thread.phase.connect(self.transcription_step.update_phase)
+        self.transcription_thread.file_failed.connect(self.transcription_step.mark_file_failed)
         self.transcription_thread.finished.connect(self._on_transcription_complete)
         self.transcription_thread.error.connect(self._on_transcription_error)
         self.transcription_thread.start()

@@ -22,6 +22,8 @@ import pytest  # noqa: E402
 from PyQt5.QtCore import Qt, QThread, pyqtSignal  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
+from speech_to_text.gui.i18n import t  # noqa: E402
+
 # No local `qapp` fixture here on purpose: these tests take pytest-qt's
 # session-scoped one. A local definition shadows it, and a module-scoped
 # QApplication fixture in this suite once broke unrelated tests outright.
@@ -2318,3 +2320,115 @@ def _row_label(step, path):
         if isinstance(row.layout().itemAt(1).widget(), QLabel)
         else None
     )
+
+
+class TestTheStripShowsAFailedFile:
+    """
+    One bad file does not cost the other nine - the batch walks past it and
+    records the failure in the output document. But the strip painted that
+    file the same green as one that worked, so the only way to find out was
+    to open the HTML afterwards and read file_failed_notice.
+
+    The worker had no channel back to the GUI for it. The one added for the
+    time estimate made it cheap.
+    """
+
+    @pytest.fixture
+    def step(self, qtbot):
+        from speech_to_text.gui.steps.transcription import TranscriptionStep
+
+        s = TranscriptionStep()
+        qtbot.addWidget(s)
+        s.set_batch_files(["a.mp3", "b.mp3", "c.mp3"])
+        s.start()
+        s.stop()
+        return s
+
+    @staticmethod
+    def _fill(step, index):
+        """The segment's painted fill colour, as a hex string."""
+        sheet = step._batch_segment_frames[index - 1].styleSheet()
+        return sheet.split("background-color:")[1].split(";")[0].strip()
+
+    def test_a_failed_file_is_not_painted_as_done(self, step):
+        from speech_to_text.gui.theme import COLORS
+
+        step.mark_file_failed(1)
+        # The run moves on to file 2, which paints everything before it done.
+        step.update_progress("w_file_progress", {"i": 2, "n": 3, "name": "b.mp3"}, 20)
+
+        assert self._fill(step, 1) == COLORS["error"], (
+            "the failed file was repainted as done when the batch moved past it"
+        )
+        assert self._fill(step, 2) == COLORS["accent"]
+
+    def test_a_file_that_fails_while_running_turns_red_immediately(self, step):
+        from speech_to_text.gui.theme import COLORS
+
+        step.update_progress("w_file_progress", {"i": 2, "n": 3, "name": "b.mp3"}, 20)
+        assert self._fill(step, 2) == COLORS["accent"]
+
+        step.mark_file_failed(2)
+
+        assert self._fill(step, 2) == COLORS["error"]
+
+    def test_the_failure_is_announced_not_just_coloured(self, step):
+        """
+        A 6px mark is a weak signal on its own, and colour alone is no signal
+        at all to a screen reader. The name carries it too.
+        """
+        step.mark_file_failed(2)
+        segment = step._batch_segment_frames[1]
+
+        assert "b.mp3" in segment.accessibleName()
+        assert t("file_failed_notice") in segment.accessibleName()
+        assert segment.toolTip() == segment.accessibleName()
+
+    def test_the_other_files_are_untouched(self, step):
+        from speech_to_text.gui.theme import COLORS
+
+        step.mark_file_failed(2)
+
+        assert self._fill(step, 1) == COLORS["accent"]
+        assert self._fill(step, 3) == "transparent"
+        assert step._batch_segment_frames[2].accessibleName() == "c.mp3"
+
+    def test_an_index_outside_the_batch_is_ignored(self, step):
+        """The index crosses a process boundary; a stray one must not raise
+        out of a slot, and must not silently mark the wrong file."""
+        step.mark_file_failed(0)
+        step.mark_file_failed(99)
+
+        assert step._failed_files == set()
+
+    def test_a_new_run_starts_with_a_clean_strip(self, step):
+        from speech_to_text.gui.theme import COLORS
+
+        step.mark_file_failed(1)
+        step.start()
+        step.stop()
+
+        assert step._failed_files == set()
+        assert self._fill(step, 1) == COLORS["accent"]
+
+
+class TestFailedFileRelay:
+    def test_the_index_arrives_as_its_own_signal(self, qtbot):
+        """
+        Its own signal rather than `error`: the batch has NOT failed, it is
+        carrying on, and routing this through error would tear the run down
+        over one bad file.
+        """
+        from speech_to_text.gui.main_window import TranscriptionThread
+
+        thread = TranscriptionThread(
+            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+        )
+        errors = []
+        thread.error.connect(lambda *args: errors.append(args))
+
+        with qtbot.waitSignal(thread.file_failed, timeout=1000) as caught:
+            thread._relay_progress_message("file_failed", [2])
+
+        assert caught.args == [2]
+        assert errors == []

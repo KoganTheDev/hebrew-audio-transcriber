@@ -357,6 +357,11 @@ class TranscriptionStep(QFrame):
         self._file_info_args: tuple[str, str] | None = None
         self._result_path_value: str | None = None
         self._dot_phase = 0
+        # 1-based indices the worker has reported as failed, and which file is
+        # running - both needed to repaint the strip, which has to be able to
+        # redraw from scratch whenever either changes.
+        self._failed_files: set[int] = set()
+        self._current_file_index = 1
         # Every measurement this run has made, and the arithmetic over them.
         # Qt-free and in gui/presenters/ on purpose: "how long is left" is a
         # decision, not a widget, and it is testable against a fake clock
@@ -414,6 +419,8 @@ class TranscriptionStep(QFrame):
             if widget is not None:
                 widget.deleteLater()
         self._batch_segment_frames = []
+        self._failed_files = set()
+        self._current_file_index = 1
 
         if len(self._batch_filenames) <= 1:
             self.batch_strip.hide()
@@ -446,19 +453,24 @@ class TranscriptionStep(QFrame):
     def _paint_batch_segments(self, current_index: int) -> None:
         """Repaint every segment for `current_index` (1-based) being the file
         now running. Segments before it are done, the one at it is current,
-        everything after is still pending.
+        everything after is still pending - and any the worker has told us
+        about is failed.
 
-        Deliberately only three states. The worker has no channel back to
-        the GUI for "this particular file failed" mid-batch - a failed file
-        is recorded in the output document itself (file_failed_notice) and
-        the batch continues past it (see core/worker.py) - so a fourth
-        "failed" segment state would have nothing real to drive it. Showing
-        one anyway (e.g. guessing from the next w_file_progress arriving
-        "too fast") would be inventing a signal the worker never sent,
-        which is worse than the strip honestly not knowing.
+        The failed state is checked FIRST, because a failed file is also a
+        file the run has moved past, and "done" would otherwise win and paint
+        it the same green as one that worked. That was the old behaviour, for
+        want of a signal: the worker had no channel back to the GUI for "this
+        particular file failed", so the only way to find out was to open the
+        output document afterwards and read file_failed_notice. The channel
+        added for the time estimate made one cheap, so the strip now knows.
+
+        Still not guessed at: this paints what the worker actually reported
+        and nothing else.
         """
         for index, segment in enumerate(self._batch_segment_frames, start=1):
-            if index < current_index:
+            if index in self._failed_files:
+                fill, border = COLORS["error"], COLORS["error"]
+            elif index < current_index:
                 fill, border = COLORS["success"], COLORS["success"]
             elif index == current_index:
                 fill, border = COLORS["accent"], COLORS["accent"]
@@ -468,10 +480,56 @@ class TranscriptionStep(QFrame):
                 f"background-color: {fill}; border: {theme.Border.HAIRLINE}px solid {border};"
             )
 
+    def _reset_batch_segments(self) -> None:
+        """Put every segment back to pending, with its plain filename."""
+        self._failed_files = set()
+        self._current_file_index = 1
+        for index, segment in enumerate(self._batch_segment_frames, start=1):
+            name = (
+                self._batch_filenames[index - 1]
+                if index <= len(self._batch_filenames)
+                else str(index)
+            )
+            segment.setToolTip(name)
+            segment.setAccessibleName(name)
+        self._paint_batch_segments(current_index=self._current_file_index)
+
+    def mark_file_failed(self, index: int) -> None:
+        """Record that file `index` (1-based) could not be transcribed.
+
+        The run is still going: one bad file does not cost the other nine
+        (see core/worker.py), so this changes what the strip shows and
+        nothing else. The colour alone would be a weak signal on a 6px mark,
+        so the name it announces says so too - that is the part a screen
+        reader reads, and the part a tooltip shows on hover.
+        """
+        if not 1 <= index <= len(self._batch_segment_frames):
+            return
+        self._failed_files.add(index)
+
+        segment = self._batch_segment_frames[index - 1]
+        name = (
+            self._batch_filenames[index - 1] if index <= len(self._batch_filenames) else str(index)
+        )
+        # Reuses the notice the transcript itself carries for a failed file,
+        # rather than a second string saying the same thing in two places.
+        failed = f"{name} - {t('file_failed_notice')}"
+        segment.setToolTip(failed)
+        segment.setAccessibleName(failed)
+
+        self._paint_batch_segments(current_index=self._current_file_index)
+
     def start(self) -> None:
         """Reset the display for a fresh run and start the elapsed-time ticker."""
         self.start_time = time.time()
         self._estimator = TimeEstimator()
+        # Clearing the set is not enough on its own: the segments keep the
+        # colour and the name they were last given, so a file that failed in
+        # the previous run would stay red - and keep announcing itself as
+        # failed - until the new run happened to repaint it. In practice
+        # set_batch_files rebuilds the strip first, but start() is public and
+        # has to leave the widget consistent by itself.
+        self._reset_batch_segments()
         self._last_percentage = 0
         self._last_percent_change_time = self.start_time
         self._status_key = "w_initializing"
@@ -581,6 +639,7 @@ class TranscriptionStep(QFrame):
             i, n = params.get("i"), params.get("n")
             if isinstance(i, int) and isinstance(n, int) and n == len(self._batch_segment_frames):
                 self.batch_readout.setText(t("batch_progress_readout", i=i, n=n))
+                self._current_file_index = i
                 self._paint_batch_segments(current_index=i)
 
         if percentage != STATUS_ONLY_PERCENT:
