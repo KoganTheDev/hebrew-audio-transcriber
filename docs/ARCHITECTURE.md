@@ -109,8 +109,8 @@ Three details worth knowing:
   other, which is the whole point: "Est. remaining" used to be a projection
   over bar position, and that is only valid if every percent costs the same
   wall clock. It does not come close. Measured on one 15-minute recording, 67s
-  went by at a fixed 5% (faster-whisper's VAD pass, before any segment exists)
-  and 280s at a fixed 98% (waiting on the overlapped diarization thread).
+  went by at a fixed 5% - faster-whisper's VAD pass, which runs over the whole
+  file before a single segment exists.
   `gui/presenters/time_estimate.py` does the arithmetic, with no Qt, so it can
   be driven against a fake clock.
 - **Progress crosses three coordinate systems** - the transcriber's own absolute

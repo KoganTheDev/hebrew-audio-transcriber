@@ -75,8 +75,8 @@ STATUS_ONLY_PERCENT = -1
 # was elapsed * (100 - percent) / percent, which assumes every percent costs
 # the same wall clock. Measured on this machine, it does not come close -
 # the model-load band can be twenty minutes on a first run or two seconds on
-# a warm one, and a file's diarization tail (see FILE_LOCAL_SPEAKER_ID_END)
-# ran 280s on one 15-minute recording while the bar did not move at all.
+# a warm one, and faster-whisper's VAD pass sits at a fixed 5% for as long as
+# it takes - 67s on one 15-minute recording, before a single segment exists.
 #
 # So the worker reports work in units that mean something on their own, and
 # the GUI divides measured wall clock by them. Two message kinds, both plain

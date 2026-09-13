@@ -520,8 +520,10 @@ class TranscriptionStep(QFrame):
         Hebrew correction - are already inside the measured rate, because the
         rate is wall clock over audio and they happen between two audio
         positions. The wait is the exception: it falls after its file's audio
-        has been fully counted, so nothing would otherwise account for it, and
-        it is the phase that put 280s of frozen bar at the end of a real run.
+        has been fully counted, so nothing would otherwise account for it. On
+        this hardware it costs nothing, because diarization finishes well
+        inside transcription; it is a fast device or a very small model that
+        would leave an overhang here.
         """
         # Any phase at all anchors the rate's clock: the first one to arrive is
         # this batch's first file being decoded or VAD-scanned, which is the
@@ -607,7 +609,7 @@ class TranscriptionStep(QFrame):
         elapsed * (100 - percent) / percent - a projection over the progress
         bar, which is only valid if every percent costs the same wall clock.
         It does not: measured on a 15-minute recording, 67s went by at a fixed
-        5% and 280s at a fixed 98%. Now it is measured work per measured
+        5% before a single segment existed. Now it is measured work per measured
         second (see gui/presenters/time_estimate.py), and the estimator
         returns None whenever it genuinely does not know yet rather than
         projecting from a pace that is not happening.

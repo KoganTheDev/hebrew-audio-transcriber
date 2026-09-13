@@ -279,8 +279,8 @@ class TestTimeEstimatorHasNothingToSayYet:
     Every case where the honest answer is "not known", and why each is real.
 
     The formula this replaces had no such answer: elapsed * (100 - pct) / pct
-    always produced a number, including during the 67s at 5% and the 280s at
-    98% that a measured run actually contains.
+    always produced a number, including through the 67s at a fixed 5% that a
+    measured run actually contains.
     """
 
     def test_before_anything_is_decoded(self):
@@ -305,9 +305,9 @@ class TestTimeEstimatorHasNothingToSayYet:
     def test_during_a_first_tail_of_unknown_length(self):
         """
         Diarization's leftover after transcription reports no progress of its
-        own, and on a real batch it was 280s. With nothing measured to predict
-        it from, a number would be an invention - and a number that then sat
-        at zero for four minutes is the exact behaviour being removed.
+        own, so its length is not knowable until it ends. With nothing measured
+        to predict it from, a number would be an invention - and a number that
+        then sat at zero is the exact behaviour being removed.
         """
         clock = FakeClock()
         estimator = TimeEstimator()
@@ -395,12 +395,14 @@ class TestTimeEstimatorMeasures:
 
 class TestTimeEstimatorAccountsForTheTail:
     """
-    The 280s and 222s of frozen bar at the end of two real files.
+    Whatever diarization has left once transcription has finished.
 
-    Future files' tails need no term of their own - the rate is wall clock
-    over audio, so a completed file's tail is already amortised into it. Only
-    the tail being waited out right now sits outside, because that file's
-    audio has already been counted as done.
+    On this hardware that is nothing - diarization hides completely underneath
+    transcription - so these drive the estimator directly rather than through
+    a real run. Future files' tails need no term of their own: the rate is
+    wall clock over audio, so a completed file's tail is already amortised
+    into it. Only the tail being waited out right now sits outside, because
+    that file's audio has already been counted as done.
     """
 
     @staticmethod
@@ -652,9 +654,9 @@ class TestSegmentsArriveInBursts:
         """
         A file's tail falls between its last work report and the next file's
         first one, so it lands squarely in that gap. Counted as time served,
-        a 280s diarization wait knocked 280s off the estimate the instant it
-        ended - the estimate fell by more than four minutes for work that had
-        not happened.
+        a diarization wait knocks its whole length off the estimate the instant
+        it ends - the estimate falls by minutes for work that had not
+        happened.
         """
         clock = FakeClock()
         estimator = self._mid_run(clock)

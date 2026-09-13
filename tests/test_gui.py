@@ -1899,10 +1899,10 @@ class TestTimeReadout:
 
     def test_a_first_tail_of_unknown_length_says_so(self, step):
         """
-        The diarization join reports no progress while it runs and lasted 280s
-        on a real file. Until one has been measured, "calculating" is the true
-        description - and an estimate that instead read 0:00 for four and a
-        half minutes is what this replaces.
+        The diarization join reports no progress at all while it runs, so its
+        length is not knowable until it ends. Until one has been measured,
+        "calculating" is the true description - an estimate that instead read
+        0:00 for the duration is what this replaces.
         """
         from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
 
