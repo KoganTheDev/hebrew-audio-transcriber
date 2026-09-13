@@ -167,6 +167,64 @@ class _RetryStatusLogHandler(logging.Handler):
                 return
 
 
+# Prefix of the temp file _atomic_write_html writes through. Named because
+# the sweeper below has to recognise its own litter and nothing else.
+_TEMP_PREFIX = ".transcript-"
+_TEMP_SUFFIX = ".tmp"
+
+# How old an abandoned temp file must be before it is swept. A real write
+# takes well under a second, so anything this old is certainly not in
+# progress - and the gap is what makes the sweep safe when two runs write to
+# the same folder at once, which is a thing a user with two windows open can
+# do. Deleting a live sibling's temp file would corrupt ITS output, which is
+# far worse than leaving litter.
+_TEMP_STALE_SECONDS = 3600.0
+
+
+def _sweep_stale_temp_files(output_file: str, now: float | None = None) -> int:
+    """Delete abandoned .transcript-*.tmp files beside the output. Returns how many.
+
+    _atomic_write_html writes through a temp file in the target's own
+    directory and removes it on failure - but a cancelled run never gets to
+    run that cleanup. TranscriptionThread.stop() calls Process.terminate(),
+    which on Windows is TerminateProcess: no exception, no finally, no
+    finalizer. A run cancelled mid-write therefore leaves a multi-megabyte
+    hidden file in the user's own audio folder, and nothing ever removed it.
+
+    Swept at the start of a run rather than at the end of one, because the run
+    that creates the orphan is by definition the one that does not get to
+    clean up after itself.
+
+    Never fatal: this is tidying, and failing to tidy must not cost a
+    transcription. A directory that cannot be listed or a file that cannot be
+    removed is logged and stepped over.
+    """
+    directory = os.path.dirname(output_file) or "."
+    cutoff = (now if now is not None else time.time()) - _TEMP_STALE_SECONDS
+    swept = 0
+    try:
+        names = os.listdir(directory)
+    except OSError as e:
+        logger.debug(f"Could not list {directory} to sweep temp files: {e}")
+        return 0
+
+    for name in names:
+        if not (name.startswith(_TEMP_PREFIX) and name.endswith(_TEMP_SUFFIX)):
+            continue
+        candidate = os.path.join(directory, name)
+        try:
+            if os.path.getmtime(candidate) > cutoff:
+                continue
+            os.remove(candidate)
+            swept += 1
+        except OSError as e:
+            logger.debug(f"Could not sweep {candidate}: {e}")
+
+    if swept:
+        logger.info(f"Removed {swept} abandoned checkpoint temp file(s) from {directory}")
+    return swept
+
+
 def _atomic_write_html(path: str, content: str) -> None:
     """Write content to `path` without ever leaving a half-written file behind.
 
@@ -185,7 +243,7 @@ def _atomic_write_html(path: str, content: str) -> None:
     left behind for the batch's output directory to accumulate junk in.
     """
     directory = os.path.dirname(path) or "."
-    fd, tmp_path = tempfile.mkstemp(prefix=".transcript-", suffix=".tmp", dir=directory)
+    fd, tmp_path = tempfile.mkstemp(prefix=_TEMP_PREFIX, suffix=_TEMP_SUFFIX, dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
@@ -542,6 +600,9 @@ def run_transcription_process(
             if not transcriber.load_model():
                 result_queue.put(("error", "err_load_model", {}))
                 return
+
+            # Before the first checkpoint can add one of its own.
+            _sweep_stale_temp_files(output_file)
 
             batch = _new_batch(options, output_file)
             succeeded = _transcribe_all(audio_files, transcriber, options, batch, progress_queue)

@@ -28,6 +28,43 @@ logger = logging.getLogger(__name__)
 # this channel is a measured duration and so cannot be below zero.
 PHASE_STARTED_SECONDS = -1.0
 
+# How long to keep listening after the worker process has exited before
+# calling the run failed. Queue.empty() is documented as unreliable, and this
+# is exactly the case it is unreliable in: the child puts its result and then
+# exits, so there is a window where the process is already gone and the result
+# has not yet crossed the pipe. Concluding "the worker exited" inside that
+# window reports a SUCCESSFUL run as a failure. Nothing is paid for this in
+# the normal path - the result is read and the loop returns long before the
+# process is noticed to be gone.
+RESULT_GRACE_SECONDS = 2.0
+
+# How long to wait for a terminated process to actually die before giving up
+# on reaping it. terminate() is asynchronous; without a join() the child is
+# never reaped and its handle leaks for the life of the Process object.
+TERMINATE_GRACE_SECONDS = 5.0
+
+
+def _terminate_and_reap(process: "multiprocessing.Process | None") -> None:
+    """Stop a worker process and wait for it, so nothing is left unreaped.
+
+    terminate() only asks. Every call site used to stop there, which leaves a
+    zombie on POSIX and an open process handle on Windows until the Process
+    object is garbage collected. join() is what actually reaps it.
+
+    kill() as a last resort: terminate() is SIGTERM, and a child wedged inside
+    a native call - ctranslate2 or onnxruntime mid-inference - can outlive it.
+    A daemon child would not block interpreter exit either way, but leaving it
+    running means it keeps burning cores for a result nobody will read.
+    """
+    if process is None or not process.is_alive():
+        return
+    process.terminate()
+    process.join(timeout=TERMINATE_GRACE_SECONDS)
+    if process.is_alive():
+        logger.warning("worker process ignored terminate(); killing it")
+        process.kill()
+        process.join(timeout=TERMINATE_GRACE_SECONDS)
+
 
 class TranscriptionThread(QThread):
     """Worker thread for transcription.
@@ -150,18 +187,21 @@ class TranscriptionThread(QThread):
 
                 try:
                     kind, *payload = result_queue.get_nowait()
-                    if kind == "finished":
-                        logger.info("✓ Transcription complete")
-                        self.finished.emit(payload[0])
-                    else:
-                        key, params = payload
-                        logger.error(f"Transcription worker error: {key} {params}")
-                        self.error.emit(key, params)
-                    return
                 except queue.Empty:
                     pass
+                else:
+                    self._emit_result(kind, payload)
+                    return
 
-                if not self._process.is_alive() and result_queue.empty():
+                if not self._process.is_alive():
+                    # NOT `and result_queue.empty()`: empty() is documented as
+                    # unreliable, and the child putting its result immediately
+                    # before exiting is the case it is unreliable in. Give the
+                    # result one last chance to arrive, with a real blocking
+                    # wait, before calling a run that may well have succeeded
+                    # a failure. See RESULT_GRACE_SECONDS.
+                    if self._drain_final_result(progress_queue, result_queue):
+                        return
                     self.error.emit("err_worker_exited", {})
                     return
 
@@ -171,8 +211,43 @@ class TranscriptionThread(QThread):
             logger.error(f"TranscriptionThread error: {e}", exc_info=True)
             self.error.emit("err_generic", {"detail": str(e)})
         finally:
-            if self._process and self._process.is_alive():
-                self._process.terminate()
+            _terminate_and_reap(self._process)
+
+    def _drain_final_result(
+        self,
+        progress_queue: "multiprocessing.Queue",
+        result_queue: "multiprocessing.Queue",
+    ) -> bool:
+        """After the child has exited, relay what is left and emit its result.
+
+        Returns whether a result actually arrived. False means the process
+        really did die without reporting one, which is the genuine
+        err_worker_exited case the caller then reports.
+        """
+        while True:
+            try:
+                kind, *payload = progress_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._relay_progress_message(kind, payload)
+
+        try:
+            kind, *payload = result_queue.get(timeout=RESULT_GRACE_SECONDS)
+        except queue.Empty:
+            return False
+
+        self._emit_result(kind, payload)
+        return True
+
+    def _emit_result(self, kind: str, payload: list) -> None:
+        """Turn one result_queue message into the matching Qt signal."""
+        if kind == "finished":
+            logger.info("✓ Transcription complete")
+            self.finished.emit(payload[0])
+        else:
+            key, params = payload
+            logger.error(f"Transcription worker error: {key} {params}")
+            self.error.emit(key, params)
 
     def _relay_progress_message(self, kind: str, payload: list) -> None:
         """Relay one progress_queue message as the progress signal.
@@ -211,8 +286,7 @@ class TranscriptionThread(QThread):
     def stop(self):
         """Stop the thread and terminate the worker process if running."""
         self._is_running = False
-        if self._process and self._process.is_alive():
-            self._process.terminate()
+        _terminate_and_reap(self._process)
 
     def _get_output_path(self) -> str:
         """Get output file path - named after the single file, or the batch's folder."""
@@ -273,8 +347,7 @@ class CalibrationThread(QThread):
             if self._is_running:
                 self.failed.emit(str(e))
         finally:
-            if self._process and self._process.is_alive():
-                self._process.terminate()
+            _terminate_and_reap(self._process)
 
     def stop(self):
         """Stop the thread and terminate the benchmark process if running.
@@ -288,5 +361,4 @@ class CalibrationThread(QThread):
         one time this repo watched that happen).
         """
         self._is_running = False
-        if self._process and self._process.is_alive():
-            self._process.terminate()
+        _terminate_and_reap(self._process)
