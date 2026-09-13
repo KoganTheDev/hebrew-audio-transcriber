@@ -928,3 +928,105 @@ class TestWorkStream:
         assert done, "the two-party path reported no position at all"
         assert done == sorted(done), "audio_done ran backwards across the two channels"
         assert max(done) == pytest.approx(10.0), "one file counted as more than its own length"
+
+
+class TestAbandonedTempFilesAreSwept:
+    """
+    _atomic_write_html removes its temp file if the write fails - but a
+    cancelled run never gets to run that cleanup. stop() calls terminate(),
+    which on Windows is TerminateProcess: no exception, no finally, no
+    finalizer. A run cancelled mid-write left a multi-megabyte hidden file in
+    the user's own audio folder and nothing ever removed it.
+    """
+
+    @staticmethod
+    def _orphan(directory, name=".transcript-abc123.tmp", age_seconds=7200):
+        path = directory / name
+        path.write_text("half a transcript", encoding="utf-8")
+        old = time.time() - age_seconds
+        os.utime(path, (old, old))
+        return path
+
+    def test_an_abandoned_temp_file_is_removed(self, tmp_path):
+        orphan = self._orphan(tmp_path)
+
+        assert worker._sweep_stale_temp_files(str(tmp_path / "out.html")) == 1
+        assert not orphan.exists()
+
+    def test_a_temp_file_that_could_still_be_in_flight_is_left_alone(self, tmp_path):
+        """
+        Two runs writing into the same folder at once is something a user with
+        two windows open can do, and deleting a live sibling's temp file would
+        corrupt ITS output - far worse than leaving litter. A real write takes
+        well under a second, so only a long-dead file is swept.
+        """
+        fresh = self._orphan(tmp_path, name=".transcript-live.tmp", age_seconds=0)
+
+        assert worker._sweep_stale_temp_files(str(tmp_path / "out.html")) == 0
+        assert fresh.exists()
+
+    def test_nothing_else_in_the_folder_is_touched(self, tmp_path):
+        """The sweep runs in the user's own audio folder. It recognises its
+        own litter by prefix AND suffix, and nothing else."""
+        keep = [
+            "meeting.mp3",
+            "out_transcription.html",
+            "transcript-notes.tmp",  # no leading dot
+            ".transcript-notes.txt",  # wrong suffix
+        ]
+        for name in keep:
+            path = tmp_path / name
+            path.write_text("x", encoding="utf-8")
+            old = time.time() - 7200
+            os.utime(path, (old, old))
+
+        assert worker._sweep_stale_temp_files(str(tmp_path / "out.html")) == 0
+        for name in keep:
+            assert (tmp_path / name).exists(), f"the sweep deleted {name}"
+
+    def test_a_sweep_that_cannot_run_is_not_fatal(self, tmp_path, monkeypatch):
+        """Tidying must never cost a transcription."""
+
+        def boom(_directory):
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(worker.os, "listdir", boom)
+
+        assert worker._sweep_stale_temp_files(str(tmp_path / "out.html")) == 0
+
+    def test_a_file_that_will_not_delete_is_stepped_over(self, tmp_path, monkeypatch):
+        self._orphan(tmp_path, name=".transcript-a.tmp")
+        self._orphan(tmp_path, name=".transcript-b.tmp")
+
+        real_remove = worker.os.remove
+        seen: list = []
+
+        def flaky(path):
+            seen.append(path)
+            if path.endswith("a.tmp"):
+                raise OSError("in use by another process")
+            real_remove(path)
+
+        monkeypatch.setattr(worker.os, "remove", flaky)
+
+        assert worker._sweep_stale_temp_files(str(tmp_path / "out.html")) == 1
+        assert len(seen) == 2, "the sweep stopped at the first failure"
+
+    def test_a_run_sweeps_before_it_writes_its_own_checkpoint(self, tmp_path):
+        """
+        Swept at the start of a run, because the run that creates the orphan
+        is by definition the one that does not get to clean up after itself.
+        """
+        orphan = self._orphan(tmp_path)
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0])
+
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            FakeQueue(),
+            FakeQueue(),
+        )
+
+        assert not orphan.exists()
+        assert (tmp_path / "out.html").exists()
