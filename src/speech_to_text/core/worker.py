@@ -800,6 +800,16 @@ def _transcribe_one(
         channels, two_party, options, progress_queue, diarization_result
     )
 
+    # Nothing reads the per-channel arrays again once they have been mixed
+    # down: only the two-party path below takes `channels`, and that path is
+    # the one where `mono` was never built. Holding them anyway kept a stereo
+    # file's audio in memory THREE times over - both channels plus the mix -
+    # for the entire length of a transcription, which is the longest and most
+    # memory-hungry stretch of the run. to_mono returns channels[0] itself for
+    # a mono file, so dropping the list there frees the list and nothing else.
+    if mono is not None:
+        channels = None
+
     segments = _decode_transcript(
         transcriber,
         audio_file,

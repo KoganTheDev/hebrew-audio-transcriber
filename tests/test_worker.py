@@ -1030,3 +1030,74 @@ class TestAbandonedTempFilesAreSwept:
 
         assert not orphan.exists()
         assert (tmp_path / "out.html").exists()
+
+
+class TestChannelsAreReleasedAfterMixdown:
+    """
+    A stereo file's audio was held THREE times over - both channels plus the
+    mix - for the whole length of a transcription, which is the longest and
+    most memory-hungry stretch of a run. Nothing reads the channels again once
+    they have been mixed down.
+    """
+
+    def test_the_channels_are_dropped_once_the_mix_exists(self, tmp_path, monkeypatch):
+        from speech_to_text.core import audio_source, diarization
+
+        stereo = [
+            np.zeros(1600, dtype=np.float32),
+            np.zeros(1600, dtype=np.float32),
+        ]
+        monkeypatch.setattr(audio_source, "load", lambda path: (stereo, False))
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+        monkeypatch.setattr(
+            diarization,
+            "diarize",
+            lambda samples, sample_rate=16000, num_speakers=2, progress=None: [],
+        )
+
+        seen = {}
+        real_decode = worker._decode_transcript
+
+        def spy(transcriber, audio_file, channels, mono, two_party, *args, **kwargs):
+            seen["channels"] = channels
+            seen["mono_is_array"] = mono is not None
+            return real_decode(transcriber, audio_file, channels, mono, two_party, *args, **kwargs)
+
+        monkeypatch.setattr(worker, "_decode_transcript", spy)
+
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        worker.run_transcription_process(
+            ["a.wav"], str(tmp_path / "out.html"), options, FakeQueue(), FakeQueue()
+        )
+
+        assert seen["mono_is_array"] is True
+        assert seen["channels"] is None, "the per-channel arrays were held through the run"
+
+    def test_a_two_party_file_keeps_its_channels(self, tmp_path, monkeypatch):
+        """
+        The exact path transcribes each channel separately, so for it the
+        channels ARE the work - and it is the path where no mix was built.
+        """
+        from speech_to_text.core import audio_source
+
+        stereo = [
+            np.zeros(1600, dtype=np.float32),
+            np.zeros(1600, dtype=np.float32),
+        ]
+        monkeypatch.setattr(audio_source, "load", lambda path: (stereo, True))
+
+        seen = {}
+        real_decode = worker._decode_transcript
+
+        def spy(transcriber, audio_file, channels, mono, two_party, *args, **kwargs):
+            seen["channels"] = channels
+            return real_decode(transcriber, audio_file, channels, mono, two_party, *args, **kwargs)
+
+        monkeypatch.setattr(worker, "_decode_transcript", spy)
+
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        worker.run_transcription_process(
+            ["a.wav"], str(tmp_path / "out.html"), options, FakeQueue(), FakeQueue()
+        )
+
+        assert seen["channels"] is stereo
