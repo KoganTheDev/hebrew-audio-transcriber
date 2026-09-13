@@ -489,7 +489,15 @@ def _transcribe_all(
                 emit_work,
             )
             batch.documents.append(document)
-            if not document.failed:
+            if document.failed:
+                # The one thing the GUI could not previously learn. A failed
+                # file is recorded in the output document and the batch walks
+                # past it, which is the right behaviour - but it meant the
+                # progress strip painted the file the same green as one that
+                # worked, and the only way to find out was to open the HTML
+                # afterwards. 1-based to match w_file_progress's "i".
+                progress_queue.put(("file_failed", index + 1))
+            else:
                 succeeded += 1
 
             # Gated on succeeded > 0 rather than firing unconditionally: if

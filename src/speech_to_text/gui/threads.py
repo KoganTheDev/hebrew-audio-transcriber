@@ -94,6 +94,10 @@ class TranscriptionThread(QThread):
     # the sentinel is applied at exactly this boundary and nowhere else.
     work = pyqtSignal(float, float, float)
     phase = pyqtSignal(str, float, float)
+    # 1-based index of a file the batch could not transcribe. Its own signal
+    # rather than an error: the batch has NOT failed, it is carrying on, and
+    # routing this through `error` would tear the run down over one bad file.
+    file_failed = pyqtSignal(int)
 
     def __init__(
         self,
@@ -283,6 +287,8 @@ class TranscriptionThread(QThread):
         elif kind == "phase":
             name, seconds, sent_at = payload
             self.phase.emit(name, PHASE_STARTED_SECONDS if seconds is None else seconds, sent_at)
+        elif kind == "file_failed":
+            self.file_failed.emit(payload[0])
 
     def stop(self):
         """Stop the thread and terminate the worker process if running."""

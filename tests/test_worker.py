@@ -1100,3 +1100,51 @@ class TestChannelsAreReleasedAfterMixdown:
         )
 
         assert seen["channels"] is stereo
+
+
+class TestTheWorkerReportsWhichFileFailed:
+    """
+    The batch continues past a bad file, so the GUI needs telling which one
+    it was - without that, the progress strip painted it as done.
+    """
+
+    def test_a_failing_file_is_reported_by_its_batch_position(self, tmp_path):
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0, 10.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav", "broken.wav", "c.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        failed = [item[1] for item in progress_queue.items if item[0] == "file_failed"]
+        assert failed == [2], "expected the second file, 1-based, and only it"
+
+    def test_a_batch_with_nothing_wrong_reports_nothing(self, tmp_path):
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"], str(tmp_path / "out.html"), options, progress_queue, FakeQueue()
+        )
+
+        assert [i for i in progress_queue.items if i[0] == "file_failed"] == []
+
+    def test_reporting_a_failure_does_not_fail_the_batch(self, tmp_path):
+        """The whole point: the other files still produce a transcript."""
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0])
+        result_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["broken.wav", "b.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            FakeQueue(),
+            result_queue,
+        )
+
+        assert result_queue.items[-1][0] == "finished"
+        assert (tmp_path / "out.html").exists()
