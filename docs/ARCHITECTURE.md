@@ -92,20 +92,32 @@ MainWindow._start_transcription      │
     polls progress_queue             │      load model (once, for the batch)
    <─ ("progress", key, params, pct) ┼      for each file:
    <─ ("status", key, params) ───────┼        decode audio (PyAV)
-    emits Qt signals to the UI       │        transcribe (faster-whisper)
-                                     │        diarize (overlapped thread)
-                                     │        correct Hebrew terms
+   <─ ("work", done, total, at) ─────┼        transcribe (faster-whisper)
+   <─ ("phase", name, seconds, at) ──┼        diarize (overlapped thread)
+    emits Qt signals to the UI       │        correct Hebrew terms
                                      │        write HTML checkpoint
    <─ ("finished", output_file) ─────┼      render final document
    <─ ("error", key, params) ────────┼      on failure
 ```
 
-Two details worth knowing:
+Three details worth knowing:
 
+- **Two channels, because the bar and the clock ask different questions.**
+  `progress`/`status` carry a position on a 0-100 bar. `work`/`phase` carry
+  measurements - audio-seconds decoded, and what each phase really cost - and
+  are what the time estimate is computed from. Neither is derivable from the
+  other, which is the whole point: "Est. remaining" used to be a projection
+  over bar position, and that is only valid if every percent costs the same
+  wall clock. It does not come close. Measured on one 15-minute recording, 67s
+  went by at a fixed 5% (faster-whisper's VAD pass, before any segment exists)
+  and 280s at a fixed 98% (waiting on the overlapped diarization thread).
+  `gui/presenters/time_estimate.py` does the arithmetic, with no Qt, so it can
+  be driven against a fake clock.
 - **Progress crosses three coordinate systems** - the transcriber's own absolute
   scale, one file's local 0-100, and the batch-wide scale the progress bar
   actually shows. `core/progress_scale.py` names every boundary so the remapping
-  arithmetic is not bare integers retyped at each site.
+  arithmetic is not bare integers retyped at each site. The work stream needs
+  none of them: audio-seconds mean the same thing everywhere and simply add up.
 - **The output file is rewritten after every file**, not once at the end. A crash
   at file 9 of 10 still leaves nine transcripts on disk.
 
