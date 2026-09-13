@@ -22,14 +22,29 @@ from PyQt5.QtWidgets import (
 
 from speech_to_text import config
 from speech_to_text.gui import theme
-from speech_to_text.gui.audio_utils import get_audio_duration
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
+from speech_to_text.gui.threads import DurationProbeThread
 from speech_to_text.gui.widgets import DropZone, make_label
 from speech_to_text.hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
+
+
+def _size_mb(path: str) -> float:
+    """A file's size in MB, or 0.0 if it has gone.
+
+    Guarded because this runs while rendering a row, and a file can be deleted
+    or unmounted between being dropped and being drawn. An OSError escaping
+    here would take out the whole drop handler, losing the other files in the
+    same drop along with it.
+    """
+    try:
+        return os.path.getsize(path) / (1024 * 1024)
+    except OSError:
+        return 0.0
+
 
 # Minimum height of a single file row, paired with _sync_rows_height().
 ROW_MIN_HEIGHT = 26
@@ -268,6 +283,12 @@ class FileSelectStep(QFrame):
         # Files PyAV could not open. Their duration is a size-based guess, and
         # they are the ones most likely to fail once transcription starts.
         self._unprobed: set[str] = set()
+        # Files whose length is still being read. Their entry in _durations is
+        # a placeholder 0 until the probe lands, which is why is_probing gates
+        # the Next button: a run started now would weight its progress, and
+        # size its time estimate, against durations that are not real yet.
+        self._pending: set[str] = set()
+        self._probes: list[DurationProbeThread] = []
         self._rows: dict[str, QFrame] = {}
         # Basenames skipped by the most recent drop (see _drop) - rendered
         # into the summary line by _update_summary until the next drop
@@ -287,8 +308,19 @@ class FileSelectStep(QFrame):
 
     @property
     def durations(self) -> list[int]:
-        """Per-file durations, in the same order as selected_files."""
-        return [self._durations[path] for path in self.selected_files]
+        """Per-file durations, in the same order as selected_files.
+
+        .get(), not indexing: a file is listed the moment it is dropped and
+        gains its duration a little later, so a caller reading this mid-probe
+        must get a placeholder rather than a KeyError. is_probing is how a
+        caller knows to wait instead.
+        """
+        return [self._durations.get(path, 0) for path in self.selected_files]
+
+    @property
+    def is_probing(self) -> bool:
+        """Whether any selected file's length is still being read."""
+        return bool(self._pending)
 
     def _reset_drop_zone(self) -> None:
         """Reset drop zone to its normal (non-drag) styling."""
@@ -378,22 +410,87 @@ class FileSelectStep(QFrame):
         self._browse()
 
     def _add_files(self, paths: list[str]) -> None:
-        """Append new files, skipping any already listed - a second drop never duplicates."""
-        changed = False
+        """Append new files, skipping any already listed - a second drop never duplicates.
+
+        The rows appear immediately and their lengths arrive afterwards.
+        Probing used to happen right here, in the handler, which meant a
+        dropped folder of thirty recordings did thirty blocking container
+        opens with the event loop stopped - and on OneDrive placeholders each
+        one can wait on a download. See DurationProbeThread.
+        """
+        added = []
         for path in paths:
             if path in self.selected_files:
                 continue
             self.selected_files.append(path)
-            duration, probed = get_audio_duration(path)
-            self._durations[path] = duration
-            if not probed:
-                self._unprobed.add(path)
+            # A placeholder until the probe lands. Registered now so
+            # total_duration and durations stay answerable for every listed
+            # file at every moment, rather than only for probed ones.
+            self._durations[path] = 0
+            self._pending.add(path)
             self._add_row(path)
-            changed = True
+            added.append(path)
 
-        if changed:
+        if added:
+            self._start_probe(added)
             self._update_summary()
             self.files_selected.emit(list(self.selected_files), self.total_duration)
+
+    def _start_probe(self, paths: list[str]) -> None:
+        """Read the lengths of `paths` in the background.
+
+        One thread per batch of added files rather than one long-lived worker:
+        a drop is a discrete piece of work with a known list, and letting each
+        finish and retire keeps the teardown story simple - see stop_probing.
+        """
+        probe = DurationProbeThread(paths)
+        probe.probed.connect(self._on_probed)
+        probe.finished.connect(lambda: self._retire_probe(probe))
+        self._probes.append(probe)
+        probe.start()
+
+    def _retire_probe(self, probe: "DurationProbeThread") -> None:
+        if probe in self._probes:
+            self._probes.remove(probe)
+        probe.deleteLater()
+
+    def _on_probed(self, path: str, duration: int, probed: bool) -> None:
+        """One file's length has arrived.
+
+        Ignored outright if the file is no longer listed: a probe queued
+        before the user removed a file, or before reset(), would otherwise
+        resurrect its duration into the totals.
+        """
+        if path not in self.selected_files:
+            return
+
+        self._durations[path] = duration
+        self._pending.discard(path)
+        if not probed:
+            self._unprobed.add(path)
+
+        self._render_row_label(path)
+        self._update_summary()
+        # Re-emitted per file, not once at the end: the model recommendation
+        # and its time estimate are computed from the total, so they should
+        # sharpen as the lengths land rather than sit wrong until the last
+        # one does.
+        self.files_selected.emit(list(self.selected_files), self.total_duration)
+
+    def stop_probing(self) -> None:
+        """Abandon any in-flight probes and wait for their threads.
+
+        Called on teardown and on reset(). A QThread still running when its
+        signals reach a half-destroyed widget is the failure this repo has
+        already been bitten by once - see gui/focus.py and
+        MainWindow._detach_calibration_thread.
+        """
+        for probe in list(self._probes):
+            probe.probed.disconnect()
+            probe.stop()
+            probe.wait()
+        self._probes.clear()
+        self._pending.clear()
 
     def _add_row(self, path: str) -> None:
         row = QFrame()
@@ -478,18 +575,20 @@ class FileSelectStep(QFrame):
         remove_btn = remove_item.widget()
         if not isinstance(label, QLabel) or not isinstance(remove_btn, QPushButton):
             return
-        duration = self._durations[path]
-        size_mb = os.path.getsize(path) / (1024 * 1024)
         filename = os.path.basename(path)
-        label.setText(
-            t(
-                "file_info",
-                filename=filename,
-                minutes=duration // 60,
-                seconds=duration % 60,
-                size=f"{size_mb:.1f}",
+        if path in self._pending:
+            label.setText(t("file_info_probing", filename=filename))
+        else:
+            duration = self._durations.get(path, 0)
+            label.setText(
+                t(
+                    "file_info",
+                    filename=filename,
+                    minutes=duration // 60,
+                    seconds=duration % 60,
+                    size=f"{_size_mb(path):.1f}",
+                )
             )
-        )
         if path in self._unprobed:
             # Warned, not rejected. A probe failure is not proof that
             # faster-whisper cannot decode the file - PyAV and ffmpeg do not
@@ -511,6 +610,7 @@ class FileSelectStep(QFrame):
             row.deleteLater()
         self._durations.pop(path, None)
         self._unprobed.discard(path)
+        self._pending.discard(path)
         if path in self.selected_files:
             self.selected_files.remove(path)
 
@@ -583,6 +683,7 @@ class FileSelectStep(QFrame):
             self._rows_layout.removeWidget(row)
             row.deleteLater()
         self._rows.clear()
+        self.stop_probing()
         self._durations.clear()
         self._unprobed.clear()
         self.selected_files.clear()

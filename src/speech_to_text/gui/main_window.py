@@ -606,7 +606,12 @@ class MainWindow(QMainWindow):
         """Handle the file list changing (add, remove, or a folder drop)."""
         self.selected_files = list(file_paths)
         self.audio_duration = total_duration
-        self.next_btn.setEnabled(bool(self.selected_files))
+        # Not just "are there files": while a length is still being read its
+        # duration is a placeholder, and a run started now would weight its
+        # progress and size its time estimate against numbers that are not
+        # real yet. files_selected is re-emitted as each probe lands, so this
+        # enables itself the moment the last one does.
+        self.next_btn.setEnabled(bool(self.selected_files) and not self.file_step.is_probing)
         logger.debug(f"Files selected: {len(self.selected_files)} file(s), {total_duration}s total")
 
     def _on_model_selected(self, model: str) -> None:
@@ -692,7 +697,7 @@ class MainWindow(QMainWindow):
                 back_visible=False,
                 cancel_visible=False,
                 next_visible=True,
-                next_enabled=bool(self.selected_files),
+                next_enabled=bool(self.selected_files) and not self.file_step.is_probing,
             )
 
     def _go_next(self) -> None:
@@ -969,6 +974,11 @@ class MainWindow(QMainWindow):
         that path is covered too; both helpers below are idempotent.
         """
         self._detach_calibration_thread()
+        # Duration probing is short-lived but can still be in flight when the
+        # window goes away - a dropped OneDrive placeholder can take a while -
+        # and a QThread delivering into a half-destroyed widget is the exact
+        # trap gui/focus.py exists for.
+        self.file_step.stop_probing()
         if self.transcription_thread:
             self.transcription_thread.stop()
             self.transcription_thread.wait()

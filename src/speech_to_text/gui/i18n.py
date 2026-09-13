@@ -142,6 +142,14 @@ STRINGS = {
         + "{size} MB"
         + _PDI,
     },
+    # Shown in a file's row while its length is still being read off disk.
+    # Deliberately the same shape as file_info minus the two facts it does not
+    # have yet, and isolated the same way, so the row does not reflow when the
+    # real values arrive.
+    "file_info_probing": {
+        "en": "{filename} | reading length...",
+        "he": _RLM + _LRI + "{filename}" + _PDI + " | קורא אורך...",
+    },
     # Summary line above the file list. Unlike file_info, this doesn't open
     # with a filename - it opens with the count - so it needs no RLM anchor
     # (the Hebrew string already starts with a strong-RTL character).

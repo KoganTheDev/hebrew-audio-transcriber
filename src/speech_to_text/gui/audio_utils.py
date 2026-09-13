@@ -57,7 +57,18 @@ def get_audio_duration(file_path: str) -> tuple[int, bool]:
 
     # Last-resort fallback: a rough estimate from file size. Only reached if
     # the file couldn't be opened/probed at all.
-    file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    #
+    # Guarded, unlike the original: this sat OUTSIDE the try above, so a file
+    # that had gone between being selected and being probed raised OSError
+    # straight out of a function whose entire contract is to degrade rather
+    # than raise - and straight into the drop handler, taking the rest of the
+    # drop with it. A missing file has no size and no duration, and saying so
+    # is what marks it unreadable in the list.
+    try:
+        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    except OSError as e:
+        logger.warning(f"Could not size {file_path}: {e}")
+        return 0, False
     estimated_seconds = int(file_size_mb * 60 * config.AUDIO_MINUTES_PER_100MB)
     logger.warning(
         f"Using ESTIMATED duration (file could not be probed): "

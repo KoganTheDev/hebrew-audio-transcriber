@@ -16,6 +16,7 @@ from speech_to_text.core.calibration import run_calibration_process
 from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
 from speech_to_text.core.worker import run_transcription_process
+from speech_to_text.gui.audio_utils import get_audio_duration
 from speech_to_text.gui.i18n import document_strings, t
 
 logger = logging.getLogger(__name__)
@@ -291,6 +292,52 @@ class TranscriptionThread(QThread):
     def _get_output_path(self) -> str:
         """Get output file path - named after the single file, or the batch's folder."""
         return config.output_path_for(self.audio_files)
+
+
+class DurationProbeThread(QThread):
+    """Reads audio durations off the GUI thread, one file at a time.
+
+    get_audio_duration opens the container with PyAV, which is a few
+    milliseconds for a local file and arbitrarily long for one OneDrive has
+    left as a cloud-only placeholder: opening it blocks until Windows has
+    hydrated the file, which can mean pulling hundreds of megabytes down
+    first. Run inline in the drop handler - which is where it used to be -
+    that freezes the whole window, once per dropped file, with nothing on
+    screen to say why.
+
+    Deliberately a plain QThread with no subprocess behind it, unlike the two
+    below. The DLL conflict this module exists to work around is PyQt5 against
+    ctranslate2 (see the module docstring); PyAV is neither, and
+    gui/audio_utils.py has always imported it in this process.
+    """
+
+    # path, duration in seconds, whether that duration was really probed
+    probed = pyqtSignal(str, int, bool)
+
+    def __init__(self, paths: list[str]):
+        super().__init__()
+        self._paths = list(paths)
+        self._is_running = True
+
+    def run(self) -> None:
+        for path in self._paths:
+            if not self._is_running:
+                return
+            try:
+                seconds, exact = get_audio_duration(path)
+            except Exception as e:
+                # get_audio_duration already absorbs a probe failure and falls
+                # back to a size estimate, so reaching here means even that
+                # failed - the file has gone since it was dropped. Report it
+                # as unprobed rather than letting one bad path end the queue
+                # and leave every file behind it stuck on "reading length".
+                logger.warning(f"Could not probe {path}: {e}")
+                seconds, exact = 0, False
+            self.probed.emit(path, seconds, exact)
+
+    def stop(self) -> None:
+        """Abandon the rest of the queue. The file list has moved on."""
+        self._is_running = False
 
 
 class CalibrationThread(QThread):
