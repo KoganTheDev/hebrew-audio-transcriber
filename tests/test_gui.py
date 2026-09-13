@@ -1932,3 +1932,176 @@ class TestTimeReadout:
         step.update_progress("w_loading_model", {"model": "tiny"}, 5)
 
         assert "calculating" in step.time_label.text()
+
+
+class FakeProcess:
+    """A multiprocessing.Process stand-in that records how it was stopped."""
+
+    def __init__(self, alive=True, dies_on_terminate=True):
+        self._alive = alive
+        self._dies_on_terminate = dies_on_terminate
+        self.terminated = 0
+        self.killed = 0
+        self.joins = []
+
+    def is_alive(self):
+        return self._alive
+
+    def terminate(self):
+        self.terminated += 1
+        if self._dies_on_terminate:
+            self._alive = False
+
+    def kill(self):
+        self.killed += 1
+        self._alive = False
+
+    def join(self, timeout=None):
+        self.joins.append(timeout)
+
+
+class TestWorkerProcessIsReaped:
+    """
+    terminate() only asks. Nothing followed it with join(), so every stopped
+    worker was left unreaped - a zombie on POSIX, an open process handle on
+    Windows - until the Process object happened to be collected.
+    """
+
+    def test_a_terminated_process_is_joined(self):
+        from speech_to_text.gui import threads
+
+        process = FakeProcess()
+        threads._terminate_and_reap(process)
+
+        assert process.terminated == 1
+        assert process.joins, "terminate() was not followed by join()"
+
+    def test_a_process_that_ignores_terminate_is_killed(self):
+        """
+        terminate() is SIGTERM, and a child wedged inside a native call -
+        ctranslate2 or onnxruntime mid-inference - can outlive it. Left
+        running it keeps burning cores for a result nobody will read.
+        """
+        from speech_to_text.gui import threads
+
+        process = FakeProcess(dies_on_terminate=False)
+        threads._terminate_and_reap(process)
+
+        assert process.terminated == 1
+        assert process.killed == 1
+        assert len(process.joins) == 2
+
+    def test_an_already_dead_process_is_left_alone(self):
+        from speech_to_text.gui import threads
+
+        process = FakeProcess(alive=False)
+        threads._terminate_and_reap(process)
+
+        assert process.terminated == 0
+        assert process.killed == 0
+
+    def test_no_process_at_all_is_not_an_error(self):
+        """stop() can be called before the process was ever created."""
+        from speech_to_text.gui import threads
+
+        threads._terminate_and_reap(None)
+
+
+class TestAFinishedRunIsNotReportedAsAFailure:
+    """
+    The child puts its result and then exits, so there is a window where the
+    process is already gone and the result has not yet crossed the pipe.
+    Queue.empty() is documented as unreliable and this is the case it is
+    unreliable in - so a SUCCESSFUL run could be reported as err_worker_exited.
+    """
+
+    @staticmethod
+    def _thread():
+        from speech_to_text.gui.main_window import TranscriptionThread
+
+        return TranscriptionThread(
+            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+        )
+
+    def test_a_result_still_in_flight_is_waited_for(self, qtbot):
+        """
+        The queue reports itself empty, then hands the result over on a real
+        blocking get - exactly the shape of the race.
+        """
+        import queue as queue_module
+
+        class InFlightQueue:
+            def __init__(self, item):
+                self._item = item
+
+            def empty(self):
+                return True
+
+            def get_nowait(self):
+                raise queue_module.Empty
+
+            def get(self, timeout=None):
+                if self._item is None:
+                    raise queue_module.Empty
+                item, self._item = self._item, None
+                return item
+
+        thread = self._thread()
+        progress = InFlightQueue(None)
+        result = InFlightQueue(("finished", "out.html"))
+
+        with qtbot.waitSignal(thread.finished, timeout=1000) as caught:
+            assert thread._drain_final_result(progress, result) is True
+
+        assert caught.args == ["out.html"]
+
+    def test_a_worker_that_really_died_still_reports_it(self, qtbot):
+        """The genuine failure must survive the fix for the false one."""
+        import queue as queue_module
+
+        class EmptyQueue:
+            def empty(self):
+                return True
+
+            def get_nowait(self):
+                raise queue_module.Empty
+
+            def get(self, timeout=None):
+                raise queue_module.Empty
+
+        thread = self._thread()
+
+        assert thread._drain_final_result(EmptyQueue(), EmptyQueue()) is False
+
+    def test_trailing_progress_is_relayed_before_the_result(self, qtbot):
+        """
+        The same reason the main loop drains in bulk: messages queued just
+        before the child exited would otherwise be dropped, leaving the bar
+        stuck below 100% on a run that actually completed.
+        """
+        import queue as queue_module
+
+        class ScriptedQueue:
+            def __init__(self, items):
+                self._items = list(items)
+
+            def empty(self):
+                return not self._items
+
+            def get_nowait(self):
+                if not self._items:
+                    raise queue_module.Empty
+                return self._items.pop(0)
+
+            def get(self, timeout=None):
+                return self.get_nowait()
+
+        thread = self._thread()
+        seen = []
+        thread.progress.connect(lambda *args: seen.append(args))
+
+        progress = ScriptedQueue([("progress", "w_complete", {}, 100)])
+        result = ScriptedQueue([("finished", "out.html")])
+        thread._drain_final_result(progress, result)
+
+        assert seen == [("w_complete", {}, 100)]
