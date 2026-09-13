@@ -56,7 +56,7 @@ jobs:
         # there is no display on a runner.
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest --cov=speech_to_text --cov-branch --cov-fail-under=80
+        run: pytest --cov=speech_to_text --cov-branch --cov-fail-under=83
 
       - name: Documentation density
         # Reported, never gated - no tool can judge whether a given paragraph
