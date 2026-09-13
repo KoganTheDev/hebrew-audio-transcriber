@@ -7,6 +7,11 @@ import os
 # sherpa-onnx pyannote + campplus models, and scaled by core count where used.
 # It is not derived from the Whisper calibration benchmark: different models,
 # different compute profile.
+#
+# Re-measured since, alongside transcription rather than alone: 26.6s for 180s
+# of audio, i.e. 0.15x realtime, comfortably better than this constant. The
+# 0.3 is kept as the conservative figure it always was - it is only ever used
+# to pad a pre-run estimate, where over-promising speed is the worse error.
 DIARIZATION_REALTIME_FACTOR = 0.3
 
 # These two are sherpa-onnx's OfflineSpeakerDiarizationConfig knobs, named
@@ -38,6 +43,23 @@ DIARIZATION_MIN_DURATION_OFF = 0.5
 # 300s of AMI, diarization went 124.4s -> 96.6s with identical DER.
 #
 # min() so a 2-core machine is not told to use 4.
+#
+# MEASURED AGAINST THE ALTERNATIVES, because diarization no longer runs alone:
+# core/worker.py starts it on a thread beside transcription, so the two now
+# compete for the same cores and the obvious worry is that this 4 plus
+# ctranslate2's own threads oversubscribe a 4-core machine. On 180s of audio
+# with ivrit-turbo, timing each pass alone and then both overlapped:
+#
+#   ct2 threads  onnx threads   diarize  transcribe   both   vs sequential
+#   auto         4 (this)          26.6s     130.3s  151.2s   wins by 4%
+#   3            1                 30.3s     136.5s  152.5s   wins by 9%
+#   2            2                 25.2s     151.5s  210.8s   LOSES by 19%
+#
+# Leaving both sides to choose is the fastest of the three, and the overlap
+# pays in every configuration that does not starve ctranslate2. Splitting the
+# budget explicitly only makes the sequential baseline worse, which is what
+# makes its larger "wins by" margin look better than it is. So this stays,
+# and the pairing to avoid is squeezing ctranslate2 down to 2.
 DIARIZATION_NUM_THREADS = min(4, os.cpu_count() or 1)
 
 # onnxruntime execution provider. "cpu" is stated rather than left implicit

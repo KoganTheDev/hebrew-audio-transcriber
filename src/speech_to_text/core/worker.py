@@ -741,14 +741,16 @@ def _decode_transcript(
         return segments
     finally:
         if diarization_thread is not None:
-            # Timed, and announced before it blocks. This join is where a run
-            # spends its most conspicuously silent stretch: measured on this
-            # machine, 280s and 222s on the two files of one batch, all of it
-            # after the last segment arrived and with nothing moving. It is not
-            # idle - diarization is still running - but it reports no progress
-            # of its own by design (see _start_diarization), so saying "this
-            # phase has started" is the only honest thing available until it
-            # returns.
+            # Timed, and announced before it blocks. Usually this join
+            # returns immediately: measured on this machine with ivrit-turbo,
+            # diarization costs 26.6s against transcription's 130.3s on the
+            # same 180s of audio, so it has long since finished. It is the
+            # other case this exists for - transcription much faster than
+            # diarization, which is what a CUDA device or a very small model
+            # would produce - where the join becomes a stretch with nothing
+            # moving at all. Diarization reports no progress of its own by
+            # design (see _start_diarization), so saying "this phase has
+            # started" is the only honest thing available until it returns.
             join_start = time.perf_counter()
             _report_phase(progress_queue, WORK_PHASE_DIARIZE_WAIT, WORK_PHASE_STARTED)
             diarization_thread.join()

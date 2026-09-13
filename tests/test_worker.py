@@ -860,13 +860,12 @@ class TestWorkStream:
 
     def test_the_diarization_wait_is_announced_before_it_blocks(self, tmp_path, monkeypatch):
         """
-        The single most conspicuous stall in a real run: measured at 280s and
-        222s on the two files of one batch, every second of it after the last
-        segment arrived and with the bar not moving. Diarization reports no
-        percentage of its own by design (see _start_diarization), so a
-        "started" marker is the only honest signal available until the join
-        returns - and it is what lets the GUI count the phase down rather than
-        appear to have hung.
+        Diarization reports no percentage of its own by design (see
+        _start_diarization), so while the join blocks there is nothing to say
+        except that it has begun. On this hardware the join returns at once -
+        diarization finishes well inside transcription - but a fast device or
+        a very small model inverts that, and then the "started" marker is what
+        lets the GUI count the phase down rather than appear to have hung.
         """
         from speech_to_text.core import audio_source, diarization
 

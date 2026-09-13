@@ -7,12 +7,11 @@ The estimate this replaces was one line in gui/steps/transcription.py:
 which projects time from a position on the progress bar. That is only valid
 if every percent of the bar costs the same wall clock, and the bands do not
 come close to that. Measured on a 4-core machine, one 15-minute recording
-spent 67s at a fixed 5% (faster-whisper's VAD pass, before any segment
-exists) and 280s at a fixed 98% (waiting for diarization to finish). During
-both, the formula above is being fed a percentage that has stopped moving,
-so it either freezes or - worse - keeps projecting from a pace that is no
-longer happening. A two-file batch measured a pre-run estimate of 1h 6m
-against an actual 38m 43s.
+spent 67s at a fixed 5% - faster-whisper's VAD pass, which runs over the
+whole file before a single segment exists. Through all of it the formula
+above is fed a percentage that has stopped moving, so it either freezes or -
+worse - keeps projecting from a pace that is no longer happening. A two-file
+batch measured a pre-run estimate of 1h 6m against an actual 38m 43s.
 
 What is used instead is two rates over work the run has genuinely done:
 
@@ -79,11 +78,16 @@ MAX_AUDIO_BEFORE_A_RATE = 300.0
 class _WaitMeasurement:
     """How much of diarization was left over after transcription finished.
 
-    Diarization runs on a thread alongside transcription and usually hides
-    underneath it, costing nothing. When it does not - a heavier model leaves
-    fewer cores for it - what is left over is a stretch at the very end of a
-    file with no progress of any kind, measured here at 280s and 222s on the
-    two files of one batch. It is charged per audio-second of the file it
+    Diarization runs on a thread alongside transcription and on this hardware
+    hides underneath it completely, costing nothing: 26.6s against
+    transcription's 130.3s over the same 180s of audio. What this measures is
+    the case where it does not - transcription much faster than diarization,
+    which is what a CUDA device or a very small model would produce - leaving
+    a stretch at the end of a file with no progress of any kind.
+
+    It has not been observed on this machine since diarization was moved onto
+    a thread, so treat the prediction as a guard rather than as something the
+    common path exercises. It is charged per audio-second of the file it
     followed, so a later, longer file is predicted to owe proportionally more.
     """
 
@@ -281,10 +285,10 @@ class TimeEstimator:
                 # yet. Nothing to add, and nothing to apologise for.
                 return decoding_left
             # A tail IS running and this run has never measured one. Its
-            # length could be seconds or minutes - on a real batch it was
-            # 280s - so any number here would be an invention, and a number
-            # that then sat at zero for four and a half minutes is exactly
-            # the behaviour this change exists to remove.
+            # length is not knowable in advance - diarization reports no
+            # progress while it works - so any number here would be an
+            # invention, and a number that then sat at zero for minutes is
+            # exactly the behaviour this change exists to remove.
             return None
 
         owed = wait_rate * self._audio_owing_a_tail()
@@ -304,9 +308,9 @@ class TimeEstimator:
         down every second, without letting the gap inflate the rate itself.
 
         Any tail inside the gap is excluded, whether it is still running or
-        has just finished. Without that exclusion a 280s diarization wait was
-        read as 280s of decoding already done and knocked the estimate down by
-        the same amount the moment the wait ended.
+        has just finished. Without that exclusion a diarization wait is read as
+        decoding already done and knocks the estimate down by its whole length
+        the moment it ends - caught by replaying a real run's timings.
         """
         if self._last_work_at is None:
             return 0.0
