@@ -16,6 +16,7 @@ import time
 import numpy as np
 import pytest
 
+from speech_to_text.core import progress_scale as ps
 from speech_to_text.core import worker
 from speech_to_text.core.options import TranscriptionOptions
 from speech_to_text.core.segments import Segment, Word
@@ -38,10 +39,18 @@ class FakeTranscriber:
     progress on the same fixed 15->90 absolute sub-range the real
     Transcriber.transcribe() uses (see core/worker.py's _transcribe_one
     docstring), and raises for a file path the test marks as broken.
+
+    It also reports the work stream on the same contract the real one does
+    (see core/progress_scale.py): a file-local audio position per segment,
+    and the file's full duration once, at the end - which is what the real
+    Transcriber has to send because VAD trims trailing silence and the last
+    segment therefore stops short of the file's own length.
     """
 
     def __init__(self, model_size, device, language, progress_callback):
         self.progress_callback = progress_callback
+        self.work_callback = lambda done, total: None
+        self.phase_callback = lambda name, seconds: None
 
     def load_model(self):
         self.progress_callback(("w_loading_model", {}), 5)
@@ -64,8 +73,16 @@ class FakeTranscriber:
             # function must never reach its final render/write.
             raise KeyboardInterrupt("simulated hard kill mid-transcription")
         self.progress_callback(("w_starting", {}), 15)
+        self.phase_callback("prepare", 0.5)
         for pct in (30, 50, 70, 90):
             self.progress_callback(("w_transcribing_time", {}), pct)
+            if total_duration_seconds > 0:
+                # 30..90 of the 15..90 band, expressed as a position in the
+                # file's own audio - the same fact, in the work stream's units.
+                fraction = (pct - 15) / 75
+                self.work_callback(fraction * total_duration_seconds, total_duration_seconds)
+        if total_duration_seconds > 0:
+            self.work_callback(total_duration_seconds, total_duration_seconds)
         return [Segment(start=0, end=1, text=f"hello from {source}")]
 
 
@@ -74,6 +91,16 @@ def fake_transcriber(monkeypatch):
     import speech_to_text.core.transcriber as transcriber_module
 
     monkeypatch.setattr(transcriber_module, "Transcriber", FakeTranscriber)
+
+
+def _work_items(progress_queue):
+    """(audio_done, audio_total) of every ('work', ...) item, in order."""
+    return [(item[1], item[2]) for item in progress_queue.items if item[0] == "work"]
+
+
+def _phase_items(progress_queue):
+    """(name, seconds) of every ('phase', ...) item, in order."""
+    return [(item[1], item[2]) for item in progress_queue.items if item[0] == "phase"]
 
 
 def _progress_percents(progress_queue, keys=None):
@@ -690,6 +717,8 @@ class TestDiarizationOverlap:
         class ExplodingTranscriber:
             def __init__(self):
                 self.progress_callback = lambda *a, **k: None
+                self.work_callback = lambda *a, **k: None
+                self.phase_callback = lambda *a, **k: None
 
             def transcribe(self, source, total_duration_seconds=0):
                 raise RuntimeError("simulated transcribe failure")
@@ -704,6 +733,7 @@ class TestDiarizationOverlap:
                 10.0,
                 lambda *a, **k: None,
                 FakeQueue(),
+                lambda *a, **k: None,
             )
 
         # Checked with NO extra wait: ExplodingTranscriber.transcribe()
@@ -718,3 +748,183 @@ class TestDiarizationOverlap:
             "diarization thread was not joined before the exception propagated "
             "out of _transcribe_one - it was left running orphaned instead"
         )
+
+
+class TestWorkStream:
+    """
+    The measurements the time estimate is computed from (core/progress_scale.py).
+
+    These are NOT the progress bar. The bar is a position on a 0-100 scale
+    whose bands cost wildly different amounts of wall clock; the work stream
+    is audio-seconds and measured durations, which is what can actually be
+    divided into a rate. The properties below are the ones the GUI's
+    arithmetic assumes, and each of them is a way the old
+    elapsed * (100 - pct) / pct estimate went wrong.
+    """
+
+    def test_audio_done_climbs_monotonically_to_the_batch_total(self, tmp_path):
+        """
+        The denominator has to be the batch, not the file.
+
+        A per-file position would reset to zero at every file boundary, and a
+        rate computed across that reset would collapse the estimate exactly
+        when it finally had enough data to be good.
+        """
+        durations = [10.0, 100.0, 5.0]
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=durations)
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav", "b.wav", "c.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        work = _work_items(progress_queue)
+        assert work, "expected the worker to report audio positions"
+
+        done = [d for d, _total in work]
+        assert done == sorted(done), "audio_done ran backwards"
+        assert all(total == sum(durations) for _d, total in work)
+        assert done[-1] == pytest.approx(sum(durations))
+
+    def test_the_reported_total_is_the_real_probed_duration_not_a_file_count(self, tmp_path):
+        """
+        Weighting by duration is the whole reason the batch scale exists: a
+        two-hour recording among ten one-minute ones must not read as "90% of
+        files done" while nearly all the work remains.
+        """
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[60.0, 7200.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["short.wav", "long.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        work = _work_items(progress_queue)
+        # The short file is 1/121st of the batch's audio, so the position must
+        # still be near the floor when it finishes, not near half.
+        assert work[0][0] < 60.0
+        assert max(d for d, _t in work) == pytest.approx(7260.0)
+
+    def test_a_file_with_no_known_duration_reports_no_position(self, tmp_path):
+        """
+        Without a probed duration there is nothing to measure a rate against.
+        Reporting a position anyway - against a guessed denominator - would
+        produce a confidently wrong ETA, which is worse than none: the GUI
+        shows elapsed only until a real measurement exists.
+        """
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[0.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        assert _work_items(progress_queue) == []
+
+    def test_phases_are_reported_with_their_measured_duration(self, tmp_path):
+        """
+        Every one of these was already being timed for the DEBUG log (see
+        _log_phase). Sending the same value rather than re-deriving it in the
+        GUI is what keeps one measurement instead of two numbers that can
+        disagree.
+        """
+        options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        phases = dict(_phase_items(progress_queue))
+        assert ps.WORK_PHASE_TRANSCRIBE in phases
+        assert ps.WORK_PHASE_RENDER in phases
+        assert all(seconds is None or seconds >= 0 for seconds in phases.values()), (
+            "a phase reported a negative duration"
+        )
+
+    def test_the_diarization_wait_is_announced_before_it_blocks(self, tmp_path, monkeypatch):
+        """
+        The single most conspicuous stall in a real run: measured at 280s and
+        222s on the two files of one batch, every second of it after the last
+        segment arrived and with the bar not moving. Diarization reports no
+        percentage of its own by design (see _start_diarization), so a
+        "started" marker is the only honest signal available until the join
+        returns - and it is what lets the GUI count the phase down rather than
+        appear to have hung.
+        """
+        from speech_to_text.core import audio_source, diarization
+
+        monkeypatch.setattr(
+            audio_source, "load", lambda path: ([np.zeros(1600, dtype=np.float32)], False)
+        )
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+        monkeypatch.setattr(
+            diarization,
+            "diarize",
+            lambda samples, sample_rate=16000, num_speakers=2, progress=None: [],
+        )
+
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        waits = [
+            seconds
+            for name, seconds in _phase_items(progress_queue)
+            if name == ps.WORK_PHASE_DIARIZE_WAIT
+        ]
+        assert waits, "the diarization join was never announced"
+        assert waits[0] is ps.WORK_PHASE_STARTED, "the wait must be announced before it blocks"
+        assert waits[-1] is not ps.WORK_PHASE_STARTED, "the wait never reported how long it took"
+
+    def test_a_two_party_file_is_not_counted_twice(self, tmp_path, monkeypatch):
+        """
+        A true-stereo recording is transcribed once per channel, so the work
+        callback fires twice over the same duration. They are folded into
+        halves, or the reported position would climb to the file's length,
+        drop back to zero and climb again - and audio_done running backwards
+        makes the estimate jump instead of converge.
+        """
+        from speech_to_text.core import audio_source
+
+        stereo = [np.zeros(1600, dtype=np.float32), np.zeros(1600, dtype=np.float32)]
+        monkeypatch.setattr(audio_source, "load", lambda path: (stereo, True))
+
+        options = TranscriptionOptions(identify_speakers=True, audio_durations=[10.0])
+        progress_queue = FakeQueue()
+
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            options,
+            progress_queue,
+            FakeQueue(),
+        )
+
+        done = [d for d, _t in _work_items(progress_queue)]
+        assert done, "the two-party path reported no position at all"
+        assert done == sorted(done), "audio_done ran backwards across the two channels"
+        assert max(done) == pytest.approx(10.0), "one file counted as more than its own length"

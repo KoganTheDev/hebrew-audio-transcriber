@@ -324,3 +324,34 @@ class TestDiarizationModelsRoot:
         resolve_diarization_models_root()
 
         assert not target.exists(), "resolving a path should not create it"
+
+
+class TestCalibrationCachePath:
+    """
+    The third cache that must not depend on the working directory.
+
+    MODEL_DOWNLOAD_ROOT and DIARIZATION_MODELS_ROOT were both fixed for this
+    (see the two classes above); core/calibration.py's cache was missed and
+    stayed a bare "whisper_models/.calibration.json". Launched through the
+    console script from any other directory, load_cached_tiny_rtf missed the
+    cache, so the full tiny-model benchmark re-ran on EVERY launch and
+    save_calibration created a stray whisper_models/ wherever the user
+    happened to be. This is that gap, closed and pinned.
+    """
+
+    def test_the_cache_path_is_absolute(self):
+        from speech_to_text.core import calibration
+
+        assert os.path.isabs(calibration.CALIBRATION_CACHE_PATH)
+
+    def test_the_cache_lives_in_the_resolved_model_root(self):
+        """
+        Not merely absolute - the SAME directory the weights already use.
+
+        Anchoring it anywhere else would work, but would split one model
+        cache across two locations and re-introduce the drift config/paths.py
+        exists to prevent.
+        """
+        from speech_to_text.core import calibration
+
+        assert os.path.dirname(calibration.CALIBRATION_CACHE_PATH) == config.MODEL_DOWNLOAD_ROOT

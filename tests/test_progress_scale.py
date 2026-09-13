@@ -89,3 +89,32 @@ def test_a_transcriber_percentage_remaps_into_the_file_local_band():
 
     assert remap(ps.TRANSCRIBER_MODEL_LOADED_PERCENT) == ps.FILE_LOCAL_TRANSCRIBE_START
     assert remap(ps.TRANSCRIBER_TRANSCRIBE_END_PERCENT) == ps.FILE_LOCAL_TRANSCRIBE_END
+
+
+def test_the_work_phases_are_distinct():
+    """
+    Each name keys a separate measurement in the GUI's time estimate. Two
+    phases sharing a name would silently overwrite one another's duration,
+    and the symptom would be an ETA that is wrong only on files where both
+    phases run - which is most of them.
+    """
+    phases = [
+        ps.WORK_PHASE_DECODE,
+        ps.WORK_PHASE_PREPARE,
+        ps.WORK_PHASE_TRANSCRIBE,
+        ps.WORK_PHASE_DIARIZE,
+        ps.WORK_PHASE_DIARIZE_WAIT,
+        ps.WORK_PHASE_ASSIGN,
+        ps.WORK_PHASE_CORRECT,
+        ps.WORK_PHASE_RENDER,
+    ]
+    assert len(set(phases)) == len(phases)
+
+
+def test_the_started_marker_cannot_be_mistaken_for_a_duration():
+    """
+    Every other value on the phase channel is a measured wall-clock duration,
+    so the "begun, not finished" marker must not be a number - there is no
+    number that could not also be a real duration.
+    """
+    assert ps.WORK_PHASE_STARTED is None

@@ -11,11 +11,16 @@ from PyQt5.QtGui import QDesktopServices, QFontMetrics, QResizeEvent
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from speech_to_text.core.formatting import format_mmss
-from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
+from speech_to_text.core.progress_scale import (
+    STATUS_ONLY_PERCENT,
+    WORK_PHASE_DIARIZE_WAIT,
+)
 from speech_to_text.gui import theme
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.icons import ICONS, svg_to_pixmap
+from speech_to_text.gui.presenters.time_estimate import TimeEstimator
 from speech_to_text.gui.theme import COLORS, Fonts, Spacing
+from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
 from speech_to_text.gui.widgets import IconTextButton, make_label
 
 logger = logging.getLogger(__name__)
@@ -24,11 +29,15 @@ logger = logging.getLogger(__name__)
 class TranscriptionStep(QFrame):
     """Step 3: Transcription progress and results."""
 
-    # Once this many seconds pass with no real percentage movement, the
-    # elapsed*(100-pct)/pct projection is stale (it was only ever valid for
-    # the pace measured up to the last real update) and left unchecked
-    # balloons into an obviously-wrong, ever-growing number. Switch to an
-    # honest "calculating..." instead of trusting it past this point.
+    # A stalled bar used to be the ONLY way this screen could tell that its
+    # own estimate had gone stale, because the estimate was a projection over
+    # bar position and nothing else. It no longer is: the estimate now comes
+    # from measured work (see gui/presenters/time_estimate.py), which knows on
+    # its own when it has nothing to report and says so. Kept for the one case
+    # the work stream cannot cover - a file whose duration could not be probed
+    # at all, which produces no work reports ever (see gui/audio_utils.py) -
+    # so that run still says "calculating" rather than "Elapsed" alone for its
+    # entire length.
     STALL_SECONDS = 5
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -348,6 +357,11 @@ class TranscriptionStep(QFrame):
         self._file_info_args: tuple[str, str] | None = None
         self._result_path_value: str | None = None
         self._dot_phase = 0
+        # Every measurement this run has made, and the arithmetic over them.
+        # Qt-free and in gui/presenters/ on purpose: "how long is left" is a
+        # decision, not a widget, and it is testable against a fake clock
+        # there rather than only through a live window.
+        self._estimator = TimeEstimator()
         # Ticks once a second so the elapsed/remaining time and a "still
         # working" heartbeat keep moving even during real backend gaps with
         # no new progress message (e.g. while the model is still loading, or
@@ -457,6 +471,7 @@ class TranscriptionStep(QFrame):
     def start(self) -> None:
         """Reset the display for a fresh run and start the elapsed-time ticker."""
         self.start_time = time.time()
+        self._estimator = TimeEstimator()
         self._last_percentage = 0
         self._last_percent_change_time = self.start_time
         self._status_key = "w_initializing"
@@ -485,6 +500,46 @@ class TranscriptionStep(QFrame):
     def _render_status(self) -> str:
         return t(self._status_key, **self._status_params)
 
+    def update_work(self, audio_done: float, audio_total: float, sent_at: float) -> None:
+        """Record how much audio the worker has actually decoded.
+
+        sent_at is the WORKER's time.monotonic(), used rather than reading the
+        clock here: it is the same system-wide monotonic clock in both
+        processes (GetTickCount64 on Windows, CLOCK_MONOTONIC elsewhere), and
+        taking the worker's reading keeps queue latency and any Qt event-loop
+        stall out of a rate that is measured over minutes.
+        """
+        self._estimator.note_work(audio_done, audio_total, sent_at)
+        if self.start_time is not None:
+            self._refresh_time_label(time.time() - self.start_time)
+
+    def update_phase(self, name: str, seconds: float, sent_at: float) -> None:
+        """Record one measured phase of the pipeline.
+
+        Only the diarization wait is acted on. The rest - decode, render,
+        Hebrew correction - are already inside the measured rate, because the
+        rate is wall clock over audio and they happen between two audio
+        positions. The wait is the exception: it falls after its file's audio
+        has been fully counted, so nothing would otherwise account for it, and
+        it is the phase that put 280s of frozen bar at the end of a real run.
+        """
+        # Any phase at all anchors the rate's clock: the first one to arrive is
+        # this batch's first file being decoded or VAD-scanned, which is the
+        # moment work on audio actually begins. Before that the run is loading
+        # a model, and charging that to audio-seconds would wreck the rate.
+        self._estimator.note_work_started(sent_at)
+
+        if name != WORK_PHASE_DIARIZE_WAIT:
+            if self.start_time is not None:
+                self._refresh_time_label(time.time() - self.start_time)
+            return
+        if seconds == PHASE_STARTED_SECONDS:
+            self._estimator.note_wait_started(sent_at)
+        else:
+            self._estimator.note_wait_finished(seconds)
+        if self.start_time is not None:
+            self._refresh_time_label(time.time() - self.start_time)
+
     def update_progress(self, status_key: str, params: dict[str, object], percentage: int) -> None:
         """Update status text and, for real percentage updates, the progress
         bar and elapsed/estimated-remaining time.
@@ -503,6 +558,15 @@ class TranscriptionStep(QFrame):
         self._status_params = dict(params)
         self._dot_phase = 0
         self.status_label.setText(self._render_status())
+
+        # The estimator needs to know which file is running for the same reason
+        # the strip below does, but it is told even when the strip is hidden:
+        # a single-file run still has a diarization tail to predict, and the
+        # file index is what bounds that file's own audio.
+        if status_key == "w_file_progress":
+            file_index = params.get("i")
+            if isinstance(file_index, int):
+                self._estimator.note_file_started(file_index)
 
         # w_file_progress is the one worker message that names which file
         # in the batch is running (see core/worker.py) - route it to the
@@ -533,39 +597,32 @@ class TranscriptionStep(QFrame):
         self._progress_animation.start()
 
     def _refresh_time_label(self, elapsed: float) -> None:
-        """Recompute elapsed + estimated-remaining from the last known progress
-        percentage. Called both on every real progress update and on every
-        1-second tick, so "Est. remaining" stays visible and keeps counting
-        down throughout the whole run instead of only appearing momentarily
-        each time a backend message arrives.
+        """Show elapsed, and what the run has measured about what is left.
 
-        If the percentage hasn't moved in a while (STALL_SECONDS), the
-        elapsed*(100-pct)/pct projection is no longer trustworthy - it was
-        only ever a snapshot of the pace up to the last real update, and
-        without correction it balloons the longer a single hard-to-decode
-        segment takes. Showing "calculating..." is more honest than a
-        confidently-wrong, ever-growing number.
+        Called on every real update and on every 1-second tick, so the readout
+        keeps counting down between backend messages instead of only moving
+        when one arrives.
+
+        What changed here is where the number comes from. It used to be
+        elapsed * (100 - percent) / percent - a projection over the progress
+        bar, which is only valid if every percent costs the same wall clock.
+        It does not: measured on a 15-minute recording, 67s went by at a fixed
+        5% and 280s at a fixed 98%. Now it is measured work per measured
+        second (see gui/presenters/time_estimate.py), and the estimator
+        returns None whenever it genuinely does not know yet rather than
+        projecting from a pace that is not happening.
+
+        Three readouts, in order of how much is known:
+          - nothing decoded yet, and the bar has not moved either: elapsed
+            alone, with no claim about the future at all;
+          - something is happening but no rate exists yet - the model is
+            loading, the VAD pass is running, or a first diarization tail is
+            being waited out: "calculating";
+          - a real measurement: the number.
         """
-        percentage = self._last_percentage
-        since_last_change = (
-            elapsed
-            if self._last_percent_change_time is None
-            else time.time() - self._last_percent_change_time
-        )
+        remaining = self._estimator.remaining(time.monotonic())
 
-        if percentage <= 0:
-            self.time_label.setText(t("elapsed", elapsed=format_mmss(elapsed)))
-        elif since_last_change > self.STALL_SECONDS:
-            self.time_label.setText(
-                t(
-                    "elapsed_remaining",
-                    elapsed=format_mmss(elapsed),
-                    remaining=t("calculating"),
-                )
-            )
-        else:
-            # Simple linear projection from work done so far.
-            remaining = elapsed * (100 - percentage) / percentage
+        if remaining is not None:
             self.time_label.setText(
                 t(
                     "elapsed_remaining",
@@ -573,6 +630,29 @@ class TranscriptionStep(QFrame):
                     remaining=format_mmss(remaining),
                 )
             )
+            return
+
+        # No measurement yet. Before anything at all has happened, promising a
+        # calculation would be as much of an invention as a number; once the
+        # run is visibly under way, saying the estimate is still being worked
+        # out is the honest description of exactly what is true.
+        since_last_change = (
+            elapsed
+            if self._last_percent_change_time is None
+            else time.time() - self._last_percent_change_time
+        )
+        under_way = self._last_percentage > 0 or since_last_change > self.STALL_SECONDS
+        if not under_way:
+            self.time_label.setText(t("elapsed", elapsed=format_mmss(elapsed)))
+            return
+
+        self.time_label.setText(
+            t(
+                "elapsed_remaining",
+                elapsed=format_mmss(elapsed),
+                remaining=t("calculating"),
+            )
+        )
 
     def show_result(self, file_path: str) -> None:
         """Show completion result."""

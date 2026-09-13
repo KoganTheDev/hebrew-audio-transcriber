@@ -11,6 +11,7 @@ Anything a presenter needs from the Qt world - translation, hardware
 probing - arrives as an injected argument, so a test can hand it a stub.
 """
 
+from speech_to_text.gui.presenters.time_estimate import TimeEstimator
 from speech_to_text.gui.presenters.transcription import (
     DeviceRecommender,
     TranscriptionRequest,
@@ -20,6 +21,7 @@ from speech_to_text.gui.presenters.transcription import (
 
 __all__ = [
     "DeviceRecommender",
+    "TimeEstimator",
     "TranscriptionRequest",
     "build_file_summary",
     "build_transcription_request",

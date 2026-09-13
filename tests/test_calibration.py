@@ -7,9 +7,9 @@ silence WAV the benchmark measures against, the relative-cost table that
 turns one measured model into five predicted ones, and the subprocess entry
 point's two-outcome contract.
 
-CALIBRATION_CACHE_PATH is a repo-relative path, so every test that touches
-the cache repoints it into tmp_path first - otherwise the suite would write
-into whisper_models/ in the working directory.
+CALIBRATION_CACHE_PATH points into the real model cache, so every test that
+touches the cache repoints it into tmp_path first - otherwise the suite would
+overwrite the developer's own measured calibration.
 """
 
 import json

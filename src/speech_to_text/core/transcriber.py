@@ -3,6 +3,7 @@ Handles the actual transcription process.
 """
 
 import logging
+import time
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -14,6 +15,8 @@ from speech_to_text.core.progress_scale import (
     TRANSCRIBER_MODEL_LOADED_PERCENT,
     TRANSCRIBER_TRANSCRIBE_END_PERCENT,
     TRANSCRIBER_TRANSCRIBE_SPAN,
+    WORK_PHASE_PREPARE,
+    WORK_PHASE_STARTED,
 )
 from speech_to_text.core.segments import Segment, Word
 
@@ -38,11 +41,25 @@ class Transcriber:
         beam_size: int | None = None,
         cpu_threads: int | None = None,
         num_workers: int | None = None,
+        work_callback: Callable | None = None,
+        phase_callback: Callable | None = None,
     ):
         self.model_size = model_size
         self.device = device
         self.language = language
         self.progress_callback = progress_callback or self._default_callback
+        # The time estimate's two inputs, kept separate from progress_callback
+        # because they are measurements rather than a position on a bar (see
+        # core/progress_scale.py's work-stream section). Both default to a
+        # no-op, so every existing caller - the eval harness included - is
+        # unchanged by their existence.
+        #
+        # work_callback(audio_done, audio_total) is FILE-LOCAL: this module
+        # transcribes one thing and knows nothing about batches. core/worker.py
+        # rescales it to batch-wide, which is the same division of labour
+        # progress_callback already has.
+        self.work_callback = work_callback or self._default_work_callback
+        self.phase_callback = phase_callback or self._default_phase_callback
         # Any, not Optional[WhisperModel]: WhisperModel is itself None when
         # faster-whisper is not installed (see the import guard above), so
         # there is no static type here to be Optional of.
@@ -81,6 +98,16 @@ class Transcriber:
     @staticmethod
     def _default_callback(message: tuple[str, dict[str, Any]], progress: int) -> None:
         """Default progress callback."""
+        pass
+
+    @staticmethod
+    def _default_work_callback(audio_done: float, audio_total: float) -> None:
+        """Default work callback - see __init__ for why this exists."""
+        pass
+
+    @staticmethod
+    def _default_phase_callback(name: str, seconds: float | None) -> None:
+        """Default phase callback - see __init__ for why this exists."""
         pass
 
     def load_model(self) -> bool:
@@ -304,6 +331,16 @@ class Transcriber:
             # Transcribing phase occupies 15-90% of the overall progress bar.
             self.progress_callback(("w_starting", {}), TRANSCRIBER_MODEL_LOADED_PERCENT)
 
+            # The stretch between here and the first Segment is the longest
+            # stretch of the whole run with nothing to report: model.transcribe()
+            # runs Silero VAD over the entire file and decodes the first ~30s
+            # window before it yields anything at all. Measured on this machine:
+            # 67s on a 15-minute file, all of it at a fixed percentage. Timing it
+            # as its own phase is what lets the GUI say "this is a known step
+            # that costs this much" instead of showing a bar that has stopped.
+            prepare_start = time.perf_counter()
+            self.phase_callback(WORK_PHASE_PREPARE, WORK_PHASE_STARTED)
+
             segments, info = self.model.transcribe(
                 audio_file,
                 language=self.language,
@@ -320,6 +357,27 @@ class Transcriber:
             )
 
             logger.debug(f"Transcription info: {info}")
+
+            # info carries duration_after_vad - how much audio actually has to
+            # be decoded once silence is dropped. Logged rather than used as the
+            # work denominator: the GUI measures its rate against wall clock, so
+            # skipped silence already shows up as the position simply jumping,
+            # and swapping denominators mid-file would make the rate wobble for
+            # no gain. It is here because it is the one number that explains why
+            # a file ran faster than its length suggested.
+            # _as_float, not the raw attribute: faster-whisper's info type has
+            # changed shape across releases and the test suite feeds in
+            # MagicMocks, neither of which should be able to abort a
+            # transcription that is otherwise about to succeed - the same
+            # defensiveness _to_segment applies for the same reason.
+            speech_seconds = _as_float(
+                getattr(info, "duration_after_vad", None), total_duration_seconds
+            )
+            logger.debug(
+                f"Decoding {speech_seconds:.1f}s of speech "
+                f"out of {total_duration_seconds:.1f}s of audio"
+            )
+            self.phase_callback(WORK_PHASE_PREPARE, time.perf_counter() - prepare_start)
 
             collected: list[Segment] = []
             segment_count = 0
@@ -371,7 +429,27 @@ class Transcriber:
                 )
                 self.progress_callback(message, progress)
 
+                # The same fact the percentage above was derived from, sent on
+                # unrounded and in its own units. The bar needs a 0-100; the
+                # clock needs audio-seconds, and turning one back into the other
+                # is exactly the lossy step that made the old estimate wrong.
+                # Only when the duration is real - without it there is nothing
+                # to measure a rate against, and a made-up denominator would
+                # produce a confidently wrong ETA rather than none.
+                if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
+                    self.work_callback(
+                        min(float(segment_end), total_duration_seconds),
+                        total_duration_seconds,
+                    )
+
             logger.info(f"✓ Transcription complete: {len(collected)} segments")
+            # This file's audio is now fully accounted for, which the last
+            # segment's end does NOT say on its own: VAD trims trailing silence,
+            # so a recording that ends quietly stops yielding segments well
+            # short of its own length. Without this the batch's audio_done would
+            # never reach audio_total and the ETA would keep a phantom tail.
+            if total_duration_seconds > 0:
+                self.work_callback(total_duration_seconds, total_duration_seconds)
             self.progress_callback(("w_transcription_done", {}), TRANSCRIBER_TRANSCRIBE_END_PERCENT)
             return collected
 

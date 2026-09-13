@@ -297,10 +297,9 @@ class TestBackgroundWorkStopsBeforeExit:
 
     MainWindow._detach_calibration_thread already handles this, but only from
     closeEvent. This path never closes the window: exec_() returns and main()
-    falls straight through to sys.exit. A fresh CI runner has no
-    whisper_models/.calibration.json, so the thread always starts there, which
-    is why CI sees this and a developer machine with a warm cache almost never
-    does.
+    falls straight through to sys.exit. A fresh CI runner has no calibration
+    cache, so the thread always starts there, which is why CI sees this and a
+    developer machine with a warm cache almost never does.
     """
 
     def test_main_does_not_return_with_a_live_calibration_thread(self):
@@ -309,9 +308,16 @@ class TestBackgroundWorkStopsBeforeExit:
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"
         env["PYTHONPATH"] = str(repo_root / "src")
-        # An empty cwd, so there is no calibration cache to load and the thread
-        # actually starts - the CI runner's situation, reproduced deliberately.
+        # An empty model root, so there is no calibration cache to load and the
+        # thread actually starts - the CI runner's situation, reproduced
+        # deliberately. SPEECH_TO_TEXT_MODEL_DIR, not an empty cwd: the cache
+        # used to be a bare relative "whisper_models/.calibration.json", so
+        # simply running from elsewhere was enough to miss it. That was a bug
+        # (see TestCalibrationCachePath in test_config.py) and it is now fixed,
+        # which leaves the documented env override as the honest way to ask for
+        # a cold machine.
         with tempfile.TemporaryDirectory() as cold:
+            env["SPEECH_TO_TEXT_MODEL_DIR"] = cold
             result = subprocess.run(
                 [sys.executable, "-c", script],
                 cwd=cold,

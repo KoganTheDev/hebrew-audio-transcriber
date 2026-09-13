@@ -109,8 +109,26 @@ def _asset_bytes(name: str) -> bytes:
     return (_ASSETS / name).read_bytes()
 
 
+@cache
 def _data_uri(name: str) -> str:
-    """base64-encode one file under vistas/ as a data:image/webp;... URI."""
+    """base64-encode one file under vistas/ as a data:image/webp;... URI.
+
+    Cached like the three readers above, and it is the one that was missed.
+    _asset_bytes already caches the read, but the encode was repeated: a batch
+    re-renders the whole document after every file (see
+    worker._write_checkpoint), and each render encodes both the landscape and
+    the portrait crop of the pinned backdrop.
+
+    Consistency rather than speed, and worth saying so plainly: measured, that
+    is 804 KiB re-encoded in 2.5ms per render, about 27ms across a ten-file
+    batch that takes tens of minutes. What it actually removes is 1.4 MB of
+    string allocated per render for a result that cannot have changed, and the
+    oddity of three cached readers beside one uncached one.
+
+    Safe to cache on the name alone because the name IS the whole input: the
+    files are shipped package data, and the per-run choice is pinned once by
+    worker._new_batch precisely so it stays the same across those re-renders.
+    """
     encoded = base64.b64encode(_asset_bytes(f"vistas/{name}")).decode("ascii")
     return f"data:image/webp;base64,{encoded}"
 

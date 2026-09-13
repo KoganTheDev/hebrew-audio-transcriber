@@ -20,6 +20,14 @@ from speech_to_text.gui.i18n import document_strings, t
 
 logger = logging.getLogger(__name__)
 
+# What the `phase` signal carries in place of core/progress_scale.py's
+# WORK_PHASE_STARTED. The worker says None, meaning "begun, duration unknown";
+# pyqtSignal's type list has no optional float, so the None is turned into a
+# sentinel here, at the one boundary that forces it, rather than letting an
+# Optional leak through the whole GUI. Negative because every real value on
+# this channel is a measured duration and so cannot be below zero.
+PHASE_STARTED_SECONDS = -1.0
+
 
 class TranscriptionThread(QThread):
     """Worker thread for transcription.
@@ -37,6 +45,17 @@ class TranscriptionThread(QThread):
     progress = pyqtSignal(str, dict, int)
     finished = pyqtSignal(str)
     error = pyqtSignal(str, dict)
+    # The time estimate's two inputs: audio-seconds decoded against the batch
+    # total, and one named phase's measured wall clock. Separate signals from
+    # `progress` because they are measurements in their own units rather than a
+    # position on the bar - see core/progress_scale.py's work-stream section for
+    # why a percentage is the wrong thing to project time from.
+    #
+    # `phase` sends -1.0 for "this phase has begun, duration not known yet".
+    # The worker sends None there; pyqtSignal cannot carry an optional float, so
+    # the sentinel is applied at exactly this boundary and nowhere else.
+    work = pyqtSignal(float, float, float)
+    phase = pyqtSignal(str, float, float)
 
     def __init__(
         self,
@@ -166,7 +185,15 @@ class TranscriptionThread(QThread):
         "update the status text, but don't move the bar" (see
         TranscriptionStep.update_progress).
 
-        This thread only relays (key, params) pairs; it never renders text.
+        "work" and "phase" carry no text at all - they are the measurements
+        the time estimate is computed from (see core/progress_scale.py). They
+        get their own signals rather than riding on `progress` so that a
+        message which moves the bar and a message which moves the clock stay
+        independently routable; the bar's percentage and the clock's
+        audio-seconds answer different questions and are not derivable from
+        one another.
+
+        This thread only relays; it renders no text and does no arithmetic.
         """
         if kind == "progress":
             key, params, percent = payload
@@ -174,6 +201,12 @@ class TranscriptionThread(QThread):
         elif kind == "status":
             key, params = payload
             self.progress.emit(key, params, STATUS_ONLY_PERCENT)
+        elif kind == "work":
+            audio_done, audio_total, sent_at = payload
+            self.work.emit(audio_done, audio_total, sent_at)
+        elif kind == "phase":
+            name, seconds, sent_at = payload
+            self.phase.emit(name, PHASE_STARTED_SECONDS if seconds is None else seconds, sent_at)
 
     def stop(self):
         """Stop the thread and terminate the worker process if running."""

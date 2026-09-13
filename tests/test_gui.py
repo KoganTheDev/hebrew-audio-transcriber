@@ -1765,3 +1765,170 @@ class TestUnreadableFileIsFlagged:
         file_select_step._remove_file(str(bad))
 
         assert str(bad) not in file_select_step._unprobed
+
+
+class TestWorkStreamRelay:
+    """
+    TranscriptionThread relays the worker's measurements; it computes nothing.
+
+    The arithmetic belongs in the GUI, where the clock is (see
+    core/progress_scale.py's work-stream section). What is pinned here is that
+    the numbers survive the crossing intact, and that the one thing the queue
+    can express but a pyqtSignal cannot - "this phase has begun, duration
+    unknown" - is translated at exactly this boundary and nowhere else.
+    """
+
+    @staticmethod
+    def _thread():
+        from speech_to_text.gui.main_window import TranscriptionThread
+
+        return TranscriptionThread(
+            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+        )
+
+    def test_a_work_message_arrives_unchanged(self, qtbot):
+        thread = self._thread()
+
+        with qtbot.waitSignal(thread.work, timeout=1000) as caught:
+            thread._relay_progress_message("work", [42.5, 120.0, 1234.0])
+
+        assert caught.args == [42.5, 120.0, 1234.0]
+
+    def test_a_finished_phase_carries_its_measured_duration(self, qtbot):
+        thread = self._thread()
+
+        with qtbot.waitSignal(thread.phase, timeout=1000) as caught:
+            thread._relay_progress_message("phase", ["diarize", 163.04, 1234.0])
+
+        assert caught.args == ["diarize", 163.04, 1234.0]
+
+    def test_a_started_phase_becomes_the_sentinel(self, qtbot):
+        """
+        The worker says None. pyqtSignal's type list has no optional float, so
+        the None becomes PHASE_STARTED_SECONDS here rather than an Optional
+        leaking through every slot downstream. Negative, because every real
+        value on this channel is a measured duration.
+        """
+        from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
+
+        thread = self._thread()
+
+        with qtbot.waitSignal(thread.phase, timeout=1000) as caught:
+            thread._relay_progress_message("phase", ["diarize_wait", None, 1234.0])
+
+        assert caught.args == ["diarize_wait", PHASE_STARTED_SECONDS, 1234.0]
+        assert PHASE_STARTED_SECONDS < 0
+
+    def test_work_and_progress_stay_on_separate_signals(self, qtbot):
+        """
+        A message that moves the bar and a message that moves the clock are
+        independently routable on purpose: the bar's percentage and the
+        clock's audio-seconds answer different questions and neither can be
+        derived from the other.
+        """
+        thread = self._thread()
+        progress_seen: list = []
+        thread.progress.connect(lambda *args: progress_seen.append(args))
+
+        thread._relay_progress_message("work", [1.0, 2.0, 3.0])
+        thread._relay_progress_message("phase", ["render", 0.1, 3.0])
+
+        assert progress_seen == []
+
+
+class TestTimeReadout:
+    """
+    What step 3 actually prints, end to end, for the three states it can be in.
+
+    The estimator's arithmetic is covered without a QApplication in
+    test_presenters.py; what is pinned here is the wiring - that the work
+    stream reaches it, and that "not known yet" comes out as words rather than
+    as a number.
+    """
+
+    @pytest.fixture
+    def step(self, qtbot, monkeypatch):
+        from speech_to_text.gui.steps import transcription as step_module
+
+        clock = {"now": 5000.0}
+        monkeypatch.setattr(step_module.time, "monotonic", lambda: clock["now"])
+
+        s = step_module.TranscriptionStep()
+        qtbot.addWidget(s)
+        s.start()
+        # The 1s heartbeat would otherwise repaint the label underneath the
+        # assertions, from a real clock rather than the fake one.
+        s.stop()
+        s.clock = clock
+        return s
+
+    def test_at_the_very_start_it_promises_nothing_at_all(self, step):
+        """
+        Nothing has happened yet, so even offering to calculate would be more
+        than is known. start() puts elapsed alone on the label and it stays
+        that way until the run is visibly under way.
+        """
+        text = step.time_label.text()
+
+        assert "Elapsed" in text
+        assert "remaining" not in text.lower()
+
+    def test_while_the_model_loads_it_offers_no_number(self, step):
+        """
+        Model loading ranges from two seconds on a warm cache to tens of
+        minutes on a first download, and no amount of audio has been decoded
+        to measure against. Something is clearly happening, so the readout
+        says the estimate is still being worked out rather than inventing one.
+        """
+        step.update_progress("w_loading_model", {"model": "ivrit-turbo"}, 5)
+
+        assert "calculating" in step.time_label.text()
+
+    def test_once_enough_is_decoded_it_shows_a_real_number(self, step):
+        from speech_to_text.gui.steps import transcription as step_module
+
+        step.update_work(0.0, 600.0, step.clock["now"])
+        step.clock["now"] += 300.0
+        monotonic = step.clock["now"]
+        step.update_work(300.0, 600.0, monotonic)
+
+        text = step.time_label.text()
+        assert "remaining" in text.lower()
+        # 300s of wall clock bought 300s of audio, and 300s of audio is left.
+        assert step_module.format_mmss(300.0) in text
+
+    def test_a_first_tail_of_unknown_length_says_so(self, step):
+        """
+        The diarization join reports no progress while it runs and lasted 280s
+        on a real file. Until one has been measured, "calculating" is the true
+        description - and an estimate that instead read 0:00 for four and a
+        half minutes is what this replaces.
+        """
+        from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
+
+        step.update_progress("w_file_progress", {"i": 1, "n": 1, "name": "a.mp3"}, 12)
+        step.update_work(0.0, 600.0, step.clock["now"])
+        step.clock["now"] += 600.0
+        step.update_work(600.0, 600.0, step.clock["now"])
+        assert "calculating" not in step.time_label.text()
+
+        step.update_phase("diarize_wait", PHASE_STARTED_SECONDS, step.clock["now"])
+
+        assert "calculating" in step.time_label.text()
+
+    def test_a_new_run_forgets_the_previous_one(self, step):
+        """
+        start() is called again for a second batch after "New File". A rate
+        carried over from the previous run would describe different audio on a
+        differently loaded machine.
+        """
+        step.update_work(0.0, 600.0, step.clock["now"])
+        step.clock["now"] += 300.0
+        step.update_work(300.0, 600.0, step.clock["now"])
+        assert "remaining" in step.time_label.text().lower()
+
+        step.start()
+        step.stop()
+        step.update_progress("w_loading_model", {"model": "tiny"}, 5)
+
+        assert "calculating" in step.time_label.text()
