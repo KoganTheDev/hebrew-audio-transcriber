@@ -355,3 +355,80 @@ class TestCalibrationCachePath:
         from speech_to_text.core import calibration
 
         assert os.path.dirname(calibration.CALIBRATION_CACHE_PATH) == config.MODEL_DOWNLOAD_ROOT
+
+
+class TestLogPath:
+    """
+    The fourth thing that resolved against the working directory.
+
+    MODEL_DOWNLOAD_ROOT, DIARIZATION_MODELS_ROOT and the calibration cache
+    were each fixed for this; logging.FileHandler was still being handed a
+    bare "speech_to_text.log", so the console script scattered one wherever
+    it happened to be started and none of them was the file the user had
+    been told to look at.
+    """
+
+    def test_the_path_is_absolute(self):
+        from speech_to_text.config.paths import resolve_log_path
+
+        assert os.path.isabs(resolve_log_path())
+
+    def test_it_does_not_move_with_the_working_directory(self, tmp_path, monkeypatch):
+        from speech_to_text.config.paths import resolve_log_path
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_LOG_DIR", raising=False)
+        here = os.getcwd()
+        try:
+            first = resolve_log_path()
+            os.chdir(tmp_path)
+            second = resolve_log_path()
+        finally:
+            os.chdir(here)
+
+        assert first == second, "the log moved with the working directory"
+
+    def test_a_source_checkout_keeps_its_log_beside_pyproject(self, monkeypatch):
+        """
+        Where it has always appeared for anyone launching through run.bat or
+        run.ps1, both of which cd to the project first. Fixing the bug should
+        not also relocate a file people know how to find.
+        """
+        from speech_to_text.config.paths import resolve_log_path
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_LOG_DIR", raising=False)
+        directory = os.path.dirname(resolve_log_path())
+
+        assert os.path.isfile(os.path.join(directory, "pyproject.toml"))
+
+    def test_an_installed_copy_falls_back_to_a_per_user_directory(self, tmp_path, monkeypatch):
+        """No pyproject.toml above it, and site-packages is the wrong place."""
+        from speech_to_text.config import paths
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_LOG_DIR", raising=False)
+        monkeypatch.setattr(paths.os.path, "isfile", lambda _p: False)
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+
+        directory = paths._log_directory()
+
+        assert str(tmp_path) in directory
+        assert "speech-to-text" in directory
+
+    def test_an_explicit_override_wins_and_is_made_absolute(self, tmp_path, monkeypatch):
+        from speech_to_text.config.paths import LOG_FILENAME, resolve_log_path
+
+        monkeypatch.setenv("SPEECH_TO_TEXT_LOG_DIR", str(tmp_path / "elsewhere"))
+        resolved = resolve_log_path()
+
+        assert resolved == str(tmp_path / "elsewhere" / LOG_FILENAME)
+        assert os.path.isabs(resolved)
+
+    def test_the_log_is_bounded(self):
+        """
+        It was not: the file had reached 2 MB of DEBUG and nothing would ever
+        have trimmed it. The level stays at DEBUG on purpose - the per-phase
+        timings this app's tuning rests on are DEBUG - so the bytes are what
+        gets bounded, not the detail.
+        """
+        assert config.LOG_MAX_BYTES > 0
+        assert config.LOG_BACKUP_COUNT > 0

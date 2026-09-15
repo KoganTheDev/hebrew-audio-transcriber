@@ -3,6 +3,7 @@ Professional GUI application for audio transcription.
 """
 
 import logging
+import logging.handlers
 import os
 import sys
 
@@ -16,8 +17,14 @@ from speech_to_text.core.log_bidi import VisualOrderFormatter
 
 # Setup logging: fixed-width, column-aligned format with millisecond precision
 # and source location (file:line) - easy to scan and to grep by level/module.
+# %(process)d is not decoration. Transcription runs in a separate process
+# (see core/worker.py) which re-imports this module and configures the same
+# handlers, so GUI lines and worker lines land interleaved in one file.
+# Without the pid there was no way to tell which process wrote a line, and
+# the worker's are the interesting ones - the per-phase timings come from it.
 LOG_FORMAT = (
-    "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)-32s %(filename)s:%(lineno)d - %(message)s"
+    "%(asctime)s.%(msecs)03d %(process)-6d %(levelname)-8s %(name)-32s "
+    "%(filename)s:%(lineno)d - %(message)s"
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -53,7 +60,25 @@ except (AttributeError, ValueError):
 stdout_handler = logging.StreamHandler(sys.stdout)
 stdout_handler.setFormatter(VisualOrderFormatter(LOG_FORMAT, DATE_FORMAT))
 
-file_handler = logging.FileHandler("speech_to_text.log", encoding="utf-8")
+# Rotating, and at an absolute path resolved once - see
+# config.resolve_log_path for why a relative one was a bug and
+# config.LOG_MAX_BYTES for why the level stays at DEBUG.
+#
+# Both processes open this same file, which a RotatingFileHandler does not
+# coordinate. The failure that buys is bounded and known: on Windows the
+# rename a rotation performs cannot touch a file another process still holds
+# open, so the rotation raises, logging swallows it through handleError, and
+# one process keeps appending to an oversized file until the other lets go.
+# A dropped rotation, not a corrupted log. The alternatives - a file per pid,
+# or forwarding the child's records over the progress queue - each cost more
+# than that is worth, and the pid in LOG_FORMAT is what actually makes the
+# shared file readable.
+file_handler = logging.handlers.RotatingFileHandler(
+    config.resolve_log_path(),
+    maxBytes=config.LOG_MAX_BYTES,
+    backupCount=config.LOG_BACKUP_COUNT,
+    encoding="utf-8",
+)
 file_handler.setFormatter(logging.Formatter(LOG_FORMAT, DATE_FORMAT))
 
 logging.basicConfig(

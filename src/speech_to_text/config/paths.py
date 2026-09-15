@@ -126,6 +126,62 @@ def resolve_diarization_models_root() -> str:
 DIARIZATION_MODELS_ROOT = resolve_diarization_models_root()
 
 
+LOG_FILENAME = "speech_to_text.log"
+
+# How large the log may grow before it is rotated, and how many old ones are
+# kept. Unbounded before this: the file had reached 2 MB of DEBUG on a
+# development machine and nothing would ever have trimmed it. Generous
+# because the DEBUG lines are what make a slow run diagnosable at all - the
+# per-phase timings in core/worker.py are DEBUG, and lowering the level to
+# bound the size would have thrown away the measurements this app's tuning
+# rests on. Bound the bytes, not the detail.
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
+
+
+def _log_directory() -> str:
+    """The directory the log belongs in, source checkout or installed copy.
+
+    A checkout is identified by pyproject.toml sitting at the ancestor the
+    package was imported from - which is exactly where the log has always
+    appeared for anyone launching through run.bat or run.ps1, since both cd
+    to the project first. Keeping it there means this fix does not quietly
+    move a file people already know how to find.
+
+    An installed copy has no pyproject.toml above it, and writing into
+    site-packages would be wrong anyway, so it gets the per-user state
+    directory: %LOCALAPPDATA% on Windows, $XDG_STATE_HOME elsewhere. State
+    rather than data (which is where the model caches go) because a log is
+    reproducible noise, not something whose loss costs the user a download.
+    """
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for ancestor in (os.path.dirname(package_dir), os.path.dirname(os.path.dirname(package_dir))):
+        if os.path.isfile(os.path.join(ancestor, "pyproject.toml")):
+            return ancestor
+
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
+    else:
+        base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(base, "speech-to-text", "logs")
+
+
+def resolve_log_path() -> str:
+    """Absolute path of the application log.
+
+    It was a bare "speech_to_text.log" handed to FileHandler, so it resolved
+    against the working directory - the fourth instance of exactly the bug
+    MODEL_DOWNLOAD_ROOT, DIARIZATION_MODELS_ROOT and the calibration cache
+    were each fixed for. Launched through the console script from somewhere
+    else, every run scattered another log wherever the user happened to be,
+    and none of them was the one they were told to look at.
+    """
+    override = os.environ.get("SPEECH_TO_TEXT_LOG_DIR")
+    directory = os.path.abspath(override) if override else _log_directory()
+    os.makedirs(directory, exist_ok=True)
+    return os.path.join(directory, LOG_FILENAME)
+
+
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
 
 # HTML, not .txt: only a declared, not guessed, paragraph direction gets Hebrew
