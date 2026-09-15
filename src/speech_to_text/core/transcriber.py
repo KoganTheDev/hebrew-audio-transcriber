@@ -27,6 +27,51 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Exception class names that mean "the machine could not reach the model",
+# as opposed to "the model is wrong". Matched by NAME, walking the class
+# hierarchy, rather than by isinstance: these types come from requests and
+# huggingface_hub, which are transitive dependencies of faster-whisper. This
+# module already guards its faster_whisper import (see below) because it has
+# to import cleanly without it, so importing their error classes at module
+# level to run isinstance against would undo that.
+#
+# LocalEntryNotFoundError is the important one: it is what the hub raises
+# when it cannot reach the network AND has nothing cached, which is exactly
+# the first-run-without-internet case. Deliberately absent is
+# HfHubHTTPError - a 404 for a repo that does not exist reaches the network
+# perfectly well and is not this.
+_NETWORK_FAILURE_NAMES = frozenset(
+    {
+        "ConnectionError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "Timeout",
+        "LocalEntryNotFoundError",
+        "OfflineModeIsEnabled",
+        "NewConnectionError",
+        "MaxRetryError",
+    }
+)
+
+
+def _is_network_failure(error: BaseException) -> bool:
+    """Whether this exception means the network, not the model."""
+    seen: set[int] = set()
+    queue: list[BaseException | None] = [error]
+    while queue:
+        current = queue.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        for klass in type(current).__mro__:
+            if klass.__name__ in _NETWORK_FAILURE_NAMES:
+                return True
+        # A hub failure usually arrives wrapped, with the socket error that
+        # actually happened as its cause.
+        queue.append(current.__cause__)
+        queue.append(current.__context__)
+    return False
+
 
 class Transcriber:
     """Handles speech-to-text transcription."""
@@ -72,6 +117,10 @@ class Transcriber:
         # unset (ctranslate2 picks its own thread count). Explicit values
         # exist so tests/eval/compare_models.py can sweep them without a
         # parallel construction path.
+        # Set by load_model when it fails, so the caller can say WHY rather
+        # than showing one "failed to load" for a missing network and a
+        # broken model alike. None until a load has actually failed.
+        self.load_failed_on_network = False
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.cpu_threads = cpu_threads
@@ -173,7 +222,12 @@ class Transcriber:
                 except Exception as fallback_error:
                     e = fallback_error
 
-            logger.error(f"Failed to load {self.model_size} model: {e}", exc_info=True)
+            self.load_failed_on_network = _is_network_failure(e)
+            logger.error(
+                f"Failed to load {self.model_size} model: {e}"
+                f"{' (network unreachable)' if self.load_failed_on_network else ''}",
+                exc_info=True,
+            )
             self.progress_callback(("w_error_loading", {"detail": str(e)}), 0)
             return False
 
