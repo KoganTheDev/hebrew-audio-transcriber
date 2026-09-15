@@ -606,7 +606,20 @@ def run_transcription_process(
             )
 
             if not transcriber.load_model():
-                result_queue.put(("error", "err_load_model", {}))
+                # Two very different problems used to arrive as one message.
+                # A first run with no internet and a genuinely broken model
+                # both read "Failed to load transcription model", which tells
+                # a user nothing about whether to check their connection or
+                # pick a different model.
+                result_queue.put(
+                    (
+                        "error",
+                        "err_load_model_offline"
+                        if transcriber.load_failed_on_network
+                        else "err_load_model",
+                        {},
+                    )
+                )
                 return
 
             # Before the first checkpoint can add one of its own.

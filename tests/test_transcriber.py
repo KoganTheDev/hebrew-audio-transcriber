@@ -596,3 +596,71 @@ class TestWorkStream:
         transcriber.load_model()
 
         assert transcriber.transcribe("a.wav", total_duration_seconds=120.0) is not None
+
+
+class TestNetworkFailureIsDistinguishable:
+    """
+    "no internet on a first run" and "this model is broken" both used to
+    arrive as one message, which tells a user nothing about whether to check
+    their connection or pick a different model.
+    """
+
+    def test_a_hub_offline_error_is_read_as_a_network_failure(self):
+        from speech_to_text.core.transcriber import _is_network_failure
+
+        class LocalEntryNotFoundError(Exception):
+            pass
+
+        assert _is_network_failure(LocalEntryNotFoundError("nothing cached"))
+
+    def test_a_socket_failure_wrapped_by_the_hub_is_found_through_its_cause(self):
+        """Hub failures usually arrive wrapped, with the real error as cause."""
+        from speech_to_text.core.transcriber import _is_network_failure
+
+        class ConnectionError_(Exception):
+            pass
+
+        ConnectionError_.__name__ = "ConnectionError"
+        wrapper = RuntimeError("could not fetch")
+        wrapper.__cause__ = ConnectionError_("name resolution failed")
+
+        assert _is_network_failure(wrapper)
+
+    def test_a_missing_repo_is_not_a_network_failure(self):
+        """
+        A 404 reached the network perfectly well. Telling the user to check
+        their connection would send them looking in the wrong place.
+        """
+        from speech_to_text.core.transcriber import _is_network_failure
+
+        class HfHubHTTPError(Exception):
+            pass
+
+        class RepositoryNotFoundError(HfHubHTTPError):
+            pass
+
+        assert not _is_network_failure(RepositoryNotFoundError("404"))
+
+    def test_an_ordinary_failure_is_not_a_network_failure(self):
+        from speech_to_text.core.transcriber import _is_network_failure
+
+        assert not _is_network_failure(ValueError("unsupported compute type"))
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_load_model_records_which_kind_of_failure_it_was(self, mock_whisper_model_class):
+        class LocalEntryNotFoundError(Exception):
+            pass
+
+        mock_whisper_model_class.side_effect = LocalEntryNotFoundError("offline")
+        transcriber = Transcriber()
+
+        assert transcriber.load_model() is False
+        assert transcriber.load_failed_on_network is True
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_a_broken_model_is_not_blamed_on_the_network(self, mock_whisper_model_class):
+        mock_whisper_model_class.side_effect = ValueError("bad weights")
+        transcriber = Transcriber()
+
+        assert transcriber.load_model() is False
+        assert transcriber.load_failed_on_network is False

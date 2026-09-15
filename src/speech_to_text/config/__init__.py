@@ -44,11 +44,15 @@ from speech_to_text.config.models import DEFAULT_MODEL, MODELS, hf_repo_id
 from speech_to_text.config.paths import (
     CHECKPOINT_FILENAME,
     DIARIZATION_MODELS_ROOT,
+    LOG_BACKUP_COUNT,
+    LOG_FILENAME,
+    LOG_MAX_BYTES,
     MODEL_DOWNLOAD_ROOT,
     OUTPUT_FILENAME_TEMPLATE,
     SUPPORTED_FORMATS,
     TERMS_FILENAME,
     output_path_for,
+    resolve_log_path,
     resolve_model_download_root,
 )
 from speech_to_text.config.transcription import (
@@ -99,6 +103,9 @@ __all__ = [
     "GUI_WINDOW_WIDTH",
     "ICON_PATH",
     "INSTALL_TIMEOUT_SECONDS",
+    "LOG_BACKUP_COUNT",
+    "LOG_FILENAME",
+    "LOG_MAX_BYTES",
     "LANGUAGE",
     "MODELS",
     "MODEL_DOWNLOAD_ROOT",
@@ -115,4 +122,5 @@ __all__ = [
     "compute_type_for_device",
     "hf_repo_id",
     "output_path_for",
+    "resolve_log_path",
 ]

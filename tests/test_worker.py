@@ -1148,3 +1148,43 @@ class TestTheWorkerReportsWhichFileFailed:
 
         assert result_queue.items[-1][0] == "finished"
         assert (tmp_path / "out.html").exists()
+
+
+class TestTheLoadFailureSaysWhich:
+    """
+    The worker reported one key for both, discarding the distinction
+    Transcriber had already worked out.
+    """
+
+    def _run(self, tmp_path, monkeypatch, on_network):
+        import speech_to_text.core.transcriber as transcriber_module
+
+        class FailingTranscriber:
+            def __init__(self, *args, **kwargs):
+                self.progress_callback = kwargs.get("progress_callback", lambda *a: None)
+                self.load_failed_on_network = on_network
+
+            def load_model(self):
+                return False
+
+        monkeypatch.setattr(transcriber_module, "Transcriber", FailingTranscriber)
+
+        result_queue = FakeQueue()
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            TranscriptionOptions(identify_speakers=False, audio_durations=[10.0]),
+            FakeQueue(),
+            result_queue,
+        )
+        return result_queue.items[-1]
+
+    def test_a_network_failure_says_so(self, tmp_path, monkeypatch):
+        assert self._run(tmp_path, monkeypatch, True) == (
+            "error",
+            "err_load_model_offline",
+            {},
+        )
+
+    def test_any_other_failure_keeps_the_general_message(self, tmp_path, monkeypatch):
+        assert self._run(tmp_path, monkeypatch, False) == ("error", "err_load_model", {})

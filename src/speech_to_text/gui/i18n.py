@@ -632,6 +632,22 @@ STRINGS = {
     },
     # --- Errors surfaced in the GUI ---
     "err_load_model": {"en": "Failed to load transcription model", "he": "טעינת מודל התמלול נכשלה"},
+    # Split from err_load_model because the two ask for opposite things from
+    # the user. A model that will not load is a reason to pick another one; a
+    # model that cannot be REACHED is a reason to check the connection and
+    # try the same one again. The first run of a model is the only time this
+    # can happen - once the weights are cached, loading never touches the
+    # network at all, which is what the second sentence is telling the user.
+    "err_load_model_offline": {
+        "en": (
+            "Could not download the model - no connection to the internet. "
+            "Once a model has been downloaded once, it works offline."
+        ),
+        "he": (
+            "לא ניתן להוריד את המודל - אין חיבור לאינטרנט. "
+            "לאחר הורדה ראשונה, המודל עובד גם ללא חיבור."
+        ),
+    },
     "err_transcription_failed": {"en": "Transcription failed", "he": "התמלול נכשל"},
     "err_worker_exited": {
         "en": "Transcription worker process exited unexpectedly",
