@@ -372,6 +372,32 @@ def test_toolbar_row_sits_across_both_tracks():
     assert _property(tb_row, "grid-column") == "1 / -1"
 
 
+def test_search_cluster_is_one_bordered_field_that_never_wraps():
+    """
+    The icon, input, counter and prev/next arrows render as a single field.
+
+    Separately, the edgeless input plus a counter slot reserved even while
+    empty left ~70px of blank between the arrows and the placeholder, which
+    read as padding. The selector must stay .tb-group.tb-search: the
+    breakpoint rule sets flex-wrap: wrap on every .tb-group, and a plain
+    .tb-search would lose to it on source order and break the field across
+    two lines inside its own border.
+    """
+    source = _css_source()
+    field = _rule_block(source, ".tb-group.tb-search")
+    assert _property(field, "flex-wrap") == "nowrap"
+    assert _property(field, "border").startswith("var(--control-border-width) solid")
+
+    # Borderless arrows, placed after the divider, which follows the counter.
+    assert re.search(r"^\.tb-search \.icon-btn \{[^}]*border: 0;", source, re.M)
+    assert re.search(r"^\.tb-search \.icon-btn \{ order: 2; \}", source, re.M)
+    assert int(_property(_rule_block(source, ".tb-search::after"), "order")) < 2
+
+    assert re.search(r"\.count:empty \{ min-width: 0; \}", source), (
+        "an empty counter must not reserve width inside the field"
+    )
+
+
 def test_rail_is_fixed_and_main_is_the_flexible_track():
     """
     The two-track layout (main / rail, no third empty flank - see

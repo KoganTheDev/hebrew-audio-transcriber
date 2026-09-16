@@ -104,6 +104,45 @@
    changes nothing about how far the box can still be squeezed at 819px,
    only how much of the row it claims when there is space to spare. */
 .tb-search { flex: 0 1 20rem; min-width: 0; }
+
+/* The search cluster is drawn as ONE field: icon, input, counter and the
+   prev/next arrows inside a single bordered box, with the arrows docked at
+   its far end. Separately, the input had no visible edge and the counter
+   reserved 3.2rem even when empty, so ~70px of blank sat between the arrows
+   and the placeholder and read as padding rather than as part of the
+   search bar.
+
+   .tb-group.tb-search, not .tb-search: 90-responsive.css sets flex-wrap:
+   wrap on every .tb-group below the stacking breakpoint, and a bordered
+   field must never break across two lines inside its own border. */
+.tb-group.tb-search {
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding-inline: 0.7rem 0.25rem;
+  border: var(--control-border-width) solid var(--control-border);
+  border-radius: var(--control-radius);
+}
+.tb-search:focus-within { border-color: var(--accent); }
+/* Borderless inside the field - the field's border is their "this is a
+   control" cue now, so a second squircle per arrow would read as buttons
+   floating in a box. 36x40 keeps them well above the 24px WCAG 2.2 target
+   minimum while leaving the field its 44px outer height. */
+.tb-search .icon-btn { border: 0; min-width: 36px; min-height: 40px; }
+/* Divider between the counter and the arrows. A pseudo-element for the same
+   reason as .tb-actions::before: decoration, kept out of the DOM and the
+   accessibility tree. ::after is the LAST flex item by default, so order
+   moves the arrows after it. */
+.tb-search::after {
+  content: "";
+  order: 1;
+  flex: none;
+  inline-size: var(--control-border-width);
+  block-size: 1.4rem;
+  background: var(--control-border);
+  opacity: 0.55;
+}
+.tb-search .icon-btn { order: 2; }
 /* flex: none so the squeeze at narrow widths lands on .tb-search alone
    rather than being shared proportionally with the action buttons - see
    .tb-btn/.icon-btn's own flex: none below for why a button is the wrong
@@ -159,16 +198,15 @@
      the row to hold one line down to the stacking breakpoint instead of
      spilling onto a second line first. */
   min-width: 3rem;
-  min-height: 44px;
-  padding: 0 0.5rem;
+  min-height: 40px;
+  padding: 0 0.3rem;
   border: 0;
-  border-bottom: 1px solid transparent;
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 0.95rem;
 }
-#search:focus { border-bottom-color: var(--accent); outline: none; }
+#search:focus { outline: none; }
 #search:focus-visible { outline: none; }
 
 .count {
@@ -182,6 +220,8 @@
   min-width: 3.2rem;
   text-align: center;
 }
+/* No reserved slot until there is a count to show - see .tb-group.tb-search. */
+.count:empty { min-width: 0; }
 
 /* Squircle: every toolbar button and icon button carries a visible resting
    border in --control-border (see that token's definition for why it is
