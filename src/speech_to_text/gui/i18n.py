@@ -558,9 +558,6 @@ STRINGS = {
     "w_initializing": {"en": "Initializing...", "he": "מאתחל..."},
     "w_loading_model": {"en": "Loading {model} model...", "he": "טוען מודל {model}..."},
     # First run only: the weights are 1.6-3.1 GB and this can take tens of
-    # minutes. The MB figures are Latin quantities inside Hebrew text, so
-    # they are isolated the same way every other number in this table is.
-    # First run only: the weights are 1.6-3.1 GB and this can take tens of
     # minutes. The progress is a FILE count, not a percentage of bytes -
     # see Transcriber._fetch_weights for why that is the only signal
     # huggingface_hub exposes to a caller. {size} carries the total so the
