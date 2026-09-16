@@ -11,6 +11,7 @@ from speech_to_text import config
 from speech_to_text.core.formatting import format_mmss
 from speech_to_text.core.hebrew_text import isolate_rtl
 from speech_to_text.core.progress_scale import (
+    STATUS_ONLY_PERCENT,
     TRANSCRIBER_LOAD_START_PERCENT,
     TRANSCRIBER_MODEL_LOADED_PERCENT,
     TRANSCRIBER_TRANSCRIBE_END_PERCENT,
@@ -228,7 +229,7 @@ class Transcriber:
                 f"{' (network unreachable)' if self.load_failed_on_network else ''}",
                 exc_info=True,
             )
-            self.progress_callback(("w_error_loading", {"detail": str(e)}), 0)
+            self.progress_callback(("w_error_loading", {"detail": str(e)}), STATUS_ONLY_PERCENT)
             return False
 
     def _fetch_weights(self) -> str | None:
@@ -375,7 +376,7 @@ class Transcriber:
         """
         if not self.model:
             logger.error("Model not loaded - call load_model() first")
-            self.progress_callback(("w_model_not_loaded", {}), 0)
+            self.progress_callback(("w_model_not_loaded", {}), STATUS_ONLY_PERCENT)
             return None
 
         logger.info(f"Starting transcription: {audio_file}")
@@ -510,7 +511,9 @@ class Transcriber:
         except Exception as e:
             logger.error(f"Transcription failed: {e}", exc_info=True)
             logger.debug(f"Error details: {type(e).__name__}")
-            self.progress_callback(("w_error", {"detail": str(e)}), 0)
+            # Status-only, not 0: inside a batch the worker rescales this, and
+            # a 0 would drag the bar back to the start of the failed file.
+            self.progress_callback(("w_error", {"detail": str(e)}), STATUS_ONLY_PERCENT)
             return None
 
 

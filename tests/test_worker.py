@@ -72,6 +72,13 @@ class FakeTranscriber:
             # Exception, so this must propagate all the way out and the
             # function must never reach its final render/write.
             raise KeyboardInterrupt("simulated hard kill mid-transcription")
+        if isinstance(source, str) and source == "soft_fail.wav":
+            # The real Transcriber's own failure path: it catches, reports
+            # w_error without a percentage, and returns None.
+            self.progress_callback(("w_starting", {}), 15)
+            self.progress_callback(("w_transcribing_time", {}), 60)
+            self.progress_callback(("w_error", {"detail": "x"}), ps.STATUS_ONLY_PERCENT)
+            return None
         self.progress_callback(("w_starting", {}), 15)
         self.phase_callback("prepare", 0.5)
         for pct in (30, 50, 70, 90):
@@ -115,6 +122,13 @@ def _progress_percents(progress_queue, keys=None):
     return out
 
 
+def _assert_bar_never_moves_backwards(progress_queue):
+    """Every percentage the GUI would paint, init to complete, in order."""
+    painted = [p for p in _progress_percents(progress_queue) if p != ps.STATUS_ONLY_PERCENT]
+    steps_back = [(a, b) for a, b in zip(painted, painted[1:]) if b < a]
+    assert not steps_back, f"the bar moved backwards: {steps_back} in {painted}"
+
+
 class TestBatchProgressRescaling:
     def test_per_file_progress_is_monotonic_and_stays_within_the_batch_band(self, tmp_path):
         """
@@ -134,23 +148,55 @@ class TestBatchProgressRescaling:
             result_queue,
         )
 
-        # Only the per-file transcription messages - not init/load/format/save,
-        # which are intentionally outside the 12-98% per-file band.
         per_file_percents = _progress_percents(
             progress_queue, keys={"w_starting", "w_transcribing_time", "w_transcription_done"}
         )
         assert per_file_percents, "expected at least one per-file progress message"
-        assert all(12 <= p <= 98 for p in per_file_percents)
-        # The duration-weighted rescale itself is monotonic across the whole
-        # batch (this is what the formula in run_transcription_process
-        # guarantees). Model loading, which happens once before the batch
-        # loop starts and is not part of the rescaled band, is not included
-        # here - Transcriber's own hardcoded "model loaded" percentage
-        # (15%) already sits above this band's 12% floor even in a
-        # single-file run, which predates this refactor.
-        assert per_file_percents == sorted(per_file_percents)
+        assert all(
+            ps.BATCH_TRANSCRIBE_START <= p <= ps.BATCH_TRANSCRIBE_END for p in per_file_percents
+        )
+        _assert_bar_never_moves_backwards(progress_queue)
 
         assert result_queue.items[-1][0] == "finished"
+
+    def test_the_bar_does_not_step_back_after_the_model_loads(self, tmp_path, monkeypatch):
+        """
+        The reported bug, with the GUI's defaults: "model loaded" at 15%, then
+        the first file's "analyzing audio" at 13%. Speaker identification is on
+        because that is what emits the early analyzing checkpoint.
+        """
+        from speech_to_text.core import audio_source, diarization
+
+        mono = [np.zeros(1600, dtype=np.float32)]
+        monkeypatch.setattr(audio_source, "load", lambda path: (mono, False))
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+        monkeypatch.setattr(diarization, "diarize", lambda *args, **kwargs: [])
+
+        progress_queue = FakeQueue()
+        worker.run_transcription_process(
+            ["a.wav"],
+            str(tmp_path / "out.html"),
+            TranscriptionOptions(identify_speakers=True, audio_durations=[900.0]),
+            progress_queue,
+            FakeQueue(),
+        )
+        _assert_bar_never_moves_backwards(progress_queue)
+
+    def test_a_file_that_fails_mid_batch_does_not_drag_the_bar_back(self, tmp_path):
+        """
+        A transcription error used to report 0%, which the batch rescale turned
+        into the start of the failed file's slice - a visible jump back.
+        """
+        progress_queue = FakeQueue()
+        worker.run_transcription_process(
+            ["a.wav", "soft_fail.wav", "c.wav"],
+            str(tmp_path / "out.html"),
+            TranscriptionOptions(identify_speakers=False, audio_durations=[10.0, 10.0, 10.0]),
+            progress_queue,
+            FakeQueue(),
+        )
+        assert "w_error" in [item[1] for item in progress_queue.items if item[0] == "progress"]
+        _assert_bar_never_moves_backwards(progress_queue)
 
     def test_a_single_file_batch_still_reaches_completion(self, tmp_path):
         options = TranscriptionOptions(identify_speakers=False, audio_durations=[10.0])
@@ -922,6 +968,9 @@ class TestWorkStream:
             progress_queue,
             FakeQueue(),
         )
+
+        # The bar has the same double-pass problem on its own scale.
+        _assert_bar_never_moves_backwards(progress_queue)
 
         done = [d for d, _t in _work_items(progress_queue)]
         assert done, "the two-party path reported no position at all"

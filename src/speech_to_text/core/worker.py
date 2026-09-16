@@ -37,6 +37,7 @@ from speech_to_text.core.progress_scale import (
     FILE_LOCAL_SPEAKER_ID_END,
     FILE_LOCAL_TRANSCRIBE_SPAN,
     FILE_LOCAL_TRANSCRIBE_START,
+    STATUS_ONLY_PERCENT,
     TRANSCRIBER_MODEL_LOADED_PERCENT,
     TRANSCRIBER_TRANSCRIBE_SPAN,
     WORK_PHASE_ASSIGN,
@@ -344,6 +345,9 @@ def _batch_scale_emitter(
 
     def emit_local(message: _Message, local_percent: int) -> None:
         key, params = message
+        if local_percent == STATUS_ONLY_PERCENT:
+            progress_queue.put(("progress", key, params, STATUS_ONLY_PERCENT))
+            return
         if total_duration > 0:
             done = done_before + (local_percent / 100.0) * file_duration
             global_percent = BATCH_TRANSCRIBE_START + int(
@@ -654,9 +658,9 @@ def _file_local_emitter(emit_progress: _Emitter) -> _Emitter:
     """
 
     def from_transcriber_scale(message: _Message, percent: int) -> None:
-        # A stray 0 (Transcriber's own error sentinel) clamps to 0 rather
-        # than going negative - the file is about to be marked failed
-        # regardless of the exact number shown at that instant.
+        if percent == STATUS_ONLY_PERCENT:
+            emit_progress(message, percent)
+            return
         local = max(
             0,
             min(
@@ -904,6 +908,10 @@ def _transcribe_per_channel(
     per_channel = list(channels[:2])
     channel_count = max(len(per_channel), 1)
     file_work_callback = transcriber.work_callback
+    # The bar has the same problem on the transcriber's own 15-90 scale: each
+    # pass climbs the whole band, so channel 2 would restart at 15%. Each
+    # channel gets its own slice of that band instead.
+    file_progress_callback = transcriber.progress_callback
 
     for index, channel in enumerate(per_channel):
         offset = index * file_duration / channel_count
@@ -911,11 +919,23 @@ def _transcribe_per_channel(
         def channel_work(done: float, total: float, _offset: float = offset) -> None:
             file_work_callback(_offset + done / channel_count, total)
 
+        def channel_progress(message: _Message, percent: int, _index: int = index) -> None:
+            if percent != STATUS_ONLY_PERCENT:
+                fraction = (
+                    percent - TRANSCRIBER_MODEL_LOADED_PERCENT
+                ) / TRANSCRIBER_TRANSCRIBE_SPAN
+                percent = TRANSCRIBER_MODEL_LOADED_PERCENT + round(
+                    (_index + max(0.0, fraction)) / channel_count * TRANSCRIBER_TRANSCRIBE_SPAN
+                )
+            file_progress_callback(message, percent)
+
         transcriber.work_callback = channel_work
+        transcriber.progress_callback = channel_progress
         try:
             segments = transcriber.transcribe(channel, total_duration_seconds=file_duration)
         finally:
             transcriber.work_callback = file_work_callback
+            transcriber.progress_callback = file_progress_callback
         if not segments:
             continue
         for segment in segments:

@@ -52,7 +52,11 @@ FILE_LOCAL_SPEAKER_ID_SPAN = FILE_LOCAL_SPEAKER_ID_END - FILE_LOCAL_TRANSCRIBE_E
 FILE_LOCAL_CORRECTING_PERCENT = 98  # Hebrew term correction has started
 
 BATCH_INIT_PERCENT = 2
-BATCH_TRANSCRIBE_START = 12
+# Exactly where model loading ends, not below it. Model loading reports on
+# the transcriber's own scale and reaches the GUI unchanged, so a batch band
+# starting lower (it was 12) made the bar step back from 15% the moment the
+# first file began.
+BATCH_TRANSCRIBE_START = TRANSCRIBER_MODEL_LOADED_PERCENT
 BATCH_TRANSCRIBE_END = 98
 # Numerically == BATCH_TRANSCRIBE_END: rendering begins exactly where per-file
 # transcription left off. Not a coincidence worth a second constant.

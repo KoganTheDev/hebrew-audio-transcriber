@@ -59,6 +59,15 @@ def test_the_file_local_tail_leaves_room_for_speakers_and_correction():
     assert ps.FILE_LOCAL_ANALYZING_PERCENT < ps.FILE_LOCAL_TRANSCRIBE_START
 
 
+def test_the_batch_band_does_not_start_below_the_end_of_model_loading():
+    """
+    Model loading reaches the GUI on the transcriber's own scale, then the
+    batch band takes over. A band starting lower made the bar step back from
+    "model loaded" (15%) the moment the first file began.
+    """
+    assert ps.BATCH_TRANSCRIBE_START >= ps.TRANSCRIBER_MODEL_LOADED_PERCENT
+
+
 def test_rendering_begins_exactly_where_per_file_transcription_ends():
     """Deliberate, not a coincidence - see the constant's own comment."""
     assert ps.BATCH_FORMATTING_PERCENT == ps.BATCH_TRANSCRIBE_END
