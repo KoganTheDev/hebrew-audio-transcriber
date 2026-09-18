@@ -115,6 +115,21 @@ thing - they are one-line pointers at this project's dependency lists rather
 than copies of them. Those lists live in `pyproject.toml`, which is the only
 file actually read at install time; edit them there.
 
+### NVIDIA GPU acceleration (optional)
+
+On a machine with an NVIDIA GPU, this app detects it automatically and uses
+it for transcription - no setting to flip. faster-whisper's backend
+(ctranslate2) needs the cuBLAS/cuDNN runtime to actually use the GPU, but
+doesn't bundle it, so install the `gpu` extra as well:
+
+```bash
+pip install -e ".[gpu]"
+```
+
+Without this extra, an NVIDIA GPU is still detected and selected, but the
+first transcription fails to find `libcublas`/`libcudnn` and falls back to
+CPU. No CUDA toolkit install is required - just this pip extra.
+
 ## Usage
 
 ```bash

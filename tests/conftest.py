@@ -30,7 +30,7 @@ def mock_hardware():
     """Create a mocked hardware detector."""
     with patch("speech_to_text.hardware_detection.psutil") as mock_psutil:
         mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
+        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
         yield mock_psutil
 
 

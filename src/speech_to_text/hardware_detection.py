@@ -69,7 +69,11 @@ class HardwareDetector:
 
         if psutil:
             self.cpu_count = psutil.cpu_count(logical=False)
-            self.ram_gb = psutil.virtual_memory().total / (1024**3)
+            # Decimal GB (1000**3), not GiB (1024**3): RAM sticks, OS "About"
+            # panels, and the model RAM requirements in config/models.py are
+            # all specified in decimal GB, so a 64 GB machine should read
+            # "64.8 GB" here, not the binary "60.4 GiB" mislabeled as GB.
+            self.ram_gb = psutil.virtual_memory().total / (1000**3)
             logger.debug(f"Detected: {self.cpu_count} CPU cores, {self.ram_gb:.2f} GB RAM")
         else:
             self.cpu_count = 4  # Default
@@ -84,8 +88,13 @@ class HardwareDetector:
         # model processing per second of audio), used by
         # estimate_transcription_time instead of guessed constants. None
         # until a calibration benchmark has run - see set_calibration() and
-        # speech_to_text.core.calibration.
-        self.tiny_seconds_per_audio_second: float | None = load_cached_tiny_rtf(self.cpu_count)
+        # speech_to_text.core.calibration. Keyed by device as well as core
+        # count: a GPU and a CPU measurement of the same tiny model are not
+        # comparable, so a recommendation change (e.g. this machine gaining
+        # or losing a GPU) must not reuse the other device's cached number.
+        self.tiny_seconds_per_audio_second: float | None = load_cached_tiny_rtf(
+            self.cpu_count, self.get_device_recommendation()[0]
+        )
 
         logger.info(f"Hardware: OS={self.os_name}, GPU={'Yes' if self.has_gpu else 'No'}")
         if self.has_gpu:
@@ -202,9 +211,11 @@ class HardwareDetector:
         first one that (a) fits in available RAM (can_run_model) and, once
         we have a real audio duration and a calibrated per-machine speed
         (see core.calibration), (b) is estimated to finish within
-        RECOMMENDED_TIME_BUDGET_SECONDS. Device (GPU) is not considered -
-        transcription always runs on CPU in this app (see
-        TranscriptionThread).
+        RECOMMENDED_TIME_BUDGET_SECONDS. The timing estimate this leans on
+        (estimate_transcription_time) is itself calibrated against whichever
+        device get_device_recommendation() picked for this machine, so a GPU
+        machine's estimate - and therefore this recommendation - already
+        reflects GPU speed where available.
 
         Before a file is picked or before calibration finishes, real timing
         can't be evaluated yet, so the choice falls back to RAM fit only.
@@ -257,10 +268,11 @@ class HardwareDetector:
 
         Uses a real measured benchmark (self.tiny_seconds_per_audio_second,
         from speech_to_text.core.calibration) scaled to the requested model
-        size by relative parameter count, rather than guessed constants.
-        Transcription always runs on CPU in this app (see TranscriptionThread
-        - device is hardcoded to "cpu"), so this does not factor in GPU speed
-        even if a GPU is present.
+        size by relative parameter count, rather than guessed constants. That
+        benchmark is calibrated against get_device_recommendation()'s device
+        choice (see CalibrationThread/__init__ above), so this already
+        reflects GPU speed on a machine where transcription will actually
+        run on GPU.
 
         Args:
             audio_duration_seconds: Length of audio in seconds
@@ -273,7 +285,11 @@ class HardwareDetector:
         if self.tiny_seconds_per_audio_second is not None:
             relative_cost = RELATIVE_COMPUTE_COST.get(model_size, RELATIVE_COMPUTE_COST["medium"])
             seconds_per_audio_second = self.tiny_seconds_per_audio_second * relative_cost
-            device_desc = f"{self.cpu_count} CPU cores"
+            device_desc = (
+                f"GPU ({self.gpu_name})"
+                if self.get_device_recommendation()[0] == "cuda"
+                else f"{self.cpu_count} CPU cores"
+            )
         else:
             # Calibration hasn't finished yet (first run only - see
             # CalibrationThread). Use a conservative placeholder so the UI has

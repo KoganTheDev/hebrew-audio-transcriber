@@ -232,6 +232,54 @@ class TestTranscriber:
         assert "World" in text
 
     @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_transcribe_falls_back_to_cpu_when_cuda_runtime_is_missing(
+        self, mock_whisper_model_class
+    ):
+        """
+        ctranslate2 doesn't touch libcublas/libcudnn when a CUDA WhisperModel
+        is constructed - only on the first real encode, deep inside
+        model.transcribe(). So load_model() can report success on a machine
+        that is actually missing the CUDA runtime (e.g. the `gpu` extra was
+        never installed - see _preload_cuda_runtime_libraries), and this is
+        where that failure actually surfaces. Same "CPU still works"
+        reasoning as load_model()'s own cuda-to-cpu fallback.
+        """
+        cuda_model = MagicMock()
+        cuda_model.transcribe.side_effect = RuntimeError(
+            "Library libcublas.so.12 is not found or cannot be loaded"
+        )
+        cpu_model = MagicMock()
+        cpu_model.transcribe.return_value = ([fake_segment("Hello")], MagicMock())
+        mock_whisper_model_class.side_effect = [cuda_model, cpu_model]
+
+        transcriber = Transcriber(device="cuda")
+        transcriber.load_model()
+        result = transcriber.transcribe("dummy_audio.mp3")
+
+        assert result is not None
+        assert transcriber.device == "cpu"
+        assert mock_whisper_model_class.call_count == 2
+        assert mock_whisper_model_class.call_args_list[1].kwargs["device"] == "cpu"
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
+    def test_transcribe_reports_failure_when_cuda_and_the_cpu_fallback_both_fail(
+        self, mock_whisper_model_class
+    ):
+        """A machine with no working backend at all must still fail cleanly."""
+        cuda_model = MagicMock()
+        cuda_model.transcribe.side_effect = RuntimeError("simulated CUDA runtime failure")
+        mock_whisper_model_class.side_effect = [
+            cuda_model,
+            RuntimeError("cpu fallback reload also fails"),
+        ]
+
+        transcriber = Transcriber(device="cuda")
+        transcriber.load_model()
+        result = transcriber.transcribe("dummy_audio.mp3")
+
+        assert result is None
+
+    @patch("speech_to_text.core.transcriber.WhisperModel")
     def test_transcribe_uses_config_beam_size_by_default(self, mock_whisper_model_class):
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([fake_segment("Hello")], MagicMock())

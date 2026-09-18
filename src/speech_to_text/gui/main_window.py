@@ -155,7 +155,8 @@ class MainWindow(QMainWindow):
         # the user is still picking a file, so real numbers are usually
         # ready before they reach the model-select step.
         if self.hardware.tiny_seconds_per_audio_second is None:
-            self.calibration_thread = CalibrationThread(self.hardware.cpu_count)
+            calibration_device, _ = self.hardware.get_device_recommendation()
+            self.calibration_thread = CalibrationThread(self.hardware.cpu_count, calibration_device)
             self.calibration_thread.calibrated.connect(self._on_calibration_done)
             self.calibration_thread.failed.connect(self._on_calibration_failed)
             self.calibration_thread.start()

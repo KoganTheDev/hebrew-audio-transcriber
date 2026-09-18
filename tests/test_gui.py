@@ -1585,9 +1585,10 @@ class _FakeCalibrationThread(QThread):
     calibrated = pyqtSignal(float)
     failed = pyqtSignal(str)
 
-    def __init__(self, cpu_cores: int):
+    def __init__(self, cpu_cores: int, device: str):
         super().__init__()
         self.cpu_cores = cpu_cores
+        self.device = device
         self.start_called = False
         self.stop_called = False
 

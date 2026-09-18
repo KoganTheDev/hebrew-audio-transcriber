@@ -41,6 +41,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ctranslate2 (faster-whisper's backend) needs the cuBLAS/cuDNN runtime to
+# use an NVIDIA GPU, but doesn't bundle it - these wheels are how you get it
+# without installing the full CUDA toolkit. Without this extra, an NVIDIA
+# GPU is still detected and selected (see hardware_detection.py), but the
+# first GPU transcription fails with "Library libcublas.so.12 is not found
+# or cannot be loaded" and falls back to CPU. See
+# transcriber.py's _preload_cuda_runtime_libraries for how these get found
+# at runtime.
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",

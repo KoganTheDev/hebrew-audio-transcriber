@@ -29,11 +29,11 @@ def cache_path(tmp_path, monkeypatch):
 
 class TestCache:
     def test_no_cache_file_yet_reads_as_no_measurement(self, cache_path):
-        assert calibration.load_cached_tiny_rtf(4) is None
+        assert calibration.load_cached_tiny_rtf(4, "cpu") is None
 
-    def test_a_saved_measurement_reads_back_for_the_same_core_count(self, cache_path):
-        calibration.save_calibration(4, 0.25)
-        assert calibration.load_cached_tiny_rtf(4) == 0.25
+    def test_a_saved_measurement_reads_back_for_the_same_core_count_and_device(self, cache_path):
+        calibration.save_calibration(4, "cpu", 0.25)
+        assert calibration.load_cached_tiny_rtf(4, "cpu") == 0.25
 
     def test_a_measurement_taken_on_a_different_core_count_is_ignored(self, cache_path):
         """
@@ -41,8 +41,17 @@ class TestCache:
         machine's CPU. Reusing it across a different core count would
         silently predict times for hardware that was never measured.
         """
-        calibration.save_calibration(4, 0.25)
-        assert calibration.load_cached_tiny_rtf(8) is None
+        calibration.save_calibration(4, "cpu", 0.25)
+        assert calibration.load_cached_tiny_rtf(8, "cpu") is None
+
+    def test_a_measurement_taken_on_a_different_device_is_ignored(self, cache_path):
+        """
+        A GPU and a CPU measurement of the same tiny model are not
+        comparable speeds - reusing one for the other would make the UI's
+        ETA wildly wrong instead of just uncalibrated.
+        """
+        calibration.save_calibration(4, "cuda", 0.05)
+        assert calibration.load_cached_tiny_rtf(4, "cpu") is None
 
     def test_a_corrupt_cache_file_reads_as_no_measurement_rather_than_raising(self, cache_path):
         """
@@ -51,12 +60,12 @@ class TestCache:
         """
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text("{not json", encoding="utf-8")
-        assert calibration.load_cached_tiny_rtf(4) is None
+        assert calibration.load_cached_tiny_rtf(4, "cpu") is None
 
     def test_a_cache_missing_the_measurement_itself_is_not_trusted(self, cache_path):
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps({"cpu_cores": 4}), encoding="utf-8")
-        assert calibration.load_cached_tiny_rtf(4) is None
+        cache_path.write_text(json.dumps({"cpu_cores": 4, "device": "cpu"}), encoding="utf-8")
+        assert calibration.load_cached_tiny_rtf(4, "cpu") is None
 
     def test_an_unwritable_cache_location_is_logged_not_raised(self, monkeypatch):
         """
@@ -68,7 +77,7 @@ class TestCache:
             raise OSError("read-only filesystem")
 
         monkeypatch.setattr(calibration.os, "makedirs", refuse)
-        calibration.save_calibration(4, 0.25)
+        calibration.save_calibration(4, "cpu", 0.25)
 
 
 class TestSilenceWav:
@@ -131,13 +140,13 @@ class TestRelativeComputeCost:
 
 class TestSubprocessEntryPoint:
     def test_a_successful_benchmark_is_reported_as_ok_with_the_measurement(self, monkeypatch):
-        monkeypatch.setattr(calibration, "_run_calibration", lambda cores: 0.42)
+        monkeypatch.setattr(calibration, "_run_calibration", lambda cores, device: 0.42)
         result_queue = []
 
         class Queue:
             put = staticmethod(result_queue.append)
 
-        calibration.run_calibration_process(4, Queue())
+        calibration.run_calibration_process(4, "cpu", Queue())
         assert result_queue == [("ok", 0.42)]
 
     def test_a_failed_benchmark_is_reported_rather_than_crashing_the_child(self, monkeypatch):
@@ -146,7 +155,7 @@ class TestSubprocessEntryPoint:
         leave it waiting forever instead of falling back to an estimate.
         """
 
-        def boom(cores):
+        def boom(cores, device):
             raise RuntimeError("Failed to load calibration model")
 
         monkeypatch.setattr(calibration, "_run_calibration", boom)
@@ -155,5 +164,5 @@ class TestSubprocessEntryPoint:
         class Queue:
             put = staticmethod(result_queue.append)
 
-        calibration.run_calibration_process(4, Queue())
+        calibration.run_calibration_process(4, "cpu", Queue())
         assert result_queue == [("error", "Failed to load calibration model")]

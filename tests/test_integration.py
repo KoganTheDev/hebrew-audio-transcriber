@@ -23,7 +23,7 @@ class TestIntegration:
         """Test that config models are compatible with hardware detection."""
         with patch("speech_to_text.hardware_detection.psutil") as mock_psutil:
             mock_psutil.cpu_count.return_value = 4
-            mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
+            mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
 
             with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
                 detector = HardwareDetector()

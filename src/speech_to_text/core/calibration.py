@@ -83,27 +83,40 @@ RELATIVE_COMPUTE_COST = {
 }
 
 
-def load_cached_tiny_rtf(cpu_cores: int) -> float | None:
-    """Return the cached seconds-per-audio-second factor, if valid for this CPU core count."""
+def load_cached_tiny_rtf(cpu_cores: int, device: str) -> float | None:
+    """Return the cached seconds-per-audio-second factor, if valid for this
+    CPU core count and device.
+
+    device is part of the cache key (not just cpu_cores) because a GPU and a
+    CPU run of the same tiny model are not remotely comparable speeds - a
+    stale GPU-measured number silently reused for a CPU estimate (e.g. after
+    the GPU is removed, or the cache directory is copied to another machine)
+    would make the UI's ETA wildly wrong instead of just uncalibrated.
+    """
     if not os.path.exists(CALIBRATION_CACHE_PATH):
         return None
     try:
         with open(CALIBRATION_CACHE_PATH, encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cpu_cores") == cpu_cores and "tiny_seconds_per_audio_second" in data:
+        if (
+            data.get("cpu_cores") == cpu_cores
+            and data.get("device") == device
+            and "tiny_seconds_per_audio_second" in data
+        ):
             return float(data["tiny_seconds_per_audio_second"])
     except Exception as e:
         logger.debug(f"Could not read calibration cache: {e}")
     return None
 
 
-def save_calibration(cpu_cores: int, tiny_seconds_per_audio_second: float) -> None:
+def save_calibration(cpu_cores: int, device: str, tiny_seconds_per_audio_second: float) -> None:
     try:
         os.makedirs(os.path.dirname(CALIBRATION_CACHE_PATH) or ".", exist_ok=True)
         with open(CALIBRATION_CACHE_PATH, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "cpu_cores": cpu_cores,
+                    "device": device,
                     "tiny_seconds_per_audio_second": tiny_seconds_per_audio_second,
                 },
                 f,
@@ -130,7 +143,7 @@ def _generate_silence_wav(path: str, seconds: int, sample_rate: int) -> None:
         wf.writeframesraw(silence_frame * n_frames)
 
 
-def _run_calibration(cpu_cores: int) -> float:
+def _run_calibration(cpu_cores: int, device: str) -> float:
     """Run the actual timed benchmark. Must only be called inside the worker process."""
     from speech_to_text.core.transcriber import Transcriber
 
@@ -138,9 +151,13 @@ def _run_calibration(cpu_cores: int) -> float:
         wav_path = os.path.join(tmp_dir, "calibration.wav")
         _generate_silence_wav(wav_path, CALIBRATION_AUDIO_SECONDS, CALIBRATION_SAMPLE_RATE)
 
-        transcriber = Transcriber(model_size="tiny", device="cpu")
+        transcriber = Transcriber(model_size="tiny", device=device)
         if not transcriber.load_model():
             raise RuntimeError("Failed to load calibration model")
+        # load_model() may have fallen back to CPU (e.g. cuda requested but
+        # unavailable) - cache under the device that actually ran, not the
+        # one requested, so load_cached_tiny_rtf's lookup stays honest.
+        effective_device = transcriber.device
 
         start = time.time()
         # Call the model directly (not Transcriber.transcribe) so VAD stays
@@ -157,15 +174,17 @@ def _run_calibration(cpu_cores: int) -> float:
         elapsed = time.time() - start
 
     seconds_per_audio_second = max(elapsed / CALIBRATION_AUDIO_SECONDS, 0.01)
-    save_calibration(cpu_cores, seconds_per_audio_second)
+    save_calibration(cpu_cores, effective_device, seconds_per_audio_second)
     logger.info(
         f"Calibration complete: {seconds_per_audio_second:.4f}s processing "
-        f"per second of audio (tiny model, {cpu_cores} CPU cores)"
+        f"per second of audio (tiny model, {cpu_cores} CPU cores, device={effective_device})"
     )
     return seconds_per_audio_second
 
 
-def run_calibration_process(cpu_cores: int, result_queue: "multiprocessing.Queue") -> None:
+def run_calibration_process(
+    cpu_cores: int, device: str, result_queue: "multiprocessing.Queue"
+) -> None:
     """Entry point for the calibration subprocess.
 
     Puts ("ok", seconds_per_audio_second) or ("error", message) on
@@ -173,7 +192,7 @@ def run_calibration_process(cpu_cores: int, result_queue: "multiprocessing.Queue
     see module docstring.
     """
     try:
-        result_queue.put(("ok", _run_calibration(cpu_cores)))
+        result_queue.put(("ok", _run_calibration(cpu_cores, device)))
     except Exception as e:
         logger.error(f"Calibration worker process error: {e}", exc_info=True)
         result_queue.put(("error", str(e)))

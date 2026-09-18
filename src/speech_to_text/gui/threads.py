@@ -359,19 +359,20 @@ class CalibrationThread(QThread):
     calibrated = pyqtSignal(float)
     failed = pyqtSignal(str)
 
-    def __init__(self, cpu_cores: int):
+    def __init__(self, cpu_cores: int, device: str):
         super().__init__()
         self.cpu_cores = cpu_cores
+        self.device = device
         self._is_running = True
         self._process: multiprocessing.Process | None = None
 
     def run(self):
-        logger.info("Starting background hardware calibration...")
+        logger.info(f"Starting background hardware calibration on {self.device}...")
         try:
             result_queue: multiprocessing.Queue = multiprocessing.Queue()
             self._process = multiprocessing.Process(
                 target=run_calibration_process,
-                args=(self.cpu_cores, result_queue),
+                args=(self.cpu_cores, self.device, result_queue),
                 daemon=True,
             )
             self._process.start()

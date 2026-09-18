@@ -16,7 +16,9 @@ class TestHardwareDetector:
     def test_initialization_with_psutil(self, mock_psutil):
         """Test HardwareDetector initialization with psutil."""
         mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
+        # Decimal GB (1000**3), matching how ram_gb is computed - see
+        # hardware_detection.py's comment on why it isn't 1024**3 (GiB).
+        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
 
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
             detector = HardwareDetector()
@@ -44,7 +46,7 @@ class TestHardwareDetector:
     def test_can_run_model_sufficient_ram(self, mock_psutil):
         """Test model validation with sufficient RAM."""
         mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
+        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
 
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
             detector = HardwareDetector()
@@ -57,7 +59,7 @@ class TestHardwareDetector:
         """Test model validation with insufficient RAM."""
         mock_psutil.cpu_count.return_value = 4
         # Only 2GB RAM
-        mock_psutil.virtual_memory.return_value = MagicMock(total=2 * 1024**3)
+        mock_psutil.virtual_memory.return_value = MagicMock(total=2 * 1000**3)
 
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
             detector = HardwareDetector()
@@ -69,7 +71,7 @@ class TestHardwareDetector:
     def test_get_hardware_info(self, mock_psutil):
         """Test hardware info retrieval."""
         mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
+        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
 
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
             with patch.object(HardwareDetector, "_get_gpu_name", return_value=None):

@@ -2,9 +2,14 @@
 Handles the actual transcription process.
 """
 
+import ctypes
+import importlib.util
 import logging
+import os
+import platform
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 from speech_to_text import config
@@ -27,6 +32,55 @@ except ImportError:
     WhisperModel = None
 
 logger = logging.getLogger(__name__)
+
+_cuda_runtime_preloaded = False
+
+
+def _preload_cuda_runtime_libraries() -> None:
+    """Make the pip-installed cuBLAS/cuDNN runtime (the project's `gpu`
+    extra) discoverable to ctranslate2's CUDA backend before it's needed.
+
+    ctranslate2 doesn't touch libcublas/libcudnn when a CUDA WhisperModel
+    is constructed - only on the first GPU encode, deep inside
+    model.transcribe(). By then a LD_LIBRARY_PATH/PATH change is too
+    late: both glibc and Windows resolve the library search path once,
+    at process start, so mutating os.environ from within the running
+    process has no effect on it. Loading the actual .so/.dll files by
+    absolute path with global visibility, before any CUDA work happens,
+    is what makes them resolvable regardless of how the app was
+    launched (GUI double-click, run.bat, etc., none of which give a
+    chance to export an env var first).
+
+    Safe no-op if the `gpu` extra was never installed: ctranslate2 then
+    fails to find the libraries exactly as it did before this existed,
+    and load_model()'s existing cuda-to-cpu fallback takes over.
+    """
+    global _cuda_runtime_preloaded
+    if _cuda_runtime_preloaded:
+        return
+    _cuda_runtime_preloaded = True
+
+    is_windows = platform.system() == "Windows"
+    for package in ("nvidia.cublas", "nvidia.cudnn"):
+        spec = importlib.util.find_spec(package)
+        if spec is None or not spec.submodule_search_locations:
+            continue
+        package_dir = Path(next(iter(spec.submodule_search_locations)))
+        lib_dir = package_dir / ("bin" if is_windows else "lib")
+        if not lib_dir.is_dir():
+            continue
+        if is_windows:
+            try:
+                os.add_dll_directory(str(lib_dir))
+            except OSError:
+                logger.debug(f"Could not add DLL directory {lib_dir}", exc_info=True)
+        else:
+            for shared_object in sorted(lib_dir.glob("*.so.*")):
+                try:
+                    ctypes.CDLL(str(shared_object), mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    logger.debug(f"Could not preload {shared_object}", exc_info=True)
+
 
 # Exception class names that mean "the machine could not reach the model",
 # as opposed to "the model is wrong". Matched by NAME, walking the class
@@ -332,6 +386,9 @@ class Transcriber:
         machine, so production leaves them alone; the knobs exist so the
         eval harness can still sweep them.
         """
+        if device == "cuda":
+            _preload_cuda_runtime_libraries()
+
         compute_type = self.compute_type or config.compute_type_for_device(device)
         kwargs: dict[str, Any] = dict(
             device=device,
@@ -379,142 +436,173 @@ class Transcriber:
             self.progress_callback(("w_model_not_loaded", {}), STATUS_ONLY_PERCENT)
             return None
 
+        try:
+            return self._transcribe_once(audio_file, total_duration_seconds)
+        except Exception as e:
+            if self.device == "cuda":
+                # Unlike a driver/VRAM problem (which surfaces in
+                # load_model(), since WhisperModel() touches the GPU
+                # immediately), a missing CUDA runtime library (see
+                # _preload_cuda_runtime_libraries) only fails here, on the
+                # first real encode - load_model() reported success because
+                # ctranslate2 doesn't touch libcublas/libcudnn until now.
+                # Same reasoning as load_model()'s cuda-to-cpu retry: a
+                # machine that would work fine on CPU should not lose an
+                # entire file because its GPU path had a problem.
+                logger.warning(
+                    f"CUDA transcription failed ({e}); reloading model on "
+                    "CPU and retrying this file once.",
+                    exc_info=True,
+                )
+                try:
+                    self.device = "cpu"
+                    self._load_on(self.device)
+                    return self._transcribe_once(audio_file, total_duration_seconds)
+                except Exception as fallback_error:
+                    e = fallback_error
+
+            logger.error(f"Transcription failed: {e}", exc_info=True)
+            # Status-only, not 0: inside a batch the worker rescales this,
+            # and a 0 would drag the bar back to the start of the failed file.
+            self.progress_callback(("w_error", {"detail": str(e)}), STATUS_ONLY_PERCENT)
+            return None
+
+    def _transcribe_once(
+        self, audio_file: Any, total_duration_seconds: float = 0
+    ) -> list[Segment]:
+        """Do the actual transcription work, letting any failure propagate.
+
+        Split out of transcribe() so a CUDA runtime failure can be retried
+        once on CPU without duplicating this whole body - see transcribe().
+        Any failure propagates to the caller (transcribe()) uncaught.
+        """
         logger.info(f"Starting transcription: {audio_file}")
         logger.debug(f"Language: {self.language}, Device: {self.device}")
 
-        try:
-            # Transcribing phase occupies 15-90% of the overall progress bar.
-            self.progress_callback(("w_starting", {}), TRANSCRIBER_MODEL_LOADED_PERCENT)
+        # Transcribing phase occupies 15-90% of the overall progress bar.
+        self.progress_callback(("w_starting", {}), TRANSCRIBER_MODEL_LOADED_PERCENT)
 
-            # The stretch between here and the first Segment is the longest
-            # stretch of the whole run with nothing to report: model.transcribe()
-            # runs Silero VAD over the entire file and decodes the first ~30s
-            # window before it yields anything at all. Measured on this machine:
-            # 67s on a 15-minute file, all of it at a fixed percentage. Timing it
-            # as its own phase is what lets the GUI say "this is a known step
-            # that costs this much" instead of showing a bar that has stopped.
-            prepare_start = time.perf_counter()
-            self.phase_callback(WORK_PHASE_PREPARE, WORK_PHASE_STARTED)
+        # The stretch between here and the first Segment is the longest
+        # stretch of the whole run with nothing to report: model.transcribe()
+        # runs Silero VAD over the entire file and decodes the first ~30s
+        # window before it yields anything at all. Measured on this machine:
+        # 67s on a 15-minute file, all of it at a fixed percentage. Timing it
+        # as its own phase is what lets the GUI say "this is a known step
+        # that costs this much" instead of showing a bar that has stopped.
+        prepare_start = time.perf_counter()
+        self.phase_callback(WORK_PHASE_PREPARE, WORK_PHASE_STARTED)
 
-            segments, info = self.model.transcribe(
-                audio_file,
-                language=self.language,
-                beam_size=self.beam_size if self.beam_size is not None else config.BEAM_SIZE,
-                # Per-word timings and confidences. Needed twice over: word
-                # boundaries are what let diarization attribute a speaker
-                # change that happens mid-segment, and word probabilities are
-                # what let the Hebrew correction pass touch only the words the
-                # model was unsure about. Load-bearing - do not turn off to
-                # save time (see core/worker.py's module docstring).
-                word_timestamps=True,
-                vad_filter=config.VAD_FILTER,
-                vad_parameters=dict(min_silence_duration_ms=500),
-            )
+        segments, info = self.model.transcribe(
+            audio_file,
+            language=self.language,
+            beam_size=self.beam_size if self.beam_size is not None else config.BEAM_SIZE,
+            # Per-word timings and confidences. Needed twice over: word
+            # boundaries are what let diarization attribute a speaker
+            # change that happens mid-segment, and word probabilities are
+            # what let the Hebrew correction pass touch only the words the
+            # model was unsure about. Load-bearing - do not turn off to
+            # save time (see core/worker.py's module docstring).
+            word_timestamps=True,
+            vad_filter=config.VAD_FILTER,
+            vad_parameters=dict(min_silence_duration_ms=500),
+        )
 
-            logger.debug(f"Transcription info: {info}")
+        logger.debug(f"Transcription info: {info}")
 
-            # info carries duration_after_vad - how much audio actually has to
-            # be decoded once silence is dropped. Logged rather than used as the
-            # work denominator: the GUI measures its rate against wall clock, so
-            # skipped silence already shows up as the position simply jumping,
-            # and swapping denominators mid-file would make the rate wobble for
-            # no gain. It is here because it is the one number that explains why
-            # a file ran faster than its length suggested.
-            # _as_float, not the raw attribute: faster-whisper's info type has
-            # changed shape across releases and the test suite feeds in
-            # MagicMocks, neither of which should be able to abort a
-            # transcription that is otherwise about to succeed - the same
-            # defensiveness _to_segment applies for the same reason.
-            speech_seconds = _as_float(
-                getattr(info, "duration_after_vad", None), total_duration_seconds
-            )
-            logger.debug(
-                f"Decoding {speech_seconds:.1f}s of speech "
-                f"out of {total_duration_seconds:.1f}s of audio"
-            )
-            self.phase_callback(WORK_PHASE_PREPARE, time.perf_counter() - prepare_start)
+        # info carries duration_after_vad - how much audio actually has to
+        # be decoded once silence is dropped. Logged rather than used as the
+        # work denominator: the GUI measures its rate against wall clock, so
+        # skipped silence already shows up as the position simply jumping,
+        # and swapping denominators mid-file would make the rate wobble for
+        # no gain. It is here because it is the one number that explains why
+        # a file ran faster than its length suggested.
+        # _as_float, not the raw attribute: faster-whisper's info type has
+        # changed shape across releases and the test suite feeds in
+        # MagicMocks, neither of which should be able to abort a
+        # transcription that is otherwise about to succeed - the same
+        # defensiveness _to_segment applies for the same reason.
+        speech_seconds = _as_float(
+            getattr(info, "duration_after_vad", None), total_duration_seconds
+        )
+        logger.debug(
+            f"Decoding {speech_seconds:.1f}s of speech "
+            f"out of {total_duration_seconds:.1f}s of audio"
+        )
+        self.phase_callback(WORK_PHASE_PREPARE, time.perf_counter() - prepare_start)
 
-            collected: list[Segment] = []
-            segment_count = 0
+        collected: list[Segment] = []
+        segment_count = 0
 
-            # 'segments' is a lazy generator - faster-whisper decodes one
-            # segment at a time as it's iterated. Iterating it directly
-            # (instead of materializing it with list() first) is what makes
-            # per-segment progress updates reflect real, ongoing work rather
-            # than firing all at once after decoding has already finished.
-            for segment in segments:
-                segment_count += 1
-                try:
-                    segment_preview = segment.text[:50] if segment.text else "(empty)"
-                    # The preview is often Hebrew, and it's the last thing on
-                    # the line - LOG_FORMAT (main.py) puts %(message)s after
-                    # only LTR fields. Isolated so a trailing neutral
-                    # character (faster-whisper leaves a comma on truncated
-                    # segments) resolves against this LTR line instead of
-                    # reordering into the Hebrew. See hebrew_text.isolate_rtl.
-                    logger.debug(f"Segment {segment_count}: {isolate_rtl(segment_preview)}")
-                except Exception:
-                    pass  # Skip debug logging if segment attributes are problematic
+        # 'segments' is a lazy generator - faster-whisper decodes one
+        # segment at a time as it's iterated. Iterating it directly
+        # (instead of materializing it with list() first) is what makes
+        # per-segment progress updates reflect real, ongoing work rather
+        # than firing all at once after decoding has already finished.
+        for segment in segments:
+            segment_count += 1
+            try:
+                segment_preview = segment.text[:50] if segment.text else "(empty)"
+                # The preview is often Hebrew, and it's the last thing on
+                # the line - LOG_FORMAT (main.py) puts %(message)s after
+                # only LTR fields. Isolated so a trailing neutral
+                # character (faster-whisper leaves a comma on truncated
+                # segments) resolves against this LTR line instead of
+                # reordering into the Hebrew. See hebrew_text.isolate_rtl.
+                logger.debug(f"Segment {segment_count}: {isolate_rtl(segment_preview)}")
+            except Exception:
+                pass  # Skip debug logging if segment attributes are problematic
 
-                if segment.text:
-                    collected.append(_to_segment(segment))
+            if segment.text:
+                collected.append(_to_segment(segment))
 
-                segment_end = getattr(segment, "end", None)
-                message: tuple[str, dict[str, Any]]
-                if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
-                    # Real progress: how far into the audio this segment ends.
-                    fraction = min(segment_end / total_duration_seconds, 1.0)
-                    message = (
-                        "w_transcribing_time",
-                        {
-                            "position": format_mmss(segment_end),
-                            "total": format_mmss(total_duration_seconds),
-                        },
-                    )
-                else:
-                    # No reliable duration to measure against (shouldn't
-                    # normally happen - the GUI always probes the real
-                    # duration first) - fall back to a soft, ever-increasing
-                    # estimate that never claims to reach completion.
-                    fraction = min(0.03 * segment_count, 0.95)
-                    message = ("w_transcribing_seg", {"n": segment_count})
-
-                progress = TRANSCRIBER_MODEL_LOADED_PERCENT + int(
-                    fraction * TRANSCRIBER_TRANSCRIBE_SPAN
+            segment_end = getattr(segment, "end", None)
+            message: tuple[str, dict[str, Any]]
+            if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
+                # Real progress: how far into the audio this segment ends.
+                fraction = min(segment_end / total_duration_seconds, 1.0)
+                message = (
+                    "w_transcribing_time",
+                    {
+                        "position": format_mmss(segment_end),
+                        "total": format_mmss(total_duration_seconds),
+                    },
                 )
-                self.progress_callback(message, progress)
+            else:
+                # No reliable duration to measure against (shouldn't
+                # normally happen - the GUI always probes the real
+                # duration first) - fall back to a soft, ever-increasing
+                # estimate that never claims to reach completion.
+                fraction = min(0.03 * segment_count, 0.95)
+                message = ("w_transcribing_seg", {"n": segment_count})
 
-                # The same fact the percentage above was derived from, sent on
-                # unrounded and in its own units. The bar needs a 0-100; the
-                # clock needs audio-seconds, and turning one back into the other
-                # is exactly the lossy step that made the old estimate wrong.
-                # Only when the duration is real - without it there is nothing
-                # to measure a rate against, and a made-up denominator would
-                # produce a confidently wrong ETA rather than none.
-                if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
-                    self.work_callback(
-                        min(float(segment_end), total_duration_seconds),
-                        total_duration_seconds,
-                    )
+            progress = TRANSCRIBER_MODEL_LOADED_PERCENT + int(
+                fraction * TRANSCRIBER_TRANSCRIBE_SPAN
+            )
+            self.progress_callback(message, progress)
 
-            logger.info(f"✓ Transcription complete: {len(collected)} segments")
-            # This file's audio is now fully accounted for, which the last
-            # segment's end does NOT say on its own: VAD trims trailing silence,
-            # so a recording that ends quietly stops yielding segments well
-            # short of its own length. Without this the batch's audio_done would
-            # never reach audio_total and the ETA would keep a phantom tail.
-            if total_duration_seconds > 0:
-                self.work_callback(total_duration_seconds, total_duration_seconds)
-            self.progress_callback(("w_transcription_done", {}), TRANSCRIBER_TRANSCRIBE_END_PERCENT)
-            return collected
+            # The same fact the percentage above was derived from, sent on
+            # unrounded and in its own units. The bar needs a 0-100; the
+            # clock needs audio-seconds, and turning one back into the other
+            # is exactly the lossy step that made the old estimate wrong.
+            # Only when the duration is real - without it there is nothing
+            # to measure a rate against, and a made-up denominator would
+            # produce a confidently wrong ETA rather than none.
+            if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
+                self.work_callback(
+                    min(float(segment_end), total_duration_seconds),
+                    total_duration_seconds,
+                )
 
-        except Exception as e:
-            logger.error(f"Transcription failed: {e}", exc_info=True)
-            logger.debug(f"Error details: {type(e).__name__}")
-            # Status-only, not 0: inside a batch the worker rescales this, and
-            # a 0 would drag the bar back to the start of the failed file.
-            self.progress_callback(("w_error", {"detail": str(e)}), STATUS_ONLY_PERCENT)
-            return None
+        logger.info(f"✓ Transcription complete: {len(collected)} segments")
+        # This file's audio is now fully accounted for, which the last
+        # segment's end does NOT say on its own: VAD trims trailing silence,
+        # so a recording that ends quietly stops yielding segments well
+        # short of its own length. Without this the batch's audio_done would
+        # never reach audio_total and the ETA would keep a phantom tail.
+        if total_duration_seconds > 0:
+            self.work_callback(total_duration_seconds, total_duration_seconds)
+        self.progress_callback(("w_transcription_done", {}), TRANSCRIBER_TRANSCRIBE_END_PERCENT)
+        return collected
 
 
 def _to_segment(raw: Any) -> Segment:
