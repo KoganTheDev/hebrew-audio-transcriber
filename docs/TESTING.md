@@ -15,6 +15,22 @@ QT_QPA_PLATFORM=offscreen pytest    # required with no display (CI does this)
 The package is a src-layout; `pytest.ini` sets `pythonpath = src`, so no install
 is needed to run the suite.
 
+## CI checks
+
+Four checks run in CI (`.github/workflows/ci.yml`, on Windows - PyQt5, the
+PowerShell launcher and a path-resolution branch all target it), alongside pytest:
+
+    ruff check src tests tools                # lint, including a McCabe complexity ceiling of 10
+    ruff format --check src tests tools       # formatting
+    lint-imports                              # the two architecture contracts - see ARCHITECTURE.md §1
+    mypy -p speech_to_text.core -p speech_to_text.config -p speech_to_text.gui.presenters -p speech_to_text.hardware_detection
+
+That mypy invocation is deliberately scoped. Those packages are at zero errors
+under `disallow_untyped_defs` and CI fails if that changes. The whole-package
+run is reported but not gated, because `gui/` still carries errors that are
+PyQt5 shipping no type information rather than defects. See Coverage below
+for the branch coverage gate.
+
 ## Levels
 
 | Level | Where | What it proves |
@@ -44,6 +60,38 @@ reader would otherwise have to be told:
   with matching placeholders, and Latin quantities inside Hebrew strings are
   BiDi-isolated.
 
+## Front-end (jsdom)
+
+The transcript document's JavaScript - editing, autosave, speaker renaming,
+search, audio, export, help panel, guided tour - is covered by a jsdom
+behavioural suite at `tests/js/`, run with Node instead of pytest. Install
+once with `npm install` (needs Node.js; jsdom is the only dependency), then
+run it directly:
+
+    node --test "tests/js/*.test.mjs"
+
+`pytest` runs this suite too (`tests/test_js_behaviour.py`), so plain `pytest`
+still catches a JS regression - but it skips with an explicit reason, rather
+than failing, when `node` isn't on `PATH` or `node_modules/` hasn't been
+installed.
+
+A fragment does still pass `node --check` on its own, which is misleading:
+Node treats a `.js` file as CommonJS and wraps it in a function, so even the
+top-level `return` in `00-preamble.js` is legal there (as ESM it is an
+"Illegal return statement"). Syntax-checking one fragment therefore proves
+very little - a fragment references names other fragments define, so only the
+concatenation the app renders is meaningful (see ARCHITECTURE.md's
+cross-cutting section on why fragment order is load-bearing).
+`test_js_behaviour.py` checks that concatenation.
+
+Even with the jsdom suite, one gap remains: jsdom implements no real layout
+and no `matchMedia` (the harness stubs it to "no preference"), so responsive
+breakpoints, the tour spotlight's on-screen position, and
+prefers-contrast/prefers-reduced-motion/dark-mode media queries are still
+untested by either suite. That gap is a written checklist:
+[transcript-manual-checks.md](transcript-manual-checks.md). Work it before
+shipping a change to `core/assets/`.
+
 ## Deliberately out of scope
 
 - **`tests/eval/*` are developer scripts, not tests.** `compare_models.py`,
@@ -51,7 +99,18 @@ reader would otherwise have to be told:
   need real audio, real models and minutes to hours of wall clock. pytest does
   not collect them (no `test_*` functions). The thin `test_compare_models.py` /
   `test_diarization_metrics.py` / `test_hebrew_metrics.py` wrappers exist only to
-  test those harnesses' plumbing, with the model fully mocked.
+  test those harnesses' plumbing, with the model fully mocked. To compare models
+  on your own audio:
+
+      python -m tests.eval.compare_models path/to/audio.m4a --models medium ivrit-turbo
+
+  This writes both transcripts side by side for reading, plus speed and
+  confidence metrics. Without a reference transcript there is no accuracy
+  percentage to report: confidence figures correlate with quality but do not
+  measure it, and a confidently wrong model scores well. Hand-correct a few
+  minutes of transcript and pass it with `--reference` to get a real word
+  error rate, computed with Hebrew-appropriate normalization (nikud, final
+  letters, and the app's own timestamps and speaker labels are all discounted).
 - **No test downloads a model or touches the network.** Every heavy dependency
   is mocked. `test_js_behaviour.py` needs Node and skips - never fails - when
   `node_modules/` is absent.

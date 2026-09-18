@@ -36,33 +36,57 @@ scripts and backdrop photos are all inlined into the single HTML file.
 ## 2. Building blocks
 
 ```
-src/speech_to_text/
-  main.py              process entry: logging, dependency check, Qt import ORDER
-  config.py            model table, tuned constants, path resolution
-  hardware_detection.py CPU/RAM/GPU probe, model recommendation, time estimates
-  core/                everything that runs in the worker process. No Qt, ever.
-    worker.py            the batch pipeline: load model, per file decode ->
-                         transcribe -> diarize -> correct, checkpoint, render
-    transcriber.py       wraps faster-whisper; emits Segment objects
-    audio_source.py      PyAV decode; detects true-stereo two-party recordings
-    diarization.py       sherpa-onnx model lifecycle and engine dispatch
-    speaker_attribution.py  deciding which speaker each word belongs to
-    diarization_powerset.py opt-in second engine, decodes the model itself
-    segmentation.py      pure-numpy powerset decode maths
-    hebrew_correct.py    term-list correction of low-confidence Hebrew words
-    hebrew_text.py       Hebrew normalization and BiDi isolation
-    segments.py          Word / Segment / TranscriptDocument - shared vocabulary
-    formatting/          renders those into the self-contained HTML transcript
-    assets/css|js        the transcript's own front-end, concatenated in order
-  gui/                 PyQt5. Runs in the main process.
-    presenters/          decisions, with NO Qt import - see below
-    main_window.py       the 3-step wizard shell, navigation, thread wiring
-    steps/               file select, model select, transcription
-    widgets.py           DropZone, IconTextButton, and the make_label factory
-    theme.py             Catppuccin palette + QSS builders
-    i18n.py              English/Hebrew strings and RTL handling
-    threads.py           QThread wrappers that own the worker subprocess
+src/speech_to_text/             src-layout: the package is not importable from the repo root
+  main.py                       process entry: logging, dependency check, Qt import ORDER
+  hardware_detection.py         CPU/RAM/GPU probe, model recommendation, time estimates
+  config/                       grouped by what each constant is FOR, not where it was declared
+    app.py                        metadata, window geometry, dependency list
+    models.py                     the MODELS table and the default
+    paths.py                      model-download root, output filenames, supported formats
+    transcription.py              language, beam size, compute type, speed factors
+    diarization.py                tuned constants, each with the AMI measurement behind it
+  core/                         everything that runs in the worker process. No Qt, ever.
+    worker.py                     the batch pipeline: load model, per file decode ->
+                                  transcribe -> diarize -> correct, checkpoint, render
+    transcriber.py                wraps faster-whisper; emits Segment objects
+    calibration.py                one-time hardware benchmark (also runs out-of-process)
+    progress_scale.py             named boundaries for the progress bar's 3 coordinate systems
+    audio_source.py               PyAV decode; detects true-stereo two-party recordings
+    diarization.py                sherpa-onnx model lifecycle and engine dispatch
+    speaker_attribution.py        deciding which speaker each word belongs to
+    diarization_powerset.py       opt-in second engine, decodes the model itself
+    segmentation.py               pure-numpy powerset decode maths
+    hebrew_correct.py             term-list correction of low-confidence Hebrew words
+    hebrew_text.py                Hebrew normalization and BiDi isolation
+    log_bidi.py                   visual-order console logging for Hebrew log lines
+    power.py                      keeps the machine awake for the length of a run
+    dependencies.py               installs missing runtime dependencies on first launch
+    segments.py                   Word / Segment / TranscriptDocument - shared vocabulary
+    options.py                    settings for one run, passed to the worker process
+    formatting/                   renders those into the self-contained HTML transcript
+    assets/css|js                 the transcript's own front-end, concatenated in order
+  gui/                          PyQt5. Runs in the main process.
+    presenters/                   decisions, with NO Qt import - see below
+    main_window.py                the 3-step wizard shell, navigation, thread wiring
+    steps/                        file select, model select, transcription
+    widgets.py                    DropZone, IconTextButton, and the make_label factory
+    theme.py                      Catppuccin palette + QSS builders
+    checkbox_style.py             QProxyStyle that paints the checkbox indicator
+    focus.py                      keyboard-vs-pointer focus-ring gate
+    icons.py                      Tabler icon SVGs, rendered to QPixmap
+    stepper.py                    3-step wizard indicator shown above the stacked widget
+    audio_utils.py                real audio/video duration probing (via PyAV)
+    i18n.py                       English/Hebrew strings and RTL handling
+    threads.py                    QThread wrappers that own the worker subprocess
 ```
+
+Outside `src/`: `tests/` holds the pytest suite plus `tests/js/` (jsdom) and
+`tests/eval/` (dev-only harnesses - see [TESTING.md](TESTING.md)); `tools/`
+holds two maintenance scripts (`build_vistas.py` downscales the transcript's
+backdrop photos, `doc_density.py` measures prose-vs-code ratio per file); and
+`docs/` holds this file, `TESTING.md`, the architecture diagram's editable
+`.drawio` source and rendered `.jpg`, and `transcript-manual-checks.md` (the
+manual QA checklist for what neither test suite can cover - see TESTING.md).
 
 The dependency direction is one-way: `gui/` may import `core/`, never the
 reverse. `core/segments.py` is the shared vocabulary both sides agree on, and it

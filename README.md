@@ -8,77 +8,6 @@
 
 A desktop application that transcribes Hebrew audio and video into timestamped, speaker-labelled text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) with Hebrew-specialised models, behind a PyQt5 GUI. Everything runs locally: no audio ever leaves your machine, and no account is needed.
 
-## Overview
-
-Point it at one or more audio/video files (or drop a whole folder), and it walks you through a 3-step wizard: pick the file(s), pick a model, and transcribe.
-- **Hebrew-specialised models**: defaults to [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper rather than stock Whisper, which is trained overwhelmingly on English. The generic Whisper sizes remain available for mixed-language audio.
-- **Timestamped speaker turns**: each block of the transcript carries its position in the audio and, where speakers can be identified, who is talking.
-- **Batch transcription**: select several files, or drop a folder, and get back one combined document - each source file gets its own titled section, transcribed in a single model load instead of one run per file.
-- **Bilingual interface (English / עברית)**: starts in English; the עב/EN button in the header (or `Ctrl+Shift+L` from anywhere in the wizard) switches the whole UI to a fully mirrored right-to-left Hebrew layout, and the choice is remembered between runs.
-- **Real hardware-aware recommendations**: the suggested model is computed from your actual CPU/RAM and the total duration of everything you've selected.
-- **Output saving location:** The output is saved automatically next to the audio - beside the file itself for a single run, or beside the first file for a batch (see "Output format" below).
-
-### Output format
-
-The transcript is a single, self-contained HTML file - not a `.txt` file. That's a deliberate choice, not a cosmetic one: a plain-text file carries no direction metadata, so a Hebrew line's alignment is *guessed* by whatever program opens it (most text viewers and editors hardcode left-to-right), and there is no plain-text mechanism that reliably fixes this. HTML lets direction be *declared* (`dir="rtl"`) instead of guessed, which is the only approach that renders correctly everywhere. The file is fully offline - no external fonts, no CDN, nothing loaded over the network - consistent with the rest of the app.
-
-Each source file becomes its own titled section, and within a section each speaker turn is its own block: a header line with the timestamp and speaker, then the speech below it, one sentence per line for easy scanning. A sidebar lists every file and tracks which one you're currently scrolled into - it's also where speaker names, colours and roster live, one panel per file, rather than repeating that strip inside every section.
-
-```html
-<header class="file-bar" data-file-accent="0"><h1>meeting.m4a</h1><span class="file-position">1 / 1</span></header>
-<article class="turn" data-turn="0-0" data-start="0.00" data-end="4.00" data-speaker="0" data-palette="0">
-  <h2><button class="ts" dir="ltr" data-start="0.00" data-end="4.00">⁦0:00 - 0:04⁩</button>
-      <button class="spk" data-speaker="0" data-palette="0">דובר 1</button></h2>
-  <div class="body" contenteditable="true"><p>שלום, מה שלומך היום?</p></div>
-</article>
-```
-
-A timestamp is a *range*, not an instant: clicking it seeks to the start and plays exactly to the end, then stops - so it names the section you're about to hear, not just where it begins. Ranges are wrapped in Unicode directional isolates (`dir="ltr"` controls the browser's layout; the isolates keep plain-text copies ordered correctly too, "start - end" rather than reversed). The hyphen between the two times is a neutral character sitting between two LTR digit runs inside RTL text - without the isolate it can reorder the same way mirrored brackets used to. If you process the copied text with your own tools, strip `U+2066`, `U+2069` and `U+200F` before parsing.
-
-### Correcting the transcript
-
-The transcript is not just something to read - it is where the proofreading happens. Open it in a browser and:
-
-- **Edit any turn** by clicking into it and typing. No edit mode, no save button.
-- **Name, recolour and reassign speakers from the sidebar.** Type a real name once and every "דובר 1" in that recording becomes it. Names stay per file by default, since speaker 1 in one recording is rarely the same person as speaker 1 in another; one button copies them across when it really is the same meeting. If diarization missed someone or merged two people, "+ הוספת דובר" adds a speaker with its own colour from a verified eight-colour palette, and clicking any turn's speaker label opens a menu to move that turn to a different speaker.
-- **See what the model doubted.** Whisper records a confidence for every word, and the toolbar toggle shades the ones that fell below the same threshold the Hebrew term-correction pass uses. This is the difference between re-reading a whole transcript and looking at the twenty words that need it. Editing a turn clears its shading, because the confidence no longer describes what is now there.
-- **Listen exactly to a turn.** The transcript is written next to its audio, so clicking a timestamp seeks, plays, and pauses again at the turn's end - and the turn being spoken is highlighted while it plays. The player has its own seek bar and a "current / total" readout; dragging the seek bar past a turn's end plays on rather than snapping back, the same way pressing play/pause already overrides a turn's bounds. If the audio is moved away or is in a container the browser can't play, that recording's timestamps quietly become plain labels - the rest of the batch is unaffected.
-- **Search** across every file with `/`, stepping through matches with Enter. Matching ignores nikud and treats final letter forms as the same letter.
-- **Copy it out, and edit from either side.** Every section has an always-visible plain-text panel with checkboxes for timestamps and speaker names, plus a per-turn copy button. It is not read-only: each row is itself editable and tied to its card, so a fix typed into the plain-text panel updates the card above it, and vice versa - there is nothing to keep in sync by hand. Every copy - a turn or the whole panel - confirms itself with a brief toast.
-- **Keep your place in a batch.** Each file's name stays pinned below the toolbar as you scroll through it, in its own accent colour, and the sidebar's file list and speaker panel track the same thing, so it's hard to drift from one recording's turns into the next one's without noticing.
-- **Light or dark, following your system.** The document defaults to your OS colour scheme, with its own toggle to override that. The palette is based on Catppuccin (Latte for light, Mocha for dark) - the same basis as the AnuPpuccin Obsidian theme. A photographic backdrop shows through at full strength in the margins and faintly behind the reading panel itself; the panel's own translucency is tuned so body text still clears WCAG's 4.5:1 minimum against the darkest or lightest pixel any shipped photo could put behind it. A reader whose OS asks for maximum contrast gets the flat surface back with no photo at all.
-
-#### Where your edits actually live
-
-**This is worth understanding, because it is not what you would assume.** A page opened from a `file://` path cannot write back to its own file - browsers block that outright, and the API that would allow it is unavailable to documents loaded from disk. So:
-
-- Every keystroke saves **instantly to your browser's local storage**, keyed to that transcript. Close the tab, reopen the file, and your work is there. The status reads **"נשמר בדפדפן" / "Saved in browser"** to say exactly that.
-- The `.html` file on disk is **not** updated. To get a file containing your edits, press **"Save a copy"** (or `Ctrl+S`), which downloads a fresh, fully self-contained HTML with everything baked in. That copy is itself a working editor.
-
-The practical consequence: edits live in the browser you made them in. Emailing the original `.html` to someone, or opening it on another machine, will not carry them - export a copy first. Re-running transcription on the same audio also produces a new document with a new identity, so its predecessor's saved edits no longer apply to it.
-
-If a file in a batch fails to transcribe, its section says so and every other file's transcript is still produced - one bad recording doesn't cost you the rest of the batch. The output file itself is rewritten after every file finishes, not just once at the very end, so a crash, reboot or power loss partway through - say, at file 9 of 10 - still leaves the nine completed transcripts on disk, ready to open.
-
-### Speaker identification
-
-Enabled by default, with a speaker count you can set on the model screen. Telling it exactly how many people are in the recording matters: fixing the count is considerably more reliable than letting the app infer it.
-
-Two paths, chosen automatically:
-
-- **One speaker per channel** (some phone and VoIP call recorders): each channel is transcribed separately, so attribution is exact. Detection is strict, since most stereo audio is really a duplicated mono mix. This roughly doubles transcription time.
-- **Single microphone**: neural diarization via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), running offline with no account required. Model weights (~36 MB) download once on first use. Adds roughly a third of the audio's duration to processing time.
-
-If speaker identification fails for any reason, the transcript is still saved - just without labels.
-
-### Correcting names and jargon
-
-Words the model reliably mangles - people, places, organisations, professional vocabulary - can be listed in a `hebrew_terms.txt` file next to where you run the app. Copy [`hebrew_terms.example.txt`](hebrew_terms.example.txt) to get started. Without that file, nothing happens.
-
-Only words the model itself flagged as uncertain are considered, and only your listed terms are candidates. Matching is aware of how Hebrew is actually misheard (א/ע, כ/ק, ט/ת) and of prefixes, so listing `ירושלים` also covers `בירושלים`. Every substitution is written to `speech_to_text.log` so you can check it.
-
-This is not a spell checker, and adding ordinary vocabulary makes it worse rather than better - see the comments in the example file for why.
-
-
 ## Screenshots
 
 |              | File Selection                                            | Model Picking                                           |
@@ -89,6 +18,17 @@ This is not a spell checker, and adding ordinary vocabulary makes it worse rathe
 ## Flow Chart
 
 ![Architecture diagram](docs/architecture.jpg)
+
+## Features
+
+Point it at one or more audio/video files (or drop a whole folder), and it walks you through a 3-step wizard: pick the file(s), pick a model, and transcribe.
+
+- **Hebrew-specialised models** - defaults to [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper, not stock Whisper (trained overwhelmingly on English); generic Whisper sizes remain available for mixed-language audio.
+- **Timestamped, speaker-labelled turns** - each block shows its position in the audio and, where identifiable, who's speaking.
+- **Batch transcription** - select several files or drop a folder, and get back one combined document from a single model load.
+- **Bilingual interface (English / עברית)** - a full, mirrored right-to-left Hebrew layout, one click or `Ctrl+Shift+L` away.
+- **Hardware-aware model recommendations** - based on your actual CPU/RAM/GPU and the total duration of everything selected.
+- **Saves automatically** next to the source file(s) - see [Working with the transcript](#working-with-the-transcript).
 
 ## Installation
 
@@ -104,31 +44,19 @@ python -m venv .venv
 pip install -e .
 ```
 
-For development (tests, linting):
-
-```bash
-pip install -e ".[dev]"
-```
-
-`requirements.txt` and `requirements-dev.txt` still work and do the same
-thing - they are one-line pointers at this project's dependency lists rather
-than copies of them. Those lists live in `pyproject.toml`, which is the only
-file actually read at install time; edit them there.
-
 ### NVIDIA GPU acceleration (optional)
 
-On a machine with an NVIDIA GPU, this app detects it automatically and uses
-it for transcription - no setting to flip. faster-whisper's backend
-(ctranslate2) needs the cuBLAS/cuDNN runtime to actually use the GPU, but
-doesn't bundle it, so install the `gpu` extra as well:
+This app detects an NVIDIA GPU automatically and uses it for transcription -
+no setting to flip. It also needs the cuBLAS/cuDNN runtime, which
+faster-whisper's backend doesn't bundle on its own:
 
 ```bash
 pip install -e ".[gpu]"
 ```
 
-Without this extra, an NVIDIA GPU is still detected and selected, but the
-first transcription fails to find `libcublas`/`libcudnn` and falls back to
-CPU. No CUDA toolkit install is required - just this pip extra.
+Without it, the GPU is still detected and selected, but the first
+transcription falls back to CPU when it can't find `libcublas`/`libcudnn`.
+No CUDA toolkit needed - just this pip extra.
 
 ## Usage
 
@@ -136,19 +64,13 @@ CPU. No CUDA toolkit install is required - just this pip extra.
 python -m speech_to_text.main
 ```
 
-That needs the package installed (`pip install -e .` above), because it lives under `src/` and is
-deliberately not importable from the repo root - a src-layout, so a broken packaging config fails
-immediately rather than at the point someone installs the wheel. If you would rather not install,
-`run.ps1` and `run.bat` point `PYTHONPATH` at `src/` for you, which is what makes them a
-double-click affair with no install step.
-
-
-The window is resizable, and a step indicator across the top of the wizard always shows which of the three steps you're on.
+Needs the package installed (see Installation above) - or launch `run.ps1` /
+`run.bat` instead, which run it straight from `src/` with no install step.
 
 **Workflow:**
-1. **Select Audio File(s)**: drag one or more files into the drop zone (or click to browse, or `Ctrl+O`, or drop a whole folder). Your CPU/RAM/GPU are shown alongside the total duration of everything selected; each file can be removed individually before continuing. Anything dropped in a format the app doesn't support is rejected rather than silently accepted and left to fail later - the drop zone reports how many files were skipped.
-2. **Choose Model**: pick from the models below, and set whether to identify speakers. Each card shows the model's RAM requirement and, for anything not already sitting in your local model cache, its first-use download size - so the download warning only appears when a download will actually happen. The app pre-selects the highest-accuracy model that will still finish within a reasonable time on your hardware, based on the total duration of the batch; while the one-time hardware benchmark behind that estimate is still running, the screen says so, and says so if the benchmark failed instead. `Enter` moves on and `Escape` goes back to file selection.
-3. **Transcribe**: watch live progress - including, for a batch, a "3 / 10" readout and a segment per file showing which one is currently running. Progress and status messages follow the selected UI language, even if you switch mid-run. Cancelling takes two presses: the first arms the Cancel button and shows an inline confirmation that times out on its own, and a second press (or `Escape`) actually cancels and returns you to model selection. On completion, the combined transcript is saved next to the source file(s), with an **Open transcript** button that launches it in your browser and a second button that opens its containing folder.
+1. **Select file(s)** - drag in audio/video files or a whole folder; your CPU/RAM/GPU and the total duration selected are shown alongside.
+2. **Choose a model** - pick from the table below. The app pre-selects the highest-accuracy model that will still finish in reasonable time on your hardware.
+3. **Transcribe** - watch live progress, then open the finished transcript straight from the app.
 
 ### Models
 
@@ -164,147 +86,41 @@ The window is resizable, and a step indicator across the top of the wizard alway
 
 The two Ivrit models are [ivrit.ai](https://www.ivrit.ai/en/2025/02/13/training-whisper/) fine-tunes of Whisper trained on hundreds of hours of transcribed Hebrew. For Hebrew audio they make considerably fewer mistakes than any of the generic sizes above them, and Ivrit Turbo's reduced decoder makes it faster than Medium despite being a larger model. The generic sizes are still the better choice for mixed-language or non-Hebrew recordings.
 
-Actual processing time isn't fixed: it's estimated from a one-time benchmark run on your own CPU the first time the app launches, then scaled by model size, the file's real duration, and whether speaker identification is enabled.
+Actual processing time isn't fixed: it's estimated from a one-time benchmark run on your own hardware the first time the app launches, then scaled by model size, the file's real duration, and whether speaker identification is enabled.
 
-## Project Structure
+## Working with the transcript
 
-```
-src/speech_to_text/             # src-layout: the package is not importable from the repo root
-├── main.py                     # Entry point: logging setup, dependency checks, launches the GUI
-├── hardware_detection.py       # CPU/RAM/GPU probing, model recommendation, time estimation
-├── config/                     # Grouped by what each constant is FOR, not where it was declared
-│   ├── app.py                  # Metadata, window geometry, dependency list
-│   ├── models.py               # The MODELS table and the default
-│   ├── paths.py                # Model-download root, output filenames, supported formats
-│   ├── transcription.py        # Language, beam size, compute type, speed factors
-│   └── diarization.py          # Tuned constants, each with the AMI measurement behind it
-├── core/                       # Runs in the worker process. Never imports PyQt5 - see below
-│   ├── transcriber.py          # Wraps faster_whisper.WhisperModel
-│   ├── segments.py             # Structured transcript: timings, per-word confidence, speaker
-│   ├── progress_scale.py       # Named boundaries for the progress bar's 3 coordinate systems
-│   ├── formatting/             # Turn merging & self-contained RTL HTML rendering (timecode/turns/assets/chrome/document)
-│   ├── assets/                 # css/ and js/ fragment directories, numbered and concatenated at render time
-│   ├── options.py              # Settings for one run, passed to the worker process
-│   ├── audio_source.py         # PyAV decoding and one-speaker-per-channel detection
-│   ├── diarization.py          # sherpa-onnx model lifecycle and engine dispatch
-│   ├── speaker_attribution.py  # Deciding which speaker each word belongs to
-│   ├── diarization_powerset.py # Diarization on our own powerset decode (the "powerset" engine)
-│   ├── segmentation.py         # Powerset decoding of the pyannote segmentation-3.0 ONNX model
-│   ├── hebrew_correct.py       # Confidence-gated correction against a user term list
-│   ├── hebrew_text.py          # Shared Hebrew normalization (nikud, final forms, clitics)
-│   ├── log_bidi.py             # Visual-order console logging for Hebrew log lines
-│   ├── power.py                # Keeps the machine awake for the length of a transcription run
-│   ├── worker.py               # Runs transcription in a separate OS process
-│   ├── calibration.py          # One-time hardware benchmark (also runs out-of-process)
-│   └── dependencies.py         # Installs missing runtime dependencies on first launch
-└── gui/                        # PyQt5, main process
-    ├── presenters/             # The decisions a view makes, with NO Qt import - testable without a QApplication
-    ├── main_window.py          # Main window, wizard navigation, transcription lifecycle
-    ├── i18n.py                 # English/Hebrew string table, language state, persistence
-    ├── widgets.py              # DropZone, IconTextButton, and the make_label factory
-    ├── threads.py              # QThread bridge between the GUI and the background process
-    ├── steps/                  # One module per wizard step (file select / model select / transcribe)
-    ├── stepper.py              # 3-step wizard indicator shown above the stacked widget
-    ├── theme.py                # Colors, fonts, QSS stylesheet builders
-    ├── checkbox_style.py       # QProxyStyle that paints the checkbox indicator (replaces a QSS raster tick)
-    ├── focus.py                # Keyboard-vs-pointer focus-ring gate
-    ├── icons.py                # Tabler icon SVGs, rendered to QPixmap
-    └── audio_utils.py          # Real audio/video duration probing (via PyAV)
+The output of a run is a single, self-contained HTML file - not a `.txt` -
+so a Hebrew line's right-to-left direction can be *declared* rather than
+guessed by whatever program opens it. Open it in any browser to read it, and
+edit it right there: click into any turn to fix the text, rename and
+recolour speakers from the sidebar, or search across every file with `/`.
 
-tests/                          # pytest suite, plus tests/js/ (jsdom) and tests/eval/ (dev harnesses)
-tools/
-├── build_vistas.py             # Downscales the backdrop photos shipped with the transcript
-└── doc_density.py              # Measures how much of a file is prose rather than code
-docs/
-├── ARCHITECTURE.md             # Constraints, building blocks, the runtime flow, cross-cutting concerns
-├── TESTING.md                  # Test strategy: levels, what the contract tests encode, coverage policy
-├── architecture.drawio         # Editable source for the architecture diagram
-├── architecture.jpg            # Rendered diagram (embedded above)
-└── transcript-manual-checks.md # Manual QA checklist for the generated transcript page
-```
+One thing worth knowing before you start editing: **edits save instantly to
+your browser's local storage, not back to the file on disk.** Press
+**"Save a copy"** (or `Ctrl+S`) to download a fresh HTML file with your edits
+baked in - that's the one to keep or send to someone else.
 
-**Two structural rules are enforced rather than documented.** `core/` may never import
-PyQt5 or the GUI - on Windows, PyQt5 and faster-whisper/ctranslate2 bundle conflicting
-copies of `MSVCP140.dll`, and loading both into one process crashes intermittently with no
-Python traceback, which is why transcription runs in a separate process. `gui/presenters/`
-extends the same rule outward so the decisions a view makes are testable with no display.
-Both are checked by `tests/test_layering.py` at test time and by `import-linter` at lint
-time. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Speaker identification is on by default (set how many speakers on the model
+screen), and a `hebrew_terms.txt` file next to the app corrects names and
+jargon the model gets wrong - copy
+[`hebrew_terms.example.txt`](hebrew_terms.example.txt) to get started.
 
-## Testing
+See **[docs/USING_THE_TRANSCRIPT.md](docs/USING_THE_TRANSCRIPT.md)** for the
+full guide: editing, speaker renaming, confidence shading, audio playback,
+and exactly how speaker identification and term correction each work.
+
+## Development
 
 ```bash
-pytest                                    # full suite: 684 tests, ~50s
-pytest --cov=speech_to_text --cov-report=html   # with coverage report
-pytest tests/test_transcriber.py -v       # a single module
+pip install -e ".[dev]"
+pytest
 ```
 
-Alongside the tests, four checks run in CI (`.github/workflows/ci.yml`, on Windows - PyQt5, the
-PowerShell launcher and a path-resolution branch all target it):
-
-```bash
-ruff check src tests tools                # lint, including a McCabe complexity ceiling of 10
-ruff format --check src tests tools       # formatting
-lint-imports                              # the two architecture contracts described above
-mypy -p speech_to_text.core -p speech_to_text.config      -p speech_to_text.gui.presenters -p speech_to_text.hardware_detection
-```
-
-That mypy invocation is deliberately scoped. Those packages are at zero errors under
-`disallow_untyped_defs` and CI fails if that changes. The whole-package run is reported but not
-gated, because `gui/` still carries errors that are PyQt5 shipping no type information rather than
-defects. Branch coverage is gated at 80%.
-
-Note if you run pytest-qt yourself: `pytest.ini` pins `qt_api = pyqt5`. Both PyQt5 and PyQt6 may be
-installed, pytest-qt guesses PyQt6 first, and a PyQt6 `QApplication` inside this PyQt5 process
-aborts the interpreter with no traceback.
-
-The transcript document's JavaScript - editing, autosave, speaker renaming, search, audio, export,
-help panel, guided tour - is covered by a jsdom behavioural suite at `tests/js/`, run with Node
-instead of pytest. Install once with `npm install` (needs Node.js; jsdom is the only dependency),
-then run it directly:
-
-```bash
-node --test "tests/js/*.test.mjs"
-```
-
-`pytest` runs this suite too (`tests/test_js_behaviour.py`), so plain `pytest` still catches a JS
-regression - but it skips with an explicit reason, rather than failing, when `node` isn't on `PATH`
-or `node_modules/` hasn't been installed.
-
-The stylesheet and script are no longer single files: `core/assets/css/` and `core/assets/js/` are
-each a directory of numerically-prefixed fragments, concatenated in sorted filename order at render
-time (`_asset_dir()` in `core/formatting/assets.py`). The JS fragments are bare bodies of one shared
-IIFE - the wrapper and `'use strict'` are emitted once by Python.
-
-That numbering is correctness, not tidiness: `00-preamble.js` opens with a `return` guard that has
-to run first, and `99-init.js` initialises against handlers every earlier fragment defined.
-`tests/test_asset_order.py` enforces it - first, last, every fragment numbered, no duplicate
-prefixes.
-
-A fragment does still pass `node --check` on its own, which is misleading: Node treats a `.js` file
-as CommonJS and wraps it in a function, so even the top-level `return` in `00-preamble.js` is legal
-there (as ESM it is an "Illegal return statement"). Syntax checking one fragment therefore proves
-very little - a fragment references names other fragments define, so only the concatenation the app
-renders is meaningful. `tests/test_js_behaviour.py` checks that concatenation.
-
-Even with the jsdom suite, one gap remains: jsdom implements no real layout and no `matchMedia`
-(the harness stubs it to "no preference"), so responsive breakpoints, the tour spotlight's on-screen
-position, and prefers-contrast/prefers-reduced-motion/dark-mode media queries are still untested by
-either suite. That gap is a written checklist:
-[`docs/transcript-manual-checks.md`](docs/transcript-manual-checks.md). Work it before shipping a
-change to `core/assets/`.
-
-### Comparing models on your own audio
-
-`tests/eval/` holds a dev-only harness, kept out of the pytest suite because it needs real recordings and takes minutes:
-
-```bash
-python -m tests.eval.compare_models path/to/audio.m4a --models medium ivrit-turbo
-```
-
-It writes both transcripts side by side for reading, plus speed and confidence metrics.
-
-Note what those metrics are and are not. Without a reference transcript there is no accuracy percentage to report: confidence figures correlate with quality but do not measure it, and a confidently wrong model scores well. Hand-correct a few minutes of transcript and pass it with `--reference` to get a real word error rate, computed with Hebrew-appropriate normalization (nikud, final letters, and the app's own timestamps and speaker labels are all discounted).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module layout and
+the two structural rules enforced by tests and `import-linter`, and
+[docs/TESTING.md](docs/TESTING.md) for test levels, coverage policy, CI
+checks, and the jsdom front-end suite.
 
 ## License
 
