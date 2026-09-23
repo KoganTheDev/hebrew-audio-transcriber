@@ -35,12 +35,9 @@ jobs:
         # Invoke the console script, not `python -m importlinter.cli`: the
         # module form exits 0 without checking anything.
         #
-        # PYTHONPATH=src because import-linter builds its graph by importing
-        # from sys.path, and nothing is installed into site-packages any more
-        # (see pyproject's [tool.setuptools]). Without it the run prints
-        # "Could not find package 'config' in your Python path" and checks
-        # nothing - which, like the module form above, is a pass that proves
-        # nothing rather than a failure.
+        # PYTHONPATH=src: nothing is installed, and without it the run
+        # prints "Could not find package" and checks NOTHING - a pass that
+        # proves nothing, like the module form above.
         env:
           PYTHONPATH: src
         run: lint-imports

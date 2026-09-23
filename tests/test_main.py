@@ -29,10 +29,10 @@ def spy_init(self, *a, **k):
 mw.MainWindow.__init__ = spy_init
 QApplication.exec_ = lambda self: 0
 
-import main as main_module
+import app as app_module
 
 try:
-    main_module.main()
+    app_module.main()
 except SystemExit:
     pass
 
@@ -54,14 +54,14 @@ class TestMain:
 
     def test_main_imports(self):
         """Test that main module imports are correct."""
-        import main
+        import app
 
-        assert hasattr(main, "main")
-        assert callable(main.main)
+        assert hasattr(app, "main")
+        assert callable(app.main)
 
     def test_main_callable(self):
         """Test that main function is callable."""
-        from main import main
+        from app import main
 
         assert callable(main)
 
@@ -70,7 +70,7 @@ class TestLoggingHandlers:
     """
     Regression coverage for the thing that actually matters here: the
     stdout handler and the file handler must end up with *different*
-    formatters. main.py used to hand basicConfig(format=...) to both
+    formatters. app.py used to hand basicConfig(format=...) to both
     handlers at once, which is exactly what made the previous isolate fix
     invisible on screen while still working in speech_to_text.log - nothing
     else in the suite would notice the two streams being unified again.
@@ -83,21 +83,21 @@ class TestLoggingHandlers:
     """
 
     def test_stream_handler_uses_visual_order_formatter(self):
-        import main  # noqa: F401 - import triggers basicConfig
+        import app  # noqa: F401 - import triggers basicConfig
 
-        assert isinstance(main.stdout_handler.formatter, VisualOrderFormatter)
+        assert isinstance(app.stdout_handler.formatter, VisualOrderFormatter)
 
     def test_file_handler_uses_plain_formatter(self):
-        import main  # noqa: F401 - import triggers basicConfig
+        import app  # noqa: F401 - import triggers basicConfig
 
-        assert type(main.file_handler.formatter) is logging.Formatter
-        assert not isinstance(main.file_handler.formatter, VisualOrderFormatter)
+        assert type(app.file_handler.formatter) is logging.Formatter
+        assert not isinstance(app.file_handler.formatter, VisualOrderFormatter)
 
 
 class TestHighDpiEntryPointOrdering:
     """
     The high-DPI attributes live at module scope in gui/main_window.py, which
-    only works because main.py imports that module BEFORE it
+    only works because app.py imports that module BEFORE it
     constructs its QApplication. Qt ignores AA_EnableHighDpiScaling once an
     application object exists, so reordering that import would not raise
     anything - it would silently drop the app back to blurry bitmap scaling,
@@ -113,9 +113,9 @@ class TestHighDpiEntryPointOrdering:
         import ast
         import inspect
 
-        import main as main_module
+        import app as app_module
 
-        source = inspect.getsource(main_module)
+        source = inspect.getsource(app_module)
         tree = ast.parse(source)
 
         import_line = None
@@ -132,17 +132,17 @@ class TestHighDpiEntryPointOrdering:
                 and isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
                 # DiagnosticApplication (gui/crash_handler.py) is a QApplication
-                # subclass main.py constructs instead of QApplication directly,
+                # subclass app.py constructs instead of QApplication directly,
                 # to route Qt-slot exceptions to the crash handler - same
                 # ordering requirement applies to it.
                 and node.func.id in ("QApplication", "DiagnosticApplication")
             ):
                 construct_line = node.lineno
 
-        assert import_line is not None, "main.py no longer imports gui.main_window"
-        assert construct_line is not None, "main.py no longer constructs QApplication directly"
+        assert import_line is not None, "app.py no longer imports gui.main_window"
+        assert construct_line is not None, "app.py no longer constructs QApplication directly"
         assert import_line < construct_line, (
-            "main.py constructs QApplication on line "
+            "app.py constructs QApplication on line "
             f"{construct_line} before importing gui.main_window on line {import_line}. "
             "The high-DPI attributes are set at that module's import time and Qt "
             "ignores them once a QApplication exists, so this ordering is load-bearing."
@@ -155,7 +155,7 @@ class TestHighDpiRendering:
     rendering path - AA_EnableHighDpiScaling, AA_UseHighDpiPixmaps, and the
     PassThrough rounding policy (see the comment above that module's
     `_is_text_entry_widget` for why these three, and why they live at
-    module scope there rather than duplicated in main.py
+    module scope there rather than duplicated in app.py
     and this module's own main()). Without them Windows falls back to
     bitmap-stretching the whole window at 125%/150% scale - it still
     renders, just visibly soft, which is easy to miss in a screenshot-free
@@ -216,9 +216,9 @@ class TestShippedEntryPointAppliesStylesheet:
     app.setStyleSheet(theme.app_stylesheet()) used to exist only inside
     gui/main_window.py's own main(), reachable exclusively via
     `python -m gui.main_window` - a path nothing shipped
-    (run.ps1, run.bat, `python -m main`, the `speech-to-text`
+    (run.ps1, run.bat, `python srcpp.py`, the `speech-to-text`
     console script) ever uses. Every one of those goes through
-    main.py::main(), which built its own QApplication and
+    app.py::main(), which built its own QApplication and
     never applied the stylesheet at all: the whole themed look (peach
     checkbox tick, radio ring-and-dot, styled scrollbars/tooltip, the
     kbdFocus ring on native controls) was silently absent from every real
@@ -228,7 +228,7 @@ class TestShippedEntryPointAppliesStylesheet:
     point and look at the QApplication instance it produces.
 
     Like TestHighDpiRendering above, a subprocess is used rather than an
-    in-process call: main.py constructs its own process-wide QApplication
+    in-process call: app.py constructs its own process-wide QApplication
     and calls sys.exit() on the way out, neither of which plays well with
     pytest's shared QApplication or its own process. QApplication.exec_ is
     monkeypatched to capture styleSheet() and return immediately instead of
@@ -245,9 +245,9 @@ class TestShippedEntryPointAppliesStylesheet:
             "    captured['stylesheet'] = self.styleSheet()\n"
             "    return 0\n"
             "QApplication.exec_ = fake_exec\n"
-            "import main as main_module\n"
+            "import app as app_module\n"
             "try:\n"
-            "    main_module.main()\n"
+            "    app_module.main()\n"
             "except SystemExit:\n"
             "    pass\n"
             "sheet = captured.get('stylesheet', '')\n"

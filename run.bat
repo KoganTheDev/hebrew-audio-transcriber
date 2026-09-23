@@ -18,12 +18,12 @@ set "_prev_codepage=%_prev_codepage: =%"
 chcp 65001 >nul
 
 REM Check the program files are actually here before handing over to Python.
-REM Without this the failure is a bare "can't open file 'src\main.py'", or
+REM Without this the failure is a bare "can't open file 'src\app.py'", or
 REM worse a ModuleNotFoundError from halfway through startup. That is what an
 REM incomplete copy looks like - a half-finished OneDrive sync, a partial
 REM download, or a folder copied while files were open - and neither message
 REM tells a user anything they can act on.
-if not exist "%~dp0src\main.py" (
+if not exist "%~dp0src\app.py" (
     echo.
     echo ERROR: This copy of the app is incomplete - the program files are missing.
     echo.
@@ -33,7 +33,7 @@ if not exist "%~dp0src\main.py" (
         echo that change and only half-updated - a "git pull" that could not
         echo overwrite a file, most likely.
     ) else (
-        echo Expected to find: %~dp0src\main.py
+        echo Expected to find: %~dp0src\app.py
     )
     echo.
     echo To fix it, get a fresh copy of the whole folder:
@@ -45,12 +45,8 @@ if not exist "%~dp0src\main.py" (
     exit /b 1
 )
 
-REM config/, core/ and gui/ live in src/, which is not on sys.path just
-REM because the repo root is the working directory. Pointing PYTHONPATH at it
-REM keeps this launcher a double-click affair with no install step. main.py
-REM puts its own directory on sys.path too, so this is belt-and-braces for
-REM anything it spawns (the transcription worker inherits the environment,
-REM not main.py's in-process edit).
+REM app.py puts src/ on sys.path itself; this covers what it SPAWNS - the
+REM worker process inherits the environment, not an in-process edit.
 set "PYTHONPATH=%~dp0src"
 
 if /i "%~1"=="setup" goto :setup_venv
@@ -59,12 +55,10 @@ goto :after_setup
 :setup_venv
 echo Setting up .venv...
 
-REM Pick the interpreter that will BUILD the venv, then check its version
-REM before using it. pyproject requires >=3.10, but "py -3" hands back
-REM whatever the machine's default 3.x is - on an older install that is 3.8
-REM or 3.9. The venv itself creates fine on those, so the failure lands one
-REM step later, out of pip, as "package requires a different Python version",
-REM which reads like a broken project rather than a stale interpreter.
+REM "py -3" hands back whatever the default 3.x is, and pyproject needs
+REM >=3.10. The venv builds fine on 3.9, so without this check the failure
+REM lands one step later out of pip, reading like a broken project rather
+REM than a stale interpreter.
 where py >nul 2>nul
 if %errorlevel%==0 (
     set "_boot=py -3"
@@ -103,10 +97,8 @@ exit /b 1
 :python_ok
 echo Using Python %_pyver%
 
-REM A .venv folder with no python.exe in it is a half-created one - an
-REM interrupted setup, or an interpreter that has since been uninstalled.
-REM "python -m venv" onto that path repairs some of it and leaves the rest,
-REM so clear it out and start clean instead.
+REM "python -m venv" onto a half-created .venv repairs some of it and
+REM leaves the rest, so start clean instead.
 if exist "%~dp0.venv" if not exist "%~dp0.venv\Scripts\python.exe" (
     echo Removing an incomplete .venv from an earlier attempt...
     rmdir /s /q "%~dp0.venv"
@@ -121,16 +113,10 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
     exit /b 1
 )
 
-REM A fresh venv ships whatever pip was bundled with the interpreter. On
-REM Python 3.11.0 that is pip 22.3, and pip 22.x has a Windows bug where the
-REM build-tracker directory it keeps under %%TEMP%% disappears part way
-REM through a long install, ending the run with
-REM   ERROR: Could not install packages due to an OSError: [Errno 2]
-REM   No such file or directory: '...\pip-build-tracker-xxxx\<hash>'
-REM This project pulls ~120 MB of wheels (PyQt5-Qt5 alone is 50 MB), so an
-REM install here runs for minutes and sits squarely in that window.
-REM Upgrading pip first is the fix, and it also brings a resolver that
-REM understands the metadata newer wheels publish.
+REM A fresh venv carries the interpreter's bundled pip - 22.3 on Python
+REM 3.11.0, which aborts long installs on Windows with "OSError: [Errno 2]
+REM ... pip-build-tracker-xxxx". This project pulls ~120 MB of wheels, so it
+REM sits in that window every time.
 "%~dp0.venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
 if not !errorlevel!==0 (
     echo.
@@ -140,11 +126,9 @@ if not !errorlevel!==0 (
     exit /b 1
 )
 
-REM Give pip its own scratch directory next to the venv instead of %%TEMP%%.
-REM The tracker failure above is triggered by something else emptying
-REM %%TEMP%% mid-install - Storage Sense, Disk Cleanup, or an antivirus
-REM scanner - which a newer pip does not prevent. A folder inside the project
-REM is not a target for any of them. Removed after.
+REM Scratch space outside %%TEMP%%: the tracker failure above is triggered
+REM by Storage Sense, Disk Cleanup or antivirus emptying it mid-install,
+REM which a newer pip does not prevent.
 set "_prev_temp=%TEMP%"
 set "_prev_tmp=%TMP%"
 mkdir "%~dp0.venv\pip-tmp" 2>nul
@@ -163,11 +147,9 @@ if not "!_pipcode!"=="0" (
     exit /b 1
 )
 
-REM pip reporting success is not the same as the app being able to start: a
-REM wheel can unpack without its DLLs landing, which surfaces much later as
-REM an ImportError from inside the GUI. Import every top-level dependency
-REM now, while the setup output is still on screen and the user is expecting
-REM setup problems.
+REM A wheel can unpack without its DLLs landing, which surfaces much later
+REM as an ImportError from inside the GUI. Catch it here, while the user is
+REM still expecting setup problems.
 "%~dp0.venv\Scripts\python.exe" -c "import PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
 if not !errorlevel!==0 (
     echo.
@@ -202,7 +184,7 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
     exit /b 1
 )
 
-"%~dp0.venv\Scripts\python.exe" "%~dp0src\main.py"
+"%~dp0.venv\Scripts\python.exe" "%~dp0src\app.py"
 set "_exitcode=%errorlevel%"
 if defined _prev_codepage chcp %_prev_codepage% >nul
 REM Hold the window open only when something actually failed - a normal

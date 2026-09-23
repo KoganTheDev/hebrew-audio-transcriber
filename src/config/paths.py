@@ -54,16 +54,10 @@ def _cache_root(dir_name: str) -> str:
     time as a bare relative "./diarization_models" precisely because this
     reasoning lived only in the Whisper half.
     """
-    # dirname twice: this module lives in config/, so src/ - the directory
-    # the check below is written in terms of - is one further up than this
-    # file's own directory.
+    # config/paths.py -> config/ -> src/ -> repo root, which is where an
+    # already-downloaded cache sits. Walking one level further would reach
+    # outside the repo and could match a stray directory beside it.
     src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # One level, not two. The modules live directly under <repo>/src/, so
-    # src/'s immediate parent IS the repo root, which is where the already
-    # downloaded models sit. This walked two levels back when the code was a
-    # package at <repo>/src/speech_to_text/ and src/ was therefore one step
-    # further from the root; keeping that second level now would reach
-    # outside the repo entirely and could match a stray directory beside it.
     repo_root = os.path.dirname(src_dir)
     beside = os.path.join(repo_root, dir_name)
     if os.path.isdir(beside):
@@ -154,8 +148,6 @@ def _log_directory() -> str:
     where the model caches go) because a log is reproducible noise, not
     something whose loss costs the user a download.
     """
-    # One level up from src/ is the repo root - see _models_directory for why
-    # this stopped being a two-level walk when the layout was flattened.
     src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     repo_root = os.path.dirname(src_dir)
     if os.path.isfile(os.path.join(repo_root, "pyproject.toml")):

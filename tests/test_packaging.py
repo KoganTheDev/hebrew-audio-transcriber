@@ -1,22 +1,14 @@
 """
 Guards on how this project is laid out and installed.
 
-These exist because this part fails *quietly*. The stylesheet, the script and
-the backdrop images are read from disk at render time rather than imported, so
-a tree missing them starts fine, imports fine, and only misbehaves later - at
-the moment a user renders a transcript, which comes out unstyled and
-backdrop-less with no error anyone could trace back to a moved directory.
-Nothing else in the suite would notice, because every other test either
-monkeypatches the asset paths or renders against whatever happens to be there.
+These exist because this part fails *quietly*. The stylesheet, script and
+backdrop images are read from disk at render time rather than imported, so a
+tree missing them starts and imports fine, then produces an unstyled
+transcript with no error anyone could trace back to a moved directory.
 
-The project used to ship as an installed package, and these tests guarded the
-package-data globs that carried those assets into a wheel. It does not any
-more: the modules sit directly under src/ as `config`, `core` and `gui`, which
-are names far too generic to put into a shared site-packages, so pyproject
-declares `packages = []` and installs dependencies only. The assets are now
-found by walking from __file__ instead, and what needs guarding moved with
-them - from "is the glob right" to "is the directory still where the code
-reaches for it".
+The project installs no modules of its own (see pyproject's
+[tool.setuptools]), so the assets are found by walking from __file__ and what
+needs guarding is whether those directories are still where the code reaches.
 """
 
 from pathlib import Path
@@ -32,15 +24,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
 SRC = ROOT / "src"
 
-# Everything read at render time rather than imported, keyed by the module
-# whose __file__ walk resolves it. Extensions, not paths: the point is to
-# catch a *new* asset of a known kind landing somewhere nothing reaches.
+# Extensions, not paths: the point is to catch a NEW asset of a known kind
+# landing somewhere nothing reaches.
 ASSET_SUFFIXES = {".css", ".js", ".webp", ".ico"}
 
-# The directories the code actually reaches for. core/formatting/assets.py
-# resolves _ASSETS as Path(__file__).parent.parent / "assets", which is
-# src/core/assets - stated here independently so that moving one without the
-# other fails a test rather than a user's transcript.
+# Stated independently of the code that resolves them, so moving one without
+# the other fails a test rather than a user's transcript.
 ASSET_DIRS = (
     SRC / "core" / "assets",
     SRC / "assets",
@@ -56,11 +45,7 @@ def _config():
 
 class TestAssetsAreWhereTheCodeLooks:
     def test_the_asset_directories_exist(self):
-        """
-        The regression this module exists for, in its new form: an asset
-        directory moved or renamed without the __file__ walk that finds it
-        being moved too.
-        """
+        """An asset directory moved without the __file__ walk that finds it."""
         for directory in ASSET_DIRS:
             assert directory.is_dir(), (
                 f"{directory.relative_to(ROOT)} is read at render time by a "
@@ -69,20 +54,13 @@ class TestAssetsAreWhereTheCodeLooks:
             )
 
     def test_assets_module_resolves_to_the_real_directory(self):
-        """
-        Asserted against the module's own resolution rather than a repeat of
-        the path literal, so that changing the walk without changing the tree
-        (or the reverse) is what fails.
-        """
+        """Against the module's own resolution, not a repeat of the literal."""
         from core.formatting import assets
 
         assert Path(assets._ASSETS).resolve() == (SRC / "core" / "assets").resolve()
 
     def test_every_shipped_asset_sits_under_a_directory_the_code_reaches(self):
-        """
-        A new asset kind, or a new asset directory, added somewhere the
-        render-time walks never look.
-        """
+        """A new asset added somewhere the render-time walks never look."""
         found = [p for p in SRC.rglob("*") if p.is_file() and p.suffix.lower() in ASSET_SUFFIXES]
         assert found, "no assets found - the discovery glob itself is wrong"
 
@@ -96,10 +74,7 @@ class TestAssetsAreWhereTheCodeLooks:
         )
 
     def test_the_render_time_assets_are_present(self):
-        """
-        A narrower belt-and-braces check on the three kinds the renderer
-        cannot do without, in case the sweep above is ever relaxed.
-        """
+        """The three kinds the renderer cannot do without, in case the sweep above is relaxed."""
         core_assets = SRC / "core" / "assets"
         assert list(core_assets.glob("css/*.css")), "no stylesheet fragments"
         assert list(core_assets.glob("js/*.js")), "no script fragments"
@@ -108,13 +83,7 @@ class TestAssetsAreWhereTheCodeLooks:
 
 class TestNothingIsPublished:
     def test_no_top_level_packages_are_declared(self):
-        """
-        `config`, `core` and `gui` are far too generic to install into a
-        shared site-packages - `import config` from any other project would
-        start resolving to this app's. Declaring no packages is what keeps
-        `pip install -e .` meaning "resolve the dependency list" and nothing
-        more.
-        """
+        """`import config` from any other project would otherwise resolve to this app's."""
         setuptools_config = _config()["tool"]["setuptools"]
         assert setuptools_config["packages"] == [], (
             "this project installs its dependencies and no modules of its "
@@ -123,23 +92,15 @@ class TestNothingIsPublished:
         )
 
     def test_no_console_script_promises_an_importable_entry_point(self):
-        """
-        A console script would be generated as `from <module> import main`,
-        which cannot work when nothing is installed. run.bat and run.ps1 are
-        the entry points, and they put src/ on the path themselves.
-        """
+        """A console script imports an installed module; this project installs none."""
         assert "scripts" not in _config()["project"], (
             "a console script needs an installed module to import; this "
             "project installs none - the launchers are the way in"
         )
 
     def test_the_entry_point_module_exists(self):
-        """
-        What the launchers actually run. Named here so that renaming it
-        without updating them fails in the suite rather than on a user's
-        machine.
-        """
-        assert (SRC / "main.py").is_file()
+        """What the launchers run - renaming it without updating them fails here."""
+        assert (SRC / "app.py").is_file()
 
 
 class TestSingleSourceOfTruth:

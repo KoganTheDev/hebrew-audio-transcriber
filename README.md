@@ -74,7 +74,7 @@ No CUDA toolkit needed - just this pip extra.
 ## Usage
 
 ```bash
-python src\main.py
+python src\app.py
 ```
 
 Needs the dependencies installed and `.venv` active (see Installation above) -

@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 # object is constructed - setting them on an already-running instance is a
 # silent no-op. This module is imported (directly or via `from
 # gui import theme` pulling in sibling gui modules) by every
-# real and harness entry point - main.py, this module's own
+# real and harness entry point - app.py, this module's own
 # main(), and the screenshot/probe scripts under scratchpad/ - strictly
 # before any of them calls `QApplication(sys.argv)`, so doing it here at
 # module import time, exactly once (Python's module cache guarantees that),
@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
         self.center_on_screen()
 
         # Catches whatever install_global_exception_hook() routes here (see
-        # main.py) - anything that would otherwise have crashed with no
+        # app.py) - anything that would otherwise have crashed with no
         # user-visible trace.
         get_crash_bridge().crashed.connect(self._on_unhandled_crash)
 
@@ -1052,7 +1052,7 @@ def configure_application(app: QApplication) -> None:
 
     This used to live only in this module's own main() below, which is
     reachable exclusively via `python -m gui.main_window` -
-    a path nothing in the shipped app actually uses. main.py
+    a path nothing in the shipped app actually uses. app.py
     (the real entry point behind run.ps1, run.bat, `python -m
     main`, and the `speech-to-text` console script) built
     its own QApplication and never applied the stylesheet at all, so the
@@ -1064,7 +1064,7 @@ def configure_application(app: QApplication) -> None:
     setup here, called by both entry points (and by anything else that
     stands up a QApplication for this GUI, e.g. screenshot/diagnostic
     scripts), is what keeps them from drifting apart again - adding the one
-    missing line to main.py would have fixed today's symptom but left two
+    missing line to app.py would have fixed today's symptom but left two
     independent call sites free to diverge on the next change.
 
     Must be called AFTER the QApplication is constructed (setStyleSheet and

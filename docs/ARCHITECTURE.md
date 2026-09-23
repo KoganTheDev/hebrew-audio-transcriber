@@ -37,7 +37,7 @@ scripts and backdrop photos are all inlined into the single HTML file.
 
 ```
 src/                            on sys.path at run time; nothing is installed into site-packages
-  main.py                       process entry: logging, dependency check, Qt import ORDER
+  app.py                        process entry: logging, dependency check, Qt import ORDER
   hardware_detection.py         CPU/RAM/GPU probe, model recommendation, time estimates
   config/                       grouped by what each constant is FOR, not where it was declared
     app.py                        metadata, window geometry, dependency list
@@ -155,7 +155,7 @@ quantities embedded in Hebrew strings are wrapped in BiDi isolates (U+2066 /
 U+2069), because rule N1 otherwise lets a digit run reorder the punctuation
 around it.
 
-**Logging.** Configured once, in `main.py`, before anything else runs. The
+**Logging.** Configured once, in `app.py`, before anything else runs. The
 console handler uses `VisualOrderFormatter` so Hebrew log lines read correctly
 in a terminal that does no BiDi of its own; the file handler does not.
 

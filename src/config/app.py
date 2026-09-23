@@ -18,7 +18,7 @@ ICON_PATH = os.path.join(
 #
 # This used to list only PyQt5 and tqdm, which made the startup check worse than
 # useless: it reported success on an interpreter missing faster-whisper, and
-# main.py then died on "import faster_whisper" with a bare exit. The check has
+# app.py then died on "import faster_whisper" with a bare exit. The check has
 # to cover everything, or it is just a slower way of failing later.
 REQUIRED_PACKAGES = {
     "PyQt5": "PyQt5",

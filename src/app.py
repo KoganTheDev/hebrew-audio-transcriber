@@ -7,11 +7,8 @@ import logging.handlers
 import os
 import sys
 
-# src/ - this file's OWN directory - is what holds config/, core/ and gui/,
-# so that is what goes on the path. One dirname, not two: the modules used to
-# live one level deeper, in src/speech_to_text/, and the walk had to climb out
-# of the package to reach src/. Climbing twice from here would put the repo
-# ROOT on the path instead, where none of them are importable.
+# This file's own directory, src/, holds config/, core/ and gui/. One dirname,
+# not two - the repo root has none of them on it.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config
@@ -88,7 +85,10 @@ logging.basicConfig(
     level=logging.DEBUG,
     handlers=[stdout_handler, file_handler],
 )
-logger = logging.getLogger(__name__)
+# "app", not __name__: as the entry point, __name__ varies with the start
+# method ("__main__", "app", "__mp_main__"), which made the log's module
+# column report how the process was started rather than what wrote the line.
+logger = logging.getLogger("app")
 
 
 def main() -> None:
@@ -96,6 +96,9 @@ def main() -> None:
     logger.info("=" * 70)
     logger.info(f"Starting {config.APP_NAME} v{config.APP_VERSION}")
     logger.info(f"Python {sys.version.split()[0]}")
+    # Unconditionally, not just on the dependency failure: "which Python" is
+    # the first question of nearly every launch problem.
+    logger.info(f"Interpreter: {sys.executable}")
     logger.info(f"Platform: {sys.platform}")
     logger.info("=" * 70)
 

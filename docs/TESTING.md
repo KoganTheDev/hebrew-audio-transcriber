@@ -131,7 +131,7 @@ the ratchet has one number to move.
 
 Coverage is not uniform by design: `core/` carries the logic a wrong answer
 actually costs something, and is held higher than `gui/` construction code.
-`main.py` sits near 22% because it is process bootstrap that a subprocess test
+`app.py` sits near 22% because it is process bootstrap that a subprocess test
 exercises end to end rather than line by line.
 
 ## Markers

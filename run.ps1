@@ -41,12 +41,12 @@ try {
     Write-Host 'Starting Hebrew Audio Transcriber...' -ForegroundColor Green
 
     # Check the program files are actually here before handing over to Python.
-    # Without this the failure is a bare "can't open file 'src\main.py'", or
+    # Without this the failure is a bare "can't open file 'src\app.py'", or
     # worse a ModuleNotFoundError from halfway through startup. That is what
     # an incomplete copy looks like - a half-finished OneDrive sync, a partial
     # download, or a folder copied while files were open - and neither message
     # tells a user anything they can act on.
-    $entryPoint = Join-Path $root 'src\main.py'
+    $entryPoint = Join-Path $root 'src\app.py'
     if (-not (Test-Path $entryPoint)) {
         $stale = Join-Path $root 'src\speech_to_text'
         $hint = if (Test-Path $stale) {
@@ -82,12 +82,9 @@ To fix it, get a fresh copy of the whole folder:
     if ($Setup) {
         Write-Host 'Setting up .venv...' -ForegroundColor Green
 
-        # Pick the interpreter that will BUILD the venv, then check its
-        # version before using it. pyproject requires >=3.10, but "py -3"
-        # hands back whatever the machine's default 3.x is - on an older
-        # install that is 3.8 or 3.9. The venv itself creates fine on those,
-        # so the failure lands one step later, out of pip, as "package
-        # requires a different Python version", which reads like a broken
+        # "py -3" hands back whatever the default 3.x is, and pyproject
+        # needs >=3.10. The venv builds fine on 3.9, so without this check the
+        # failure lands one step later out of pip, reading like a broken
         # project rather than a stale interpreter.
         $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
         if ($pyLauncher) {
@@ -103,12 +100,9 @@ To fix it, get a fresh copy of the whole folder:
             $bootArgs = @()
         }
 
-        # stderr is folded in so a failing interpreter reports WHY in the
-        # error below rather than just an exit code, and the version is then
-        # pulled out by pattern rather than by reading the whole stream -
-        # 'py' prints its own warnings there ("Python from the Microsoft
-        # Store...", venv deprecation notices), and treating those as the
-        # version number would reject a perfectly good 3.12.
+        # stderr folded in so a failure reports why, but the version is
+        # matched by pattern: 'py' prints its own warnings there, and reading
+        # the whole stream would reject a perfectly good 3.12.
         $bootOutput = (& $bootExe @bootArgs -c "import sys; print('PYVER %d.%d' % sys.version_info[:2])" 2>&1 | Out-String)
         $match = [regex]::Match($bootOutput, 'PYVER (\d+)\.(\d+)')
         if ($LASTEXITCODE -ne 0 -or -not $match.Success) {
@@ -125,10 +119,8 @@ Install a current Python from https://www.python.org/downloads/ (tick
         }
         Write-Host "Using Python $bootVersion from $bootExe" -ForegroundColor DarkGray
 
-        # A .venv folder with no python.exe in it is a half-created one - an
-        # interrupted setup, or an interpreter that has since been
-        # uninstalled. 'python -m venv' onto that path repairs some of it and
-        # leaves the rest, so clear it out and start clean instead.
+        # 'python -m venv' onto a half-created .venv repairs some of it and
+        # leaves the rest, so start clean instead.
         if ((Test-Path $venvDir) -and -not (Test-Path $venvPython)) {
             Write-Host 'Removing an incomplete .venv from an earlier attempt...' -ForegroundColor DarkGray
             Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
@@ -139,26 +131,18 @@ Install a current Python from https://www.python.org/downloads/ (tick
             Fail "Creating .venv failed - see the output above."
         }
 
-        # A fresh venv ships whatever pip was bundled with the interpreter.
-        # On Python 3.11.0 that is pip 22.3, and pip 22.x has a Windows bug
-        # where the build-tracker directory it keeps under %TEMP% disappears
-        # part way through a long install, ending the run with
-        #   ERROR: Could not install packages due to an OSError: [Errno 2]
-        #   No such file or directory: '...\pip-build-tracker-xxxx\<hash>'
-        # This project pulls ~120 MB of wheels (PyQt5-Qt5 alone is 50 MB), so
-        # an install here runs for minutes and sits squarely in that window.
-        # Upgrading pip first is the fix, and it also brings a resolver that
-        # understands the metadata newer wheels publish.
+        # A fresh venv carries the interpreter's bundled pip - 22.3 on
+        # Python 3.11.0, which aborts long installs on Windows with
+        # "OSError: [Errno 2] ... pip-build-tracker-xxxx". This project pulls
+        # ~120 MB of wheels, so it sits in that window every time.
         & $venvPython -m pip install --upgrade pip setuptools wheel
         if ($LASTEXITCODE -ne 0) {
             Fail "Upgrading pip inside .venv failed (exit code $LASTEXITCODE) - see the output above."
         }
 
-        # Give pip its own scratch directory next to the venv instead of
-        # %TEMP%. The tracker failure above is triggered by something else
-        # emptying %TEMP% mid-install - Storage Sense, Disk Cleanup, or an
-        # antivirus scanner - which a newer pip does not prevent. A folder
-        # inside the project is not a target for any of them. Removed after.
+        # Scratch space outside %TEMP%: the tracker failure above is
+        # triggered by Storage Sense, Disk Cleanup or antivirus emptying it
+        # mid-install, which a newer pip does not prevent.
         $pipTemp = Join-Path $venvDir 'pip-tmp'
         New-Item -ItemType Directory -Force -Path $pipTemp | Out-Null
         $prevTemp = $env:TEMP
@@ -177,11 +161,9 @@ Install a current Python from https://www.python.org/downloads/ (tick
             Fail "Installing dependencies into .venv failed (exit code $LASTEXITCODE) - see the output above."
         }
 
-        # pip reporting success is not the same as the app being able to
-        # start: a wheel can unpack without its DLLs landing, which surfaces
-        # much later as an ImportError from inside the GUI. Import every
-        # top-level dependency now, while the setup output is still on screen
-        # and the user is expecting setup problems.
+        # A wheel can unpack without its DLLs landing, which surfaces much
+        # later as an ImportError from inside the GUI. Catch it here, while
+        # the user is still expecting setup problems.
         & $venvPython -c "import PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
         if ($LASTEXITCODE -ne 0) {
             Fail "Setup finished but the installed packages do not import (exit code $LASTEXITCODE) - see the error above. Deleting the .venv folder and running 'run.ps1 -Setup' again usually clears this."
@@ -218,17 +200,10 @@ Or let this launcher do it for you:
     # out to chcp.com or its "Active code page: ..." echo. Restored in
     # finally so the launcher doesn't leave the user's console in a
     # different state than it found it.
-    # config/, core/ and gui/ live in src/, which is not on sys.path just
-    # because the repo root is the working directory. Pointing PYTHONPATH at
-    # it keeps this launcher a double-click affair with no install step.
-    # main.py puts its own directory on sys.path too, so this is
-    # belt-and-braces for anything it spawns (the transcription worker
-    # inherits the environment, not main.py's in-process edit).
-    # $root, not $PSScriptRoot: the two are the same from a terminal, but
-    # $PSScriptRoot is empty in some double-click hosts, and Join-Path on an
-    # empty path throws - turning a working launch into a parameter-binding
-    # error reported as if the app itself had failed. $root already has the
-    # fallback for that case.
+    # app.py puts src/ on sys.path itself; this covers what it SPAWNS - the
+    # worker process inherits the environment, not an in-process edit.
+    # $root, not $PSScriptRoot: the latter is empty in some double-click
+    # hosts, and Join-Path then throws.
     $env:PYTHONPATH = Join-Path $root 'src'
 
     $prevOutputEncoding = [Console]::OutputEncoding

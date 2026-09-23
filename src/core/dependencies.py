@@ -10,7 +10,7 @@ package list it worked from did not include faster-whisper.
 Installing is the installer's job. This reports.
 
 It checks with importlib.util.find_spec rather than by importing. That is not a
-detail: main.py imports faster_whisper BEFORE PyQt5 on purpose, because the two
+detail: app.py imports faster_whisper BEFORE PyQt5 on purpose, because the two
 ship conflicting copies of MSVCP140.dll on Windows and whichever loads first
 wins. A check that imported its way down a dict would decide that order by
 dict insertion order instead, and silently reintroduce the access violation

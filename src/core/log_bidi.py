@@ -1,6 +1,6 @@
 """Logging glue for visual-order console output - see core/hebrew_text.py,
-above to_visual_order(), for why this exists at all. Separate from main.py so
-main.py stays wiring: which handler gets which formatter, not why.
+above to_visual_order(), for why this exists at all. Separate from app.py so
+app.py stays wiring: which handler gets which formatter, not why.
 """
 
 import logging

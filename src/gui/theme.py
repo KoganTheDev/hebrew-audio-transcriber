@@ -106,7 +106,7 @@ class _FontsMeta(type):
     uninitialised font database, and it keeps those wrong metrics
     afterwards: QFontMetrics on such a font reports a 227px advance for the
     header title where the same font built after QApplication reports 276px.
-    main.py imports this module at module level and only
+    app.py imports this module at module level and only
     constructs its QApplication inside main(), so class-body QFont literals
     were always being built on the wrong side of that line.
 

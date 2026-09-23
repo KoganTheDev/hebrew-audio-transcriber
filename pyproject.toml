@@ -74,20 +74,9 @@ Repository = "https://github.com/example/speech-to-text.git"
 Issues = "https://github.com/example/speech-to-text/issues"
 
 [tool.setuptools]
-# This project installs its DEPENDENCIES and nothing else. It is a
-# run-from-source desktop application, not a distributable library: the
-# modules live directly under src/ as `config`, `core` and `gui`, and those
-# are names far too generic to put into a shared site-packages. Declaring no
-# packages is what makes `pip install -e .` mean "resolve the dependency list
-# below" without also publishing three top-level names that would collide
-# with the wider ecosystem.
-#
-# The app finds its own modules because the launchers put src/ on the path,
-# and it finds its assets (transcript CSS/JS, vista backdrops, window icon)
-# by walking from __file__ - see core/formatting/assets.py. Nothing is
-# resolved through package metadata, so there is no package-data block to
-# keep in sync and no way for a missing one to produce an unstyled
-# transcript at render time.
+# Dependencies only, no modules. `config`, `core` and `gui` are too generic to
+# publish into a shared site-packages; the app runs from src/ instead, and
+# finds its assets by walking from __file__ (core/formatting/assets.py).
 packages = []
 
 [tool.ruff]
@@ -138,11 +127,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-# Without this, ruff sorts `config`, `core` and `gui` as third-party imports
-# and reorders every file accordingly. They only look third-party because
-# they are bare top-level names now - nothing marks them as ours the way a
-# single `speech_to_text` package once did. This is the standing cost of the
-# flat layout, paid here once.
+# Bare top-level names, so nothing marks them as ours; without this ruff sorts
+# them as third-party and reorders every file.
 known-first-party = ["config", "core", "gui", "hardware_detection"]
 
 [tool.ruff.lint.mccabe]
@@ -164,10 +150,8 @@ docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.10"
-# The modules live under src/, which is not on the path just because the repo
-# root is the working directory. Without this mypy cannot find them at all and
-# stops with "Cannot find implementation or library stub" before checking a
-# single file. CI's continue-on-error was masking a step that never ran.
+# Without this mypy cannot find the modules at all and stops before checking
+# a single file.
 mypy_path = "src"
 warn_return_any = true
 warn_unused_configs = true
@@ -208,10 +192,8 @@ disallow_untyped_defs = false
 disable_error_code = ["var-annotated", "no-untyped-def", "method-assign", "attr-defined"]
 
 [tool.importlinter]
-# hardware_detection is deliberately absent: it is a single module, not a
-# package, and import-linter rejects those outright. It costs the contracts
-# nothing - they are about core/ and gui/, and hardware_detection imports
-# those rather than being imported by them.
+# hardware_detection omitted: import-linter takes packages only, and the
+# contracts are about core/ and gui/, which it imports rather than the reverse.
 root_packages = ["config", "core", "gui"]
 # Required to forbid an external package (PyQt5) rather than only first-party
 # modules - without it the contract is rejected at run time.

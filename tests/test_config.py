@@ -77,7 +77,7 @@ class TestConfig:
         The list has to be complete, or the startup check is worse than absent.
 
         It used to hold only PyQt5 and tqdm, on the reasoning that
-        faster_whisper was "lazy-loaded". It is not lazy: main.py imports it
+        faster_whisper was "lazy-loaded". It is not lazy: app.py imports it
         during startup, before PyQt5, to fix a DLL load order. So the check
         passed on an interpreter with no faster-whisper and the app died
         moments later on the import, having first pip-installed PyQt5 into

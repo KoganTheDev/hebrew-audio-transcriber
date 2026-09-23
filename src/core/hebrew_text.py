@@ -35,7 +35,7 @@ BIDI_CONTROLS = re.compile(r"[‎‏⁦-⁩‪-‮]")
 
 # RTL isolation for Hebrew logged into an otherwise-LTR line.
 #
-# main.py's LOG_FORMAT puts %(message)s last, after fields that are always LTR
+# app.py's LOG_FORMAT puts %(message)s last, after fields that are always LTR
 # (timestamp, level, logger name, file:line), so Hebrew text is an RTL run
 # trailing an LTR paragraph with nothing marking where it ends. A neutral
 # character right after the Hebrew - the trailing comma faster-whisper leaves

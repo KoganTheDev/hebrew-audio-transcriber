@@ -34,7 +34,7 @@ class TestDependencies:
         """
         Availability is decided with find_spec, never by importing.
 
-        main.py imports faster_whisper BEFORE PyQt5 deliberately, because the
+        app.py imports faster_whisper BEFORE PyQt5 deliberately, because the
         two ship conflicting MSVCP140.dll copies on Windows and whichever
         loads first wins. A check that imported its way down the dict would
         hand that decision to dict insertion order and silently undo the fix.

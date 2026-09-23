@@ -546,7 +546,7 @@ class Transcriber:
             try:
                 segment_preview = segment.text[:50] if segment.text else "(empty)"
                 # The preview is often Hebrew, and it's the last thing on
-                # the line - LOG_FORMAT (main.py) puts %(message)s after
+                # the line - LOG_FORMAT (app.py) puts %(message)s after
                 # only LTR fields. Isolated so a trailing neutral
                 # character (faster-whisper leaves a comma on truncated
                 # segments) resolves against this LTR line instead of
