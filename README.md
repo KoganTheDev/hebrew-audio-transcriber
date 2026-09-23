@@ -41,8 +41,15 @@ cd hebrew-audio-transcriber
 python -m venv .venv
 .venv\Scripts\activate
 
+python -m pip install --upgrade pip
 pip install -e .
 ```
+
+The `pip` upgrade is not optional on Windows. A new venv carries the pip
+that shipped with your interpreter, and on Python 3.11.0 that is pip 22.3,
+which aborts long installs with `OSError: [Errno 2] No such file or
+directory: '...\pip-build-tracker-...'`. This project downloads ~120 MB of
+wheels, so it hits that reliably.
 
 ### NVIDIA GPU acceleration (optional)
 

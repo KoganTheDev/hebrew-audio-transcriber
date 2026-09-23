@@ -78,26 +78,116 @@ To fix it, get a fresh copy of the whole folder:
     # never silently handed a system Python instead.
     $venvPython = Join-Path $root '.venv\Scripts\python.exe'
 
+    $venvDir = Join-Path $root '.venv'
+
     if ($Setup) {
         Write-Host 'Setting up .venv...' -ForegroundColor Green
+
+        # Pick the interpreter that will BUILD the venv, then check its
+        # version before using it. pyproject requires >=3.10, but "py -3"
+        # hands back whatever the machine's default 3.x is - on an older
+        # install that is 3.8 or 3.9. The venv itself creates fine on those,
+        # so the failure lands one step later, out of pip, as "package
+        # requires a different Python version", which reads like a broken
+        # project rather than a stale interpreter.
         $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
         if ($pyLauncher) {
-            & $pyLauncher.Source -3 -m venv (Join-Path $root '.venv')
+            $bootExe = $pyLauncher.Source
+            $bootArgs = @('-3')
         }
         else {
             $python = Get-Command python -ErrorAction SilentlyContinue
             if (-not $python -or $python.Source -like '*\WindowsApps\*') {
-                Fail "No Python installation found (checked 'py' and 'python'). Install Python 3.9+ from https://www.python.org/downloads/"
+                Fail "No Python installation found (checked 'py' and 'python'). Install Python 3.10+ from https://www.python.org/downloads/"
             }
-            & $python.Source -m venv (Join-Path $root '.venv')
+            $bootExe = $python.Source
+            $bootArgs = @()
         }
+
+        # stderr is folded in so a failing interpreter reports WHY in the
+        # error below rather than just an exit code, and the version is then
+        # pulled out by pattern rather than by reading the whole stream -
+        # 'py' prints its own warnings there ("Python from the Microsoft
+        # Store...", venv deprecation notices), and treating those as the
+        # version number would reject a perfectly good 3.12.
+        $bootOutput = (& $bootExe @bootArgs -c "import sys; print('PYVER %d.%d' % sys.version_info[:2])" 2>&1 | Out-String)
+        $match = [regex]::Match($bootOutput, 'PYVER (\d+)\.(\d+)')
+        if ($LASTEXITCODE -ne 0 -or -not $match.Success) {
+            Fail "Could not run Python ($bootExe) to check its version. Output was:`n$bootOutput"
+        }
+        $bootVersion = "$($match.Groups[1].Value).$($match.Groups[2].Value)"
+        if ([int]$match.Groups[1].Value -lt 3 -or ([int]$match.Groups[1].Value -eq 3 -and [int]$match.Groups[2].Value -lt 10)) {
+            Fail @"
+This project needs Python 3.10 or newer, but the Python on this machine is $bootVersion ($bootExe).
+
+Install a current Python from https://www.python.org/downloads/ (tick
+"Add python.exe to PATH" in the installer), then run 'run.ps1 -Setup' again.
+"@
+        }
+        Write-Host "Using Python $bootVersion from $bootExe" -ForegroundColor DarkGray
+
+        # A .venv folder with no python.exe in it is a half-created one - an
+        # interrupted setup, or an interpreter that has since been
+        # uninstalled. 'python -m venv' onto that path repairs some of it and
+        # leaves the rest, so clear it out and start clean instead.
+        if ((Test-Path $venvDir) -and -not (Test-Path $venvPython)) {
+            Write-Host 'Removing an incomplete .venv from an earlier attempt...' -ForegroundColor DarkGray
+            Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
+        }
+
+        & $bootExe @bootArgs -m venv $venvDir
         if (-not (Test-Path $venvPython)) {
             Fail "Creating .venv failed - see the output above."
         }
-        & $venvPython -m pip install -e $root
+
+        # A fresh venv ships whatever pip was bundled with the interpreter.
+        # On Python 3.11.0 that is pip 22.3, and pip 22.x has a Windows bug
+        # where the build-tracker directory it keeps under %TEMP% disappears
+        # part way through a long install, ending the run with
+        #   ERROR: Could not install packages due to an OSError: [Errno 2]
+        #   No such file or directory: '...\pip-build-tracker-xxxx\<hash>'
+        # This project pulls ~120 MB of wheels (PyQt5-Qt5 alone is 50 MB), so
+        # an install here runs for minutes and sits squarely in that window.
+        # Upgrading pip first is the fix, and it also brings a resolver that
+        # understands the metadata newer wheels publish.
+        & $venvPython -m pip install --upgrade pip setuptools wheel
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Upgrading pip inside .venv failed (exit code $LASTEXITCODE) - see the output above."
+        }
+
+        # Give pip its own scratch directory next to the venv instead of
+        # %TEMP%. The tracker failure above is triggered by something else
+        # emptying %TEMP% mid-install - Storage Sense, Disk Cleanup, or an
+        # antivirus scanner - which a newer pip does not prevent. A folder
+        # inside the project is not a target for any of them. Removed after.
+        $pipTemp = Join-Path $venvDir 'pip-tmp'
+        New-Item -ItemType Directory -Force -Path $pipTemp | Out-Null
+        $prevTemp = $env:TEMP
+        $prevTmp = $env:TMP
+        try {
+            $env:TEMP = $pipTemp
+            $env:TMP = $pipTemp
+            & $venvPython -m pip install -e $root
+        }
+        finally {
+            $env:TEMP = $prevTemp
+            $env:TMP = $prevTmp
+            Remove-Item -Recurse -Force $pipTemp -ErrorAction SilentlyContinue
+        }
         if ($LASTEXITCODE -ne 0) {
             Fail "Installing dependencies into .venv failed (exit code $LASTEXITCODE) - see the output above."
         }
+
+        # pip reporting success is not the same as the app being able to
+        # start: a wheel can unpack without its DLLs landing, which surfaces
+        # much later as an ImportError from inside the GUI. Import every
+        # top-level dependency now, while the setup output is still on screen
+        # and the user is expecting setup problems.
+        & $venvPython -c "import speech_to_text, PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Setup finished but the installed packages do not import (exit code $LASTEXITCODE) - see the error above. Deleting the .venv folder and running 'run.ps1 -Setup' again usually clears this."
+        }
+
         Write-Host '.venv is ready.' -ForegroundColor Green
     }
 
@@ -132,7 +222,12 @@ Or let this launcher do it for you:
     # src-layout: the package lives in src/, which is not on sys.path just
     # because the repo root is the working directory. Pointing PYTHONPATH at
     # it keeps this launcher a double-click affair with no install step.
-    $env:PYTHONPATH = Join-Path $PSScriptRoot 'src'
+    # $root, not $PSScriptRoot: the two are the same from a terminal, but
+    # $PSScriptRoot is empty in some double-click hosts, and Join-Path on an
+    # empty path throws - turning a working launch into a parameter-binding
+    # error reported as if the app itself had failed. $root already has the
+    # fallback for that case.
+    $env:PYTHONPATH = Join-Path $root 'src'
 
     $prevOutputEncoding = [Console]::OutputEncoding
     try {

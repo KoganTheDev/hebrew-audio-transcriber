@@ -54,12 +54,61 @@ goto :after_setup
 
 :setup_venv
 echo Setting up .venv...
+
+REM Pick the interpreter that will BUILD the venv, then check its version
+REM before using it. pyproject requires >=3.10, but "py -3" hands back
+REM whatever the machine's default 3.x is - on an older install that is 3.8
+REM or 3.9. The venv itself creates fine on those, so the failure lands one
+REM step later, out of pip, as "package requires a different Python version",
+REM which reads like a broken project rather than a stale interpreter.
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 -m venv "%~dp0.venv"
+    set "_boot=py -3"
 ) else (
-    python -m venv "%~dp0.venv"
+    set "_boot=python"
 )
+for /f "delims=" %%v in ('%_boot% -c "import sys; print('%%d.%%d' %% sys.version_info[:2])" 2^>nul') do set "_pyver=%%v"
+if not defined _pyver (
+    echo.
+    echo ERROR: No working Python found ^(checked "py" and "python"^).
+    echo Install Python 3.10+ from https://www.python.org/downloads/
+    echo.
+    pause
+    exit /b 1
+)
+for /f "tokens=1,2 delims=." %%a in ("%_pyver%") do (
+    set "_pymajor=%%a"
+    set "_pyminor=%%b"
+)
+if !_pymajor! lss 3 goto :old_python
+if !_pymajor! equ 3 if !_pyminor! lss 10 goto :old_python
+goto :python_ok
+
+:old_python
+echo.
+echo ERROR: This project needs Python 3.10 or newer, but the Python on this
+echo machine is %_pyver%.
+echo.
+echo Install a current Python from https://www.python.org/downloads/
+echo ^(tick "Add python.exe to PATH" in the installer^), then run
+echo "run.bat setup" again.
+echo.
+pause
+exit /b 1
+
+:python_ok
+echo Using Python %_pyver%
+
+REM A .venv folder with no python.exe in it is a half-created one - an
+REM interrupted setup, or an interpreter that has since been uninstalled.
+REM "python -m venv" onto that path repairs some of it and leaves the rest,
+REM so clear it out and start clean instead.
+if exist "%~dp0.venv" if not exist "%~dp0.venv\Scripts\python.exe" (
+    echo Removing an incomplete .venv from an earlier attempt...
+    rmdir /s /q "%~dp0.venv"
+)
+
+%_boot% -m venv "%~dp0.venv"
 if not exist "%~dp0.venv\Scripts\python.exe" (
     echo.
     echo ERROR: Creating .venv failed - see the output above.
@@ -67,14 +116,65 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
+
+REM A fresh venv ships whatever pip was bundled with the interpreter. On
+REM Python 3.11.0 that is pip 22.3, and pip 22.x has a Windows bug where the
+REM build-tracker directory it keeps under %%TEMP%% disappears part way
+REM through a long install, ending the run with
+REM   ERROR: Could not install packages due to an OSError: [Errno 2]
+REM   No such file or directory: '...\pip-build-tracker-xxxx\<hash>'
+REM This project pulls ~120 MB of wheels (PyQt5-Qt5 alone is 50 MB), so an
+REM install here runs for minutes and sits squarely in that window.
+REM Upgrading pip first is the fix, and it also brings a resolver that
+REM understands the metadata newer wheels publish.
+"%~dp0.venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
+if not !errorlevel!==0 (
+    echo.
+    echo ERROR: Upgrading pip inside .venv failed - see the output above.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Give pip its own scratch directory next to the venv instead of %%TEMP%%.
+REM The tracker failure above is triggered by something else emptying
+REM %%TEMP%% mid-install - Storage Sense, Disk Cleanup, or an antivirus
+REM scanner - which a newer pip does not prevent. A folder inside the project
+REM is not a target for any of them. Removed after.
+set "_prev_temp=%TEMP%"
+set "_prev_tmp=%TMP%"
+mkdir "%~dp0.venv\pip-tmp" 2>nul
+set "TEMP=%~dp0.venv\pip-tmp"
+set "TMP=%~dp0.venv\pip-tmp"
 "%~dp0.venv\Scripts\python.exe" -m pip install -e "%~dp0"
-if not %errorlevel%==0 (
+set "_pipcode=!errorlevel!"
+set "TEMP=%_prev_temp%"
+set "TMP=%_prev_tmp%"
+rmdir /s /q "%~dp0.venv\pip-tmp" 2>nul
+if not "!_pipcode!"=="0" (
     echo.
     echo ERROR: Installing dependencies into .venv failed - see the output above.
     echo.
     pause
     exit /b 1
 )
+
+REM pip reporting success is not the same as the app being able to start: a
+REM wheel can unpack without its DLLs landing, which surfaces much later as
+REM an ImportError from inside the GUI. Import every top-level dependency
+REM now, while the setup output is still on screen and the user is expecting
+REM setup problems.
+"%~dp0.venv\Scripts\python.exe" -c "import speech_to_text, PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
+if not !errorlevel!==0 (
+    echo.
+    echo ERROR: Setup finished but the installed packages do not import - see
+    echo the error above. Deleting the .venv folder and running "run.bat setup"
+    echo again usually clears this.
+    echo.
+    pause
+    exit /b 1
+)
+
 echo .venv is ready.
 :after_setup
 
