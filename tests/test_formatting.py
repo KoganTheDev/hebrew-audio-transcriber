@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 
 import pytest
 
-from speech_to_text.core.formatting import (
+from core.formatting import (
     LRI,
     PDI,
     RLM,
@@ -24,8 +24,8 @@ from speech_to_text.core.formatting import (
     merge_turns,
     render_html,
 )
-from speech_to_text.core.hebrew_correct import CONFIDENCE_THRESHOLD
-from speech_to_text.core.segments import Segment, TranscriptDocument, Word
+from core.hebrew_correct import CONFIDENCE_THRESHOLD
+from core.segments import Segment, TranscriptDocument, Word
 
 HE = "שלום עולם"
 
@@ -613,7 +613,7 @@ class TestEditableDocument:
         this file while still doing the redundant work this test exists to
         rule out.
         """
-        import speech_to_text.core.formatting as formatting_module
+        import core.formatting as formatting_module
 
         calls = []
         real_merge_turns = formatting_module.merge_turns
@@ -1015,7 +1015,7 @@ class TestDocStringsHaveBothLanguages:
     # it.
 
     def test_every_doc_key_has_english_and_hebrew(self):
-        from speech_to_text.gui.i18n import STRINGS
+        from gui.i18n import STRINGS
 
         doc_keys = [
             key
@@ -1046,7 +1046,7 @@ class TestInlinedAssets:
         They are package data, not source-tree files - an install that drops
         them produces a silently broken document rather than an import error.
         """
-        from speech_to_text.core.formatting.assets import _asset_dir
+        from core.formatting.assets import _asset_dir
 
         assert "body {" in _asset_dir("css")
         assert "localStorage" in _asset_dir("js")
@@ -1076,7 +1076,7 @@ class TestVistaBackdrop:
         assert len(renders) > 1
 
     def test_missing_vistas_directory_renders_cleanly_with_no_backdrop(self, monkeypatch, tmp_path):
-        import speech_to_text.core.formatting as formatting
+        import core.formatting as formatting
 
         # Patched on formatting.assets, not on the formatting package itself:
         # _vista_names() is defined in formatting/assets.py and reads
@@ -1145,7 +1145,7 @@ class TestVistaBackdrop:
         the MAIN backdrop, and would also double the odds of that photo
         being chosen at all relative to a photo with no portrait crop.
         """
-        import speech_to_text.core.formatting as formatting
+        import core.formatting as formatting
 
         vistas_dir = tmp_path / "vistas"
         vistas_dir.mkdir()
@@ -1181,7 +1181,7 @@ class TestVistaBackdrop:
         comment for why patching the formatting package's re-exported names
         would not do anything.
         """
-        import speech_to_text.core.formatting as formatting
+        import core.formatting as formatting
 
         assets_dir = tmp_path / "assets"
         vistas_dir = assets_dir / "vistas"
@@ -1261,7 +1261,7 @@ class TestRemovedIdentifiersNeverReappear:
     """
 
     def test_no_locate_button_or_turn_count_mechanism_remains(self):
-        from speech_to_text.core.formatting.assets import _asset_dir
+        from core.formatting.assets import _asset_dir
 
         js, css = _asset_dir("js"), _asset_dir("css")
         for name in (
@@ -1335,7 +1335,7 @@ class TestPopoverStackingAndAnchoring:
         header's own card - now that cards are flat, one sentence wide, the
         card that needs raising is the .bubble the menu opened from.
         """
-        from speech_to_text.core.formatting.assets import _asset_dir
+        from core.formatting.assets import _asset_dir
 
         css = _asset_dir("css")
         match = re.search(r"\.bubble\.menu-open\s*\{([^}]*)\}", css)
@@ -1353,7 +1353,7 @@ class TestPopoverStackingAndAnchoring:
         block's edge, not under the chip that was actually clicked) - has to
         be the positioned ancestor.
         """
-        from speech_to_text.core.formatting.assets import _asset_dir
+        from core.formatting.assets import _asset_dir
 
         css = _asset_dir("css")
         match = re.search(r"\.bubble-spk-anchor\s*\{([^}]*)\}", css)
@@ -1370,7 +1370,7 @@ class TestTourStrings:
     """
 
     def test_every_tour_key_has_english_and_hebrew(self):
-        from speech_to_text.gui.i18n import STRINGS
+        from gui.i18n import STRINGS
 
         # doc_tour_step_position (like the pre-existing doc_file_position it
         # mirrors) is a bare "{i} / {n}" placeholder template with nothing
@@ -1388,7 +1388,7 @@ class TestTourStrings:
                 assert entry["he"] != entry["en"], f"{key}'s Hebrew value is not translated"
 
     def test_step_and_control_keys_all_exist(self):
-        from speech_to_text.gui.i18n import STRINGS
+        from gui.i18n import STRINGS
 
         required = [
             "doc_tour_start",
@@ -1417,7 +1417,7 @@ class TestTourStrings:
             assert key in STRINGS, f"{key} missing from STRINGS"
 
     def test_document_strings_carries_tour_keys_stripped_of_the_doc_prefix(self):
-        from speech_to_text.gui.i18n import document_strings, set_language
+        from gui.i18n import document_strings, set_language
 
         set_language("en")
         strings = document_strings()
@@ -1474,7 +1474,7 @@ class TestEveryAssetReaderIsCached:
     """
 
     def test_the_readers_and_the_encoder_all_cache(self):
-        from speech_to_text.core import formatting
+        from core import formatting
 
         for reader in (
             formatting._asset,
@@ -1486,7 +1486,7 @@ class TestEveryAssetReaderIsCached:
             assert hasattr(reader, "cache_clear"), f"{reader.__name__} is not cached"
 
     def test_encoding_the_same_backdrop_twice_does_the_work_once(self):
-        from speech_to_text.core import formatting
+        from core import formatting
 
         names = formatting._vista_names()
         if not names:

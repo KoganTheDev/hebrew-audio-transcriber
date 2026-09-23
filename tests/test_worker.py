@@ -4,7 +4,7 @@ Tests for the batch transcription worker (core/worker.py).
 Transcriber itself is swapped for a fake: these tests are about the batch
 loop's own logic (progress rescaling, one-file-failure isolation), not about
 faster-whisper. The fake stands in wherever core.worker does
-`from speech_to_text.core.transcriber import Transcriber` - patched on the
+`from core.transcriber import Transcriber` - patched on the
 transcriber module itself so that late import picks it up.
 """
 
@@ -16,10 +16,10 @@ import time
 import numpy as np
 import pytest
 
-from speech_to_text.core import progress_scale as ps
-from speech_to_text.core import worker
-from speech_to_text.core.options import TranscriptionOptions
-from speech_to_text.core.segments import Segment, Word
+from core import progress_scale as ps
+from core import worker
+from core.options import TranscriptionOptions
+from core.segments import Segment, Word
 
 
 class FakeQueue:
@@ -95,7 +95,7 @@ class FakeTranscriber:
 
 @pytest.fixture(autouse=True)
 def fake_transcriber(monkeypatch):
-    import speech_to_text.core.transcriber as transcriber_module
+    import core.transcriber as transcriber_module
 
     monkeypatch.setattr(transcriber_module, "Transcriber", FakeTranscriber)
 
@@ -165,7 +165,7 @@ class TestBatchProgressRescaling:
         the first file's "analyzing audio" at 13%. Speaker identification is on
         because that is what emits the early analyzing checkpoint.
         """
-        from speech_to_text.core import audio_source, diarization
+        from core import audio_source, diarization
 
         mono = [np.zeros(1600, dtype=np.float32)]
         monkeypatch.setattr(audio_source, "load", lambda path: (mono, False))
@@ -495,7 +495,7 @@ class TestDiarizationOverlap:
         run run_transcription_process with identify_speakers=True without
         touching a real file, PyAV or sherpa-onnx.
         """
-        from speech_to_text.core import audio_source, diarization
+        from core import audio_source, diarization
 
         channels = [np.zeros(1600, dtype=np.float32)]
 
@@ -527,7 +527,7 @@ class TestDiarizationOverlap:
         real (not stubbed) here, so a segment whose word falls inside the
         one fake span must come back attributed to that span's speaker.
         """
-        from speech_to_text.core.diarization import SpeakerSpan
+        from core.diarization import SpeakerSpan
 
         span = SpeakerSpan(start=0.0, end=1.0, speaker=1)
         self._stub_audio_and_diarization(monkeypatch, spans=[span])
@@ -535,7 +535,7 @@ class TestDiarizationOverlap:
         # FakeTranscriber.transcribe() ignores its `source` for the returned
         # Segment's word timings, so attach a word ourselves after the call
         # to give assign_speakers something inside the fake span to match.
-        import speech_to_text.core.transcriber as transcriber_module
+        import core.transcriber as transcriber_module
 
         class WordyFakeTranscriber(transcriber_module.Transcriber):
             def transcribe(self, source, total_duration_seconds=0):
@@ -580,7 +580,7 @@ class TestDiarizationOverlap:
         phase that, per the estimate baked into hardware_detection.py, can
         take a third of the audio's own length.
         """
-        from speech_to_text.core.diarization import SpeakerSpan
+        from core.diarization import SpeakerSpan
 
         span = SpeakerSpan(start=0.0, end=1.0, speaker=1)
         self._stub_audio_and_diarization(monkeypatch, spans=[span])
@@ -745,7 +745,7 @@ class TestDiarizationOverlap:
         variable holding it goes out of scope with the exception. join()ing
         it before the exception propagates is the fix.
         """
-        from speech_to_text.core import audio_source, diarization
+        from core import audio_source, diarization
 
         channels = [np.zeros(1600, dtype=np.float32)]
         monkeypatch.setattr(audio_source, "load", lambda path: (channels, False))
@@ -913,7 +913,7 @@ class TestWorkStream:
         a very small model inverts that, and then the "started" marker is what
         lets the GUI count the phase down rather than appear to have hung.
         """
-        from speech_to_text.core import audio_source, diarization
+        from core import audio_source, diarization
 
         monkeypatch.setattr(
             audio_source, "load", lambda path: ([np.zeros(1600, dtype=np.float32)], False)
@@ -953,7 +953,7 @@ class TestWorkStream:
         drop back to zero and climb again - and audio_done running backwards
         makes the estimate jump instead of converge.
         """
-        from speech_to_text.core import audio_source
+        from core import audio_source
 
         stereo = [np.zeros(1600, dtype=np.float32), np.zeros(1600, dtype=np.float32)]
         monkeypatch.setattr(audio_source, "load", lambda path: (stereo, True))
@@ -1089,7 +1089,7 @@ class TestChannelsAreReleasedAfterMixdown:
     """
 
     def test_the_channels_are_dropped_once_the_mix_exists(self, tmp_path, monkeypatch):
-        from speech_to_text.core import audio_source, diarization
+        from core import audio_source, diarization
 
         stereo = [
             np.zeros(1600, dtype=np.float32),
@@ -1126,7 +1126,7 @@ class TestChannelsAreReleasedAfterMixdown:
         The exact path transcribes each channel separately, so for it the
         channels ARE the work - and it is the path where no mix was built.
         """
-        from speech_to_text.core import audio_source
+        from core import audio_source
 
         stereo = [
             np.zeros(1600, dtype=np.float32),
@@ -1206,7 +1206,7 @@ class TestTheLoadFailureSaysWhich:
     """
 
     def _run(self, tmp_path, monkeypatch, on_network):
-        import speech_to_text.core.transcriber as transcriber_module
+        import core.transcriber as transcriber_module
 
         class FailingTranscriber:
             def __init__(self, *args, **kwargs):

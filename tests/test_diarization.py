@@ -12,8 +12,8 @@ word boundary where the speaker actually changed.
 
 TestDiarizeBuildsSherpaConfig is the exception: diarize() itself had zero
 coverage before this, and that let a real bug through - a local variable
-named `config` inside diarize() shadowed the module-level `from
-speech_to_text import config` import for the entire function body, including
+named `config` inside diarize() shadowed the module-level `import config`
+for the entire function body, including
 the right-hand side of its own assignment, so every call raised
 UnboundLocalError. worker.py's deliberately non-fatal except around speaker
 identification swallowed that into a silent "no speaker labels", and nothing
@@ -38,14 +38,14 @@ import types
 
 import numpy as np
 
-from speech_to_text.core import diarization
-from speech_to_text.core.diarization import (
+from core import diarization
+from core.diarization import (
     MIN_SPEAKER_RUN_WORDS,
     SpeakerSpan,
     _best_speaker,
     assign_speakers,
 )
-from speech_to_text.core.segments import Segment, Word
+from core.segments import Segment, Word
 
 
 def word(start, end, text="x", probability=0.9):
@@ -222,7 +222,7 @@ class TestAssignSpeakers:
         # apart, rather than pinning the value itself - the value is a tuning
         # decision that lives in config.py and is allowed to change; the two
         # names being the same thing is the invariant this file depends on.
-        from speech_to_text import config as app_config
+        import config as app_config
 
         assert MIN_SPEAKER_RUN_WORDS == app_config.DIARIZATION_MIN_SPEAKER_RUN_WORDS
         assert MIN_SPEAKER_RUN_WORDS == 2  # the value this fixture is built for
@@ -486,7 +486,7 @@ class TestDiarizeBuildsSherpaConfig:
         `config` local reading itself instead of the settings module would
         raise before this assertion is ever reached.
         """
-        from speech_to_text import config as app_config
+        import config as app_config
 
         fake_config_cls = _install_fake_sherpa_onnx(monkeypatch)
         monkeypatch.setattr(diarization, "models_present", lambda: True)
@@ -506,7 +506,7 @@ class TestDiarizeBuildsSherpaConfig:
         reached only the segmentation model would look wired up while leaving
         the expensive half on onnxruntime's default.
         """
-        from speech_to_text import config as app_config
+        import config as app_config
 
         fake_config_cls = _install_fake_sherpa_onnx(monkeypatch)
         monkeypatch.setattr(diarization, "models_present", lambda: True)
@@ -526,7 +526,7 @@ class TestDiarizeBuildsSherpaConfig:
         was 3.8x the per-window cost of 2), so the constant must stay a small
         cap rather than drifting to os.cpu_count() in some later tidy-up.
         """
-        from speech_to_text import config as app_config
+        import config as app_config
 
         assert 1 <= app_config.DIARIZATION_NUM_THREADS <= 4
 
@@ -539,7 +539,7 @@ class TestDiarizeBuildsSherpaConfig:
         exactly the kind of regression that shows up as "the fix stopped
         helping" months later rather than as a failing test.
         """
-        from speech_to_text import config as app_config
+        import config as app_config
 
         called = {}
 
@@ -547,7 +547,7 @@ class TestDiarizeBuildsSherpaConfig:
             called["args"] = (len(samples), sample_rate, num_speakers)
             return ["sentinel"]
 
-        import speech_to_text.core.diarization_powerset as powerset_module
+        import core.diarization_powerset as powerset_module
 
         monkeypatch.setattr(powerset_module, "diarize_powerset", fake_powerset)
         monkeypatch.setattr(app_config, "DIARIZATION_ENGINE", "powerset")
@@ -561,7 +561,7 @@ class TestDiarizeBuildsSherpaConfig:
 
     def test_default_engine_still_runs_sherpa(self, monkeypatch):
         """The powerset engine is opt-in; the shipped default must not move."""
-        from speech_to_text import config as app_config
+        import config as app_config
 
         assert app_config.DIARIZATION_ENGINE == "sherpa"
 

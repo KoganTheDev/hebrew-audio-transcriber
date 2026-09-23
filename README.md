@@ -51,6 +51,12 @@ which aborts long installs with `OSError: [Errno 2] No such file or
 directory: '...\pip-build-tracker-...'`. This project downloads ~120 MB of
 wheels, so it hits that reliably.
 
+`pip install -e .` installs the **dependencies only**. The app itself runs
+from `src/` rather than from `site-packages`: its modules are `config`,
+`core` and `gui`, names too generic to publish into a shared environment, so
+`pyproject.toml` declares no packages. The launchers put `src/` on the path
+for you.
+
 ### NVIDIA GPU acceleration (optional)
 
 This app detects an NVIDIA GPU automatically and uses it for transcription -
@@ -68,16 +74,16 @@ No CUDA toolkit needed - just this pip extra.
 ## Usage
 
 ```bash
-python -m speech_to_text.main
+python src\main.py
 ```
 
-Needs the package installed (see Installation above) - or launch `run.ps1` /
-`run.bat` instead, which run it straight from `src/` against the project's
-`.venv`. Neither launcher installs anything on its own; if `.venv` doesn't
-exist yet, they fail immediately with setup instructions rather than
-silently falling back to a system Python that lacks the dependencies. Run
-`run.ps1 -Setup` (or `run.bat setup`) to have the launcher create `.venv`
-and install everything into it for you.
+Needs the dependencies installed and `.venv` active (see Installation above) -
+or launch `run.ps1` / `run.bat` instead, which run it against the project's
+`.venv` whatever your shell is pointing at. Neither launcher installs anything
+on its own; if `.venv` doesn't exist yet, they fail immediately with setup
+instructions rather than silently falling back to a system Python that lacks
+the dependencies. Run `run.ps1 -Setup` (or `run.bat setup`) to have the
+launcher create `.venv` and install everything into it for you.
 
 **Workflow:**
 1. **Select file(s)** - drag in audio/video files or a whole folder; your CPU/RAM/GPU and the total duration selected are shown alongside.

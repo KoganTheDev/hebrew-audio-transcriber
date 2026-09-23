@@ -1,5 +1,5 @@
 """One-time build step: turn the raw Unsplash JPEGs in vistas_source/ into the
-WebP backdrops shipped inside speech_to_text/core/assets/vistas/.
+WebP backdrops shipped inside core/assets/vistas/.
 
 Each source produces TWO outputs: a landscape crop (vista-NN.webp, 16:9,
 TARGET_W x TARGET_H) for wide viewports and a portrait crop
@@ -34,7 +34,7 @@ from PIL import Image
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIR = _REPO_ROOT / "vistas_source"
-OUTPUT_DIR = _REPO_ROOT / "src" / "speech_to_text" / "core" / "assets" / "vistas"
+OUTPUT_DIR = _REPO_ROOT / "src" / "core" / "assets" / "vistas"
 
 SOURCE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 

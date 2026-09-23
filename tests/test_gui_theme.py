@@ -1,5 +1,5 @@
 """
-Contrast guarantees for the PyQt5 app's own palette, speech_to_text.gui.theme.COLORS.
+Contrast guarantees for the PyQt5 app's own palette, gui.theme.COLORS.
 
 Sibling to tests/test_transcript_styles.py, which does the identical job for
 the HTML transcript document's stylesheet - see that file's module docstring
@@ -26,7 +26,7 @@ second hand-typed copy is a second place for a transcription slip to hide.
 
 import pytest
 
-from speech_to_text.gui.theme import COLORS
+from gui.theme import COLORS
 from tests.test_transcript_styles import contrast_ratio
 
 TEXT_MIN = 4.5

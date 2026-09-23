@@ -8,8 +8,8 @@ visual_order_mode() for why this exists.
 import logging
 from unittest.mock import patch
 
-from speech_to_text.core.hebrew_text import isolate_rtl
-from speech_to_text.core.log_bidi import VisualOrderFormatter, visual_order_mode
+from core.hebrew_text import isolate_rtl
+from core.log_bidi import VisualOrderFormatter, visual_order_mode
 
 
 class TestVisualOrderMode:
@@ -47,7 +47,7 @@ class TestVisualOrderMode:
 class TestVisualOrderFormatter:
     def _record(self, message: str) -> logging.LogRecord:
         return logging.LogRecord(
-            name="speech_to_text.core.transcriber",
+            name="core.transcriber",
             level=logging.DEBUG,
             pathname="transcriber.py",
             lineno=169,

@@ -23,7 +23,7 @@ PowerShell launcher and a path-resolution branch all target it), alongside pytes
     ruff check src tests tools                # lint, including a McCabe complexity ceiling of 10
     ruff format --check src tests tools       # formatting
     lint-imports                              # the two architecture contracts - see ARCHITECTURE.md §1
-    mypy -p speech_to_text.core -p speech_to_text.config -p speech_to_text.gui.presenters -p speech_to_text.hardware_detection
+    mypy -p core -p config -p gui.presenters -m hardware_detection
 
 That mypy invocation is deliberately scoped. Those packages are at zero errors
 under `disallow_untyped_defs` and CI fails if that changes. The whole-package

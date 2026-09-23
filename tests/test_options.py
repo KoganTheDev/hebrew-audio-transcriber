@@ -10,8 +10,8 @@ worker process.
 
 import pickle
 
-from speech_to_text import config
-from speech_to_text.core.options import TranscriptionOptions
+import config
+from core.options import TranscriptionOptions
 
 
 def test_the_defaults_match_the_apps_configured_model_and_language():

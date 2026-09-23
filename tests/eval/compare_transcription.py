@@ -261,8 +261,8 @@ import tempfile
 import threading
 import time
 
-from speech_to_text import config as app_config
-from speech_to_text.core.worker import _RETRY_LOG_PATTERNS
+import config as app_config
+from core.worker import _RETRY_LOG_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -923,7 +923,7 @@ def print_table(results: list[dict], has_reference: bool) -> None:
 
 
 def _load_clip(audio_path: str, start: float, seconds: float):
-    from speech_to_text.core import audio_source
+    from core import audio_source
 
     print(f"Decoding {audio_path} ...", flush=True)
     channels, _two_party = audio_source.load(audio_path)

@@ -17,22 +17,23 @@ for /f "tokens=2 delims=:" %%p in ('chcp') do set "_prev_codepage=%%p"
 set "_prev_codepage=%_prev_codepage: =%"
 chcp 65001 >nul
 
-REM Check the package is actually here before handing over to Python. Without
-REM this the failure is "ImportError: cannot import name 'config' from
-REM 'speech_to_text' (unknown location)", which means Python found a DIRECTORY
-REM called speech_to_text with no __init__.py and treated it as a namespace
-REM package. That is what an incomplete copy looks like - a half-finished
-REM OneDrive sync, a partial download, or a folder copied while files were
-REM open - and the raw traceback tells a user nothing.
-if not exist "%~dp0src\speech_to_text\__init__.py" (
+REM Check the program files are actually here before handing over to Python.
+REM Without this the failure is a bare "can't open file 'src\main.py'", or
+REM worse a ModuleNotFoundError from halfway through startup. That is what an
+REM incomplete copy looks like - a half-finished OneDrive sync, a partial
+REM download, or a folder copied while files were open - and neither message
+REM tells a user anything they can act on.
+if not exist "%~dp0src\main.py" (
     echo.
     echo ERROR: This copy of the app is incomplete - the program files are missing.
     echo.
-    if exist "%~dp0speech_to_text" (
-        echo There is an old "speech_to_text" folder here from a previous version,
-        echo but the current "src\speech_to_text" is missing.
+    if exist "%~dp0src\speech_to_text" (
+        echo This folder still has the old "src\speech_to_text" layout. The
+        echo modules moved up to "src\" directly, so this copy is from before
+        echo that change and only half-updated - a "git pull" that could not
+        echo overwrite a file, most likely.
     ) else (
-        echo Expected to find: %~dp0src\speech_to_text\__init__.py
+        echo Expected to find: %~dp0src\main.py
     )
     echo.
     echo To fix it, get a fresh copy of the whole folder:
@@ -44,9 +45,12 @@ if not exist "%~dp0src\speech_to_text\__init__.py" (
     exit /b 1
 )
 
-REM src-layout: the package lives in src/, which is not on sys.path just
-REM because the repo root is the working directory. Pointing PYTHONPATH at
-REM it keeps this launcher a double-click affair with no install step.
+REM config/, core/ and gui/ live in src/, which is not on sys.path just
+REM because the repo root is the working directory. Pointing PYTHONPATH at it
+REM keeps this launcher a double-click affair with no install step. main.py
+REM puts its own directory on sys.path too, so this is belt-and-braces for
+REM anything it spawns (the transcription worker inherits the environment,
+REM not main.py's in-process edit).
 set "PYTHONPATH=%~dp0src"
 
 if /i "%~1"=="setup" goto :setup_venv
@@ -164,7 +168,7 @@ REM wheel can unpack without its DLLs landing, which surfaces much later as
 REM an ImportError from inside the GUI. Import every top-level dependency
 REM now, while the setup output is still on screen and the user is expecting
 REM setup problems.
-"%~dp0.venv\Scripts\python.exe" -c "import speech_to_text, PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
+"%~dp0.venv\Scripts\python.exe" -c "import PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
 if not !errorlevel!==0 (
     echo.
     echo ERROR: Setup finished but the installed packages do not import - see
@@ -198,7 +202,7 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
     exit /b 1
 )
 
-"%~dp0.venv\Scripts\python.exe" -m speech_to_text.main
+"%~dp0.venv\Scripts\python.exe" "%~dp0src\main.py"
 set "_exitcode=%errorlevel%"
 if defined _prev_codepage chcp %_prev_codepage% >nul
 REM Hold the window open only when something actually failed - a normal

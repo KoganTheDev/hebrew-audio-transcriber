@@ -28,7 +28,7 @@ def sample_audio_path(temp_dir):
 @pytest.fixture
 def mock_hardware():
     """Create a mocked hardware detector."""
-    with patch("speech_to_text.hardware_detection.psutil") as mock_psutil:
+    with patch("hardware_detection.psutil") as mock_psutil:
         mock_psutil.cpu_count.return_value = 4
         mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
         yield mock_psutil
@@ -37,7 +37,7 @@ def mock_hardware():
 @pytest.fixture
 def mock_whisper_model():
     """Create a mocked WhisperModel."""
-    with patch("speech_to_text.core.transcriber.WhisperModel") as mock_model:
+    with patch("core.transcriber.WhisperModel") as mock_model:
         yield mock_model
 
 
@@ -58,6 +58,6 @@ def never_download_model_weights(monkeypatch):
     should undo this with its own monkeypatch.
     """
     monkeypatch.setattr(
-        "speech_to_text.core.transcriber.Transcriber._fetch_weights",
+        "core.transcriber.Transcriber._fetch_weights",
         lambda self: None,
     )

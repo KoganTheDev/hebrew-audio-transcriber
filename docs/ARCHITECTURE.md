@@ -7,7 +7,7 @@ what is local to it.
 
 ## 1. Constraints
 
-**`core/` must never import PyQt5, and never `speech_to_text.gui.i18n`.**
+**`core/` must never import PyQt5, and never `gui.i18n`.**
 
 This is the one rule that shapes everything else, and it is not a style
 preference. On Windows, PyQt5 and faster-whisper/ctranslate2 each bundle a
@@ -36,7 +36,7 @@ scripts and backdrop photos are all inlined into the single HTML file.
 ## 2. Building blocks
 
 ```
-src/speech_to_text/             src-layout: the package is not importable from the repo root
+src/                            on sys.path at run time; nothing is installed into site-packages
   main.py                       process entry: logging, dependency check, Qt import ORDER
   hardware_detection.py         CPU/RAM/GPU probe, model recommendation, time estimates
   config/                       grouped by what each constant is FOR, not where it was declared

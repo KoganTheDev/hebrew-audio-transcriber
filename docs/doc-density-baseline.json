@@ -1,21 +1,5 @@
 {
- "src/speech_to_text/__init__.py": {
-  "total": 9,
-  "code": 5,
-  "doc": 1,
-  "comment": 0,
-  "blank": 3,
-  "prose": 1
- },
- "src/speech_to_text/__main__.py": {
-  "total": 8,
-  "code": 3,
-  "doc": 3,
-  "comment": 0,
-  "blank": 2,
-  "prose": 3
- },
- "src/speech_to_text/config/__init__.py": {
+ "src/config/__init__.py": {
   "total": 115,
   "code": 104,
   "doc": 9,
@@ -23,7 +7,7 @@
   "blank": 2,
   "prose": 9
  },
- "src/speech_to_text/config/app.py": {
+ "src/config/app.py": {
   "total": 70,
   "code": 12,
   "doc": 1,
@@ -31,7 +15,7 @@
   "blank": 8,
   "prose": 50
  },
- "src/speech_to_text/config/diarization.py": {
+ "src/config/diarization.py": {
   "total": 142,
   "code": 14,
   "doc": 1,
@@ -39,7 +23,7 @@
   "blank": 13,
   "prose": 115
  },
- "src/speech_to_text/config/models.py": {
+ "src/config/models.py": {
   "total": 194,
   "code": 152,
   "doc": 1,
@@ -47,7 +31,7 @@
   "blank": 2,
   "prose": 40
  },
- "src/speech_to_text/config/paths.py": {
+ "src/config/paths.py": {
   "total": 127,
   "code": 31,
   "doc": 20,
@@ -55,7 +39,7 @@
   "blank": 15,
   "prose": 81
  },
- "src/speech_to_text/config/transcription.py": {
+ "src/config/transcription.py": {
   "total": 44,
   "code": 11,
   "doc": 2,
@@ -63,7 +47,7 @@
   "blank": 8,
   "prose": 25
  },
- "src/speech_to_text/core/__init__.py": {
+ "src/core/__init__.py": {
   "total": 15,
   "code": 0,
   "doc": 15,
@@ -71,7 +55,7 @@
   "blank": 0,
   "prose": 15
  },
- "src/speech_to_text/core/audio_source.py": {
+ "src/core/audio_source.py": {
   "total": 214,
   "code": 98,
   "doc": 49,
@@ -79,7 +63,7 @@
   "blank": 35,
   "prose": 81
  },
- "src/speech_to_text/core/calibration.py": {
+ "src/core/calibration.py": {
   "total": 167,
   "code": 84,
   "doc": 31,
@@ -87,7 +71,7 @@
   "blank": 18,
   "prose": 65
  },
- "src/speech_to_text/core/dependencies.py": {
+ "src/core/dependencies.py": {
   "total": 70,
   "code": 47,
   "doc": 12,
@@ -95,7 +79,7 @@
   "blank": 10,
   "prose": 13
  },
- "src/speech_to_text/core/diarization.py": {
+ "src/core/diarization.py": {
   "total": 265,
   "code": 151,
   "doc": 42,
@@ -103,7 +87,7 @@
   "blank": 40,
   "prose": 74
  },
- "src/speech_to_text/core/diarization_powerset.py": {
+ "src/core/diarization_powerset.py": {
   "total": 345,
   "code": 187,
   "doc": 105,
@@ -111,7 +95,7 @@
   "blank": 43,
   "prose": 115
  },
- "src/speech_to_text/core/formatting/__init__.py": {
+ "src/core/formatting/__init__.py": {
   "total": 331,
   "code": 184,
   "doc": 82,
@@ -119,7 +103,7 @@
   "blank": 22,
   "prose": 125
  },
- "src/speech_to_text/core/formatting/assets.py": {
+ "src/core/formatting/assets.py": {
   "total": 145,
   "code": 43,
   "doc": 79,
@@ -127,7 +111,7 @@
   "blank": 20,
   "prose": 82
  },
- "src/speech_to_text/core/formatting/chrome.py": {
+ "src/core/formatting/chrome.py": {
   "total": 513,
   "code": 288,
   "doc": 100,
@@ -135,7 +119,7 @@
   "blank": 34,
   "prose": 191
  },
- "src/speech_to_text/core/formatting/document.py": {
+ "src/core/formatting/document.py": {
   "total": 570,
   "code": 302,
   "doc": 200,
@@ -143,7 +127,7 @@
   "blank": 36,
   "prose": 232
  },
- "src/speech_to_text/core/formatting/timecode.py": {
+ "src/core/formatting/timecode.py": {
   "total": 107,
   "code": 33,
   "doc": 32,
@@ -151,7 +135,7 @@
   "blank": 15,
   "prose": 59
  },
- "src/speech_to_text/core/formatting/turns.py": {
+ "src/core/formatting/turns.py": {
   "total": 194,
   "code": 104,
   "doc": 43,
@@ -159,7 +143,7 @@
   "blank": 32,
   "prose": 58
  },
- "src/speech_to_text/core/hebrew_correct.py": {
+ "src/core/hebrew_correct.py": {
   "total": 321,
   "code": 163,
   "doc": 92,
@@ -167,7 +151,7 @@
   "blank": 45,
   "prose": 113
  },
- "src/speech_to_text/core/hebrew_text.py": {
+ "src/core/hebrew_text.py": {
   "total": 254,
   "code": 123,
   "doc": 48,
@@ -175,7 +159,7 @@
   "blank": 36,
   "prose": 95
  },
- "src/speech_to_text/core/log_bidi.py": {
+ "src/core/log_bidi.py": {
   "total": 41,
   "code": 15,
   "doc": 19,
@@ -183,7 +167,7 @@
   "blank": 7,
   "prose": 19
  },
- "src/speech_to_text/core/options.py": {
+ "src/core/options.py": {
   "total": 57,
   "code": 19,
   "doc": 7,
@@ -191,7 +175,7 @@
   "blank": 12,
   "prose": 26
  },
- "src/speech_to_text/core/power.py": {
+ "src/core/power.py": {
   "total": 121,
   "code": 37,
   "doc": 64,
@@ -199,7 +183,7 @@
   "blank": 12,
   "prose": 72
  },
- "src/speech_to_text/core/progress_scale.py": {
+ "src/core/progress_scale.py": {
   "total": 60,
   "code": 12,
   "doc": 22,
@@ -207,7 +191,7 @@
   "blank": 8,
   "prose": 40
  },
- "src/speech_to_text/core/segmentation.py": {
+ "src/core/segmentation.py": {
   "total": 257,
   "code": 94,
   "doc": 103,
@@ -215,7 +199,7 @@
   "blank": 31,
   "prose": 132
  },
- "src/speech_to_text/core/segments.py": {
+ "src/core/segments.py": {
   "total": 86,
   "code": 30,
   "doc": 38,
@@ -223,7 +207,7 @@
   "blank": 13,
   "prose": 43
  },
- "src/speech_to_text/core/speaker_attribution.py": {
+ "src/core/speaker_attribution.py": {
   "total": 378,
   "code": 197,
   "doc": 99,
@@ -231,7 +215,7 @@
   "blank": 45,
   "prose": 136
  },
- "src/speech_to_text/core/transcriber.py": {
+ "src/core/transcriber.py": {
   "total": 333,
   "code": 180,
   "doc": 73,
@@ -239,7 +223,7 @@
   "blank": 34,
   "prose": 119
  },
- "src/speech_to_text/core/worker.py": {
+ "src/core/worker.py": {
   "total": 884,
   "code": 420,
   "doc": 285,
@@ -247,7 +231,7 @@
   "blank": 106,
   "prose": 358
  },
- "src/speech_to_text/gui/__init__.py": {
+ "src/gui/__init__.py": {
   "total": 1,
   "code": 0,
   "doc": 1,
@@ -255,7 +239,7 @@
   "blank": 0,
   "prose": 1
  },
- "src/speech_to_text/gui/audio_utils.py": {
+ "src/gui/audio_utils.py": {
   "total": 52,
   "code": 29,
   "doc": 12,
@@ -263,7 +247,7 @@
   "blank": 7,
   "prose": 16
  },
- "src/speech_to_text/gui/checkbox_style.py": {
+ "src/gui/checkbox_style.py": {
   "total": 175,
   "code": 53,
   "doc": 53,
@@ -271,7 +255,7 @@
   "blank": 14,
   "prose": 108
  },
- "src/speech_to_text/gui/focus.py": {
+ "src/gui/focus.py": {
   "total": 157,
   "code": 44,
   "doc": 71,
@@ -279,7 +263,7 @@
   "blank": 12,
   "prose": 101
  },
- "src/speech_to_text/gui/i18n.py": {
+ "src/gui/i18n.py": {
   "total": 907,
   "code": 636,
   "doc": 44,
@@ -287,7 +271,7 @@
   "blank": 40,
   "prose": 231
  },
- "src/speech_to_text/gui/icons.py": {
+ "src/gui/icons.py": {
   "total": 109,
   "code": 73,
   "doc": 30,
@@ -295,7 +279,7 @@
   "blank": 6,
   "prose": 30
  },
- "src/speech_to_text/gui/main_window.py": {
+ "src/gui/main_window.py": {
   "total": 1041,
   "code": 487,
   "doc": 247,
@@ -303,7 +287,7 @@
   "blank": 109,
   "prose": 445
  },
- "src/speech_to_text/gui/presenters/__init__.py": {
+ "src/gui/presenters/__init__.py": {
   "total": 26,
   "code": 12,
   "doc": 12,
@@ -311,7 +295,7 @@
   "blank": 2,
   "prose": 12
  },
- "src/speech_to_text/gui/presenters/transcription.py": {
+ "src/gui/presenters/transcription.py": {
   "total": 111,
   "code": 43,
   "doc": 43,
@@ -319,7 +303,7 @@
   "blank": 14,
   "prose": 54
  },
- "src/speech_to_text/gui/stepper.py": {
+ "src/gui/stepper.py": {
   "total": 182,
   "code": 94,
   "doc": 24,
@@ -327,7 +311,7 @@
   "blank": 18,
   "prose": 70
  },
- "src/speech_to_text/gui/steps/__init__.py": {
+ "src/gui/steps/__init__.py": {
   "total": 25,
   "code": 9,
   "doc": 9,
@@ -335,7 +319,7 @@
   "blank": 7,
   "prose": 9
  },
- "src/speech_to_text/gui/steps/file_select.py": {
+ "src/gui/steps/file_select.py": {
   "total": 657,
   "code": 365,
   "doc": 74,
@@ -343,7 +327,7 @@
   "blank": 64,
   "prose": 228
  },
- "src/speech_to_text/gui/steps/model_select.py": {
+ "src/gui/steps/model_select.py": {
   "total": 856,
   "code": 366,
   "doc": 198,
@@ -351,7 +335,7 @@
   "blank": 71,
   "prose": 419
  },
- "src/speech_to_text/gui/steps/transcription.py": {
+ "src/gui/steps/transcription.py": {
   "total": 662,
   "code": 291,
   "doc": 127,
@@ -359,7 +343,7 @@
   "blank": 64,
   "prose": 307
  },
- "src/speech_to_text/gui/theme.py": {
+ "src/gui/theme.py": {
   "total": 891,
   "code": 464,
   "doc": 196,
@@ -367,7 +351,7 @@
   "blank": 83,
   "prose": 344
  },
- "src/speech_to_text/gui/threads.py": {
+ "src/gui/threads.py": {
   "total": 260,
   "code": 154,
   "doc": 47,
@@ -375,7 +359,7 @@
   "blank": 29,
   "prose": 77
  },
- "src/speech_to_text/gui/widgets.py": {
+ "src/gui/widgets.py": {
   "total": 211,
   "code": 100,
   "doc": 62,
@@ -383,7 +367,7 @@
   "blank": 22,
   "prose": 89
  },
- "src/speech_to_text/hardware_detection.py": {
+ "src/hardware_detection.py": {
   "total": 307,
   "code": 159,
   "doc": 79,
@@ -391,7 +375,7 @@
   "blank": 39,
   "prose": 109
  },
- "src/speech_to_text/main.py": {
+ "src/main.py": {
   "total": 177,
   "code": 98,
   "doc": 4,

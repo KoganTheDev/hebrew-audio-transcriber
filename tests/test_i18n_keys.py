@@ -1,5 +1,5 @@
 """
-Validates every i18n key speech_to_text/core/ emits across the process
+Validates every i18n key core/ emits across the process
 boundary (see core/worker.py's module docstring: progress_queue and
 result_queue carry (kind, key, params, ...) tuples, never rendered text,
 because the worker process cannot import gui.i18n to render them itself).
@@ -32,8 +32,8 @@ import pathlib
 import pkgutil
 import re
 
-import speech_to_text.core as core_package
-from speech_to_text.gui.i18n import STRINGS
+import core as core_package
+from gui.i18n import STRINGS
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
@@ -209,7 +209,7 @@ def test_filenames_in_hebrew_strings_are_bidi_isolated():
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SRC = _REPO_ROOT / "src"
-_I18N_PATH = _SRC / "speech_to_text" / "gui" / "i18n.py"
+_I18N_PATH = _SRC / "gui" / "i18n.py"
 
 # The prefix document_strings() strips. Spelled out here rather than imported
 # from i18n so this test states the convention it is checking against, and a
@@ -310,7 +310,7 @@ def _gui_t_call_keys():
     Only string-constant keys: a t(key) on a variable is resolved at runtime
     and cannot be checked statically.
     """
-    import speech_to_text.gui as gui_package
+    import gui as gui_package
 
     modules = [gui_package]
     prefix = gui_package.__name__ + "."

@@ -1,11 +1,11 @@
 """
-Layering guard: speech_to_text/core/ runs in the worker process (see
+Layering guard: core/ runs in the worker process (see
 core/__init__.py's module docstring for the MSVCP140.dll conflict that makes
 this a hard rule, not a style preference) and must never import PyQt5 or
-speech_to_text.gui.i18n - either one would pull Qt, or a module that itself
+gui.i18n - either one would pull Qt, or a module that itself
 pulls Qt, into a process that must stay Qt-free.
 
-This used to be checked only for speech_to_text.core.formatting (the package
+This used to be checked only for core.formatting (the package
 that grew a help panel and a guided tour with plenty of user-facing text to
 be tempted to translate directly), while the same rule was stated in prose,
 separately, in roughly eight other core/ modules' own docstrings. That left
@@ -26,12 +26,12 @@ import importlib
 import inspect
 import pkgutil
 
-import speech_to_text.core as core_package
+import core as core_package
 
 
 def _iter_core_modules():
     """
-    Every module object under speech_to_text.core, at any depth - the
+    Every module object under core, at any depth - the
     package itself first, then each submodule/subpackage found by walking
     the package tree recursively (pkgutil.walk_packages, not iter_modules,
     which only descends one level and would silently stop covering
@@ -50,9 +50,9 @@ def _imported_names(module) -> set:
     Every dotted path this module's import statements could plausibly bind a
     name from - both `import a.b.c` and `from a.b import c` forms, the
     latter contributing both the bare module ("a.b", so `from
-    speech_to_text.gui import i18n` doesn't need special-casing beyond what
+    gui import i18n` doesn't need special-casing beyond what
     the caller's own name matching already does) and the fully-qualified
-    "a.b.c" (so `from speech_to_text.gui import i18n` is caught even though
+    "a.b.c" (so `from gui import i18n` is caught even though
     "i18n" alone, as an alias, carries no dots for the caller's
     name.endswith("gui.i18n") check to match against).
     """

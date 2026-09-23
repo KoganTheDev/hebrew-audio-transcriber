@@ -22,7 +22,7 @@ import pytest  # noqa: E402
 from PyQt5.QtCore import Qt, QThread, pyqtSignal  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
-from speech_to_text.gui.i18n import t  # noqa: E402
+from gui.i18n import t  # noqa: E402
 
 # No local `qapp` fixture here on purpose: these tests take pytest-qt's
 # session-scoped one. A local definition shadows it, and a module-scoped
@@ -61,7 +61,7 @@ def settle(step, timeout_ms=5000):
 
 @pytest.fixture
 def file_select_step(qtbot, hardware_stub):
-    from speech_to_text.gui.steps.file_select import FileSelectStep
+    from gui.steps.file_select import FileSelectStep
 
     step = FileSelectStep(hardware_stub)
     qtbot.addWidget(step)
@@ -79,10 +79,10 @@ class TestGUI:
         """Test main window creation."""
         pass
 
-    @patch("speech_to_text.gui.main_window.QMainWindow")
+    @patch("gui.main_window.QMainWindow")
     def test_transcription_thread_initialization(self, mock_main_window):
         """TranscriptionThread takes a batch: a list of files and matching durations."""
-        from speech_to_text.gui.main_window import TranscriptionThread
+        from gui.main_window import TranscriptionThread
 
         thread = TranscriptionThread(
             audio_files=["a.mp3", "b.mp3"],
@@ -102,7 +102,7 @@ class TestFileSelectStepFolderExpansion:
     """Dropping a folder expands to the supported audio directly inside it."""
 
     def test_nonrecursive_sorted_and_filtered_to_supported_formats(self, qapp, tmp_path):
-        from speech_to_text.gui.steps.file_select import FileSelectStep
+        from gui.steps.file_select import FileSelectStep
 
         (tmp_path / "b.wav").write_bytes(b"")
         (tmp_path / "a.mp3").write_bytes(b"")
@@ -122,7 +122,7 @@ class TestFileSelectStepFileList:
     def test_files_selected_signal_carries_paths_and_total_duration(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
 
@@ -156,7 +156,7 @@ class TestFileSelectStepFileList:
     def test_a_second_drop_of_the_same_file_does_not_duplicate(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (10, True))
 
@@ -174,7 +174,7 @@ class TestFileSelectStepFileList:
     def test_removing_a_file_updates_the_list_and_re_emits(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (10, True))
 
@@ -197,7 +197,7 @@ class TestFileSelectStepFileList:
     def test_multi_file_summary_shows_count_and_total_duration(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (90, True))
 
@@ -212,7 +212,7 @@ class TestFileSelectStepFileList:
         assert "3" in summary  # 180s total -> 3m
 
     def test_reset_clears_the_list(self, file_select_step, tmp_path, monkeypatch):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (10, True))
 
@@ -241,9 +241,9 @@ class TestFileSelectStepSummaryPlurals:
     def test_one_file_reads_singular_in_both_languages(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui import i18n
+        from gui import i18n
 
-        monkeypatch.setattr("speech_to_text.gui.threads.get_audio_duration", lambda _p: (65, True))
+        monkeypatch.setattr("gui.threads.get_audio_duration", lambda _p: (65, True))
         one = tmp_path / "clip.wav"
         one.write_bytes(b"x")
         try:
@@ -260,9 +260,9 @@ class TestFileSelectStepSummaryPlurals:
             i18n.set_language("en")
 
     def test_several_files_still_read_plural(self, file_select_step, tmp_path, monkeypatch):
-        from speech_to_text.gui import i18n
+        from gui import i18n
 
-        monkeypatch.setattr("speech_to_text.gui.threads.get_audio_duration", lambda _p: (65, True))
+        monkeypatch.setattr("gui.threads.get_audio_duration", lambda _p: (65, True))
         paths = []
         for i in range(3):
             p = tmp_path / f"clip_{i}.wav"
@@ -288,7 +288,7 @@ class TestFileSelectStepDirectDropFiltering:
     def test_unsupported_direct_drop_is_skipped_supported_one_is_kept(
         self, file_select_step, tmp_path, monkeypatch
     ):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
 
@@ -358,7 +358,7 @@ class TestTranscriptionStepOpenButton:
 
     @pytest.fixture
     def step(self, qtbot):
-        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        from gui.steps.transcription import TranscriptionStep
 
         s = TranscriptionStep()
         qtbot.addWidget(s)
@@ -375,14 +375,14 @@ class TestTranscriptionStepOpenButton:
         letter into a scheme. as_uri() is what makes it openable.
         """
         step.show_result("C:/tmp/meeting_transcription.html")
-        with patch("speech_to_text.gui.steps.transcription.webbrowser.open") as opened:
+        with patch("gui.steps.transcription.webbrowser.open") as opened:
             step._open_result()
         opened.assert_called_once()
         assert opened.call_args[0][0].startswith("file:///")
         assert opened.call_args[0][0].endswith("meeting_transcription.html")
 
     def test_does_nothing_before_there_is_a_result(self, step):
-        with patch("speech_to_text.gui.steps.transcription.webbrowser.open") as opened:
+        with patch("gui.steps.transcription.webbrowser.open") as opened:
             step._open_result()
         opened.assert_not_called()
 
@@ -390,13 +390,13 @@ class TestTranscriptionStepOpenButton:
         """The path is on screen regardless - losing the window over it would not be."""
         step.show_result("C:/tmp/meeting_transcription.html")
         with patch(
-            "speech_to_text.gui.steps.transcription.webbrowser.open",
+            "gui.steps.transcription.webbrowser.open",
             side_effect=OSError("no browser"),
         ):
             step._open_result()
 
     def test_button_follows_a_live_language_switch(self, step):
-        from speech_to_text.gui import i18n
+        from gui import i18n
 
         i18n.set_language("en")
         step.retranslate()
@@ -417,7 +417,7 @@ class TestTranscriptionStepFolderButton:
 
     @pytest.fixture
     def step(self, qtbot):
-        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        from gui.steps.transcription import TranscriptionStep
 
         s = TranscriptionStep()
         qtbot.addWidget(s)
@@ -425,27 +425,27 @@ class TestTranscriptionStepFolderButton:
 
     def test_opens_the_containing_folder(self, step):
         step.show_result("C:/tmp/meeting/meeting_transcription.html")
-        with patch("speech_to_text.gui.steps.transcription.QDesktopServices.openUrl") as opened:
+        with patch("gui.steps.transcription.QDesktopServices.openUrl") as opened:
             step._open_folder()
         opened.assert_called_once()
         url = opened.call_args[0][0]
         assert url.toLocalFile().replace("\\", "/").rstrip("/") == "C:/tmp/meeting"
 
     def test_does_nothing_before_there_is_a_result(self, step):
-        with patch("speech_to_text.gui.steps.transcription.QDesktopServices.openUrl") as opened:
+        with patch("gui.steps.transcription.QDesktopServices.openUrl") as opened:
             step._open_folder()
         opened.assert_not_called()
 
     def test_a_failure_to_open_is_not_fatal(self, step):
         step.show_result("C:/tmp/meeting/meeting_transcription.html")
         with patch(
-            "speech_to_text.gui.steps.transcription.QDesktopServices.openUrl",
+            "gui.steps.transcription.QDesktopServices.openUrl",
             side_effect=OSError("no shell"),
         ):
             step._open_folder()
 
     def test_button_follows_a_live_language_switch(self, step):
-        from speech_to_text.gui import i18n
+        from gui import i18n
 
         i18n.set_language("en")
         step.retranslate()
@@ -483,7 +483,7 @@ class TestTranscriptionStepResultPathElision:
 
     @pytest.fixture
     def step(self, qtbot):
-        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        from gui.steps.transcription import TranscriptionStep
 
         s = TranscriptionStep()
         qtbot.addWidget(s)
@@ -585,7 +585,7 @@ class TestTranscriptionStepBatchStrip:
 
     @pytest.fixture
     def step(self, qtbot):
-        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        from gui.steps.transcription import TranscriptionStep
 
         s = TranscriptionStep()
         qtbot.addWidget(s)
@@ -605,7 +605,7 @@ class TestTranscriptionStepBatchStrip:
         assert len(step._batch_segment_frames) == 10
 
     def test_w_file_progress_moves_the_strip_and_updates_the_readout(self, step):
-        from speech_to_text.core.progress_scale import STATUS_ONLY_PERCENT
+        from core.progress_scale import STATUS_ONLY_PERCENT
 
         step.set_batch_files(self._batch_files(10))
         step.update_progress(
@@ -615,7 +615,7 @@ class TestTranscriptionStepBatchStrip:
         assert step.batch_readout.text() == "3 / 10"
         # Segments 1-2 done, 3 current, 4-10 pending - checked via the
         # accent fill that only the current segment's stylesheet carries.
-        from speech_to_text.gui.theme import COLORS
+        from gui.theme import COLORS
 
         styles = [seg.styleSheet() for seg in step._batch_segment_frames]
         assert COLORS["accent"] in styles[2]
@@ -767,7 +767,7 @@ class TestDropZoneKeyboardAccess:
 
         event = QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier)
         with patch(
-            "speech_to_text.gui.steps.file_select.QFileDialog.getOpenFileNames",
+            "gui.steps.file_select.QFileDialog.getOpenFileNames",
             return_value=([], ""),
         ) as dialog:
             qapp.sendEvent(file_select_step.drop_zone, event)
@@ -779,7 +779,7 @@ class TestDropZoneKeyboardAccess:
         from PyQt5.QtGui import QKeyEvent
 
         event = QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.NoModifier)
-        with patch("speech_to_text.gui.steps.file_select.QFileDialog.getOpenFileNames") as dialog:
+        with patch("gui.steps.file_select.QFileDialog.getOpenFileNames") as dialog:
             qapp.sendEvent(file_select_step.drop_zone, event)
         dialog.assert_not_called()
 
@@ -807,7 +807,7 @@ class TestKeyboardFocusTracker:
         from PyQt5.QtGui import QKeyEvent
         from PyQt5.QtWidgets import QPushButton
 
-        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+        from gui.focus import PROPERTY, KeyboardFocusTracker
 
         tracker = KeyboardFocusTracker(qapp)
         btn = QPushButton()
@@ -834,7 +834,7 @@ class TestKeyboardFocusTracker:
         from PyQt5.QtGui import QKeyEvent, QMouseEvent
         from PyQt5.QtWidgets import QPushButton
 
-        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+        from gui.focus import PROPERTY, KeyboardFocusTracker
 
         tracker = KeyboardFocusTracker(qapp)
         btn = QPushButton()
@@ -869,7 +869,7 @@ class TestKeyboardFocusTracker:
         from PyQt5.QtGui import QMouseEvent
         from PyQt5.QtWidgets import QPushButton
 
-        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+        from gui.focus import PROPERTY, KeyboardFocusTracker
 
         tracker = KeyboardFocusTracker(qapp)
         btn = QPushButton()
@@ -909,7 +909,7 @@ class TestKeyboardFocusTracker:
         """
         from PyQt5.QtWidgets import QPushButton
 
-        from speech_to_text.gui.focus import PROPERTY, KeyboardFocusTracker
+        from gui.focus import PROPERTY, KeyboardFocusTracker
 
         tracker = KeyboardFocusTracker(qapp)
         btn = QPushButton()
@@ -951,7 +951,7 @@ class TestMainWindowKeyboardGuards:
 
     @pytest.fixture
     def main_window(self, qtbot, monkeypatch):
-        from speech_to_text.gui import main_window as main_window_module
+        from gui import main_window as main_window_module
 
         hw = MagicMock()
         # Not None - MainWindow only starts CalibrationThread's background
@@ -1000,7 +1000,7 @@ class TestMainWindowKeyboardGuards:
         click.assert_called_once()
 
     def test_escape_goes_back_only_on_model_select(self, main_window):
-        from speech_to_text.gui.steps import Step
+        from gui.steps import Step
 
         main_window.current_step = Step.FILE_SELECT
         with patch.object(main_window, "_go_back") as go_back:
@@ -1028,7 +1028,7 @@ class TestMainWindowStepNavigation:
 
     @pytest.fixture
     def main_window(self, qtbot, monkeypatch):
-        from speech_to_text.gui import main_window as main_window_module
+        from gui import main_window as main_window_module
 
         hw = MagicMock()
         # Not None - MainWindow only starts CalibrationThread's background
@@ -1054,7 +1054,7 @@ class TestMainWindowStepNavigation:
         window.close()
 
     def test_forward_and_back_update_the_step_indicator(self, main_window):
-        from speech_to_text.gui.steps import Step
+        from gui.steps import Step
 
         assert main_window.step_indicator._current_step == Step.FILE_SELECT
 
@@ -1108,7 +1108,7 @@ class TestMainWindowStepNavigation:
         go_next.assert_not_called()
 
     def test_reset_returns_to_step_one(self, main_window):
-        from speech_to_text.gui.steps import Step
+        from gui.steps import Step
 
         main_window.selected_files = ["a.wav"]
         main_window.selected_model = "tiny"
@@ -1138,8 +1138,8 @@ class TestMainWindowCancelConfirm:
 
     @pytest.fixture
     def main_window(self, qtbot, monkeypatch):
-        from speech_to_text.gui import main_window as main_window_module
-        from speech_to_text.gui.steps import Step
+        from gui import main_window as main_window_module
+        from gui.steps import Step
 
         hw = MagicMock()
         hw.tiny_seconds_per_audio_second = 1.0
@@ -1233,7 +1233,7 @@ class TestMainWindowResizing:
 
     @pytest.fixture
     def main_window(self, qtbot, monkeypatch):
-        from speech_to_text.gui import main_window as main_window_module
+        from gui import main_window as main_window_module
 
         hw = MagicMock()
         # Not None - MainWindow only starts CalibrationThread's background
@@ -1269,7 +1269,7 @@ class TestMainWindowResizing:
         assert bool(main_window.windowFlags() & Qt.WindowMaximizeButtonHint)
 
     def test_minimum_size_is_at_least_the_measured_content_floor(self, main_window):
-        from speech_to_text import config
+        import config
 
         # 628px is the measured floor (153px chrome + the transcription
         # step's worst-case 475px minimumSizeHint once show_result() has
@@ -1283,7 +1283,7 @@ class TestMainWindowResizing:
     def test_transcription_step_does_not_overflow_at_minimum_height_once_show_result_has_run(
         self, main_window, qapp
     ):
-        from speech_to_text import config
+        import config
 
         main_window.resize(config.GUI_WINDOW_MIN_WIDTH, config.GUI_WINDOW_MIN_HEIGHT)
         ts = main_window.transcription_step
@@ -1331,14 +1331,14 @@ class TestModelDownloadSize:
     """
 
     def test_every_model_declares_a_download_size(self):
-        from speech_to_text import config
+        import config
 
         missing = [name for name, info in config.MODELS.items() if "download_size" not in info]
         assert not missing, f"config.MODELS entries missing download_size: {missing}"
 
     def test_download_size_is_non_empty_text(self):
         """Guards against a present-but-blank value slipping through the check above."""
-        from speech_to_text import config
+        import config
 
         for name, info in config.MODELS.items():
             assert isinstance(info["download_size"], str) and info["download_size"].strip(), (
@@ -1359,7 +1359,7 @@ class TestModelDownloadRootSharedWithCore:
     """
 
     def test_model_select_has_no_hand_mirrored_literal(self):
-        from speech_to_text.gui.steps import model_select as model_select_module
+        from gui.steps import model_select as model_select_module
 
         assert not hasattr(model_select_module, "_WHISPER_DOWNLOAD_ROOT")
 
@@ -1369,8 +1369,8 @@ class TestModelDownloadRootSharedWithCore:
         currently resolves to - proof the presence check and the downloader
         share one root rather than two literals that can drift apart.
         """
-        from speech_to_text import config
-        from speech_to_text.gui.steps import model_select as model_select_module
+        import config
+        from gui.steps import model_select as model_select_module
 
         fake_root = tmp_path / "wherever_config_points"
         cache_dir = fake_root / "models--Systran--faster-whisper-tiny" / "snapshots" / "abc123"
@@ -1422,7 +1422,7 @@ class TestModelSelectStepCardWidth:
         from PyQt5.QtGui import QResizeEvent
         from PyQt5.QtWidgets import QWIDGETSIZE_MAX
 
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
@@ -1472,8 +1472,8 @@ class TestModelSelectStepEstimateLanguage:
     """
 
     def test_toggling_the_language_re_renders_the_estimate(self, qtbot, model_hardware_stub):
-        from speech_to_text.gui import i18n
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui import i18n
+        from gui.steps.model_select import ModelSelectStep
 
         original = i18n.get_language()
         try:
@@ -1506,7 +1506,7 @@ class TestModelSelectStepCalibrationNote:
     """
 
     def test_note_is_shown_while_calibration_is_unmeasured(self, qtbot, model_hardware_stub):
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
@@ -1515,7 +1515,7 @@ class TestModelSelectStepCalibrationNote:
         assert step.calibration_note.text()  # not just visible, actually says something
 
     def test_note_is_cleared_once_calibration_lands(self, qtbot, model_hardware_stub):
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
@@ -1538,7 +1538,7 @@ class TestModelSelectStepCalibrationNote:
         not blindly hide an accurate "still measuring" note just because the
         user picked a file before the benchmark finished.
         """
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
@@ -1547,7 +1547,7 @@ class TestModelSelectStepCalibrationNote:
         assert not step.calibration_note.isHidden()
 
     def test_failed_calibration_shows_a_different_permanent_note(self, qtbot, model_hardware_stub):
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui.steps.model_select import ModelSelectStep
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
@@ -1563,7 +1563,7 @@ class TestModelSelectStepCalibrationNote:
         self, qtbot, model_hardware_stub
     ):
         """The common case: calibration usually finishes before step 2 is ever built."""
-        from speech_to_text.gui.steps.model_select import ModelSelectStep
+        from gui.steps.model_select import ModelSelectStep
 
         model_hardware_stub.tiny_seconds_per_audio_second = 0.5
         step = ModelSelectStep(model_hardware_stub)
@@ -1624,7 +1624,7 @@ class TestCalibrationThreadTeardown:
 
     @pytest.fixture
     def uncalibrated_window(self, qtbot, monkeypatch):
-        from speech_to_text.gui import main_window as main_window_module
+        from gui import main_window as main_window_module
 
         hw = MagicMock()
         # None is what makes MainWindow start a calibration thread at all -
@@ -1692,9 +1692,9 @@ class TestMakeLabelFactory:
     def test_a_label_built_with_every_argument_matches_the_hand_written_four_liner(self, qtbot):
         from PyQt5.QtWidgets import QLabel
 
-        from speech_to_text.gui import theme
-        from speech_to_text.gui.theme import Fonts
-        from speech_to_text.gui.widgets import make_label
+        from gui import theme
+        from gui.theme import Fonts
+        from gui.widgets import make_label
 
         expected = QLabel("hello")
         qtbot.addWidget(expected)
@@ -1715,7 +1715,7 @@ class TestMakeLabelFactory:
     def test_omitted_arguments_leave_the_label_at_the_qt_defaults(self, qtbot):
         from PyQt5.QtWidgets import QLabel
 
-        from speech_to_text.gui.widgets import make_label
+        from gui.widgets import make_label
 
         plain = QLabel()
         built = make_label()
@@ -1730,8 +1730,8 @@ class TestMakeLabelFactory:
     def test_the_colour_argument_is_a_theme_key_routed_through_text_qss(self, qtbot):
         """Colour keys must not become a second vocabulary: whatever
         theme.text_qss returns for a key is what the label gets, verbatim."""
-        from speech_to_text.gui import theme
-        from speech_to_text.gui.widgets import make_label
+        from gui import theme
+        from gui.widgets import make_label
 
         for key in ("text_primary", "text_secondary", "text_tertiary", "error", "success"):
             label = make_label(color=key)
@@ -1741,7 +1741,7 @@ class TestMakeLabelFactory:
     def test_a_parent_passed_to_the_factory_really_becomes_the_labels_parent(self, qtbot):
         from PyQt5.QtWidgets import QWidget
 
-        from speech_to_text.gui.widgets import make_label
+        from gui.widgets import make_label
 
         parent = QWidget()
         qtbot.addWidget(parent)
@@ -1763,7 +1763,7 @@ class TestUnreadableFileIsFlagged:
     def test_a_file_that_cannot_be_probed_is_marked_in_the_list(
         self, qtbot, file_select_step, monkeypatch, tmp_path
     ):
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (120, False))
         bad = tmp_path / "corrupt.wav"
@@ -1783,7 +1783,7 @@ class TestUnreadableFileIsFlagged:
         self, qtbot, file_select_step, monkeypatch, tmp_path
     ):
         """The marker has to distinguish, or it says nothing."""
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (120, True))
         good = tmp_path / "fine.wav"
@@ -1802,7 +1802,7 @@ class TestUnreadableFileIsFlagged:
         self, qtbot, file_select_step, monkeypatch, tmp_path
     ):
         """Otherwise a re-added path inherits a stale warning."""
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (120, False))
         bad = tmp_path / "corrupt.wav"
@@ -1829,7 +1829,7 @@ class TestWorkStreamRelay:
 
     @staticmethod
     def _thread():
-        from speech_to_text.gui.main_window import TranscriptionThread
+        from gui.main_window import TranscriptionThread
 
         return TranscriptionThread(
             audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
@@ -1858,7 +1858,7 @@ class TestWorkStreamRelay:
         leaking through every slot downstream. Negative, because every real
         value on this channel is a measured duration.
         """
-        from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
+        from gui.threads import PHASE_STARTED_SECONDS
 
         thread = self._thread()
 
@@ -1897,7 +1897,7 @@ class TestTimeReadout:
 
     @pytest.fixture
     def step(self, qtbot, monkeypatch):
-        from speech_to_text.gui.steps import transcription as step_module
+        from gui.steps import transcription as step_module
 
         clock = {"now": 5000.0}
         monkeypatch.setattr(step_module.time, "monotonic", lambda: clock["now"])
@@ -1934,7 +1934,7 @@ class TestTimeReadout:
         assert "calculating" in step.time_label.text()
 
     def test_once_enough_is_decoded_it_shows_a_real_number(self, step):
-        from speech_to_text.gui.steps import transcription as step_module
+        from gui.steps import transcription as step_module
 
         step.update_work(0.0, 600.0, step.clock["now"])
         step.clock["now"] += 300.0
@@ -1953,7 +1953,7 @@ class TestTimeReadout:
         "calculating" is the true description - an estimate that instead read
         0:00 for the duration is what this replaces.
         """
-        from speech_to_text.gui.threads import PHASE_STARTED_SECONDS
+        from gui.threads import PHASE_STARTED_SECONDS
 
         step.update_progress("w_file_progress", {"i": 1, "n": 1, "name": "a.mp3"}, 12)
         step.update_work(0.0, 600.0, step.clock["now"])
@@ -2017,7 +2017,7 @@ class TestWorkerProcessIsReaped:
     """
 
     def test_a_terminated_process_is_joined(self):
-        from speech_to_text.gui import threads
+        from gui import threads
 
         process = FakeProcess()
         threads._terminate_and_reap(process)
@@ -2031,7 +2031,7 @@ class TestWorkerProcessIsReaped:
         ctranslate2 or onnxruntime mid-inference - can outlive it. Left
         running it keeps burning cores for a result nobody will read.
         """
-        from speech_to_text.gui import threads
+        from gui import threads
 
         process = FakeProcess(dies_on_terminate=False)
         threads._terminate_and_reap(process)
@@ -2041,7 +2041,7 @@ class TestWorkerProcessIsReaped:
         assert len(process.joins) == 2
 
     def test_an_already_dead_process_is_left_alone(self):
-        from speech_to_text.gui import threads
+        from gui import threads
 
         process = FakeProcess(alive=False)
         threads._terminate_and_reap(process)
@@ -2051,7 +2051,7 @@ class TestWorkerProcessIsReaped:
 
     def test_no_process_at_all_is_not_an_error(self):
         """stop() can be called before the process was ever created."""
-        from speech_to_text.gui import threads
+        from gui import threads
 
         threads._terminate_and_reap(None)
 
@@ -2066,7 +2066,7 @@ class TestAFinishedRunIsNotReportedAsAFailure:
 
     @staticmethod
     def _thread():
-        from speech_to_text.gui.main_window import TranscriptionThread
+        from gui.main_window import TranscriptionThread
 
         return TranscriptionThread(
             audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
@@ -2171,7 +2171,7 @@ class TestProbingDoesNotBlockTheWindow:
         self, file_select_step, tmp_path, monkeypatch
     ):
         """The property the fix is actually about: the handler does not wait."""
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         released = threading.Event()
         probed_one = threading.Event()
@@ -2214,7 +2214,7 @@ class TestProbingDoesNotBlockTheWindow:
         self, file_select_step, tmp_path, monkeypatch
     ):
         """A row with no number yet has to say so, not show a wrong one."""
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         released = threading.Event()
         monkeypatch.setattr(
@@ -2242,7 +2242,7 @@ class TestProbingDoesNotBlockTheWindow:
         A probe queued before the user removed a file would otherwise
         resurrect its duration into the totals after it had gone.
         """
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
         clip = tmp_path / "clip.wav"
@@ -2262,7 +2262,7 @@ class TestProbingDoesNotBlockTheWindow:
         reset() and window teardown both have to be able to walk away from a
         queue that may be blocked on a file being downloaded.
         """
-        from speech_to_text.gui import threads as threads_module
+        from gui import threads as threads_module
 
         monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
         for i in range(3):
@@ -2283,8 +2283,8 @@ class TestNextWaitsForRealDurations:
     """
 
     def test_next_is_disabled_until_every_length_has_landed(self, qtbot, tmp_path, monkeypatch):
-        from speech_to_text.gui import threads as threads_module
-        from speech_to_text.gui.main_window import MainWindow
+        from gui import threads as threads_module
+        from gui.main_window import MainWindow
 
         released = threading.Event()
         monkeypatch.setattr(
@@ -2336,7 +2336,7 @@ class TestTheStripShowsAFailedFile:
 
     @pytest.fixture
     def step(self, qtbot):
-        from speech_to_text.gui.steps.transcription import TranscriptionStep
+        from gui.steps.transcription import TranscriptionStep
 
         s = TranscriptionStep()
         qtbot.addWidget(s)
@@ -2352,7 +2352,7 @@ class TestTheStripShowsAFailedFile:
         return sheet.split("background-color:")[1].split(";")[0].strip()
 
     def test_a_failed_file_is_not_painted_as_done(self, step):
-        from speech_to_text.gui.theme import COLORS
+        from gui.theme import COLORS
 
         step.mark_file_failed(1)
         # The run moves on to file 2, which paints everything before it done.
@@ -2364,7 +2364,7 @@ class TestTheStripShowsAFailedFile:
         assert self._fill(step, 2) == COLORS["accent"]
 
     def test_a_file_that_fails_while_running_turns_red_immediately(self, step):
-        from speech_to_text.gui.theme import COLORS
+        from gui.theme import COLORS
 
         step.update_progress("w_file_progress", {"i": 2, "n": 3, "name": "b.mp3"}, 20)
         assert self._fill(step, 2) == COLORS["accent"]
@@ -2386,7 +2386,7 @@ class TestTheStripShowsAFailedFile:
         assert segment.toolTip() == segment.accessibleName()
 
     def test_the_other_files_are_untouched(self, step):
-        from speech_to_text.gui.theme import COLORS
+        from gui.theme import COLORS
 
         step.mark_file_failed(2)
 
@@ -2403,7 +2403,7 @@ class TestTheStripShowsAFailedFile:
         assert step._failed_files == set()
 
     def test_a_new_run_starts_with_a_clean_strip(self, step):
-        from speech_to_text.gui.theme import COLORS
+        from gui.theme import COLORS
 
         step.mark_file_failed(1)
         step.start()
@@ -2420,7 +2420,7 @@ class TestFailedFileRelay:
         carrying on, and routing this through error would tear the run down
         over one bad file.
         """
-        from speech_to_text.gui.main_window import TranscriptionThread
+        from gui.main_window import TranscriptionThread
 
         thread = TranscriptionThread(
             audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]

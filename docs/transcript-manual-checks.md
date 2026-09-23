@@ -30,9 +30,9 @@ Generate a document to test against:
 ```bash
 py -3.11 -c "
 import io, sys; sys.path.insert(0, '.')
-from speech_to_text.core import formatting; formatting._asset.cache_clear()
-from speech_to_text.core.segments import Segment, TranscriptDocument, Word
-from speech_to_text.gui import i18n; i18n.set_language('he')
+from core import formatting; formatting._asset.cache_clear()
+from core.segments import Segment, TranscriptDocument, Word
+from gui import i18n; i18n.set_language('he')
 w = lambda t, p: Word(start=0, end=1, text=t, probability=p)
 segs = [Segment(0, 5, 'שלום, מה שלומך היום?', speaker=0,
                 words=[w('שלום,', .99), w('מה', .98), w('שלומך', .41), w('היום?', .93)])]
@@ -230,9 +230,9 @@ mid-block reassignment produces.
       ```bash
       py -3.11 -c "
       import io, sys; sys.path.insert(0, '.')
-      from speech_to_text.core import formatting; formatting._asset.cache_clear()
-      from speech_to_text.core.segments import Segment, TranscriptDocument, Word
-      from speech_to_text.gui import i18n; i18n.set_language('he')
+      from core import formatting; formatting._asset.cache_clear()
+      from core.segments import Segment, TranscriptDocument, Word
+      from gui import i18n; i18n.set_language('he')
       w = lambda t, p: Word(start=0, end=1, text=t, probability=p)
       segs = [Segment(0, 5, 'שלום, מה שלומך היום?', speaker=0,
                       words=[w('שלום,', .99), w('מה', .98), w('שלומך', .41), w('היום?', .93)])]

@@ -9,7 +9,7 @@ Algorithm. See the long comment in hebrew_text.py for the full reasoning;
 these tests just pin the observable behaviour.
 """
 
-from speech_to_text.core.hebrew_text import PDI, RLI, isolate_rtl, to_visual_order
+from core.hebrew_text import PDI, RLI, isolate_rtl, to_visual_order
 
 
 def test_wraps_hebrew_text_in_rtl_isolate():

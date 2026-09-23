@@ -9,14 +9,14 @@ of these tests therefore assert that it does *nothing*.
 
 import pytest
 
-from speech_to_text.core.hebrew_correct import (
+from core.hebrew_correct import (
     TermList,
     correct,
     strip_clitics,
     weighted_distance,
 )
-from speech_to_text.core.hebrew_text import normalize_word
-from speech_to_text.core.segments import Segment, Word
+from core.hebrew_text import normalize_word
+from core.segments import Segment, Word
 
 
 def word(text, probability=0.9, start=0.0, end=1.0):

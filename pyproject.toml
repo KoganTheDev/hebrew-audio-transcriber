@@ -68,46 +68,27 @@ dev = [
     "import-linter>=2.0",
 ]
 
-[project.scripts]
-speech-to-text = "speech_to_text.main:main"
-
 [project.urls]
 Homepage = "https://github.com/example/speech-to-text"
 Repository = "https://github.com/example/speech-to-text.git"
 Issues = "https://github.com/example/speech-to-text/issues"
 
 [tool.setuptools]
-# src-layout (PyPA's current recommendation): the package is not importable
-# from the repo root, so an editable install is the only way to import it.
-# That makes a broken packaging config fail immediately instead of at the
-# point a user installs the wheel.
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
-# Explicit include, not just an exclude list: with a flat layout, setuptools
-# discovers every top-level directory holding an __init__.py, which on a
-# working checkout would sweep in tests/ (and tests/eval/) alongside the real
-# package. Naming what ships is the narrower statement of the two, and it
-# does not quietly start shipping the next top-level package someone adds.
-include = ["speech_to_text*"]
-
-# The stylesheet and script inlined into every generated transcript, the
-# backdrop images they reference, and the window icon. These are read at
-# render time, not imported, so a wheel built without them installs and
-# imports cleanly and only fails later, at the point a user renders a
-# transcript - producing an unstyled document rather than an error anyone
-# could trace back to packaging. That silent-failure mode is why this block
-# is load-bearing and why tests/test_packaging.py asserts it.
-[tool.setuptools.package-data]
-"speech_to_text" = ["assets/*.ico"]
-"speech_to_text.core" = [
-    "assets/*.css",
-    "assets/*.js",
-    "assets/css/*.css",
-    "assets/js/*.js",
-    "assets/vistas/*.webp",
-]
+# This project installs its DEPENDENCIES and nothing else. It is a
+# run-from-source desktop application, not a distributable library: the
+# modules live directly under src/ as `config`, `core` and `gui`, and those
+# are names far too generic to put into a shared site-packages. Declaring no
+# packages is what makes `pip install -e .` mean "resolve the dependency list
+# below" without also publishing three top-level names that would collide
+# with the wider ecosystem.
+#
+# The app finds its own modules because the launchers put src/ on the path,
+# and it finds its assets (transcript CSS/JS, vista backdrops, window icon)
+# by walking from __file__ - see core/formatting/assets.py. Nothing is
+# resolved through package metadata, so there is no package-data block to
+# keep in sync and no way for a missing one to produce an unstyled
+# transcript at render time.
+packages = []
 
 [tool.ruff]
 line-length = 100
@@ -156,6 +137,14 @@ ignore = [
     "D205",
 ]
 
+[tool.ruff.lint.isort]
+# Without this, ruff sorts `config`, `core` and `gui` as third-party imports
+# and reorders every file accordingly. They only look third-party because
+# they are bare top-level names now - nothing marks them as ours the way a
+# single `speech_to_text` package once did. This is the standing cost of the
+# flat layout, paid here once.
+known-first-party = ["config", "core", "gui", "hardware_detection"]
+
 [tool.ruff.lint.mccabe]
 # McCabe's own recommendation, and NIST's Structured Testing default ceiling.
 # A function over this either gets split or carries a noqa saying why not.
@@ -175,9 +164,10 @@ docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.10"
-# src-layout: without this mypy cannot find the package at all and stops with
-# "Can't find package 'speech_to_text'" before checking a single file. CI's
-# continue-on-error was masking a step that never ran.
+# The modules live under src/, which is not on the path just because the repo
+# root is the working directory. Without this mypy cannot find them at all and
+# stops with "Cannot find implementation or library stub" before checking a
+# single file. CI's continue-on-error was masking a step that never ran.
 mypy_path = "src"
 warn_return_any = true
 warn_unused_configs = true
@@ -187,7 +177,7 @@ ignore_missing_imports = true
 # it, it is already ~90% annotated, and it is where a type error costs a real
 # transcription run. Held to a stricter standard than the GUI.
 [[tool.mypy.overrides]]
-module = ["speech_to_text.core.*", "speech_to_text.config", "speech_to_text.hardware_detection"]
+module = ["core.*", "config", "hardware_detection"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
@@ -196,7 +186,7 @@ disallow_incomplete_defs = true
 # real defects ("type[Qt] has no attribute RightToLeft"). Kept lenient so the
 # gate stays meaningful instead of being permanently red.
 [[tool.mypy.overrides]]
-module = ["speech_to_text.gui.*"]
+module = ["gui.*"]
 disallow_untyped_defs = false
 
 # tests/ and tools/ are configured for an on-demand `mypy tests tools`, and are
@@ -218,7 +208,11 @@ disallow_untyped_defs = false
 disable_error_code = ["var-annotated", "no-untyped-def", "method-assign", "attr-defined"]
 
 [tool.importlinter]
-root_packages = ["speech_to_text"]
+# hardware_detection is deliberately absent: it is a single module, not a
+# package, and import-linter rejects those outright. It costs the contracts
+# nothing - they are about core/ and gui/, and hardware_detection imports
+# those rather than being imported by them.
+root_packages = ["config", "core", "gui"]
 # Required to forbid an external package (PyQt5) rather than only first-party
 # modules - without it the contract is rejected at run time.
 include_external_packages = true
@@ -231,8 +225,8 @@ include_external_packages = true
 # core/__init__.py.
 name = "core must not depend on the GUI"
 type = "forbidden"
-source_modules = ["speech_to_text.core"]
-forbidden_modules = ["speech_to_text.gui", "PyQt5"]
+source_modules = ["core"]
+forbidden_modules = ["gui", "PyQt5"]
 
 [[tool.importlinter.contracts]]
 # gui/presenters/ exists to be testable without a QApplication, which only
@@ -243,5 +237,5 @@ forbidden_modules = ["speech_to_text.gui", "PyQt5"]
 # direct one.
 name = "presenters must not depend on Qt"
 type = "forbidden"
-source_modules = ["speech_to_text.gui.presenters"]
+source_modules = ["gui.presenters"]
 forbidden_modules = ["PyQt5"]

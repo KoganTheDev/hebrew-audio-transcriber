@@ -10,7 +10,7 @@ a caller build a Segment without knowing about words or speakers.
 
 import pickle
 
-from speech_to_text.core.segments import Segment, TranscriptDocument, Word, plain_text
+from core.segments import Segment, TranscriptDocument, Word, plain_text
 
 
 class TestDefaults:

@@ -1,5 +1,5 @@
 """
-Pixel-level tests for PaintedCheckboxStyle (speech_to_text/gui/checkbox_style.py).
+Pixel-level tests for PaintedCheckboxStyle (gui/checkbox_style.py).
 
 The QSS raster tick this replaced was verified once, by eye, and nothing
 pinned its states after that - a glyph could render wrong (wrong color,
@@ -18,11 +18,11 @@ configure_application, so PaintedCheckboxStyle is not installed on it by
 default. These tests install it directly on the checkbox's QApplication
 instance rather than calling configure_application, because
 configure_application also persists/reads the saved UI language and installs
-a process-wide keyboard-focus event tracker (speech_to_text.gui.focus) -
+a process-wide keyboard-focus event tracker (gui.focus) -
 side effects unrelated to what's under test here, and undesirable in a
 suite that otherwise builds a bare QApplication. Installing
 PaintedCheckboxStyle is the one piece of that setup this file's tests
-actually depend on (the class reads speech_to_text.gui.theme.COLORS
+actually depend on (the class reads gui.theme.COLORS
 directly, not QSS, so the stylesheet half of configure_application is not
 needed either).
 """
@@ -41,8 +41,8 @@ from PyQt5.QtWidgets import (  # noqa: E402
     QStyleOptionFocusRect,
 )
 
-from speech_to_text.gui.checkbox_style import PaintedCheckboxStyle  # noqa: E402
-from speech_to_text.gui.theme import COLORS  # noqa: E402
+from gui.checkbox_style import PaintedCheckboxStyle  # noqa: E402
+from gui.theme import COLORS  # noqa: E402
 
 # Antialiasing softens edge pixels toward the background, so exact-match
 # comparisons on a stroked/rounded shape are flaky by construction. This is

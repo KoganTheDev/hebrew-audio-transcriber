@@ -4,10 +4,10 @@ Tests for transcriber module.
 
 from unittest.mock import MagicMock, patch
 
-from speech_to_text.core import progress_scale as ps
-from speech_to_text.core.hebrew_text import PDI, RLI
-from speech_to_text.core.segments import plain_text
-from speech_to_text.core.transcriber import Transcriber
+from core import progress_scale as ps
+from core.hebrew_text import PDI, RLI
+from core.segments import plain_text
+from core.transcriber import Transcriber
 
 
 def fake_segment(text, start=0.0, end=1.0, words=None):
@@ -76,7 +76,7 @@ class TestTranscriber:
         """
         assert Transcriber(model_size="distil-large-v3").model_repo == "distil-large-v3"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_uses_repo_not_key(self, mock_whisper_model_class):
         """
         The repo id, not our key, must reach faster-whisper - passing
@@ -87,7 +87,7 @@ class TestTranscriber:
 
         assert mock_whisper_model_class.call_args.args[0] == "ivrit-ai/whisper-large-v3-turbo-ct2"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_success(self, mock_whisper_model_class):
         """Test successful model loading."""
         mock_model = MagicMock()
@@ -100,7 +100,7 @@ class TestTranscriber:
         assert transcriber.model is not None
         mock_whisper_model_class.assert_called_once()
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_defaults_to_cpu_compute_type_unset(self, mock_whisper_model_class):
         """
         No cpu_threads/num_workers override given -> neither kwarg reaches
@@ -115,7 +115,7 @@ class TestTranscriber:
         assert "cpu_threads" not in kwargs
         assert "num_workers" not in kwargs
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_forwards_explicit_axes_to_whispermodel(self, mock_whisper_model_class):
         """
         The knobs tests/eval/compare_models.py sweeps (Phase B) must actually
@@ -133,7 +133,7 @@ class TestTranscriber:
         assert kwargs["cpu_threads"] == 4
         assert kwargs["num_workers"] == 2
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_uses_cuda_compute_type_on_cuda(self, mock_whisper_model_class):
         """
         config.compute_type_for_device is device-conditional (float16 on
@@ -146,7 +146,7 @@ class TestTranscriber:
         assert mock_whisper_model_class.call_args.kwargs["compute_type"] == "float16"
         assert mock_whisper_model_class.call_args.kwargs["device"] == "cuda"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_falls_back_to_cpu_when_cuda_init_fails(self, mock_whisper_model_class):
         """
         A CUDA device_recommendation is only a guess from nvidia-smi output -
@@ -174,7 +174,7 @@ class TestTranscriber:
         assert second_call.kwargs["device"] == "cpu"
         assert second_call.kwargs["compute_type"] == "int8"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_reports_failure_when_both_cuda_and_the_cpu_fallback_fail(
         self, mock_whisper_model_class
     ):
@@ -189,12 +189,12 @@ class TestTranscriber:
 
     def test_load_model_whisper_not_installed(self):
         """Test model loading when WhisperModel is not available."""
-        with patch("speech_to_text.core.transcriber.WhisperModel", None):
+        with patch("core.transcriber.WhisperModel", None):
             transcriber = Transcriber()
             result = transcriber.load_model()
             assert result is False
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_failure(self, mock_whisper_model_class):
         """Test model loading failure."""
         mock_whisper_model_class.side_effect = Exception("Model loading failed")
@@ -212,7 +212,7 @@ class TestTranscriber:
 
         assert result is None
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_success(self, mock_whisper_model_class):
         """Test successful transcription."""
         mock_model = MagicMock()
@@ -231,7 +231,7 @@ class TestTranscriber:
         assert "Hello" in text
         assert "World" in text
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_falls_back_to_cpu_when_cuda_runtime_is_missing(
         self, mock_whisper_model_class
     ):
@@ -261,7 +261,7 @@ class TestTranscriber:
         assert mock_whisper_model_class.call_count == 2
         assert mock_whisper_model_class.call_args_list[1].kwargs["device"] == "cpu"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_reports_failure_when_cuda_and_the_cpu_fallback_both_fail(
         self, mock_whisper_model_class
     ):
@@ -279,7 +279,7 @@ class TestTranscriber:
 
         assert result is None
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_uses_config_beam_size_by_default(self, mock_whisper_model_class):
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([fake_segment("Hello")], MagicMock())
@@ -291,7 +291,7 @@ class TestTranscriber:
 
         assert mock_model.transcribe.call_args.kwargs["beam_size"] == 5
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_forwards_explicit_beam_size(self, mock_whisper_model_class):
         """The Phase B sweep axis - must actually reach model.transcribe()."""
         mock_model = MagicMock()
@@ -304,7 +304,7 @@ class TestTranscriber:
 
         assert mock_model.transcribe.call_args.kwargs["beam_size"] == 1
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_requests_word_timestamps(self, mock_whisper_model_class):
         """
         Word timings must be requested, or segment.words comes back None and
@@ -321,7 +321,7 @@ class TestTranscriber:
 
         assert mock_model.transcribe.call_args.kwargs["word_timestamps"] is True
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_captures_timings_and_words(self, mock_whisper_model_class):
         """Timings and per-word confidences survive into our Segment type."""
         word = MagicMock()
@@ -349,7 +349,7 @@ class TestTranscriber:
         assert result[0].words[0].text == "שלום"
         assert result[0].words[0].probability == 0.42
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_tolerates_missing_word_data(self, mock_whisper_model_class):
         """words=None (word_timestamps off, or an older faster-whisper) must not raise."""
         mock_model = MagicMock()
@@ -363,7 +363,7 @@ class TestTranscriber:
         assert len(result) == 1
         assert result[0].words == []
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_adds_spaces_between_segments(self, mock_whisper_model_class):
         """Test that spaces are added between segments."""
         mock_model = MagicMock()
@@ -379,7 +379,7 @@ class TestTranscriber:
 
         assert plain_text(result) == "Hello World"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_transcribe_empty_segments(self, mock_whisper_model_class):
         """Test transcription with empty segments."""
         mock_model = MagicMock()
@@ -397,7 +397,7 @@ class TestTranscriber:
         assert len(result) == 2
         assert plain_text(result) == "Hello World"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_segment_debug_log_isolates_hebrew_preview(self, mock_whisper_model_class, caplog):
         """
         The reported bug: a Hebrew segment preview logged into the
@@ -411,14 +411,14 @@ class TestTranscriber:
 
         transcriber = Transcriber()
         transcriber.load_model()
-        with caplog.at_level("DEBUG", logger="speech_to_text.core.transcriber"):
+        with caplog.at_level("DEBUG", logger="core.transcriber"):
             transcriber.transcribe("dummy_audio.mp3")
 
         debug_lines = [r.message for r in caplog.records if r.message.startswith("Segment ")]
         assert len(debug_lines) == 1
         assert debug_lines[0] == f"Segment 1: {RLI} סניף כשר למהדרין,{PDI}"
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_segment_debug_log_does_not_isolate_ascii_preview(
         self, mock_whisper_model_class, caplog
     ):
@@ -429,7 +429,7 @@ class TestTranscriber:
 
         transcriber = Transcriber()
         transcriber.load_model()
-        with caplog.at_level("DEBUG", logger="speech_to_text.core.transcriber"):
+        with caplog.at_level("DEBUG", logger="core.transcriber"):
             transcriber.transcribe("dummy_audio.mp3")
 
         debug_lines = [r.message for r in caplog.records if r.message.startswith("Segment ")]
@@ -452,7 +452,7 @@ class TestFetchWeights:
 
     def _transcriber(self, monkeypatch, seen):
         monkeypatch.undo()
-        from speech_to_text.core.transcriber import Transcriber
+        from core.transcriber import Transcriber
 
         return Transcriber(model_size="ivrit-turbo", progress_callback=lambda m, p: seen.append(m))
 
@@ -484,7 +484,7 @@ class TestFetchWeights:
         """A bare Whisper size is not a HuggingFace address."""
         seen: list = []
         monkeypatch.undo()
-        from speech_to_text.core.transcriber import Transcriber
+        from core.transcriber import Transcriber
 
         transcriber = Transcriber(model_size="tiny", progress_callback=lambda m, p: seen.append(m))
         captured = {}
@@ -544,7 +544,7 @@ class TestWorkStream:
         transcriber.load_model()
         return transcriber
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_each_segment_reports_where_it_ended_in_the_audio(self, mock_whisper_model_class):
         work: list = []
         phases: list = []
@@ -559,7 +559,7 @@ class TestWorkStream:
         assert [done for done, _total in work][:2] == [30.0, 95.5]
         assert all(total == 120.0 for _done, total in work)
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_the_file_is_closed_out_at_its_full_length(self, mock_whisper_model_class):
         """
         VAD trims trailing silence, so a recording that ends quietly stops
@@ -576,7 +576,7 @@ class TestWorkStream:
 
         assert work[-1] == (120.0, 120.0)
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_no_duration_means_no_work_reported(self, mock_whisper_model_class):
         """
         total_duration_seconds=0 is the "could not probe this file" case (see
@@ -592,7 +592,7 @@ class TestWorkStream:
 
         assert work == []
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_a_segment_with_no_end_reports_no_position(self, mock_whisper_model_class):
         """
         faster-whisper's segment type has changed shape across releases. A
@@ -610,7 +610,7 @@ class TestWorkStream:
         # Only the closing report at the end, not one for the segment itself.
         assert work == [(120.0, 120.0)]
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_the_wait_before_the_first_segment_is_timed(self, mock_whisper_model_class):
         """
         model.transcribe() runs VAD over the whole file and decodes the first
@@ -630,7 +630,7 @@ class TestWorkStream:
         assert prepare[0] is ps.WORK_PHASE_STARTED
         assert prepare[1] >= 0
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_a_caller_that_wants_none_of_this_is_unaffected(self, mock_whisper_model_class):
         """
         Both callbacks default to a no-op, so the eval harness and every other
@@ -654,7 +654,7 @@ class TestNetworkFailureIsDistinguishable:
     """
 
     def test_a_hub_offline_error_is_read_as_a_network_failure(self):
-        from speech_to_text.core.transcriber import _is_network_failure
+        from core.transcriber import _is_network_failure
 
         class LocalEntryNotFoundError(Exception):
             pass
@@ -663,7 +663,7 @@ class TestNetworkFailureIsDistinguishable:
 
     def test_a_socket_failure_wrapped_by_the_hub_is_found_through_its_cause(self):
         """Hub failures usually arrive wrapped, with the real error as cause."""
-        from speech_to_text.core.transcriber import _is_network_failure
+        from core.transcriber import _is_network_failure
 
         class ConnectionError_(Exception):
             pass
@@ -679,7 +679,7 @@ class TestNetworkFailureIsDistinguishable:
         A 404 reached the network perfectly well. Telling the user to check
         their connection would send them looking in the wrong place.
         """
-        from speech_to_text.core.transcriber import _is_network_failure
+        from core.transcriber import _is_network_failure
 
         class HfHubHTTPError(Exception):
             pass
@@ -690,11 +690,11 @@ class TestNetworkFailureIsDistinguishable:
         assert not _is_network_failure(RepositoryNotFoundError("404"))
 
     def test_an_ordinary_failure_is_not_a_network_failure(self):
-        from speech_to_text.core.transcriber import _is_network_failure
+        from core.transcriber import _is_network_failure
 
         assert not _is_network_failure(ValueError("unsupported compute type"))
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_load_model_records_which_kind_of_failure_it_was(self, mock_whisper_model_class):
         class LocalEntryNotFoundError(Exception):
             pass
@@ -705,7 +705,7 @@ class TestNetworkFailureIsDistinguishable:
         assert transcriber.load_model() is False
         assert transcriber.load_failed_on_network is True
 
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_a_broken_model_is_not_blamed_on_the_network(self, mock_whisper_model_class):
         mock_whisper_model_class.side_effect = ValueError("bad weights")
         transcriber = Transcriber()

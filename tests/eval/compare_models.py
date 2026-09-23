@@ -43,7 +43,7 @@ import statistics
 import sys
 import time
 
-from speech_to_text import config
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,8 @@ def transcribe_once(model_size: str, samples, duration: float, language: str | N
     TIMING - see run_config()'s docstring for the mechanism and the 5.3x
     measured cost. This bit a real benchmark run before the flag existed.
     """
-    from speech_to_text.core.segments import plain_text
-    from speech_to_text.core.transcriber import Transcriber
+    from core.segments import plain_text
+    from core.transcriber import Transcriber
 
     print(f"\n=== {model_size} ===", flush=True)
     transcriber = Transcriber(model_size=model_size, language=language or config.LANGUAGE)
@@ -345,7 +345,7 @@ def run_config(
     discarded because of exactly this - don't remove this parameter's
     default-to-explicit plumbing without knowing that history.
     """
-    from speech_to_text.core.transcriber import Transcriber
+    from core.transcriber import Transcriber
 
     label = _config_label(cfg)
     print(f"\n=== {label} ===", flush=True)
@@ -568,7 +568,7 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
-    from speech_to_text.core import audio_source
+    from core import audio_source
 
     print(f"Decoding {args.audio} ...", flush=True)
     channels, two_party = audio_source.load(args.audio)

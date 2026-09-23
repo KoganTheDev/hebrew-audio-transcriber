@@ -40,20 +40,19 @@ try {
     Set-Location $root
     Write-Host 'Starting Hebrew Audio Transcriber...' -ForegroundColor Green
 
-    # Check the package is actually here before handing over to Python.
-    # Without this the failure is "ImportError: cannot import name 'config'
-    # from 'speech_to_text' (unknown location)", which means Python found a
-    # DIRECTORY called speech_to_text with no __init__.py in it and treated it
-    # as a namespace package. That is what an incomplete copy looks like - a
-    # half-finished OneDrive sync, a partial download, or a folder copied
-    # while files were open - and the raw traceback tells a user nothing.
-    $pkgInit = Join-Path $root 'src\speech_to_text\__init__.py'
-    if (-not (Test-Path $pkgInit)) {
-        $stale = Join-Path $root 'speech_to_text'
+    # Check the program files are actually here before handing over to Python.
+    # Without this the failure is a bare "can't open file 'src\main.py'", or
+    # worse a ModuleNotFoundError from halfway through startup. That is what
+    # an incomplete copy looks like - a half-finished OneDrive sync, a partial
+    # download, or a folder copied while files were open - and neither message
+    # tells a user anything they can act on.
+    $entryPoint = Join-Path $root 'src\main.py'
+    if (-not (Test-Path $entryPoint)) {
+        $stale = Join-Path $root 'src\speech_to_text'
         $hint = if (Test-Path $stale) {
-            "There is an old 'speech_to_text' folder here from a previous version, but the current 'src\speech_to_text' is missing."
+            "This folder still has the old 'src\speech_to_text' layout. The modules moved up to 'src\' directly, so this copy is from before that change and only half-updated - a 'git pull' that could not overwrite a file, most likely."
         } else {
-            "Expected to find: $pkgInit"
+            "Expected to find: $entryPoint"
         }
         Fail @"
 This copy of the app is incomplete - the program files are missing.
@@ -183,7 +182,7 @@ Install a current Python from https://www.python.org/downloads/ (tick
         # much later as an ImportError from inside the GUI. Import every
         # top-level dependency now, while the setup output is still on screen
         # and the user is expecting setup problems.
-        & $venvPython -c "import speech_to_text, PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
+        & $venvPython -c "import PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
         if ($LASTEXITCODE -ne 0) {
             Fail "Setup finished but the installed packages do not import (exit code $LASTEXITCODE) - see the error above. Deleting the .venv folder and running 'run.ps1 -Setup' again usually clears this."
         }
@@ -207,7 +206,7 @@ Or let this launcher do it for you:
     $exe = $venvPython
     $exeArgs = @()
 
-    Write-Host "Using: $exe $($exeArgs -join ' ') -m speech_to_text.main" -ForegroundColor DarkGray
+    Write-Host "Using: $exe $($exeArgs -join ' ') $entryPoint" -ForegroundColor DarkGray
 
     # The console's output code page defaults to the system's legacy one
     # (often 862/1255 on a Hebrew locale, 437/1252 elsewhere), not UTF-8 -
@@ -219,9 +218,12 @@ Or let this launcher do it for you:
     # out to chcp.com or its "Active code page: ..." echo. Restored in
     # finally so the launcher doesn't leave the user's console in a
     # different state than it found it.
-    # src-layout: the package lives in src/, which is not on sys.path just
+    # config/, core/ and gui/ live in src/, which is not on sys.path just
     # because the repo root is the working directory. Pointing PYTHONPATH at
     # it keeps this launcher a double-click affair with no install step.
+    # main.py puts its own directory on sys.path too, so this is
+    # belt-and-braces for anything it spawns (the transcription worker
+    # inherits the environment, not main.py's in-process edit).
     # $root, not $PSScriptRoot: the two are the same from a terminal, but
     # $PSScriptRoot is empty in some double-click hosts, and Join-Path on an
     # empty path throws - turning a working launch into a parameter-binding
@@ -232,7 +234,7 @@ Or let this launcher do it for you:
     $prevOutputEncoding = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        & $exe @exeArgs -m speech_to_text.main
+        & $exe @exeArgs $entryPoint
     }
     finally {
         [Console]::OutputEncoding = $prevOutputEncoding

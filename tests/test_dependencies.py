@@ -2,7 +2,7 @@
 Tests for dependency management.
 """
 
-from speech_to_text.core.dependencies import ensure_dependencies
+from core.dependencies import ensure_dependencies
 
 
 class TestDependencies:

@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-from speech_to_text.core.formatting.assets import _asset_dir
+from core.formatting.assets import _asset_dir
 
 
 def _css_source() -> str:

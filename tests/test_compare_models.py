@@ -99,7 +99,7 @@ class TestRunConfig:
         cfg.update(overrides)
         return cfg
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_forwards_every_axis_to_transcriber(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True
@@ -127,7 +127,7 @@ class TestRunConfig:
             num_workers=2,
         )
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_language_defaults_to_config_language_not_none(self, mock_transcriber_class):
         """
         The bug this guards against: run_config used to never pass a
@@ -152,7 +152,7 @@ class TestRunConfig:
 
         assert mock_transcriber_class.call_args.kwargs["language"] == compare_models.config.LANGUAGE
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_warmup_run_is_not_counted_in_the_timed_repeats(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True
@@ -172,7 +172,7 @@ class TestRunConfig:
         assert mock_transcriber.transcribe.call_count == 4
         assert len(result["runs"]) == 3
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_median_and_spread_are_computed_from_the_timed_runs(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True
@@ -197,7 +197,7 @@ class TestRunConfig:
         assert result["median_seconds"] == 1.0
         assert result["spread_seconds"] == 5.0
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_a_single_repeat_has_zero_spread_not_an_error(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True
@@ -216,7 +216,7 @@ class TestRunConfig:
         assert result["cv"] == 0.0
         assert result["iqr_seconds"] is None
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_iqr_only_reported_with_at_least_four_repeats(self, mock_transcriber_class):
         """
         A 2-3 repeat IQR is just min-max wearing a different name - not a
@@ -238,7 +238,7 @@ class TestRunConfig:
         )
         assert result["iqr_seconds"] is None
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_cv_flags_a_noisy_config(self, mock_transcriber_class, capsys):
         """
         This is the exact noise this harness is meant to catch: the smoke
@@ -269,7 +269,7 @@ class TestRunConfig:
         assert result["cv"] > compare_models.NOISE_CV_THRESHOLD
         assert "NOISE WARNING" in capsys.readouterr().out
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_model_load_failure_is_reported_not_raised(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = False
@@ -284,7 +284,7 @@ class TestRunConfig:
         )
         assert result["error"] == "model failed to load"
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_transcription_failure_is_reported_not_raised(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True
@@ -406,7 +406,7 @@ class TestLanguageFlag:
     this before --language existed.
     """
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_transcribe_once_forwards_the_language(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True
@@ -419,7 +419,7 @@ class TestLanguageFlag:
 
         assert mock_transcriber_class.call_args.kwargs["language"] == "en"
 
-    @patch("speech_to_text.core.transcriber.Transcriber")
+    @patch("core.transcriber.Transcriber")
     def test_transcribe_once_defaults_to_config_language(self, mock_transcriber_class):
         mock_transcriber = MagicMock()
         mock_transcriber.load_model.return_value = True

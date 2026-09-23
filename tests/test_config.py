@@ -4,8 +4,8 @@ Tests for configuration module.
 
 import os
 
-from speech_to_text import config
-from speech_to_text.config import paths
+import config
+from config import paths
 
 
 class TestConfig:
@@ -168,13 +168,12 @@ class TestModelDownloadRoot:
     literal "./whisper_models" that used to be passed straight to
     WhisperModel(download_root=...) in core/transcriber.py. That literal was
     relative to the process's CURRENT WORKING DIRECTORY - harmless only as
-    long as the app was launched from the repo root, which the installed
-    `speech-to-text` console script (pyproject.toml's [project.scripts])
-    does not guarantee. A launch from elsewhere couldn't find the existing
-    cache and silently re-downloaded it - 5.9 GB on this machine.
+    long as the app was launched from the repo root, which nothing
+    guarantees. A launch from elsewhere couldn't find the existing cache and
+    silently re-downloaded it - 5.9 GB on this machine.
 
     These pin the three-step resolution order (env override, then an
-    existing whisper_models/ beside the package, then a per-user data
+    existing whisper_models/ at the repo root, then a per-user data
     directory) and the cwd-independence that order exists to guarantee.
     """
 
@@ -187,12 +186,12 @@ class TestModelDownloadRoot:
         assert os.path.abspath(result) == os.path.abspath(str(custom))
         assert os.path.isdir(result)  # created if it didn't already exist
 
-    def test_existing_whisper_models_beside_package_beats_per_user_fallback(
+    def test_existing_whisper_models_at_repo_root_beats_per_user_fallback(
         self, monkeypatch, tmp_path
     ):
         """
         This is the branch that protects the 5.9 GB already on disk: an
-        existing whisper_models/ next to the package must win, not fall
+        existing whisper_models/ at the repo root must win, not fall
         through to a fresh, empty per-user directory that would make
         gui/steps/model_select.py's _model_is_downloaded() report every
         already-cached model as "not downloaded".
@@ -200,24 +199,24 @@ class TestModelDownloadRoot:
         monkeypatch.delenv("SPEECH_TO_TEXT_MODEL_DIR", raising=False)
 
         repo_root = tmp_path / "repo_root"
-        package_dir = repo_root / "speech_to_text"
-        package_dir.mkdir(parents=True)
-        beside_package = repo_root / "whisper_models"
-        beside_package.mkdir()
+        src_dir = repo_root / "src"
+        src_dir.mkdir(parents=True)
+        beside_repo = repo_root / "whisper_models"
+        beside_repo.mkdir()
         # config.paths, not config: the resolution reads the __file__ of the
-        # submodule the function actually lives in, and it walks up from the
-        # package root - so the fake path has to sit in the config/ subpackage
-        # exactly as the real one does.
-        monkeypatch.setattr(paths, "__file__", str(package_dir / "config" / "paths.py"))
+        # module the function actually lives in, and it walks up from src/ -
+        # so the fake path has to sit in src/config/ exactly as the real one
+        # does, one level under the root the models sit at.
+        monkeypatch.setattr(paths, "__file__", str(src_dir / "config" / "paths.py"))
 
         # Point the per-user fallback somewhere else entirely, so a wrong
-        # answer (falling through instead of finding beside_package) is
+        # answer (falling through instead of finding beside_repo) is
         # distinguishable from the right one rather than accidentally equal.
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
 
         result = config.resolve_model_download_root()
 
-        assert os.path.abspath(result) == os.path.abspath(str(beside_package))
+        assert os.path.abspath(result) == os.path.abspath(str(beside_repo))
 
     def test_result_is_absolute_and_stable_across_working_directory(self, monkeypatch, tmp_path):
         """
@@ -232,13 +231,13 @@ class TestModelDownloadRoot:
         monkeypatch.delenv("SPEECH_TO_TEXT_MODEL_DIR", raising=False)
         # No whisper_models/ beside this fake package, so resolution falls
         # through to the per-user branch - which must be equally stable.
-        package_dir = tmp_path / "fake_pkg" / "speech_to_text"
-        package_dir.mkdir(parents=True)
+        src_dir = tmp_path / "fake_repo" / "src"
+        src_dir.mkdir(parents=True)
         # config.paths, not config: the resolution reads the __file__ of the
-        # submodule the function actually lives in, and it walks up from the
-        # package root - so the fake path has to sit in the config/ subpackage
-        # exactly as the real one does.
-        monkeypatch.setattr(paths, "__file__", str(package_dir / "config" / "paths.py"))
+        # module the function actually lives in, and it walks up from src/ -
+        # so the fake path has to sit in src/config/ exactly as the real one
+        # does.
+        monkeypatch.setattr(paths, "__file__", str(src_dir / "config" / "paths.py"))
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
 
         cwd_a = tmp_path / "cwd_a"
@@ -278,7 +277,7 @@ class TestDiarizationModelsRoot:
 
     def test_the_root_does_not_move_with_the_working_directory(self, tmp_path, monkeypatch):
         """The whole point: same answer from anywhere."""
-        from speech_to_text.config.paths import resolve_diarization_models_root
+        from config.paths import resolve_diarization_models_root
 
         monkeypatch.delenv("SPEECH_TO_TEXT_DIARIZATION_DIR", raising=False)
         here = os.getcwd()
@@ -293,7 +292,7 @@ class TestDiarizationModelsRoot:
 
     def test_an_explicit_override_wins_and_is_made_absolute(self, tmp_path, monkeypatch):
         """A relative override is still the caller's mistake to be protected from."""
-        from speech_to_text.config.paths import resolve_diarization_models_root
+        from config.paths import resolve_diarization_models_root
 
         monkeypatch.setenv("SPEECH_TO_TEXT_DIARIZATION_DIR", str(tmp_path / "elsewhere"))
         resolved = resolve_diarization_models_root()
@@ -303,7 +302,7 @@ class TestDiarizationModelsRoot:
 
     def test_the_module_uses_the_resolved_root(self):
         """diarization.py must read the resolved value, not re-derive one."""
-        from speech_to_text.core import diarization
+        from core import diarization
 
         assert diarization.MODELS_DIR == config.DIARIZATION_MODELS_ROOT
         assert os.path.isabs(diarization._SEGMENTATION_MODEL)
@@ -317,7 +316,7 @@ class TestDiarizationModelsRoot:
         transcription always needs it, ensure_models() creates this one only
         when it actually fetches something.
         """
-        from speech_to_text.config.paths import resolve_diarization_models_root
+        from config.paths import resolve_diarization_models_root
 
         target = tmp_path / "not_yet"
         monkeypatch.setenv("SPEECH_TO_TEXT_DIARIZATION_DIR", str(target))
@@ -340,7 +339,7 @@ class TestCalibrationCachePath:
     """
 
     def test_the_cache_path_is_absolute(self):
-        from speech_to_text.core import calibration
+        from core import calibration
 
         assert os.path.isabs(calibration.CALIBRATION_CACHE_PATH)
 
@@ -352,7 +351,7 @@ class TestCalibrationCachePath:
         cache across two locations and re-introduce the drift config/paths.py
         exists to prevent.
         """
-        from speech_to_text.core import calibration
+        from core import calibration
 
         assert os.path.dirname(calibration.CALIBRATION_CACHE_PATH) == config.MODEL_DOWNLOAD_ROOT
 
@@ -369,12 +368,12 @@ class TestLogPath:
     """
 
     def test_the_path_is_absolute(self):
-        from speech_to_text.config.paths import resolve_log_path
+        from config.paths import resolve_log_path
 
         assert os.path.isabs(resolve_log_path())
 
     def test_it_does_not_move_with_the_working_directory(self, tmp_path, monkeypatch):
-        from speech_to_text.config.paths import resolve_log_path
+        from config.paths import resolve_log_path
 
         monkeypatch.delenv("SPEECH_TO_TEXT_LOG_DIR", raising=False)
         here = os.getcwd()
@@ -393,7 +392,7 @@ class TestLogPath:
         run.ps1, both of which cd to the project first. Fixing the bug should
         not also relocate a file people know how to find.
         """
-        from speech_to_text.config.paths import resolve_log_path
+        from config.paths import resolve_log_path
 
         monkeypatch.delenv("SPEECH_TO_TEXT_LOG_DIR", raising=False)
         directory = os.path.dirname(resolve_log_path())
@@ -402,7 +401,7 @@ class TestLogPath:
 
     def test_an_installed_copy_falls_back_to_a_per_user_directory(self, tmp_path, monkeypatch):
         """No pyproject.toml above it, and site-packages is the wrong place."""
-        from speech_to_text.config import paths
+        from config import paths
 
         monkeypatch.delenv("SPEECH_TO_TEXT_LOG_DIR", raising=False)
         monkeypatch.setattr(paths.os.path, "isfile", lambda _p: False)
@@ -415,7 +414,7 @@ class TestLogPath:
         assert "speech-to-text" in directory
 
     def test_an_explicit_override_wins_and_is_made_absolute(self, tmp_path, monkeypatch):
-        from speech_to_text.config.paths import LOG_FILENAME, resolve_log_path
+        from config.paths import LOG_FILENAME, resolve_log_path
 
         monkeypatch.setenv("SPEECH_TO_TEXT_LOG_DIR", str(tmp_path / "elsewhere"))
         resolved = resolve_log_path()

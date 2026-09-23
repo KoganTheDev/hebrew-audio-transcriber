@@ -17,7 +17,7 @@ import wave
 
 import pytest
 
-from speech_to_text.core import calibration
+from core import calibration
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from speech_to_text.core import power
+from core import power
 
 
 def test_acquire_asks_for_a_continuous_system_required_hold():

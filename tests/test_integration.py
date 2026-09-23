@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from speech_to_text import config
-from speech_to_text.core.formatting import render_html
-from speech_to_text.core.options import TranscriptionOptions
-from speech_to_text.core.segments import TranscriptDocument, plain_text
-from speech_to_text.core.transcriber import Transcriber
-from speech_to_text.hardware_detection import HardwareDetector
+import config
+from core.formatting import render_html
+from core.options import TranscriptionOptions
+from core.segments import TranscriptDocument, plain_text
+from core.transcriber import Transcriber
+from hardware_detection import HardwareDetector
 
 
 class TestIntegration:
@@ -21,7 +21,7 @@ class TestIntegration:
     @pytest.mark.integration
     def test_config_hardware_compatibility(self):
         """Test that config models are compatible with hardware detection."""
-        with patch("speech_to_text.hardware_detection.psutil") as mock_psutil:
+        with patch("hardware_detection.psutil") as mock_psutil:
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
 
@@ -48,7 +48,7 @@ class TestIntegration:
     @pytest.mark.integration
     def test_model_progression(self):
         """Test that model sizes progress correctly in terms of resource requirements."""
-        from speech_to_text.config import MODELS
+        from config import MODELS
 
         model_names = list(MODELS.keys())
         for i in range(len(model_names) - 1):
@@ -75,7 +75,7 @@ class TestIntegration:
         assert os.path.isfile(test_file)
 
     @pytest.mark.integration
-    @patch("speech_to_text.core.transcriber.WhisperModel")
+    @patch("core.transcriber.WhisperModel")
     def test_end_to_end_transcription_flow(self, mock_whisper_class, sample_audio_path):
         """Test end-to-end transcription flow."""
         # Mock the model

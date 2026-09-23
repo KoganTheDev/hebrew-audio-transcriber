@@ -15,7 +15,7 @@ import itertools
 import numpy as np
 import pytest
 
-from speech_to_text.core import segmentation as seg
+from core import segmentation as seg
 
 
 class FakeSession:

@@ -9,13 +9,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from speech_to_text.core.log_bidi import VisualOrderFormatter
+from core.log_bidi import VisualOrderFormatter
 
 # Driven by TestBackgroundWorkStopsBeforeExit. Kept at module level rather than
 # inline so the quoting stays readable.
 SPY_SCRIPT = """
 from PyQt5.QtWidgets import QApplication
-import speech_to_text.gui.main_window as mw
+import gui.main_window as mw
 
 seen = {}
 real_init = mw.MainWindow.__init__
@@ -29,7 +29,7 @@ def spy_init(self, *a, **k):
 mw.MainWindow.__init__ = spy_init
 QApplication.exec_ = lambda self: 0
 
-import speech_to_text.main as main_module
+import main as main_module
 
 try:
     main_module.main()
@@ -54,14 +54,14 @@ class TestMain:
 
     def test_main_imports(self):
         """Test that main module imports are correct."""
-        from speech_to_text import main
+        import main
 
         assert hasattr(main, "main")
         assert callable(main.main)
 
     def test_main_callable(self):
         """Test that main function is callable."""
-        from speech_to_text.main import main
+        from main import main
 
         assert callable(main)
 
@@ -83,12 +83,12 @@ class TestLoggingHandlers:
     """
 
     def test_stream_handler_uses_visual_order_formatter(self):
-        from speech_to_text import main  # noqa: F401 - import triggers basicConfig
+        import main  # noqa: F401 - import triggers basicConfig
 
         assert isinstance(main.stdout_handler.formatter, VisualOrderFormatter)
 
     def test_file_handler_uses_plain_formatter(self):
-        from speech_to_text import main  # noqa: F401 - import triggers basicConfig
+        import main  # noqa: F401 - import triggers basicConfig
 
         assert type(main.file_handler.formatter) is logging.Formatter
         assert not isinstance(main.file_handler.formatter, VisualOrderFormatter)
@@ -97,7 +97,7 @@ class TestLoggingHandlers:
 class TestHighDpiEntryPointOrdering:
     """
     The high-DPI attributes live at module scope in gui/main_window.py, which
-    only works because speech_to_text/main.py imports that module BEFORE it
+    only works because main.py imports that module BEFORE it
     constructs its QApplication. Qt ignores AA_EnableHighDpiScaling once an
     application object exists, so reordering that import would not raise
     anything - it would silently drop the app back to blurry bitmap scaling,
@@ -113,7 +113,7 @@ class TestHighDpiEntryPointOrdering:
         import ast
         import inspect
 
-        import speech_to_text.main as main_module
+        import main as main_module
 
         source = inspect.getsource(main_module)
         tree = ast.parse(source)
@@ -124,7 +124,7 @@ class TestHighDpiEntryPointOrdering:
             if (
                 import_line is None
                 and isinstance(node, ast.ImportFrom)
-                and (node.module or "").startswith("speech_to_text.gui.main_window")
+                and (node.module or "").startswith("gui.main_window")
             ):
                 import_line = node.lineno
             if (
@@ -142,7 +142,7 @@ class TestHighDpiEntryPointOrdering:
         assert import_line is not None, "main.py no longer imports gui.main_window"
         assert construct_line is not None, "main.py no longer constructs QApplication directly"
         assert import_line < construct_line, (
-            "speech_to_text/main.py constructs QApplication on line "
+            "main.py constructs QApplication on line "
             f"{construct_line} before importing gui.main_window on line {import_line}. "
             "The high-DPI attributes are set at that module's import time and Qt "
             "ignores them once a QApplication exists, so this ordering is load-bearing."
@@ -151,11 +151,11 @@ class TestHighDpiEntryPointOrdering:
 
 class TestHighDpiRendering:
     """
-    Pin that speech_to_text.gui.main_window enables Qt's high-DPI
+    Pin that gui.main_window enables Qt's high-DPI
     rendering path - AA_EnableHighDpiScaling, AA_UseHighDpiPixmaps, and the
     PassThrough rounding policy (see the comment above that module's
     `_is_text_entry_widget` for why these three, and why they live at
-    module scope there rather than duplicated in speech_to_text/main.py
+    module scope there rather than duplicated in main.py
     and this module's own main()). Without them Windows falls back to
     bitmap-stretching the whole window at 125%/150% scale - it still
     renders, just visibly soft, which is easy to miss in a screenshot-free
@@ -177,7 +177,7 @@ class TestHighDpiRendering:
         repo_root = Path(__file__).resolve().parent.parent
         script = (
             "from PyQt5.QtCore import Qt\n"
-            "from speech_to_text.gui.main_window import MainWindow\n"
+            "from gui.main_window import MainWindow\n"
             "from PyQt5.QtWidgets import QApplication\n"
             "app = QApplication([])\n"
             "print('scaling=%s pixmaps=%s policy=%s' % (\n"
@@ -215,10 +215,10 @@ class TestShippedEntryPointAppliesStylesheet:
     """
     app.setStyleSheet(theme.app_stylesheet()) used to exist only inside
     gui/main_window.py's own main(), reachable exclusively via
-    `python -m speech_to_text.gui.main_window` - a path nothing shipped
-    (run.ps1, run.bat, `python -m speech_to_text.main`, the `speech-to-text`
+    `python -m gui.main_window` - a path nothing shipped
+    (run.ps1, run.bat, `python -m main`, the `speech-to-text`
     console script) ever uses. Every one of those goes through
-    speech_to_text/main.py::main(), which built its own QApplication and
+    main.py::main(), which built its own QApplication and
     never applied the stylesheet at all: the whole themed look (peach
     checkbox tick, radio ring-and-dot, styled scrollbars/tooltip, the
     kbdFocus ring on native controls) was silently absent from every real
@@ -245,7 +245,7 @@ class TestShippedEntryPointAppliesStylesheet:
             "    captured['stylesheet'] = self.styleSheet()\n"
             "    return 0\n"
             "QApplication.exec_ = fake_exec\n"
-            "import speech_to_text.main as main_module\n"
+            "import main as main_module\n"
             "try:\n"
             "    main_module.main()\n"
             "except SystemExit:\n"
@@ -281,7 +281,7 @@ class TestShippedEntryPointAppliesStylesheet:
         )
         length = int(line[len(marker) :])
         assert length > 0, (
-            "speech_to_text.main.main() produced a QApplication with an "
+            "main.main() produced a QApplication with an "
             "empty styleSheet() - the shipped entry point is not applying "
             "theme.app_stylesheet() to the real application object."
         )

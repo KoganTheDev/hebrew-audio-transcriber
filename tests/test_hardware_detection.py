@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from speech_to_text.hardware_detection import HardwareDetector
+from hardware_detection import HardwareDetector
 
 
 class TestHardwareDetector:
     """Test hardware detection functionality."""
 
-    @patch("speech_to_text.hardware_detection.psutil")
+    @patch("hardware_detection.psutil")
     def test_initialization_with_psutil(self, mock_psutil):
         """Test HardwareDetector initialization with psutil."""
         mock_psutil.cpu_count.return_value = 4
@@ -25,7 +25,7 @@ class TestHardwareDetector:
             assert detector.cpu_count == 4
             assert detector.ram_gb == pytest.approx(8.0, rel=0.01)
 
-    @patch("speech_to_text.hardware_detection.psutil", None)
+    @patch("hardware_detection.psutil", None)
     def test_initialization_without_psutil(self):
         """Test HardwareDetector initialization without psutil."""
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
@@ -42,7 +42,7 @@ class TestHardwareDetector:
                 assert device == "cpu"
                 assert "CPU" in reason
 
-    @patch("speech_to_text.hardware_detection.psutil")
+    @patch("hardware_detection.psutil")
     def test_can_run_model_sufficient_ram(self, mock_psutil):
         """Test model validation with sufficient RAM."""
         mock_psutil.cpu_count.return_value = 4
@@ -54,7 +54,7 @@ class TestHardwareDetector:
             assert can_run is True
             assert "enough RAM" in reason
 
-    @patch("speech_to_text.hardware_detection.psutil")
+    @patch("hardware_detection.psutil")
     def test_can_run_model_insufficient_ram(self, mock_psutil):
         """Test model validation with insufficient RAM."""
         mock_psutil.cpu_count.return_value = 4
@@ -67,7 +67,7 @@ class TestHardwareDetector:
             assert can_run is False
             assert "Insufficient RAM" in reason
 
-    @patch("speech_to_text.hardware_detection.psutil")
+    @patch("hardware_detection.psutil")
     def test_get_hardware_info(self, mock_psutil):
         """Test hardware info retrieval."""
         mock_psutil.cpu_count.return_value = 4

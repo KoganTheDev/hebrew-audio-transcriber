@@ -11,7 +11,7 @@ differently".
 
 import re
 
-from speech_to_text.core.hebrew_text import BIDI_CONTROLS, normalize_word
+from core.hebrew_text import BIDI_CONTROLS, normalize_word
 
 # Geresh/gershayim used in acronyms and loanwords, plus ASCII quotes that
 # transcription models place inconsistently.

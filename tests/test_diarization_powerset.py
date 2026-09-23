@@ -22,10 +22,10 @@ import types
 import numpy as np
 import pytest
 
-from speech_to_text import config
-from speech_to_text.core import diarization_powerset as dp
-from speech_to_text.core import segmentation as seg
-from speech_to_text.core.diarization import DiarizationUnavailable, SpeakerSpan
+import config
+from core import diarization_powerset as dp
+from core import segmentation as seg
+from core.diarization import DiarizationUnavailable, SpeakerSpan
 
 
 class TestProviders:
@@ -452,9 +452,7 @@ class TestDiarizePowerset:
         ort = types.ModuleType("onnxruntime")
         ort.InferenceSession = FakeSession
         monkeypatch.setitem(sys.modules, "onnxruntime", ort)
-        monkeypatch.setattr(
-            "speech_to_text.core.diarization.ensure_models", lambda progress=None: None
-        )
+        monkeypatch.setattr("core.diarization.ensure_models", lambda progress=None: None)
 
     def test_rejects_audio_at_the_wrong_sample_rate(self, monkeypatch):
         self._install(monkeypatch)

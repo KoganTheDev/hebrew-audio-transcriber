@@ -1,5 +1,5 @@
 // Behavioural test harness for transcript.js: builds a real jsdom window
-// from the ACTUAL rendered page (speech_to_text.core.formatting.render_html,
+// from the ACTUAL rendered page (core.formatting.render_html,
 // run through render_fixture.py) rather than a hand-written stand-in, so a
 // refactor of transcript.js/transcript.css can be graded on behaviour - does
 // the help panel still open, does the tour still count the right number of
@@ -80,7 +80,7 @@ function sourceKey() {
   // a fixed pair of paths would have gone stale silently the moment the
   // split happened - the fixture would keep being served from cache while
   // the code under test changed underneath it.
-  const assets = path.join(REPO_ROOT, 'src', 'speech_to_text', 'core', 'assets');
+  const assets = path.join(REPO_ROOT, 'src', 'core', 'assets');
   const watched = [path.join(__dirname, 'render_fixture.py')];
   for (const kind of ['js', 'css']) {
     for (const name of readdirSync(path.join(assets, kind))) {

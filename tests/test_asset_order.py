@@ -17,7 +17,7 @@ import re
 
 import pytest
 
-from speech_to_text.core.formatting.assets import _ASSETS
+from core.formatting.assets import _ASSETS
 
 CSS = _ASSETS / "css"
 JS = _ASSETS / "js"

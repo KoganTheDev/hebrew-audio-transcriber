@@ -5,7 +5,7 @@ into jsdom.
 Not a pytest module (no test_ prefix - pytest never collects it) and not
 imported by anything under tests/: it is invoked as a subprocess, `python
 tests/js/render_fixture.py <kind>`, precisely so the jsdom tests exercise
-speech_to_text.core.formatting.render_html's REAL output rather than a
+core.formatting.render_html's REAL output rather than a
 hand-written stand-in page that could quietly drift out of sync with what
 the app actually generates. See tests/test_formatting.py's seg()/doc()
 helpers, which the two fixtures below are built the same way as.
@@ -52,8 +52,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from speech_to_text.core.formatting import render_html  # noqa: E402
-from speech_to_text.core.segments import Segment, TranscriptDocument, Word  # noqa: E402
+from core.formatting import render_html  # noqa: E402
+from core.segments import Segment, TranscriptDocument, Word  # noqa: E402
 
 HE = "שלום עולם מה שלומך"
 

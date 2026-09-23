@@ -147,7 +147,7 @@ def _diarize_before(samples, sample_rate: int, num_speakers: int):
     """
     import sherpa_onnx
 
-    from speech_to_text.core import diarization
+    from core import diarization
 
     # Named diar_config, not config, on principle - see core/diarization.py's
     # own comment on this exact naming trap: this file has no module-level
@@ -197,7 +197,7 @@ def _assign_speakers_before_e2e(segments, spans) -> list[tuple[float, float, str
     against. It must never be reintroduced into core/ - see this change's
     plan (goofy-jumping-pine.md, section 1.5) for why splitting replaced it.
     """
-    from speech_to_text.core.diarization import _best_speaker
+    from core.diarization import _best_speaker
 
     turns: list[tuple[float, float, str]] = []
     for segment in segments:
@@ -231,7 +231,7 @@ def _report_der(label: str, result, prefix: str = "  ") -> dict:
 
 def run_span_mode(samples, sample_rate: int, num_speakers: int, reference) -> dict:
     """Score sherpa-onnx's raw spans against the reference - see the module docstring."""
-    from speech_to_text.core import diarization
+    from core import diarization
     from tests.eval.diarization_metrics import compute_der
 
     print("\n=== span-level: before (sherpa-onnx defaults, not passed explicitly) ===", flush=True)
@@ -286,9 +286,9 @@ def run_e2e_mode(
     # through production code for a dev-only measurement. Restored in the
     # finally below so a --mode both run does not leak the override into
     # anything measured after it.
-    from speech_to_text import config as app_config
-    from speech_to_text.core import diarization
-    from speech_to_text.core.transcriber import Transcriber
+    import config as app_config
+    from core import diarization
+    from core.transcriber import Transcriber
     from tests.eval.diarization_metrics import compute_der
 
     previous_vad = app_config.VAD_FILTER
@@ -418,7 +418,7 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         return 0
 
     try:
-        from speech_to_text.core import diarization
+        from core import diarization
     except ImportError as e:
         print(f"Diarization dependencies not available - skipping. ({e})")
         return 0
@@ -430,7 +430,7 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         print("or transcribe once with speaker identification on to fetch them.")
         return 0
 
-    from speech_to_text.core import audio_source
+    from core import audio_source
     from tests.eval.diarization_metrics import read_rttm
 
     print(f"Decoding {args.audio} ...", flush=True)

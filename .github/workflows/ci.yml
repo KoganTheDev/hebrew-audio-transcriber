@@ -34,6 +34,15 @@ jobs:
         # The same rule tests/test_layering.py enforces, checked declaratively.
         # Invoke the console script, not `python -m importlinter.cli`: the
         # module form exits 0 without checking anything.
+        #
+        # PYTHONPATH=src because import-linter builds its graph by importing
+        # from sys.path, and nothing is installed into site-packages any more
+        # (see pyproject's [tool.setuptools]). Without it the run prints
+        # "Could not find package 'config' in your Python path" and checks
+        # nothing - which, like the module form above, is a pass that proves
+        # nothing rather than a failure.
+        env:
+          PYTHONPATH: src
         run: lint-imports
 
       - name: Types (mypy, blocking where it is clean)
@@ -41,22 +50,22 @@ jobs:
         # must stay there - this step FAILS the build. They are the parts held
         # to disallow_untyped_defs, and the parts where a type error costs a
         # real transcription run.
-        run: mypy -p speech_to_text.core -p speech_to_text.config -p speech_to_text.gui.presenters -p speech_to_text.hardware_detection
+        run: mypy -p core -p config -p gui.presenters -m hardware_detection
 
-      - name: Types (mypy, whole package, advisory)
-        # gui/ still reports 74, nearly all of them PyQt5 shipping no type
-        # information rather than defects ("type[Qt] has no attribute
-        # RightToLeft"). Reported so the number is visible and can be driven
-        # down, not gated, so the gate above stays meaningful.
+      - name: Types (mypy, everything, advisory)
+        # gui/ still reports 10, nearly all of them PyQt5 shipping no type
+        # information rather than defects ("Item 'None' of 'QClipboard | None'
+        # has no attribute 'setText'"). Reported so the number is visible and
+        # can be driven down, not gated, so the gate above stays meaningful.
         continue-on-error: true
-        run: mypy -p speech_to_text
+        run: mypy -p config -p core -p gui -m hardware_detection
 
       - name: Tests
         # QT_QPA_PLATFORM=offscreen: the GUI suite builds real widgets and
         # there is no display on a runner.
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest --cov=speech_to_text --cov-branch --cov-fail-under=83
+        run: pytest --cov=config --cov=core --cov=gui --cov=hardware_detection --cov-branch --cov-fail-under=83
 
       - name: Documentation density
         # Reported, never gated - no tool can judge whether a given paragraph

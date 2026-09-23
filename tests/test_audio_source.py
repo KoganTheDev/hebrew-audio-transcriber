@@ -11,8 +11,8 @@ cases below cover both directions.
 import numpy as np
 import pytest
 
-from speech_to_text.core import audio_source
-from speech_to_text.core.audio_source import (
+from core import audio_source
+from core.audio_source import (
     SAMPLE_RATE,
     is_true_stereo,
     to_mono,

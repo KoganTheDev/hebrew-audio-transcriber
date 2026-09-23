@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-import speech_to_text
-from speech_to_text.core.options import TranscriptionOptions
-from speech_to_text.gui.presenters import (
+import core
+from core.options import TranscriptionOptions
+from gui.presenters import (
     TimeEstimator,
     TranscriptionRequest,
     build_file_summary,
@@ -91,15 +91,16 @@ def test_the_presenter_package_imports_without_pyqt5_ever_being_loaded():
                 return self.find_module(name, path)
 
         sys.meta_path.insert(0, Poison())
-        import speech_to_text.gui.presenters.transcription  # noqa: F401
+        import gui.presenters.transcription  # noqa: F401
         assert "PyQt5" not in sys.modules
         print("clean")
         """
     )
-    # src-layout: the package is only importable because pytest.ini puts
-    # src/ on the path, and a bare subprocess inherits none of that.
+    # The modules are only importable because pytest.ini puts src/ on the
+    # path, and a bare subprocess inherits none of that. core.__file__ is
+    # src/core/__init__.py, so parents[1] is the src/ directory itself.
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path(speech_to_text.__file__).resolve().parents[1])
+    env["PYTHONPATH"] = str(Path(core.__file__).resolve().parents[1])
     result = subprocess.run(
         [sys.executable, "-c", program],
         capture_output=True,

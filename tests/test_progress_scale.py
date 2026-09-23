@@ -8,7 +8,7 @@ constant edited in isolation that broke one of these would otherwise only
 show up as a progress bar that jumps backwards during a real run.
 """
 
-from speech_to_text.core import progress_scale as ps
+from core import progress_scale as ps
 
 
 def test_every_band_runs_forwards():
