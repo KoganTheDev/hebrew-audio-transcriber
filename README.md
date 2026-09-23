@@ -65,7 +65,12 @@ python -m speech_to_text.main
 ```
 
 Needs the package installed (see Installation above) - or launch `run.ps1` /
-`run.bat` instead, which run it straight from `src/` with no install step.
+`run.bat` instead, which run it straight from `src/` against the project's
+`.venv`. Neither launcher installs anything on its own; if `.venv` doesn't
+exist yet, they fail immediately with setup instructions rather than
+silently falling back to a system Python that lacks the dependencies. Run
+`run.ps1 -Setup` (or `run.bat setup`) to have the launcher create `.venv`
+and install everything into it for you.
 
 **Workflow:**
 1. **Select file(s)** - drag in audio/video files or a whole folder; your CPU/RAM/GPU and the total duration selected are shown alongside.

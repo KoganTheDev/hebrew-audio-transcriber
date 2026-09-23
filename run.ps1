@@ -8,6 +8,17 @@
 #   - Never trust PATH's "python" blindly: on many machines it is the
 #     Microsoft Store alias (under \WindowsApps\), which only prints an ad
 #     and exits.
+#   - Never silently launch on system Python when .venv is missing. That used
+#     to fall through to "py"/PATH python/a guessed per-user install, which
+#     has none of the project's dependencies - the user then sees a
+#     "Missing required packages" error from deep inside the app with no
+#     indication the real problem is "you never created .venv". Missing
+#     .venv is now a loud, immediate failure with setup instructions, unless
+#     -Setup is passed.
+
+param(
+    [switch]$Setup
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -57,49 +68,54 @@ To fix it, get a fresh copy of the whole folder:
 "@
     }
 
-    # The project's own virtual environment comes first, always. Without this
-    # the launcher picks a system Python that has none of the dependencies,
-    # and the failure is bewildering: the startup check only looks for PyQt5
-    # and tqdm, so it quietly pip-installs those into whatever interpreter it
-    # found - polluting the user's global Python - and then dies on
-    # "import faster_whisper", which it never checked for. A user who followed
-    # the README and made a .venv would have had every dependency sitting
-    # right there.
+    # The project's own virtual environment is the ONLY interpreter this
+    # launcher will run the app on. Without this the launcher could pick a
+    # system Python that has none of the dependencies, and the failure is
+    # bewildering: the startup check only reports missing packages, several
+    # layers removed from the real cause ("you never created .venv"). A user
+    # who followed the README and made a .venv gets every dependency sitting
+    # right there; anyone else is told to do that, loudly, right now -
+    # never silently handed a system Python instead.
     $venvPython = Join-Path $root '.venv\Scripts\python.exe'
 
-    $exe = $null
-    $exeArgs = @()
-
-    if (Test-Path $venvPython) {
-        $exe = $venvPython
-    }
-
-    # 1st choice: the Windows "py" launcher - always points at a real Python.
-    # 2nd choice: "python" on PATH, unless it is the Store alias.
-    # 3rd choice: a python.exe from the standard per-user install location.
-
-    $py = if ($exe) { $null } else { Get-Command py -ErrorAction SilentlyContinue }
-    if ($py) {
-        $exe = $py.Source
-        $exeArgs = @('-3')
-    }
-
-    if (-not $exe) {
-        $python = Get-Command python -ErrorAction SilentlyContinue
-        if ($python -and $python.Source -notlike '*\WindowsApps\*') {
-            $exe = $python.Source
+    if ($Setup) {
+        Write-Host 'Setting up .venv...' -ForegroundColor Green
+        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+        if ($pyLauncher) {
+            & $pyLauncher.Source -3 -m venv (Join-Path $root '.venv')
         }
+        else {
+            $python = Get-Command python -ErrorAction SilentlyContinue
+            if (-not $python -or $python.Source -like '*\WindowsApps\*') {
+                Fail "No Python installation found (checked 'py' and 'python'). Install Python 3.9+ from https://www.python.org/downloads/"
+            }
+            & $python.Source -m venv (Join-Path $root '.venv')
+        }
+        if (-not (Test-Path $venvPython)) {
+            Fail "Creating .venv failed - see the output above."
+        }
+        & $venvPython -m pip install -e $root
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Installing dependencies into .venv failed (exit code $LASTEXITCODE) - see the output above."
+        }
+        Write-Host '.venv is ready.' -ForegroundColor Green
     }
 
-    if (-not $exe) {
-        $guess = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1
-        if ($guess) { $exe = $guess.FullName }
+    if (-not (Test-Path $venvPython)) {
+        Fail @"
+No .venv found for this project - the app has not been set up yet.
+
+To fix it, from this folder run:
+  python -m venv .venv
+  .venv\Scripts\pip install -e .
+
+Or let this launcher do it for you:
+  run.ps1 -Setup
+"@
     }
 
-    if (-not $exe) {
-        Fail "No Python installation found (checked 'py', 'python', and $env:LOCALAPPDATA\Programs\Python). Install Python 3.9+ from https://www.python.org/downloads/"
-    }
+    $exe = $venvPython
+    $exeArgs = @()
 
     Write-Host "Using: $exe $($exeArgs -join ' ') -m speech_to_text.main" -ForegroundColor DarkGray
 

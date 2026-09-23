@@ -49,14 +49,56 @@ REM because the repo root is the working directory. Pointing PYTHONPATH at
 REM it keeps this launcher a double-click affair with no install step.
 set "PYTHONPATH=%~dp0src"
 
-REM Prefer the Windows "py" launcher: on machines where PATH's "python" is
-REM the Microsoft Store alias, "python -m ..." fails instantly.
+if /i "%~1"=="setup" goto :setup_venv
+goto :after_setup
+
+:setup_venv
+echo Setting up .venv...
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 -m speech_to_text.main
+    py -3 -m venv "%~dp0.venv"
 ) else (
-    python -m speech_to_text.main
+    python -m venv "%~dp0.venv"
 )
+if not exist "%~dp0.venv\Scripts\python.exe" (
+    echo.
+    echo ERROR: Creating .venv failed - see the output above.
+    echo.
+    pause
+    exit /b 1
+)
+"%~dp0.venv\Scripts\python.exe" -m pip install -e "%~dp0"
+if not %errorlevel%==0 (
+    echo.
+    echo ERROR: Installing dependencies into .venv failed - see the output above.
+    echo.
+    pause
+    exit /b 1
+)
+echo .venv is ready.
+:after_setup
+
+REM The project's own virtual environment is the ONLY interpreter this
+REM launcher will run the app on. Without this the launcher could silently
+REM fall back to system Python, which has none of the dependencies - the
+REM user then sees a "Missing required packages" error from deep inside the
+REM app with no indication the real problem is "you never created .venv".
+if not exist "%~dp0.venv\Scripts\python.exe" (
+    echo.
+    echo ERROR: No .venv found for this project - the app has not been set up yet.
+    echo.
+    echo To fix it, from this folder run:
+    echo   python -m venv .venv
+    echo   .venv\Scripts\pip install -e .
+    echo.
+    echo Or let this launcher do it for you:
+    echo   run.bat setup
+    echo.
+    pause
+    exit /b 1
+)
+
+"%~dp0.venv\Scripts\python.exe" -m speech_to_text.main
 set "_exitcode=%errorlevel%"
 if defined _prev_codepage chcp %_prev_codepage% >nul
 REM Hold the window open only when something actually failed - a normal
