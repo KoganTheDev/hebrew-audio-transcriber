@@ -396,10 +396,12 @@ def _transcribe_to_document(
         )
     except Exception as e:
         logger.error(f"Transcription failed for {audio_file}: {e}", exc_info=True)
-        segments = None
+        return TranscriptDocument(source_name=source_name, failed=True, error_detail=str(e))
 
     if segments is None:
-        return TranscriptDocument(source_name=source_name, failed=True)
+        return TranscriptDocument(
+            source_name=source_name, failed=True, error_detail=transcriber.last_transcribe_error
+        )
     return TranscriptDocument(source_name=source_name, segments=segments)
 
 
@@ -633,7 +635,17 @@ def run_transcription_process(
             succeeded = _transcribe_all(audio_files, transcriber, options, batch, progress_queue)
 
             if succeeded == 0:
-                result_queue.put(("error", "err_transcription_failed", {}))
+                # Every document in the batch failed - report the most recent
+                # one's real error instead of a bare "transcription failed"
+                # that tells the user nothing about why (see TranscriptDocument
+                # .error_detail).
+                last_error_detail = next(
+                    (doc.error_detail for doc in reversed(batch.documents) if doc.error_detail),
+                    None,
+                )
+                result_queue.put(
+                    ("error", "err_transcription_failed", {"detail": last_error_detail or "?"})
+                )
                 return
 
             _write_final_document(batch, emit_progress, progress_queue)

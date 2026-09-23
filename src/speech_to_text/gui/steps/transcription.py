@@ -796,7 +796,7 @@ class TranscriptionStep(QFrame):
         try:
             webbrowser.open(Path(self._result_path_value).as_uri())
         except Exception as e:
-            logger.warning(f"Could not open transcript in a browser: {e}")
+            logger.warning(f"Could not open transcript in a browser: {e}", exc_info=True)
 
     def _open_folder(self) -> None:
         """Reveal the transcript's containing folder in the OS file manager.
@@ -817,7 +817,7 @@ class TranscriptionStep(QFrame):
             folder = str(Path(self._result_path_value).parent)
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
         except Exception as e:
-            logger.warning(f"Could not open containing folder: {e}")
+            logger.warning(f"Could not open containing folder: {e}", exc_info=True)
 
     def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""

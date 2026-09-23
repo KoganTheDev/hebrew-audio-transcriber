@@ -131,7 +131,11 @@ class TestHighDpiEntryPointOrdering:
                 construct_line is None
                 and isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id == "QApplication"
+                # DiagnosticApplication (gui/crash_handler.py) is a QApplication
+                # subclass main.py constructs instead of QApplication directly,
+                # to route Qt-slot exceptions to the crash handler - same
+                # ordering requirement applies to it.
+                and node.func.id in ("QApplication", "DiagnosticApplication")
             ):
                 construct_line = node.lineno
 

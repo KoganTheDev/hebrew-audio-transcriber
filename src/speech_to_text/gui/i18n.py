@@ -645,7 +645,10 @@ STRINGS = {
             "לאחר הורדה ראשונה, המודל עובד גם ללא חיבור."
         ),
     },
-    "err_transcription_failed": {"en": "Transcription failed", "he": "התמלול נכשל"},
+    "err_transcription_failed": {
+        "en": "Transcription failed: {detail}",
+        "he": "התמלול נכשל: {detail}",
+    },
     "err_worker_exited": {
         "en": "Transcription worker process exited unexpectedly",
         "he": "תהליך התמלול הסתיים באופן בלתי צפוי",
@@ -653,6 +656,8 @@ STRINGS = {
     "err_cancelled": {"en": "Transcription cancelled", "he": "התמלול בוטל"},
     # Raw exception text stays untranslated - it's inherently English.
     "err_generic": {"en": "{detail}", "he": "{detail}"},
+    "copy_error_details": {"en": "Copy details", "he": "העתק פרטים"},
+    "error_details_copied": {"en": "Copied!", "he": "הועתק!"},
 }
 
 # Per-model card texts, keyed by the model names in config.MODELS. Model

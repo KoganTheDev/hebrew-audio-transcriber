@@ -8,6 +8,7 @@ signals - neither does any heavy lifting itself.
 import logging
 import multiprocessing
 import queue
+import traceback
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -214,7 +215,9 @@ class TranscriptionThread(QThread):
 
         except Exception as e:
             logger.error(f"TranscriptionThread error: {e}", exc_info=True)
-            self.error.emit("err_generic", {"detail": str(e)})
+            self.error.emit(
+                "err_generic", {"detail": str(e), "traceback": traceback.format_exc()}
+            )
         finally:
             _terminate_and_reap(self._process)
 

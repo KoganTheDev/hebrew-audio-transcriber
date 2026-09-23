@@ -65,6 +65,7 @@ class TranscriptDocument:
     source_name: str  # basename of the audio file
     segments: list[Segment] = field(default_factory=list)
     failed: bool = False  # transcription of this one file did not complete
+    error_detail: str | None = None  # str(exception) when failed is True
 
 
 def plain_text(segments: list[Segment]) -> str:

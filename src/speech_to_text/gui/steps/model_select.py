@@ -4,7 +4,7 @@ import logging
 import os
 from typing import cast
 
-from PyQt5.QtCore import QEvent, QObject, Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QShowEvent
 from PyQt5.QtWidgets import (
     QAbstractSpinBox,
@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QRadioButton,
     QScrollArea,
     QSpinBox,
@@ -201,6 +202,15 @@ class ModelSelectStep(QFrame):
         self.error_label = make_label(font=Fonts.CAPTION, color="error")
         self.error_label.setWordWrap(True)
         error_layout.addWidget(self.error_label, 1)
+
+        # Copies the rendered message plus whatever raw detail/traceback the
+        # failure carried, plus the log file path - so a bug report has the
+        # real error text instead of whatever the user happens to have on
+        # their clipboard. Hidden until show_error() shows it alongside the
+        # label; clear_error() hides it again.
+        self.copy_error_btn = QPushButton(t("copy_error_details"))
+        self.copy_error_btn.clicked.connect(self._on_copy_error_details)
+        error_layout.addWidget(self.copy_error_btn)
 
         layout.addWidget(self.error_banner)
 
@@ -436,6 +446,25 @@ class ModelSelectStep(QFrame):
         self._error_key = None
         self._error_params = {}
         self.error_banner.hide()
+
+    def _on_copy_error_details(self) -> None:
+        """Copy the real error text/traceback/log path, not just the friendly banner text."""
+        if self._error_key is None:
+            return
+        rendered = t("transcription_failed", message=t(self._error_key, **self._error_params))
+        parts = [rendered]
+        detail = self._error_params.get("detail")
+        if detail:
+            parts.append(str(detail))
+        tb = self._error_params.get("traceback")
+        if tb:
+            parts.append(str(tb))
+        parts.append(f"Log file: {config.resolve_log_path()}")
+        QApplication.clipboard().setText("\n\n".join(parts))
+
+        original_text = self.copy_error_btn.text()
+        self.copy_error_btn.setText(t("error_details_copied"))
+        QTimer.singleShot(1500, lambda: self.copy_error_btn.setText(original_text))
 
     def _on_radio_toggled(self, name: str, checked: bool) -> None:
         if checked:

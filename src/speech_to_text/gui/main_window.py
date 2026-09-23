@@ -31,6 +31,8 @@ from PyQt5.QtWidgets import (
 from speech_to_text import config
 from speech_to_text.gui import i18n, theme
 from speech_to_text.gui.checkbox_style import PaintedCheckboxStyle
+from speech_to_text.gui.crash_dialog import CrashDialog
+from speech_to_text.gui.crash_handler import get_crash_bridge
 from speech_to_text.gui.focus import KeyboardFocusTracker
 from speech_to_text.gui.i18n import t
 from speech_to_text.gui.presenters import build_transcription_request
@@ -150,6 +152,11 @@ class MainWindow(QMainWindow):
         # Center on screen
         self.center_on_screen()
 
+        # Catches whatever install_global_exception_hook() routes here (see
+        # main.py) - anything that would otherwise have crashed with no
+        # user-visible trace.
+        get_crash_bridge().crashed.connect(self._on_unhandled_crash)
+
         # Kick off the one-time hardware calibration in the background, if no
         # cached result was already loaded by HardwareDetector. Runs while
         # the user is still picking a file, so real numbers are usually
@@ -168,6 +175,20 @@ class MainWindow(QMainWindow):
         self.hardware.set_calibration(tiny_seconds_per_audio_second)
         self.model_step.update_audio_duration(self.audio_duration)
         logger.debug("Refreshed model time estimates with calibrated values")
+
+    def _on_unhandled_crash(self, message: str, traceback_text: str) -> None:
+        """Show CrashDialog for whatever install_global_exception_hook() caught.
+
+        Deliberately defensive: the exception is already logged by the hook
+        before this signal ever fires, so a bug in the dialog itself must not
+        be able to throw from inside a crash handler and take the process
+        down a second time with no trace at all.
+        """
+        try:
+            CrashDialog(self, message, traceback_text).exec_()
+        except Exception as e:
+            print(f"Crash dialog itself failed: {e}", file=sys.stderr)
+            logger.critical(f"Crash dialog itself failed: {e}", exc_info=True)
 
     def _on_calibration_failed(self, message: str) -> None:
         logger.warning(f"Hardware calibration failed, keeping placeholder estimates: {message}")

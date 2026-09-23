@@ -124,8 +124,11 @@ def main() -> None:
     # Import PyQt5 after dependencies are ensured
     try:
         from PyQt5.QtGui import QIcon
-        from PyQt5.QtWidgets import QApplication
 
+        from speech_to_text.gui.crash_handler import (
+            DiagnosticApplication,
+            install_global_exception_hook,
+        )
         from speech_to_text.gui.main_window import MainWindow, configure_application
 
         logger.debug("PyQt5 imports successful")
@@ -149,9 +152,13 @@ def main() -> None:
 
         # Create and run application
         logger.debug("Creating QApplication...")
-        app = QApplication(sys.argv)
+        app = DiagnosticApplication(sys.argv)
         app.setWindowIcon(QIcon(config.ICON_PATH))
         logger.debug("QApplication created successfully")
+
+        # Installed before MainWindow is built, so a crash during its
+        # construction is caught too, not just crashes during app.exec_().
+        install_global_exception_hook(app)
 
         # Apply the app stylesheet and the persisted UI language (English on
         # first-ever launch) before MainWindow is built, so every widget

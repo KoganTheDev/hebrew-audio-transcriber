@@ -176,6 +176,10 @@ class Transcriber:
         # than showing one "failed to load" for a missing network and a
         # broken model alike. None until a load has actually failed.
         self.load_failed_on_network = False
+        # Set by transcribe() when it fails, so a caller that only sees
+        # None back (see transcribe()'s docstring) can still report why.
+        # None until a transcription has actually failed.
+        self.last_transcribe_error: str | None = None
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.cpu_threads = cpu_threads
@@ -462,6 +466,7 @@ class Transcriber:
                     e = fallback_error
 
             logger.error(f"Transcription failed: {e}", exc_info=True)
+            self.last_transcribe_error = str(e)
             # Status-only, not 0: inside a batch the worker rescales this,
             # and a 0 would drag the bar back to the start of the failed file.
             self.progress_callback(("w_error", {"detail": str(e)}), STATUS_ONLY_PERCENT)
