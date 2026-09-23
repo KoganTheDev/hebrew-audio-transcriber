@@ -24,7 +24,7 @@ from core.formatting import (
     merge_turns,
     render_html,
 )
-from core.hebrew_correct import CONFIDENCE_THRESHOLD
+from core.hebrew_corrections import CONFIDENCE_THRESHOLD
 from core.segments import Segment, TranscriptDocument, Word
 
 HE = "שלום עולם"

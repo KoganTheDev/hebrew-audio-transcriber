@@ -22,7 +22,7 @@ class Word:
 
     `probability` is what makes targeted correction possible: the Hebrew pass
     looks only at words Whisper itself was unsure about instead of
-    second-guessing the whole transcript (see core/hebrew_correct.py for why
+    second-guessing the whole transcript (see core/hebrew_corrections.py for why
     that distinction matters so much in Hebrew).
     """
 

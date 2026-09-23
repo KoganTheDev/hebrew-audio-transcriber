@@ -18,7 +18,7 @@ import pytest
 
 from core import progress_scale as ps
 from core import worker
-from core.options import TranscriptionOptions
+from core.run_options import TranscriptionOptions
 from core.segments import Segment, Word
 
 

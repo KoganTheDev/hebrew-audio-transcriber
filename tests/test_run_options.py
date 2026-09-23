@@ -1,5 +1,5 @@
 """
-Tests for core/options.py.
+Tests for core/run_options.py.
 
 TranscriptionOptions is a plain dataclass, so the things worth testing are
 the two properties that are not obvious from the field list: that every
@@ -11,7 +11,7 @@ worker process.
 import pickle
 
 import config
-from core.options import TranscriptionOptions
+from core.run_options import TranscriptionOptions
 
 
 def test_the_defaults_match_the_apps_configured_model_and_language():

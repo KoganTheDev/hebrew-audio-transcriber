@@ -1,6 +1,6 @@
 """Shared Hebrew text handling.
 
-The correction pass (core/hebrew_correct.py) and the evaluation metrics
+The correction pass (core/hebrew_corrections.py) and the evaluation metrics
 (tests/eval/hebrew_metrics.py) must agree on when two spellings are "the same
 word", so the rules live in one place: a normalisation applied in one and not
 the other silently changes what a word error rate means relative to what the

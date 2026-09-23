@@ -10,10 +10,10 @@ import os
 # WhisperModel's download_root controls both where faster-whisper looks for
 # an already-cached model AND where it writes a new download, so it must be
 # ABSOLUTE. A relative root resolves against the process's current working
-# directory, and pyproject.toml installs a `speech-to-text` console script
-# (see [project.scripts]) that can be run from anywhere - so a launch from a
-# different directory would miss the existing cache and silently re-download
-# from scratch. There is no download-progress signal anywhere in this app (see
+# directory, and the app can be started from anywhere (an IDE, a shortcut, or
+# `python src\app.py` from another folder) - so a launch from a different
+# directory would miss the existing cache and silently re-download from
+# scratch. There is no download-progress signal anywhere in this app (see
 # MODELS' "download_size" comment), so the only symptom is "Loading model..."
 # taking twenty unexplained minutes - and on this machine that re-download is
 # 5.9 GB.
@@ -98,10 +98,10 @@ def resolve_diarization_models_root() -> str:
 
     This was a bare relative "./diarization_models" in core/diarization.py, so
     it resolved against the process working directory. The launchers cd to the
-    project first, which hid it - but the console-script entry point declared
-    in pyproject.toml does not, so running `speech-to-text` from anywhere else
-    re-downloaded 36 MB into whatever directory the user happened to be in, or
-    failed outright on a read-only one. Exactly the bug the Whisper cache had,
+    project first, which hid it - but nothing forces a launch to start there,
+    so running the app from anywhere else re-downloaded 36 MB into whatever
+    directory the user happened to be in, or failed outright on a read-only
+    one. Exactly the bug the Whisper cache had,
     and the reasoning for that fix is directly above.
 
     No makedirs here, unlike the Whisper root: diarization is optional, and
@@ -166,9 +166,9 @@ def resolve_log_path() -> str:
     It was a bare "speech_to_text.log" handed to FileHandler, so it resolved
     against the working directory - the fourth instance of exactly the bug
     MODEL_DOWNLOAD_ROOT, DIARIZATION_MODELS_ROOT and the calibration cache
-    were each fixed for. Launched through the console script from somewhere
-    else, every run scattered another log wherever the user happened to be,
-    and none of them was the one they were told to look at.
+    were each fixed for. Started from somewhere else, every run scattered
+    another log wherever the user happened to be, and none of them was the one
+    they were told to look at.
     """
     override = os.environ.get("SPEECH_TO_TEXT_LOG_DIR")
     directory = os.path.abspath(override) if override else _log_directory()
@@ -212,6 +212,6 @@ def output_path_for(audio_files: list[str]) -> str:
 # User-maintained list of domain terms (names, places, jargon) that a general
 # model reliably mishears. One term per line, UTF-8, "#" for comments. Looked
 # for in the working directory; absent means the correction pass does nothing,
-# which is the intended default - see core/hebrew_correct.py.
+# which is the intended default - see core/hebrew_corrections.py.
 TERMS_FILENAME = "hebrew_terms.txt"
 CHECKPOINT_FILENAME = "transcription_checkpoint.txt"

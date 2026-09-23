@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 import config
-from core import segmentation as seg
+from core import powerset_decode as seg
 
 if TYPE_CHECKING:
     from core.diarization import SpeakerSpan

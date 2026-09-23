@@ -22,7 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
-from core import power
+from core import keep_awake
 from core.progress_scale import (
     BATCH_COMPLETE_PERCENT,
     BATCH_FORMATTING_PERCENT,
@@ -51,7 +51,7 @@ from core.progress_scale import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps this module import-light
-    from core.options import TranscriptionOptions
+    from core.run_options import TranscriptionOptions
     from core.segments import Segment, TranscriptDocument
     from core.transcriber import Transcriber
 
@@ -594,10 +594,10 @@ def run_transcription_process(
     # Held for the whole batch, not per file: the gap between two files is
     # still this process working, and letting the machine stand by in that
     # window would reintroduce exactly the problem this prevents. See
-    # core/power.py for what was actually going wrong. The `with` also covers
+    # core/keep_awake.py for what was actually going wrong. The `with` also covers
     # every early return below - leaving sleep suppressed after the work is
     # done would be a worse bug than the one this fixes.
-    with power.keep_system_awake("transcription batch"):
+    with keep_awake.keep_system_awake("transcription batch"):
         try:
             progress_queue.put(("progress", "w_initializing", {}, BATCH_INIT_PERCENT))
 
@@ -1109,15 +1109,15 @@ def _correct_hebrew(
         return
 
     try:
-        from core import hebrew_correct
+        from core import hebrew_corrections
 
-        terms = hebrew_correct.TermList.load(terms_file)
+        terms = hebrew_corrections.TermList.load(terms_file)
         if not len(terms):
             return
 
         emit_progress(("w_correcting_terms", {}), FILE_LOCAL_CORRECTING_PERCENT)
         correct_start = time.perf_counter()
-        changes = hebrew_correct.correct(segments, terms)
+        changes = hebrew_corrections.correct(segments, terms)
         _log_phase(progress_queue, WORK_PHASE_CORRECT, correct_start)
         if changes:
             logger.info(f"Applied {len(changes)} Hebrew term correction(s)")

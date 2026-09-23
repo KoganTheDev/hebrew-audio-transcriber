@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 import core
-from core.options import TranscriptionOptions
+from core.run_options import TranscriptionOptions
 from gui.presenters import (
     TimeEstimator,
     TranscriptionRequest,

@@ -11,7 +11,7 @@ duplicated here.
 import html
 from functools import partial
 
-from core.hebrew_correct import CONFIDENCE_THRESHOLD
+from core.hebrew_corrections import CONFIDENCE_THRESHOLD
 from core.segments import TranscriptDocument
 
 from .chrome import (

@@ -47,7 +47,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-LOW_CONFIDENCE = 0.55  # matches core.hebrew_correct's gate
+LOW_CONFIDENCE = 0.55  # matches core.hebrew_corrections's gate
 DEFAULT_MODELS = ["medium", "ivrit-turbo"]
 OUTPUT_DIR = "eval_output"
 

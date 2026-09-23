@@ -14,8 +14,8 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
 from core.calibration import run_calibration_process
-from core.options import TranscriptionOptions
 from core.progress_scale import STATUS_ONLY_PERCENT
+from core.run_options import TranscriptionOptions
 from core.worker import run_transcription_process
 from gui.audio_utils import get_audio_duration
 from gui.i18n import document_strings, t

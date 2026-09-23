@@ -9,7 +9,7 @@ import pytest
 
 import config
 from core.formatting import render_html
-from core.options import TranscriptionOptions
+from core.run_options import TranscriptionOptions
 from core.segments import TranscriptDocument, plain_text
 from core.transcriber import Transcriber
 from hardware_detection import HardwareDetector

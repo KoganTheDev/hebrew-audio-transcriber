@@ -280,7 +280,7 @@ TESR1_AUDIO = os.path.join("mp3_test", "tesr1.wav")
 DEFAULT_START_TESR1 = 0
 DEFAULT_SECONDS_TESR1 = 360
 
-LOW_CONFIDENCE = 0.55  # matches core.hebrew_correct's gate and compare_models.py
+LOW_CONFIDENCE = 0.55  # matches core.hebrew_corrections's gate and compare_models.py
 
 # =============================================================================
 # Thermal / process-isolation controls - see the module docstring's "Why

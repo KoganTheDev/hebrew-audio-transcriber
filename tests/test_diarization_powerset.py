@@ -5,7 +5,7 @@ This module only runs when config.DIARIZATION_ENGINE is flipped, so nothing
 in the default path exercises it - which is exactly how a pipeline rots into
 dead code that still imports cleanly. Everything below runs without
 onnxruntime, sherpa-onnx or a model file: the decode arithmetic is already
-pure (core/segmentation.py), and the two library boundaries - an ONNX session
+pure (core/powerset_decode.py), and the two library boundaries - an ONNX session
 and the sherpa embedding/clustering objects - are narrow enough to stand in
 for with fakes, so the parts that carry the measured behaviour (the majority
 vote in _reconstruct, the duration floors in _tracks_to_spans, which audio an
@@ -24,7 +24,7 @@ import pytest
 
 import config
 from core import diarization_powerset as dp
-from core import segmentation as seg
+from core import powerset_decode as seg
 from core.diarization import DiarizationUnavailable, SpeakerSpan
 
 

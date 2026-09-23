@@ -24,7 +24,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from core.options import TranscriptionOptions
+from core.run_options import TranscriptionOptions
 
 
 class DeviceRecommender(Protocol):

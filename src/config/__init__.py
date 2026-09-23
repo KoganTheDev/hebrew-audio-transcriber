@@ -8,7 +8,7 @@ and gui/ reads config that way, so the facade is the whole point of the split:
 the grouping is for whoever edits these constants, not for whoever reads them.
 """
 
-from config.app import (
+from config.application import (
     APP_ID,
     APP_NAME,
     APP_VERSION,

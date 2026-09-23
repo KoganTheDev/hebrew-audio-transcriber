@@ -1053,8 +1053,7 @@ def configure_application(app: QApplication) -> None:
     This used to live only in this module's own main() below, which is
     reachable exclusively via `python -m gui.main_window` -
     a path nothing in the shipped app actually uses. app.py
-    (the real entry point behind run.ps1, run.bat, `python -m
-    main`, and the `speech-to-text` console script) built
+    (the real entry point, behind run.ps1 and run.bat) built
     its own QApplication and never applied the stylesheet at all, so the
     entire themed look - peach checkbox tick, radio ring-and-dot, spin box
     frame and arrows, dark scrollbars, styled QToolTip, the kbdFocus ring on

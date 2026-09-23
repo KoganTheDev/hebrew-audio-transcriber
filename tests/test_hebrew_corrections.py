@@ -9,7 +9,7 @@ of these tests therefore assert that it does *nothing*.
 
 import pytest
 
-from core.hebrew_correct import (
+from core.hebrew_corrections import (
     TermList,
     correct,
     strip_clitics,

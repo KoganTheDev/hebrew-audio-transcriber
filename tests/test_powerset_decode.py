@@ -1,5 +1,5 @@
 """
-Decode math for core/segmentation.py.
+Decode math for core/powerset_decode.py.
 
 Every test here runs on synthetic logits and a fake ONNX session, so the whole
 file passes with no model downloaded and no audio - which is the point. The
@@ -15,7 +15,7 @@ import itertools
 import numpy as np
 import pytest
 
-from core import segmentation as seg
+from core import powerset_decode as seg
 
 
 class FakeSession:

@@ -398,8 +398,8 @@ class Transcriber:
             device=device,
             compute_type=compute_type,
             # Absolute, resolved once at import time: a relative path would
-            # resolve against the working directory, and the console script
-            # can be launched from anywhere. See config.MODEL_DOWNLOAD_ROOT.
+            # resolve against the working directory, and the app can be
+            # launched from anywhere. See config.MODEL_DOWNLOAD_ROOT.
             download_root=config.MODEL_DOWNLOAD_ROOT,
         )
         if self.cpu_threads is not None:

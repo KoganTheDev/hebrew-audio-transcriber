@@ -266,8 +266,8 @@ class TestDiarizationModelsRoot:
 
     It was a bare relative "./diarization_models", so it resolved against
     wherever the process happened to start. run.bat and run.ps1 cd to the
-    project first, which hid it - but the console script declared in
-    pyproject.toml does not, so `speech-to-text` launched from anywhere else
+    project first, which hid it - but nothing forces a launch to start
+    there, so the app started from anywhere else
     re-downloaded 36 MB into that directory, or failed on a read-only one.
     The Whisper cache had the same bug and was fixed; this half was missed.
     """
@@ -332,7 +332,7 @@ class TestCalibrationCachePath:
     MODEL_DOWNLOAD_ROOT and DIARIZATION_MODELS_ROOT were both fixed for this
     (see the two classes above); core/calibration.py's cache was missed and
     stayed a bare "whisper_models/.calibration.json". Launched through the
-    console script from any other directory, load_cached_tiny_rtf missed the
+    app from any other directory, load_cached_tiny_rtf missed the
     cache, so the full tiny-model benchmark re-ran on EVERY launch and
     save_calibration created a stray whisper_models/ wherever the user
     happened to be. This is that gap, closed and pinned.
@@ -362,7 +362,7 @@ class TestLogPath:
 
     MODEL_DOWNLOAD_ROOT, DIARIZATION_MODELS_ROOT and the calibration cache
     were each fixed for this; logging.FileHandler was still being handed a
-    bare "speech_to_text.log", so the console script scattered one wherever
+    bare "speech_to_text.log", so a launch from elsewhere scattered one wherever
     it happened to be started and none of them was the file the user had
     been told to look at.
     """

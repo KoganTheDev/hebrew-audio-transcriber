@@ -35,10 +35,9 @@ logger = logging.getLogger(__name__)
 CALIBRATION_AUDIO_SECONDS = 60
 CALIBRATION_SAMPLE_RATE = 16000
 # Inside the resolved Whisper model root, not a bare "whisper_models/" -
-# which resolved against the process working directory. The console script
-# declared in pyproject.toml can be launched from anywhere, so a relative
-# path meant this cache was missed on every launch that did not start in the
-# project folder: the full benchmark re-ran each time, and save_calibration
+# which resolved against the process working directory. The app can be
+# launched from anywhere, so a relative path meant this cache was missed on
+# every launch that did not start in the project folder: the full benchmark re-ran each time, and save_calibration
 # scattered a stray whisper_models/ wherever the user happened to be.
 # run.bat and run.ps1 cd to the project first, which is why it stayed hidden.
 # MODEL_DOWNLOAD_ROOT is the same directory this always meant, only resolved

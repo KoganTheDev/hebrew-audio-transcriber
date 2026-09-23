@@ -40,7 +40,7 @@ src/                            on sys.path at run time; nothing is installed in
   app.py                        process entry: logging, dependency check, Qt import ORDER
   hardware_detection.py         CPU/RAM/GPU probe, model recommendation, time estimates
   config/                       grouped by what each constant is FOR, not where it was declared
-    app.py                        metadata, window geometry, dependency list
+    application.py                metadata, window geometry, dependency list
     models.py                     the MODELS table and the default
     paths.py                      model-download root, output filenames, supported formats
     transcription.py              language, beam size, compute type, speed factors
@@ -55,14 +55,14 @@ src/                            on sys.path at run time; nothing is installed in
     diarization.py                sherpa-onnx model lifecycle and engine dispatch
     speaker_attribution.py        deciding which speaker each word belongs to
     diarization_powerset.py       opt-in second engine, decodes the model itself
-    segmentation.py               pure-numpy powerset decode maths
-    hebrew_correct.py             term-list correction of low-confidence Hebrew words
+    powerset_decode.py            pure-numpy powerset decode maths
+    hebrew_corrections.py         term-list correction of low-confidence Hebrew words
     hebrew_text.py                Hebrew normalization and BiDi isolation
     log_bidi.py                   visual-order console logging for Hebrew log lines
-    power.py                      keeps the machine awake for the length of a run
+    keep_awake.py                 keeps the machine awake for the length of a run
     dependencies.py               installs missing runtime dependencies on first launch
     segments.py                   Word / Segment / TranscriptDocument - shared vocabulary
-    options.py                    settings for one run, passed to the worker process
+    run_options.py                settings for one run, passed to the worker process
     formatting/                   renders those into the self-contained HTML transcript
     assets/css|js                 the transcript's own front-end, concatenated in order
   gui/                          PyQt5. Runs in the main process.

@@ -103,7 +103,7 @@ DIARIZATION_INTERJECTION_MIN_COVERAGE = 0.8
 #
 # "sherpa"   - sherpa-onnx's OfflineSpeakerDiarization, start to finish.
 # "powerset" - our own decode of the same segmentation model
-#              (core/segmentation.py), with sherpa's embedding extractor and
+#              (core/powerset_decode.py), with sherpa's embedding extractor and
 #              clustering underneath (core/diarization_powerset.py).
 #
 # The reason for owning the middle of the pipeline is that sherpa's decode is

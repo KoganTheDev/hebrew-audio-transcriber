@@ -47,7 +47,7 @@ class TranscriptionOptions:
 
     # Path to a user-maintained list of domain terms (names, places, jargon).
     # Absent or empty means the correction pass does nothing, which is the
-    # intended default - see core/hebrew_correct.py for why a general
+    # intended default - see core/hebrew_corrections.py for why a general
     # dictionary would make Hebrew transcripts worse rather than better.
     terms_file: str | None = None
 
