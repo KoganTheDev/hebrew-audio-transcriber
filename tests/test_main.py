@@ -1,5 +1,5 @@
 """
-Tests for main module and entry points.
+Tests for the app entry point.
 """
 
 import logging
@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import app as app_module
 from core.log_bidi import VisualOrderFormatter
 
 # Driven by TestBackgroundWorkStopsBeforeExit. Kept at module level rather than
@@ -340,3 +341,59 @@ class TestBackgroundWorkStopsBeforeExit:
         assert "THREAD_RUNNING=False" in result.stdout, (
             "main() returned with the calibration thread still running: " + result.stdout
         )
+
+
+class TestReexecIntoProjectVenv:
+    """
+    app.py restarts itself on the project's .venv when started elsewhere,
+    because the launchers are not the only way in - a direct `python
+    src/app.py`, a double-click and an IDE run button all bypass them, and
+    app.py puts src/ on sys.path itself so all of them start successfully on
+    an interpreter that may have no dependencies.
+
+    These cover the three cases that must NOT spawn. The spawning case is
+    covered end-to-end by launching on a foreign interpreter; what matters
+    here is that the guards hold, because a wrong one forks forever.
+    """
+
+    @staticmethod
+    def _spy(monkeypatch):
+        calls = []
+        monkeypatch.setattr(app_module.subprocess, "run", lambda *a, **k: calls.append(a))
+        return calls
+
+    def test_the_marker_stops_a_child_re_execing_again(self, monkeypatch):
+        """The loop guard. Without it a mismatch that survives the hop forks forever."""
+        monkeypatch.setenv(app_module._REEXEC_MARKER, "1")
+        calls = self._spy(monkeypatch)
+
+        app_module._reexec_into_project_venv()
+
+        assert calls == []
+
+    def test_no_venv_means_no_spawn(self, monkeypatch, tmp_path):
+        """ensure_dependencies reports this case and can say more about it."""
+        monkeypatch.delenv(app_module._REEXEC_MARKER, raising=False)
+        monkeypatch.setattr(app_module, "__file__", str(tmp_path / "src" / "app.py"))
+        calls = self._spy(monkeypatch)
+
+        app_module._reexec_into_project_venv()
+
+        assert calls == []
+
+    def test_already_on_the_venv_python_means_no_spawn(self, monkeypatch, tmp_path):
+        """
+        Compared with samefile, not string equality: the same interpreter
+        reaches us spelled differently via symlinks, 8.3 names and case.
+        """
+        monkeypatch.delenv(app_module._REEXEC_MARKER, raising=False)
+        venv_python = tmp_path / ".venv" / "Scripts" / "python.exe"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("", encoding="utf-8")
+        monkeypatch.setattr(app_module, "__file__", str(tmp_path / "src" / "app.py"))
+        monkeypatch.setattr(app_module.sys, "executable", str(venv_python))
+        calls = self._spy(monkeypatch)
+
+        app_module._reexec_into_project_venv()
+
+        assert calls == []

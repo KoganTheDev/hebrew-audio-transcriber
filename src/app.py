@@ -5,6 +5,7 @@ Professional GUI application for audio transcription.
 import logging
 import logging.handlers
 import os
+import subprocess
 import sys
 
 # This file's own directory, src/, holds config/, core/ and gui/. One dirname,
@@ -14,6 +15,60 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 from core.dependencies import ensure_dependencies
 from core.log_bidi import VisualOrderFormatter
+
+# Guards against re-execing a child that is already the child.
+_REEXEC_MARKER = "SPEECH_TO_TEXT_REEXEC"
+
+
+def _reexec_into_project_venv() -> None:
+    """Restart on the project's .venv if started on some other interpreter.
+
+    The launchers refuse to run on anything else, but they are not the only
+    way in: a direct `python src/app.py`, a double-click and an IDE run button
+    all bypass them, and the sys.path line above means every one of those
+    starts successfully on an interpreter that may have no dependencies.
+
+    Silent when there is no .venv to move to - ensure_dependencies reports
+    that case and can say more about it than this can.
+    """
+    if os.environ.get(_REEXEC_MARKER):
+        return
+
+    src_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_python = os.path.join(os.path.dirname(src_dir), ".venv", "Scripts", "python.exe")
+    if not os.path.isfile(venv_python):
+        return
+
+    # samefile, not string comparison: the same interpreter reaches us spelled
+    # differently via symlinks, 8.3 short names and case.
+    try:
+        if os.path.samefile(venv_python, sys.executable):
+            return
+    except OSError:
+        return
+
+    os.environ[_REEXEC_MARKER] = "1"
+    print(f"Switching to the project's Python: {venv_python}", flush=True)
+    try:
+        # subprocess and exit, not os.execv: Windows has no real exec, so
+        # execv returns control to the console immediately, detaching the app
+        # and handing the launcher an exit code from the wrong process.
+        completed = subprocess.run(
+            [venv_python, os.path.abspath(__file__), *sys.argv[1:]],
+            check=False,
+        )
+    except OSError as exc:
+        # Carry on: the dependency check still gives a better message than a
+        # bare spawn traceback.
+        del os.environ[_REEXEC_MARKER]
+        print(f"Could not switch interpreters ({exc}); continuing on this one.", flush=True)
+        return
+    sys.exit(completed.returncode)
+
+
+# Before the log handlers below, so the parent does not open the log file it
+# is about to hand over.
+_reexec_into_project_venv()
 
 # Setup logging: fixed-width, column-aligned format with millisecond precision
 # and source location (file:line) - easy to scan and to grep by level/module.

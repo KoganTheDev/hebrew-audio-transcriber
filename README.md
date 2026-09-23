@@ -73,17 +73,25 @@ No CUDA toolkit needed - just this pip extra.
 
 ## Usage
 
+Double-click **`run.bat`** (or `run.ps1`). That is the whole thing - on a
+machine with no `.venv` yet it offers to do the one-time setup first, then
+starts the app.
+
+<details>
+<summary>Running it directly instead</summary>
+
 ```bash
 python src\app.py
 ```
 
-Needs the dependencies installed and `.venv` active (see Installation above) -
-or launch `run.ps1` / `run.bat` instead, which run it against the project's
-`.venv` whatever your shell is pointing at. Neither launcher installs anything
-on its own; if `.venv` doesn't exist yet, they fail immediately with setup
-instructions rather than silently falling back to a system Python that lacks
-the dependencies. Run `run.ps1 -Setup` (or `run.bat setup`) to have the
-launcher create `.venv` and install everything into it for you.
+This works from any interpreter: if the project's `.venv` exists, `app.py`
+notices it is running somewhere else and restarts itself on it, so you cannot
+accidentally run against a Python that lacks the dependencies. With no `.venv`
+at all it stops and tells you to run the launcher.
+
+`run.ps1 -Setup` (or `run.bat setup`) does the setup without the prompt.
+
+</details>
 
 **Workflow:**
 1. **Select file(s)** - drag in audio/video files or a whole folder; your CPU/RAM/GPU and the total duration selected are shown alongside.

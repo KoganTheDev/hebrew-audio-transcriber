@@ -169,19 +169,32 @@ REM launcher will run the app on. Without this the launcher could silently
 REM fall back to system Python, which has none of the dependencies - the
 REM user then sees a "Missing required packages" error from deep inside the
 REM app with no indication the real problem is "you never created .venv".
+REM No .venv: offer to build one rather than dead-ending. The prompt is
+REM delegated to run.ps1 so the app-coloured version exists once, in the one
+REM language that can set console colours per line; cmd can only recolour the
+REM whole window. Falls back to a plain prompt if PowerShell will not run.
 if not exist "%~dp0.venv\Scripts\python.exe" (
-    echo.
-    echo ERROR: No .venv found for this project - the app has not been set up yet.
-    echo.
-    echo To fix it, from this folder run:
-    echo   python -m venv .venv
-    echo   .venv\Scripts\pip install -e .
-    echo.
-    echo Or let this launcher do it for you:
-    echo   run.bat setup
-    echo.
-    pause
-    exit /b 1
+    where powershell >nul 2>nul
+    if !errorlevel!==0 (
+        powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run.ps1"
+        set "_setupcode=!errorlevel!"
+    ) else (
+        echo.
+        echo Hebrew Audio Transcriber - first-time setup
+        echo.
+        echo This needs to download about 120 MB of components.
+        echo It runs once, takes a few minutes, and everything
+        echo lands in this folder.
+        echo.
+        echo Press Enter to begin, or close this window to cancel.
+        pause >nul
+        call "%~dp0run.bat" setup
+        set "_setupcode=!errorlevel!"
+    )
+    if not "!_setupcode!"=="0" exit /b !_setupcode!
+    REM run.ps1 launches the app itself once setup finishes, so there is
+    REM nothing left for this script to start.
+    exit /b 0
 )
 
 "%~dp0.venv\Scripts\python.exe" "%~dp0src\app.py"

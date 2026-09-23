@@ -8,13 +8,10 @@
 #   - Never trust PATH's "python" blindly: on many machines it is the
 #     Microsoft Store alias (under \WindowsApps\), which only prints an ad
 #     and exits.
-#   - Never silently launch on system Python when .venv is missing. That used
-#     to fall through to "py"/PATH python/a guessed per-user install, which
-#     has none of the project's dependencies - the user then sees a
-#     "Missing required packages" error from deep inside the app with no
-#     indication the real problem is "you never created .venv". Missing
-#     .venv is now a loud, immediate failure with setup instructions, unless
-#     -Setup is passed.
+#   - Never silently launch on system Python: it has none of the project's
+#     dependencies, and the user then sees "Missing required packages" from
+#     deep inside the app rather than the real cause. With no .venv this
+#     offers to build one; with -Setup it skips the prompt.
 
 param(
     [switch]$Setup
@@ -26,6 +23,61 @@ $ErrorActionPreference = 'Stop'
 $root = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $logFile = Join-Path $root 'launcher-log.txt'
 
+# The app's own palette (gui/theme.py COLORS, Catppuccin Mocha), by role, so
+# the setup window and the app it installs look like one product. A Qt window
+# is not an option here - PyQt5 is one of the things being installed.
+$Palette = @{
+    accent    = '250;179;135'  # peach    - headings
+    text      = '205;214;244'  # text     - body
+    caption   = '147;153;178'  # overlay2 - secondary lines
+    success   = '166;227;161'  # green
+    error     = '243;139;168'  # red
+}
+# Console colours to fall back on, in the same roles.
+$PaletteFallback = @{
+    accent = 'Yellow'; text = 'White'; caption = 'DarkGray'
+    success = 'Green'; error = 'Red'
+}
+
+# 24-bit ANSI needs ENABLE_VIRTUAL_TERMINAL_PROCESSING, which is not reliably
+# on in conhost. Turn it on, and fall back to the 16 console colours if that
+# fails - printing raw escapes at a user is worse than printing no colour.
+$script:UseAnsi = $false
+
+try {
+    if (-not ('VTConsole' -as [type])) {
+        Add-Type -Namespace Native -Name VTConsole -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern IntPtr GetStdHandle(int nStdHandle);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+'@ -ErrorAction Stop
+    }
+    $handle = [Native.VTConsole]::GetStdHandle(-11)
+    $mode = 0
+    if ([Native.VTConsole]::GetConsoleMode($handle, [ref]$mode)) {
+        $script:UseAnsi = [Native.VTConsole]::SetConsoleMode($handle, $mode -bor 0x0004)
+    }
+}
+catch {
+    $script:UseAnsi = $false
+}
+# Windows Terminal and most IDE consoles already render VT even when the
+# handle call above cannot be made.
+if (-not $script:UseAnsi -and ($env:WT_SESSION -or $env:TERM_PROGRAM)) { $script:UseAnsi = $true }
+
+function Write-Themed([string]$text, [string]$role = 'text') {
+    if ($script:UseAnsi) {
+        $esc = [char]27
+        Write-Host "$esc[38;2;$($Palette[$role])m$text$esc[0m"
+    }
+    else {
+        Write-Host $text -ForegroundColor $PaletteFallback[$role]
+    }
+}
+
 function Fail([string]$message) {
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     try { "$stamp  $message" | Add-Content -Path $logFile -Encoding UTF8 } catch {}
@@ -34,6 +86,99 @@ function Fail([string]$message) {
     Write-Host "(also written to $logFile)" -ForegroundColor DarkGray
     Read-Host 'Press Enter to close'
     exit 1
+}
+
+function Invoke-Setup {
+    Write-Host 'Setting up .venv...' -ForegroundColor Green
+
+    # "py -3" hands back whatever the default 3.x is, and pyproject
+    # needs >=3.10. The venv builds fine on 3.9, so without this check the
+    # failure lands one step later out of pip, reading like a broken
+    # project rather than a stale interpreter.
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $bootExe = $pyLauncher.Source
+        $bootArgs = @('-3')
+    }
+    else {
+        $python = Get-Command python -ErrorAction SilentlyContinue
+        if (-not $python -or $python.Source -like '*\WindowsApps\*') {
+            Fail "No Python installation found (checked 'py' and 'python'). Install Python 3.10+ from https://www.python.org/downloads/"
+        }
+        $bootExe = $python.Source
+        $bootArgs = @()
+    }
+
+    # stderr folded in so a failure reports why, but the version is
+    # matched by pattern: 'py' prints its own warnings there, and reading
+    # the whole stream would reject a perfectly good 3.12.
+    $bootOutput = (& $bootExe @bootArgs -c "import sys; print('PYVER %d.%d' % sys.version_info[:2])" 2>&1 | Out-String)
+    $match = [regex]::Match($bootOutput, 'PYVER (\d+)\.(\d+)')
+    if ($LASTEXITCODE -ne 0 -or -not $match.Success) {
+        Fail "Could not run Python ($bootExe) to check its version. Output was:`n$bootOutput"
+    }
+    $bootVersion = "$($match.Groups[1].Value).$($match.Groups[2].Value)"
+    if ([int]$match.Groups[1].Value -lt 3 -or ([int]$match.Groups[1].Value -eq 3 -and [int]$match.Groups[2].Value -lt 10)) {
+        Fail @"
+This project needs Python 3.10 or newer, but the Python on this machine is $bootVersion ($bootExe).
+
+Install a current Python from https://www.python.org/downloads/ (tick
+"Add python.exe to PATH" in the installer), then run 'run.ps1 -Setup' again.
+"@
+    }
+    Write-Host "Using Python $bootVersion from $bootExe" -ForegroundColor DarkGray
+
+    # 'python -m venv' onto a half-created .venv repairs some of it and
+    # leaves the rest, so start clean instead.
+    if ((Test-Path $venvDir) -and -not (Test-Path $venvPython)) {
+        Write-Host 'Removing an incomplete .venv from an earlier attempt...' -ForegroundColor DarkGray
+        Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
+    }
+
+    & $bootExe @bootArgs -m venv $venvDir
+    if (-not (Test-Path $venvPython)) {
+        Fail "Creating .venv failed - see the output above."
+    }
+
+    # A fresh venv carries the interpreter's bundled pip - 22.3 on
+    # Python 3.11.0, which aborts long installs on Windows with
+    # "OSError: [Errno 2] ... pip-build-tracker-xxxx". This project pulls
+    # ~120 MB of wheels, so it sits in that window every time.
+    & $venvPython -m pip install --upgrade pip setuptools wheel
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Upgrading pip inside .venv failed (exit code $LASTEXITCODE) - see the output above."
+    }
+
+    # Scratch space outside %TEMP%: the tracker failure above is
+    # triggered by Storage Sense, Disk Cleanup or antivirus emptying it
+    # mid-install, which a newer pip does not prevent.
+    $pipTemp = Join-Path $venvDir 'pip-tmp'
+    New-Item -ItemType Directory -Force -Path $pipTemp | Out-Null
+    $prevTemp = $env:TEMP
+    $prevTmp = $env:TMP
+    try {
+        $env:TEMP = $pipTemp
+        $env:TMP = $pipTemp
+        & $venvPython -m pip install -e $root
+    }
+    finally {
+        $env:TEMP = $prevTemp
+        $env:TMP = $prevTmp
+        Remove-Item -Recurse -Force $pipTemp -ErrorAction SilentlyContinue
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Installing dependencies into .venv failed (exit code $LASTEXITCODE) - see the output above."
+    }
+
+    # A wheel can unpack without its DLLs landing, which surfaces much
+    # later as an ImportError from inside the GUI. Catch it here, while
+    # the user is still expecting setup problems.
+    & $venvPython -c "import PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Setup finished but the installed packages do not import (exit code $LASTEXITCODE) - see the error above. Deleting the .venv folder and running 'run.ps1 -Setup' again usually clears this."
+    }
+
+    Write-Host '.venv is ready.' -ForegroundColor Green
 }
 
 try {
@@ -79,110 +224,35 @@ To fix it, get a fresh copy of the whole folder:
 
     $venvDir = Join-Path $root '.venv'
 
-    if ($Setup) {
-        Write-Host 'Setting up .venv...' -ForegroundColor Green
+    if ($Setup) { Invoke-Setup }
 
-        # "py -3" hands back whatever the default 3.x is, and pyproject
-        # needs >=3.10. The venv builds fine on 3.9, so without this check the
-        # failure lands one step later out of pip, reading like a broken
-        # project rather than a stale interpreter.
-        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
-        if ($pyLauncher) {
-            $bootExe = $pyLauncher.Source
-            $bootArgs = @('-3')
-        }
-        else {
-            $python = Get-Command python -ErrorAction SilentlyContinue
-            if (-not $python -or $python.Source -like '*\WindowsApps\*') {
-                Fail "No Python installation found (checked 'py' and 'python'). Install Python 3.10+ from https://www.python.org/downloads/"
-            }
-            $bootExe = $python.Source
-            $bootArgs = @()
-        }
-
-        # stderr folded in so a failure reports why, but the version is
-        # matched by pattern: 'py' prints its own warnings there, and reading
-        # the whole stream would reject a perfectly good 3.12.
-        $bootOutput = (& $bootExe @bootArgs -c "import sys; print('PYVER %d.%d' % sys.version_info[:2])" 2>&1 | Out-String)
-        $match = [regex]::Match($bootOutput, 'PYVER (\d+)\.(\d+)')
-        if ($LASTEXITCODE -ne 0 -or -not $match.Success) {
-            Fail "Could not run Python ($bootExe) to check its version. Output was:`n$bootOutput"
-        }
-        $bootVersion = "$($match.Groups[1].Value).$($match.Groups[2].Value)"
-        if ([int]$match.Groups[1].Value -lt 3 -or ([int]$match.Groups[1].Value -eq 3 -and [int]$match.Groups[2].Value -lt 10)) {
-            Fail @"
-This project needs Python 3.10 or newer, but the Python on this machine is $bootVersion ($bootExe).
-
-Install a current Python from https://www.python.org/downloads/ (tick
-"Add python.exe to PATH" in the installer), then run 'run.ps1 -Setup' again.
-"@
-        }
-        Write-Host "Using Python $bootVersion from $bootExe" -ForegroundColor DarkGray
-
-        # 'python -m venv' onto a half-created .venv repairs some of it and
-        # leaves the rest, so start clean instead.
-        if ((Test-Path $venvDir) -and -not (Test-Path $venvPython)) {
-            Write-Host 'Removing an incomplete .venv from an earlier attempt...' -ForegroundColor DarkGray
-            Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
-        }
-
-        & $bootExe @bootArgs -m venv $venvDir
-        if (-not (Test-Path $venvPython)) {
-            Fail "Creating .venv failed - see the output above."
-        }
-
-        # A fresh venv carries the interpreter's bundled pip - 22.3 on
-        # Python 3.11.0, which aborts long installs on Windows with
-        # "OSError: [Errno 2] ... pip-build-tracker-xxxx". This project pulls
-        # ~120 MB of wheels, so it sits in that window every time.
-        & $venvPython -m pip install --upgrade pip setuptools wheel
-        if ($LASTEXITCODE -ne 0) {
-            Fail "Upgrading pip inside .venv failed (exit code $LASTEXITCODE) - see the output above."
-        }
-
-        # Scratch space outside %TEMP%: the tracker failure above is
-        # triggered by Storage Sense, Disk Cleanup or antivirus emptying it
-        # mid-install, which a newer pip does not prevent.
-        $pipTemp = Join-Path $venvDir 'pip-tmp'
-        New-Item -ItemType Directory -Force -Path $pipTemp | Out-Null
-        $prevTemp = $env:TEMP
-        $prevTmp = $env:TMP
-        try {
-            $env:TEMP = $pipTemp
-            $env:TMP = $pipTemp
-            & $venvPython -m pip install -e $root
-        }
-        finally {
-            $env:TEMP = $prevTemp
-            $env:TMP = $prevTmp
-            Remove-Item -Recurse -Force $pipTemp -ErrorAction SilentlyContinue
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Fail "Installing dependencies into .venv failed (exit code $LASTEXITCODE) - see the output above."
-        }
-
-        # A wheel can unpack without its DLLs landing, which surfaces much
-        # later as an ImportError from inside the GUI. Catch it here, while
-        # the user is still expecting setup problems.
-        & $venvPython -c "import PyQt5, faster_whisper, sherpa_onnx, av, psutil, tqdm"
-        if ($LASTEXITCODE -ne 0) {
-            Fail "Setup finished but the installed packages do not import (exit code $LASTEXITCODE) - see the error above. Deleting the .venv folder and running 'run.ps1 -Setup' again usually clears this."
-        }
-
-        Write-Host '.venv is ready.' -ForegroundColor Green
-    }
-
+    # No .venv: offer to build one rather than dead-ending. This used to be a
+    # hard failure with instructions, which is correct and still leaves a
+    # non-technical user stuck - the app is for people transcribing audio, not
+    # for people who want to read about virtual environments.
     if (-not (Test-Path $venvPython)) {
-        Fail @"
+        # A non-interactive host cannot answer, and Read-Host there either
+        # throws or blocks forever. Keep the old failure for that case.
+        if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+            Fail @"
 No .venv found for this project - the app has not been set up yet.
 
-To fix it, from this folder run:
-  python -m venv .venv
-  .venv\Scripts\pip install -e .
-
-Or let this launcher do it for you:
+To set it up, from this folder run:
   run.ps1 -Setup
 "@
+        }
+
+        Write-Host ''
+        Write-Themed 'Hebrew Audio Transcriber - first-time setup' 'accent'
+        Write-Host ''
+        Write-Themed 'This needs to download about 120 MB of components.' 'text'
+        Write-Themed 'It runs once, takes a few minutes, and everything' 'text'
+        Write-Themed 'lands in this folder.' 'text'
+        Write-Host ''
+        Write-Themed 'Press Enter to begin, or close this window to cancel.' 'caption'
+        [void](Read-Host)
+        Write-Host ''
+        Invoke-Setup
     }
 
     $exe = $venvPython
