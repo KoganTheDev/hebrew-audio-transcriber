@@ -113,6 +113,18 @@ section 10 below for the sidebar itself.
 - [ ] Click that chip. The reassignment menu opens with **nothing pre-checked**, and picking a
       speaker paints the card in that speaker's colour. Picking the same speaker again returns the
       card to "דובר לא ידוע" rather than leaving it blank or stuck.
+- [ ] With only two speakers, no bin icon appears on a speaker row at any point, including on
+      hover. Add a third and the icon appears on hover (and on keyboard focus - tab into a name
+      field and it should be there, not mouse-only).
+- [ ] Hovering the bin turns it red, and clicking it asks for confirmation before anything happens.
+      Cancel leaves everything untouched.
+- [ ] Confirm the delete. The row goes, and every sentence that speaker held becomes
+      "דובר לא ידוע" - still with a clickable chip, so it can be reassigned. Nothing becomes blank.
+- [ ] **Reload.** The deleted speaker stays deleted. This is the one that catches a missing
+      tombstone: the server rendered that row, so it comes back on every load unless the deletion
+      was persisted.
+- [ ] After deleting the middle speaker of three, add a new one. Its colour and default name must
+      differ from both survivors - a new speaker taking an existing one's colour is the bug here.
 
 ## 3. Uncertain words
 

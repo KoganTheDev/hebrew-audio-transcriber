@@ -40,6 +40,23 @@
         addBtn.addEventListener('click', function () { addSpeaker(fileIndex); });
       }
 
+      // Delegated, not bound per row: addSpeaker() and applySpeakerState()
+      // both create rows after this runs, and a per-row listener would miss
+      // every one of them.
+      strip.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('.remove-speaker') : null;
+        if (!btn) { return; }
+        var row = btn.closest('.speaker-row');
+        if (!row) { return; }
+        // The one destructive action in this document, and it cannot be
+        // undone from the UI - the cards it unassigns have to be reassigned
+        // by hand one at a time. Worth the one confirm the rest of the
+        // document deliberately avoids.
+        if (!window.confirm(t('remove_speaker_confirm', 'Remove this speaker?'))) { return; }
+        removeSpeaker(fileIndex, row);
+      });
+      syncRemoveControls(strip);
+
       var applyAll = strip.querySelector('.apply-all');
       if (!applyAll) { return; }
       applyAll.addEventListener('click', function () {
@@ -123,15 +140,110 @@
       count++;
     });
     var id = maxId + 1;
-    var palette = count % 8;
+    // Derived from the new id, NOT from the row count. They agree only while
+    // ids stay contiguous, and removeSpeaker() below makes them non-contiguous
+    // the moment a middle speaker is deleted: with three speakers 0,1,2, then
+    // 1 removed, count is 2 and the next add would mint "Speaker 3" with
+    // palette 2 - both already taken by the surviving speaker 2. Keying off
+    // the id keeps the name and the colour unique for the same reason the id
+    // itself is unique, and matches _palette_index() (formatting/chrome.py),
+    // which the server render has always used.
+    var palette = id % 8;
     var template = DATA.speakerLabel || 'Speaker {n}';
-    var fallback = template.replace('{n}', String(count + 1));
+    var fallback = template.replace('{n}', String(id + 1));
 
     state.speakers[fileIndex] = state.speakers[fileIndex] || {};
     state.speakers[fileIndex][id] = { fallback: fallback, palette: palette, added: true };
 
     createSpeakerRow(strip, id, fallback, palette);
+    syncRemoveControls(strip);
     save();
+  }
+
+  // Two speakers is the floor: a one-speaker roster cannot express a
+  // conversation, and a file with no speakers renders no panel at all
+  // (_render_speakers_html() in formatting/document.py). The control is
+  // rendered on every row and shown or hidden here, so addSpeaker() taking a
+  // file from two to three reveals it without a re-render.
+  function syncRemoveControls(strip) {
+    var rows = strip.querySelectorAll('.speaker-row');
+    var removable = rows.length > 2;
+    rows.forEach(function (row) {
+      var btn = row.querySelector('.remove-speaker');
+      if (btn) { btn.hidden = !removable; }
+    });
+  }
+
+  // Deletes a speaker identity. Every sentence carrying it becomes
+  // unattributed rather than silently inheriting a neighbour - the same
+  // resting state a turn diarization could not place already uses
+  // (_render_bubble_html()), which is what makes this reversible: the cards
+  // keep a real chip and can be reassigned by hand.
+  function removeSpeaker(fileIndex, row) {
+    var strip = stripFor(fileIndex);
+    if (!strip || strip.querySelectorAll('.speaker-row').length <= 2) { return; }
+
+    var id = row.dataset.speaker;
+    var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
+
+    // A server-rendered row comes back on every reload, so dropping the key
+    // is not enough - applySpeakerState() only ever CREATES rows. The
+    // tombstone is what it replays to delete this one again. An added
+    // speaker that was never saved anywhere but state can just go.
+    var entries = state.speakers[fileIndex] || {};
+    if (entries[id] && entries[id].added) {
+      delete entries[id];
+    } else {
+      state.speakers[fileIndex] = entries;
+      entries[id] = { removed: true };
+    }
+    if (state.names[fileIndex]) { delete state.names[fileIndex][id]; }
+
+    // Drop assignments pointing at the deleted identity. Left in place they
+    // would be replayed on the next load by applyAssignments() /
+    // applyLineAssignments() against a row that no longer exists, which falls
+    // back to a raw id for the palette and an empty name - a blank chip.
+    Object.keys(state.assign).forEach(function (turnId) {
+      if (String(state.assign[turnId]) === String(id)) { delete state.assign[turnId]; }
+    });
+    Object.keys(state.assignLine).forEach(function (lineId) {
+      if (String(state.assignLine[lineId]) === String(id)) { delete state.assignLine[lineId]; }
+    });
+
+    row.remove();
+
+    if (section) {
+      section.querySelectorAll('.turn[data-speaker="' + id + '"]').forEach(unattributeTurn);
+      section.querySelectorAll('.bubble[data-speaker="' + id + '"]').forEach(unattributeBubble);
+      // rebuildPlain, not schedulePlain: clusterSpeakerName() resolves names
+      // by looking the row up, and the row is already gone - the panel's
+      // headings have to be regrouped now, not on the next debounce tick.
+      rebuildPlain(section);
+    }
+
+    syncRemoveControls(strip);
+    applyNames(fileIndex);
+    save();
+  }
+
+  function unattributeTurn(turn) {
+    turn.removeAttribute('data-speaker');
+    turn.removeAttribute('data-palette');
+    turn.setAttribute('data-unattributed', 'true');
+  }
+
+  function unattributeBubble(bubble) {
+    bubble.removeAttribute('data-speaker');
+    bubble.removeAttribute('data-palette');
+    bubble.setAttribute('data-unattributed', 'true');
+    var btn = bubble.querySelector('.bubble-spk');
+    if (!btn) { return; }
+    btn.removeAttribute('data-speaker');
+    btn.removeAttribute('data-palette');
+    btn.setAttribute('data-unattributed', 'true');
+    btn.dataset.fallback = t('unattributed_speaker', 'Unknown speaker');
+    var label = btn.querySelector('.bubble-spk-label');
+    if (label) { label.textContent = btn.dataset.fallback; }
   }
 
   // Recolouring is a property of the *speaker*, not of any one turn: every turn
@@ -681,9 +793,23 @@
       var strip = stripFor(fileIndex);
       if (!strip) { return; }
       var entries = state.speakers[fileIndex];
+      var section = document.querySelector('.source[data-file="' + fileIndex + '"]');
       Object.keys(entries).forEach(function (id) {
         var entry = entries[id];
         var row = strip.querySelector('.speaker-row[data-speaker="' + id + '"]');
+        // A removed speaker's row was rendered by the server, so it is back
+        // in the markup on every load - this replays the deletion. Only a
+        // server-rendered row is ever tombstoned; an added-then-removed one
+        // has no key left to reach here (see removeSpeaker()).
+        if (entry.removed) {
+          if (row) { row.remove(); }
+          if (section) {
+            section.querySelectorAll('.turn[data-speaker="' + id + '"]').forEach(unattributeTurn);
+            section.querySelectorAll('.bubble[data-speaker="' + id + '"]')
+              .forEach(unattributeBubble);
+          }
+          return;
+        }
         if (!row && entry.added) {
           row = createSpeakerRow(strip, Number(id), entry.fallback || '', entry.palette || 0);
         }
@@ -694,6 +820,9 @@
           row.dataset.palette = String(entry.palette);
         }
       });
+      // After every create and every tombstone, not per entry: the count only
+      // settles once the whole replay for this file is done.
+      syncRemoveControls(strip);
     });
   }
 

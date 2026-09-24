@@ -133,6 +133,39 @@
    lift is worth for a background-only cue. */
 .speaker-row:hover, .speaker-row:focus-within { background: var(--surface-hover); }
 
+/* The remove control sits at the row's end and stays out of the way until the
+   row is actually being worked on - it is the one destructive action in this
+   document, and a bin icon permanently visible on every speaker invites a
+   misclick on a roster people otherwise only read.
+
+   Revealed by the same :hover/:focus-within pair that lights the row, so it
+   is reachable by keyboard (tab into the row's name field and it appears)
+   rather than mouse-only. It keeps its layout box at all times - visibility
+   and opacity, never display - so revealing it cannot reflow the row and
+   shift the name input under a caret mid-keystroke, the same reasoning the
+   comment above gives for not lifting this row on hover.
+
+   [hidden] wins over all of it: syncRemoveControls() (js/24-speakers-menus.js)
+   sets that while a file is down to two speakers, which is a hard floor, not
+   a hover state. */
+.remove-speaker {
+  margin-inline-start: auto;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--fast) ease-out;
+}
+.speaker-row:hover .remove-speaker,
+.speaker-row:focus-within .remove-speaker,
+.remove-speaker:focus-visible {
+  opacity: 1;
+  visibility: visible;
+}
+.remove-speaker[hidden] { display: none; }
+/* Destructive, so it reads as destructive on contact rather than only in the
+   confirm dialog - the one place this document uses the error colour on a
+   control. */
+.remove-speaker:hover { color: var(--error-line); }
+
 /* .swatch is the popover dots only (the reassignment menu's and the colour
    menu's own per-item indicators) - .swatch-rest is the one always-visible
    dot inside .swatch-trigger. They used to share one class, which is what

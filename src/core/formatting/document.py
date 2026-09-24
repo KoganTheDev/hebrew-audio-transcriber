@@ -150,6 +150,15 @@ def _render_speakers_html(
     a colour trigger that opens its own menu, "label wraps one control" stops
     being true of it, so the input carries its own aria-label instead.
     """
+    # The remove control is rendered on every row but hidden by CSS while the
+    # file has only two speakers - deleting down to one leaves a roster that
+    # cannot express a conversation, and a one-speaker file renders no panel
+    # at all (see _render_outline_html()). Rendered-then-hidden rather than
+    # conditionally emitted because addSpeaker() in the page script
+    # (core/assets/js/) can take a two-speaker file to three without a
+    # re-render, and a button that only exists in some server renders would
+    # have to be built twice, in two languages, in two places.
+    remove_label = _t(strings, "remove_speaker", "Remove speaker")
     rows = []
     for speaker in speakers:
         fallback = html.escape(_speaker_fallback(speaker_label, speaker))
@@ -160,7 +169,14 @@ def _render_speakers_html(
             + f'<input class="speaker-name" type="text" value=""'
             f' placeholder="{fallback}"'
             f' aria-label="{fallback}">'
-            "</div>"
+            + _button(
+                None,
+                css_class="icon-btn remove-speaker",
+                icon="trash",
+                aria_label=remove_label,
+                extra='type="button"',
+            )
+            + "</div>"
         )
 
     apply_all = (

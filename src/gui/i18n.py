@@ -394,6 +394,12 @@ STRINGS = {
     # blank chip, since a blank one hides the only way to fix such a card by
     # hand.
     "doc_unattributed_speaker": {"en": "Unknown speaker", "he": "דובר לא ידוע"},
+    # Hidden while a file has only two speakers - see _render_speakers_html().
+    "doc_remove_speaker": {"en": "Remove speaker", "he": "הסרת דובר"},
+    "doc_remove_speaker_confirm": {
+        "en": "Remove this speaker? Their sentences become unassigned.",
+        "he": "להסיר את הדובר? המשפטים שלו יסומנו כדובר לא ידוע.",
+    },
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
     "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},

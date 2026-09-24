@@ -45,6 +45,13 @@ Two fixtures, selected by the one CLI argument:
               Covers the chip rendering, opening its menu, and the override
               clearing back to the unattributed resting state.
 
+  three-speakers  One file, THREE speakers, the middle one (id 1) holding two
+              separate turns. The remove control is hidden below three
+              speakers (syncRemoveControls()), so this is the only fixture
+              that can exercise deleting one - and deleting the MIDDLE id is
+              what leaves the roster non-contiguous, which addSpeaker() has
+              to survive.
+
 
 doc_id is pinned per fixture (not left to render_html()'s own random uuid4)
 so the two fixtures' localStorage autosave keys ("hebrew-transcript:" +
@@ -207,11 +214,40 @@ def render_unattributed():
     )
 
 
+def render_three_speakers():
+    # THREE speakers, which is the floor + 1: the remove control is hidden
+    # while a file has only two (syncRemoveControls() in
+    # js/24-speakers-menus.js), so every other fixture here is deliberately
+    # unable to exercise it. Speaker 1 is the middle id, so deleting it also
+    # covers the non-contiguous-id case addSpeaker() has to survive.
+    documents = [
+        doc(
+            "recording-one.wav",
+            [
+                seg(0, 3, "אחד שתיים", speaker=0),
+                seg(4, 6, "שלוש ארבע", speaker=1),
+                seg(7, 9, "חמש שש", speaker=2),
+                seg(10, 12, "שבע שמונה", speaker=1),
+            ],
+        ),
+    ]
+    return render_html(
+        documents,
+        speaker_label="Speaker {n}",
+        timestamps=True,
+        title="fixture-three",
+        ui_strings=UI_STRINGS,
+        doc_id="js-fixture-three",
+        vista="vista-03.webp",
+    )
+
+
 _FIXTURES = {
     "full": render_full,
     "degenerate": render_degenerate,
     "triple": render_triple,
     "unattributed": render_unattributed,
+    "three-speakers": render_three_speakers,
 }
 
 

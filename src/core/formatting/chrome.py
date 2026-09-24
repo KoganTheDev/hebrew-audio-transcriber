@@ -156,6 +156,12 @@ _ICON_DEFS: dict[str, str] = {
     # document.py), which usually carries no text at all and so needs a glyph
     # to read as a control rather than an empty box.
     "user": '<path d="M12 12a4 4 0 100-8 4 4 0 000 8z"/><path d="M4.5 20c0-4.1 3.4-7.5 7.5-7.5s7.5 3.4 7.5 7.5"/>',
+    # For removing a speaker from the roster (_render_speakers_html()). A bin
+    # rather than reusing "close": an X on a row reads as "dismiss this row
+    # from view", and this deletes a speaker identity - the cards carrying it
+    # become unattributed. The stronger glyph matches the stronger action.
+    "trash": '<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/>'
+    '<path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',
 }
 
 
