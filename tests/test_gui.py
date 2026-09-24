@@ -372,17 +372,20 @@ class TestTranscriptionStepOpenButton:
     def test_opens_the_saved_transcript_as_a_file_uri(self, step):
         """
         A bare Windows path is not a URL - webbrowser would mangle the drive
-        letter into a scheme. as_uri() is what makes it openable.
+        letter into a scheme. browser_open.open_html's as_uri() call is what
+        makes it openable, and this is delegated to that module now, not
+        called directly, so the path is checked at that boundary.
         """
         step.show_result("C:/tmp/meeting_transcription.html")
-        with patch("gui.steps.transcription.webbrowser.open") as opened:
+        with patch("gui.steps.transcription.browser_open.open_html") as opened:
+            opened.return_value = "chrome"
             step._open_result()
         opened.assert_called_once()
-        assert opened.call_args[0][0].startswith("file:///")
-        assert opened.call_args[0][0].endswith("meeting_transcription.html")
+        called_path = opened.call_args[0][0]
+        assert called_path.replace("\\", "/").endswith("C:/tmp/meeting_transcription.html")
 
     def test_does_nothing_before_there_is_a_result(self, step):
-        with patch("gui.steps.transcription.webbrowser.open") as opened:
+        with patch("gui.steps.transcription.browser_open.open_html") as opened:
             step._open_result()
         opened.assert_not_called()
 
@@ -390,7 +393,7 @@ class TestTranscriptionStepOpenButton:
         """The path is on screen regardless - losing the window over it would not be."""
         step.show_result("C:/tmp/meeting_transcription.html")
         with patch(
-            "gui.steps.transcription.webbrowser.open",
+            "gui.steps.transcription.browser_open.open_html",
             side_effect=OSError("no browser"),
         ):
             step._open_result()

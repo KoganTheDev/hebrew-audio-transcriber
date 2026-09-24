@@ -3,13 +3,13 @@
 import logging
 import os
 import time
-import webbrowser
 from pathlib import Path
 
 from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QFontMetrics, QResizeEvent
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
+from core import browser_open
 from core.formatting import format_mmss
 from core.progress_scale import (
     STATUS_ONLY_PERCENT,
@@ -783,18 +783,24 @@ class TranscriptionStep(QFrame):
         self._render_result_path()
 
     def _open_result(self) -> None:
-        """Open the finished transcript in the default browser.
+        """Open the finished transcript in a preferred browser.
 
-        webbrowser rather than os.startfile: the output is HTML, and the
-        association for .html is the browser on every platform this runs on,
-        while startfile is Windows-only. A failure here is not worth an error
-        dialog - the path is on screen either way, so it is logged and the
-        user can still open it themselves.
+        Chrome, then Firefox, then Edge, then whatever the OS associates
+        with .html - in that order, because the .html file association is
+        often Edge even on a machine where Chrome is the browser someone
+        actually uses, and this page is an interactive app (search, audio
+        sync, speaker editing), not a document where the renderer is
+        cosmetic. See core/browser_open for how each candidate is found.
+
+        A failure here is not worth an error dialog - the path is on screen
+        either way, so it is logged and the user can still open it
+        themselves.
         """
         if not self._result_path_value:
             return
         try:
-            webbrowser.open(Path(self._result_path_value).as_uri())
+            used = browser_open.open_html(self._result_path_value)
+            logger.debug(f"opened transcript with browser: {used}")
         except Exception as e:
             logger.warning(f"Could not open transcript in a browser: {e}", exc_info=True)
 
