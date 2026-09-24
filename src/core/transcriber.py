@@ -51,9 +51,12 @@ def _preload_cuda_runtime_libraries() -> None:
     launched (GUI double-click, run.bat, etc., none of which give a
     chance to export an env var first).
 
-    Safe no-op if the `gpu` extra was never installed: ctranslate2 then
-    fails to find the libraries exactly as it did before this existed,
-    and load_model()'s existing cuda-to-cpu fallback takes over.
+    Safe no-op if the `gpu` extra was never installed: find_spec() on a
+    dotted name imports the parent package first, so with no `nvidia`
+    package at all it raises ModuleNotFoundError rather than returning
+    None - caught below so this is a no-op exactly as the rest of this
+    docstring claims, and load_model()'s existing cuda-to-cpu fallback
+    takes over.
     """
     global _cuda_runtime_preloaded
     if _cuda_runtime_preloaded:
@@ -62,7 +65,10 @@ def _preload_cuda_runtime_libraries() -> None:
 
     is_windows = platform.system() == "Windows"
     for package in ("nvidia.cublas", "nvidia.cudnn"):
-        spec = importlib.util.find_spec(package)
+        try:
+            spec = importlib.util.find_spec(package)
+        except (ModuleNotFoundError, ImportError, ValueError):
+            continue
         if spec is None or not spec.submodule_search_locations:
             continue
         package_dir = Path(next(iter(spec.submodule_search_locations)))

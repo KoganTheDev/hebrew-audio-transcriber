@@ -239,7 +239,7 @@ def open_html(path: str, order: tuple[str, ...] = PREFERENCE_ORDER) -> str:
     passing one to webbrowser (or to a browser's argv) mangles the drive
     letter.
     """
-    uri = Path(path).as_uri()
+    uri = Path(path).resolve().as_uri()
     browsers = detect_browsers()
     for key in order:
         exe = browsers.get(key)

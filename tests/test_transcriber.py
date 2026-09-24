@@ -5,9 +5,10 @@ Tests for transcriber module.
 from unittest.mock import MagicMock, patch
 
 from core import progress_scale as ps
+from core import transcriber as transcriber_module
 from core.hebrew_text import PDI, RLI
 from core.segments import plain_text
-from core.transcriber import Transcriber
+from core.transcriber import Transcriber, _preload_cuda_runtime_libraries
 
 
 def fake_segment(text, start=0.0, end=1.0, words=None):
@@ -438,6 +439,24 @@ class TestTranscriber:
 
 # Transcript rendering is covered in tests/test_formatting.py - it grew its own
 # module once timestamps, turn merging and bidi control characters arrived.
+
+
+class TestPreloadCudaRuntimeLibraries:
+    def test_does_not_raise_when_the_nvidia_package_is_absent(self, monkeypatch):
+        """
+        find_spec() on a dotted name ("nvidia.cublas") imports the parent
+        package first, so on a machine with no `nvidia` package at all (the
+        `gpu` extra was never pip-installed) it raises ModuleNotFoundError
+        instead of returning None. The docstring promises a safe no-op in
+        that case - this pins that promise.
+        """
+        monkeypatch.setattr(transcriber_module, "_cuda_runtime_preloaded", False)
+        with patch.object(
+            transcriber_module.importlib.util,
+            "find_spec",
+            side_effect=ModuleNotFoundError("No module named 'nvidia'"),
+        ):
+            _preload_cuda_runtime_libraries()  # must not raise
 
 
 class TestFetchWeights:

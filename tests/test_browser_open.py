@@ -112,6 +112,27 @@ class TestOpenHtmlOrdering:
         assert popen.call_args[0][0][0] == "C:/edge.exe"
 
 
+class TestOpenHtmlResolvesRelativePaths:
+    def test_a_relative_path_is_resolved_before_becoming_a_uri(self, tmp_path, monkeypatch):
+        """
+        Path(path).as_uri() raises ValueError on a relative path - it only
+        accepts an absolute one. Every existing caller happens to pass an
+        os.path.abspath()'d value already, but open_html() takes a bare
+        `path: str` with no such contract, so it must resolve internally
+        instead of trusting the caller.
+        """
+        html = tmp_path / "out.html"
+        html.write_text("<html></html>")
+        monkeypatch.chdir(tmp_path)
+        with (
+            patch.object(browser_open, "detect_browsers", return_value={}),
+            patch.object(browser_open.webbrowser, "open") as opened,
+        ):
+            used = browser_open.open_html("out.html")
+        assert used == "default"
+        opened.assert_called_once_with(html.resolve().as_uri())
+
+
 class TestOpenHtmlFallback:
     def test_uses_webbrowser_when_nothing_is_detected(self, tmp_path):
         html = tmp_path / "out.html"
