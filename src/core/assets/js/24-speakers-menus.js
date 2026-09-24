@@ -411,10 +411,17 @@
   function repaintBlockBubbles(turn, newId, newPalette, fallback) {
     turn.querySelectorAll('.body .bubble').forEach(function (bubble) {
       if (bubble.hasAttribute('data-override')) { return; }
+      // A bubble reassigned out of the unattributed state (see
+      // _render_bubble_html() in core/formatting/document.py) now has a real
+      // identity - data-unattributed has to go on both the card and its chip
+      // or the [data-unattributed] rule in 00-tokens.css would keep
+      // overriding the --spk this same call is about to set below it.
+      bubble.removeAttribute('data-unattributed');
       bubble.dataset.speaker = newId;
       bubble.dataset.palette = newPalette;
       var btn = bubble.querySelector('.bubble-spk');
       if (btn) {
+        btn.removeAttribute('data-unattributed');
         btn.dataset.speaker = newId;
         btn.dataset.palette = newPalette;
         btn.dataset.fallback = fallback;
@@ -456,15 +463,42 @@
   // a second copy of that resolution here could drift from the first. Every
   // caller of this function calls applyNames(fileIndex) afterwards.
   function paintBubbleOverride(bubble, fileIndex, newId) {
+    // Every bubble carries a real .bubble-spk chip now, attributed or not
+    // (see _render_bubble_html()'s docstring) - a bubble with none was the
+    // bug this function used to silently no-op on. There is no longer a
+    // state where a card in a diarized document has no chip to repaint.
     var btn = bubble.querySelector('.bubble-spk');
-    if (!btn) { return; }
 
     var id;
     if (newId === null || typeof newId === 'undefined') {
       bubble.removeAttribute('data-override');
       var turn = bubble.closest('.turn');
       id = turn ? turn.dataset.speaker : undefined;
-      if (typeof id === 'undefined') { return; }
+      if (typeof id === 'undefined') {
+        // The block itself has no speaker identity - turn.speaker is None
+        // (see _render_bubble_html()'s docstring) - so clearing this
+        // bubble's override restores the unattributed resting state, not a
+        // stale chip left showing whatever the override last painted.
+        bubble.removeAttribute('data-speaker');
+        bubble.removeAttribute('data-palette');
+        bubble.setAttribute('data-unattributed', 'true');
+        if (btn) {
+          btn.removeAttribute('data-speaker');
+          btn.removeAttribute('data-palette');
+          btn.setAttribute('data-unattributed', 'true');
+          // The unattributed label names no speaker, so it is never in
+          // state.names and cannot be looked up the way applyNames() looks
+          // up every other chip. It comes from the same document strings the
+          // renderer used (i18n.document_strings() strips the "doc_" prefix,
+          // so the key here matches doc_unattributed_speaker), because the
+          // button's own data-fallback has been overwritten with a real
+          // speaker's name in between.
+          btn.dataset.fallback = t('unattributed_speaker', 'Unknown speaker');
+          var lbl = btn.querySelector('.bubble-spk-label');
+          if (lbl) { lbl.textContent = btn.dataset.fallback; }
+        }
+        return;
+      }
     } else {
       id = String(newId);
       // data-override on the bubble itself (not just on its button) is what
@@ -480,11 +514,15 @@
     var palette = row ? row.dataset.palette : id;
     var fallback = row ? row.querySelector('.speaker-name').placeholder : '';
 
+    bubble.removeAttribute('data-unattributed');
     bubble.dataset.speaker = id;
     bubble.dataset.palette = String(palette);
-    btn.dataset.speaker = id;
-    btn.dataset.palette = String(palette);
-    btn.dataset.fallback = fallback;
+    if (btn) {
+      btn.removeAttribute('data-unattributed');
+      btn.dataset.speaker = id;
+      btn.dataset.palette = String(palette);
+      btn.dataset.fallback = fallback;
+    }
   }
 
   // Sets or clears a bubble's per-sentence override. Choosing the SAME speaker
@@ -498,7 +536,19 @@
     var lineId = bubble.dataset.line;
     var fileIndex = turn.closest('.source').dataset.file;
 
-    if (String(newId) === String(turn.dataset.speaker)) {
+    // An unattributed turn (speaker=None - see _render_bubble_html() in
+    // core/formatting/document.py) has no dataset.speaker to match against,
+    // so the comparison below would read String(undefined) and never clear,
+    // leaving a card that was assigned by mistake permanently stuck on that
+    // speaker. There, re-picking the speaker the override ALREADY names is
+    // the clear, which lands the card back on "unknown" rather than on a
+    // cluster identity it never had.
+    var turnSpeaker = turn.dataset.speaker;
+    var clears = typeof turnSpeaker === 'undefined'
+      ? String(newId) === String(state.assignLine[lineId])
+      : String(newId) === String(turnSpeaker);
+
+    if (clears) {
       delete state.assignLine[lineId];
       paintBubbleOverride(bubble, fileIndex, null);
     } else {

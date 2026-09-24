@@ -173,6 +173,17 @@
   --spk-6-chip-text: #11111b;
   --spk-7-chip-text: #11111b;
 
+  /* The "no speaker matched here" state (_render_bubble_html() in
+     core/formatting/document.py renders this chip when a sentence's turn
+     carries speaker=None - diarization found no overlapping span, or the
+     gap was too wide to fill; see speaker_attribution.py). Catppuccin
+     Latte's own Subtext0, not a darkened/greyed copy of one of the eight
+     accents: it has to read as "unset" at a glance, not as speaker #9, so it
+     is deliberately desaturated where every --spk-N above is vivid. White
+     chip text clears 4.5:1 at 4.94:1. */
+  --spk-unattributed: #6c6f85;
+  --spk-unattributed-chip-text: #ffffff;
+
   /* How strongly the backdrop photo shows through. DECIDED at 1.00 in both
      schemes from a live mockup: the photo runs at full strength in the
      margins, where nothing has to stay
@@ -363,6 +374,12 @@
   --dark-spk-5-chip-text: #11111b;
   --dark-spk-6-chip-text: #11111b;
   --dark-spk-7-chip-text: #11111b;
+  /* Mocha's own Subtext0, the dark-mode sibling of the light block's
+     --spk-unattributed above - same "muted, not vivid" reasoning, and light
+     enough (like the eight accents it sits beside) to take crust text:
+     8.42:1 against it, 5.65:1 against --dark-surface-hover. */
+  --dark-spk-unattributed: #a6adc8;
+  --dark-spk-unattributed-chip-text: #11111b;
   /* Both DECIDED at the same value as the light block above - see
      --panel-opacity's own comment for why 1.00/0.93, not a per-scheme
      number. --dark-panel-rgb is Mocha's own --panel (#1e1e2e), not a
@@ -411,6 +428,9 @@
     --spk-5-chip-text: var(--dark-spk-5-chip-text);
     --spk-6-chip-text: var(--dark-spk-6-chip-text);
     --spk-7-chip-text: var(--dark-spk-7-chip-text);
+
+    --spk-unattributed: var(--dark-spk-unattributed);
+    --spk-unattributed-chip-text: var(--dark-spk-unattributed-chip-text);
 
     --backdrop-opacity: var(--dark-backdrop-opacity);
     --panel-rgb: var(--dark-panel-rgb);
@@ -461,6 +481,9 @@
   --spk-6-chip-text: var(--dark-spk-6-chip-text);
   --spk-7-chip-text: var(--dark-spk-7-chip-text);
 
+  --spk-unattributed: var(--dark-spk-unattributed);
+  --spk-unattributed-chip-text: var(--dark-spk-unattributed-chip-text);
+
   --backdrop-opacity: var(--dark-backdrop-opacity);
   --panel-rgb: var(--dark-panel-rgb);
   --panel-opacity: var(--dark-panel-opacity);
@@ -500,3 +523,12 @@
 [data-palette="5"], [data-file-accent="5"] { --spk: var(--spk-5); --spk-text: var(--spk-5-chip-text); }
 [data-palette="6"], [data-file-accent="6"] { --spk: var(--spk-6); --spk-text: var(--spk-6-chip-text); }
 [data-palette="7"], [data-file-accent="7"] { --spk: var(--spk-7); --spk-text: var(--spk-7-chip-text); }
+
+/* The unattributed state's own --spk/--spk-text, set directly rather than
+   through a [data-palette="N"] index - there is no palette slot for "no
+   speaker matched", and giving it one would make it look like a 9th
+   identity instead of the deliberate absence of one (see
+   _render_bubble_html() in core/formatting/document.py). Matches [data-unattributed]
+   on both the .bubble (for the stripe) and its .bubble-spk chip (for the
+   fill), the same two elements a real [data-palette] speaker carries it on. */
+[data-unattributed] { --spk: var(--spk-unattributed); --spk-text: var(--spk-unattributed-chip-text); }

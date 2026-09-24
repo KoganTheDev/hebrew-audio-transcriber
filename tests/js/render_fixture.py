@@ -37,6 +37,14 @@ Two fixtures, selected by the one CLI argument:
               original speaker resuming right after it (tests/js/
               line-speaker.test.mjs's mid-turn split/resume/merge coverage).
 
+  unattributed  One file, three turns, the MIDDLE one with speaker=None -
+              diarization ran and placed the others, but found no span for
+              that one. Unlike "degenerate" (where nothing has a speaker and
+              no .speakers strip renders at all) this document has a real
+              roster, so the unattributed chip has somewhere to reassign to.
+              Covers the chip rendering, opening its menu, and the override
+              clearing back to the unattributed resting state.
+
 
 doc_id is pinned per fixture (not left to render_html()'s own random uuid4)
 so the two fixtures' localStorage autosave keys ("hebrew-transcript:" +
@@ -171,7 +179,40 @@ def render_triple():
     )
 
 
-_FIXTURES = {"full": render_full, "degenerate": render_degenerate, "triple": render_triple}
+def render_unattributed():
+    # A document that HAS diarization but could not place one of its turns -
+    # speaker_attribution.py leaves speaker=None when no span overlapped, or
+    # when the gap was too wide to borrow a neighbour's label across. That is
+    # a different case from "degenerate" above, where NO turn has a speaker
+    # because diarization never ran: here a real .speakers strip exists, so
+    # the unattributed chip has somewhere to reassign TO.
+    documents = [
+        doc(
+            "recording-one.wav",
+            [
+                seg(0, 3, "אחד שתיים שלוש", speaker=0),
+                seg(5, 6, "ארבע חמש", speaker=None),
+                seg(8, 9, "שש שבע", speaker=1),
+            ],
+        ),
+    ]
+    return render_html(
+        documents,
+        speaker_label="Speaker {n}",
+        timestamps=True,
+        title="fixture-unattributed",
+        ui_strings=UI_STRINGS,
+        doc_id="js-fixture-unattributed",
+        vista="vista-03.webp",
+    )
+
+
+_FIXTURES = {
+    "full": render_full,
+    "degenerate": render_degenerate,
+    "triple": render_triple,
+    "unattributed": render_unattributed,
+}
 
 
 def main():

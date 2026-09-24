@@ -106,6 +106,13 @@ section 10 below for the sidebar itself.
       and no turn count next to it (both were removed as clutter, not relocated elsewhere).
 - [ ] **Reload the page.** Added speakers, their colours, and any reassigned sentences are all still
       there, exactly as left - not just the text edits.
+- [ ] A card diarization could not place shows a **"דובר לא ידוע"** chip in a muted grey, clearly
+      not one of the eight speaker colours. It must not read as speaker 1. (To force one, render a
+      fixture with a `speaker=None` segment alongside attributed ones - `tests/js/render_fixture.py`'s
+      `unattributed` build does exactly that.)
+- [ ] Click that chip. The reassignment menu opens with **nothing pre-checked**, and picking a
+      speaker paints the card in that speaker's colour. Picking the same speaker again returns the
+      card to "דובר לא ידוע" rather than leaving it blank or stuck.
 
 ## 3. Uncertain words
 

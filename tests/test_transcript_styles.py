@@ -71,6 +71,10 @@ PAIRS = [
     ("--spk-5-chip-text", "--spk-5", TEXT_MIN),
     ("--spk-6-chip-text", "--spk-6", TEXT_MIN),
     ("--spk-7-chip-text", "--spk-7", TEXT_MIN),
+    # The unattributed chip (_render_bubble_html(), speaker is None) fills
+    # with its own neutral token rather than one of the eight palette slots -
+    # same pairing shape, same minimum, checked on its own row.
+    ("--spk-unattributed-chip-text", "--spk-unattributed", TEXT_MIN),
     # The dotted underline is one of the two carriers of "the model was unsure
     # here" - the tint alone must not be the only signal, so it has to be seen.
     ("--warn-line", "--warn-bg", UI_MIN),

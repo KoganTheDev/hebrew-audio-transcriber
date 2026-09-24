@@ -388,6 +388,12 @@ STRINGS = {
     },
     "doc_copied": {"en": "Copied", "he": "הועתק"},
     "doc_add_speaker": {"en": "Add speaker", "he": "הוספת דובר"},
+    # The chip a sentence card shows when speaker_attribution.py found no
+    # diarization span to attribute it to (see _render_bubble_html() in
+    # core/formatting/document.py) - a real, clickable label rather than a
+    # blank chip, since a blank one hides the only way to fix such a card by
+    # hand.
+    "doc_unattributed_speaker": {"en": "Unknown speaker", "he": "דובר לא ידוע"},
     "doc_speaker_colour": {"en": "Speaker colour", "he": "צבע הדובר"},
     "doc_outline": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_reassign": {"en": "Reassign to", "he": "שיוך ל־"},

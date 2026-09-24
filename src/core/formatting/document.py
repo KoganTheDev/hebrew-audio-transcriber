@@ -307,12 +307,26 @@ def _render_bubble_html(
     persist the damage.
 
     The .bubble-spk-anchor/.bubble-spk pair is the speaker chip AND the
-    reassignment affordance in one control. It is always rendered filled, in
-    the turn's speaker colour, with the turn's own name - never blank, since
-    a blank chip is not a valid resting state.
+    reassignment affordance in one control. It is always rendered filled -
+    never blank, since a blank chip is not a valid resting state - in either
+    the turn's own speaker colour and name, or, when speaker is None
+    (speaker_attribution.py found no diarization span to attribute this turn
+    to, and refused to guess across a gap - see that module's docstring),
+    a dedicated unattributed variant: same chip shape, its own neutral
+    --spk-unattributed fill (00-tokens.css) instead of a palette slot, no
+    data-speaker/data-palette, marked with data-unattributed so
+    paintBubbleOverride() can tell "no identity yet" apart from "identity 0".
+    Rendering the trigger either way is what makes an unattributed card
+    reassignable at all: the menu (js/24-speakers-menus.js) only opens from a
+    real .bubble-spk element, so a card with none could never be fixed by
+    hand.
     reassignLine()/paintBubbleOverride() (js/24-speakers-menus.js) repaint it
-    when an override is set or cleared, restoring the block's own identity on
-    a clear. Absent entirely when there is no speaker at all (no diarization).
+    when an override is set or cleared, restoring the block's own identity
+    (attributed or not) on a clear. Absent entirely only when there is no
+    speaker at all anywhere in the document (no diarization ran) - the
+    per-turn None case above is a document that HAS diarization but couldn't
+    place this particular turn, which is a different, common, expected
+    thing.
 
     The copy button copies just this one sentence - see bubblePlainText() in
     js/32-plain-text.js.
@@ -320,18 +334,39 @@ def _render_bubble_html(
     reassign_label = html.escape(strings.get("reassign_line", "Reassign this sentence"))
     chip_html = ""
     speaker_attr = ""
-    if speaker_label is not None and speaker is not None:
-        label = html.escape(_speaker_fallback(speaker_label, speaker))
-        palette = _palette_index(speaker)
-        speaker_attr = f' data-speaker="{speaker}" data-palette="{palette}"'
-        chip_html = (
-            f'<span class="bubble-spk-anchor" contenteditable="false">'
-            f'<button type="button" class="bubble-spk" data-speaker="{speaker}"'
-            f' data-palette="{palette}" data-fallback="{label}"'
-            f' aria-haspopup="true" aria-expanded="false" aria-label="{reassign_label}">'
-            f'<span class="bubble-spk-label">{label}</span></button>'
-            f"</span>"
-        )
+    if speaker_label is not None:
+        if speaker is not None:
+            label = html.escape(_speaker_fallback(speaker_label, speaker))
+            palette = _palette_index(speaker)
+            speaker_attr = f' data-speaker="{speaker}" data-palette="{palette}"'
+            chip_html = (
+                f'<span class="bubble-spk-anchor" contenteditable="false">'
+                f'<button type="button" class="bubble-spk" data-speaker="{speaker}"'
+                f' data-palette="{palette}" data-fallback="{label}"'
+                f' aria-haspopup="true" aria-expanded="false" aria-label="{reassign_label}">'
+                f'<span class="bubble-spk-label">{label}</span></button>'
+                f"</span>"
+            )
+        else:
+            # No diarization span overlapped this turn (or _fill_unmatched()
+            # refused to bridge the gap - see speaker_attribution.py). Still a
+            # real .bubble-spk, still carrying the SAME data-fallback pattern
+            # applyNames() (js/24-speakers-menus.js) already reads for every
+            # other chip - just no data-speaker/data-palette, so it never
+            # reads as speaker 0, and data-unattributed so CSS
+            # ([data-unattributed] in 00-tokens.css) and JS can tell this
+            # resting state apart from an override that happens to clear back
+            # to it.
+            unattributed_label = html.escape(strings.get("unattributed_speaker", "Unknown speaker"))
+            speaker_attr = ' data-unattributed="true"'
+            chip_html = (
+                f'<span class="bubble-spk-anchor" contenteditable="false">'
+                f'<button type="button" class="bubble-spk" data-unattributed="true"'
+                f' data-fallback="{unattributed_label}"'
+                f' aria-haspopup="true" aria-expanded="false" aria-label="{reassign_label}">'
+                f'<span class="bubble-spk-label">{unattributed_label}</span></button>'
+                f"</span>"
+            )
 
     lines = [
         f'<div class="bubble" data-line="{line_id}" data-turn="{turn_id}"'
@@ -386,6 +421,14 @@ def _render_turn_html(
     computed here, to avoid calling turn.sentences() twice for one turn - the
     caller's low-confidence check needs it too.
     """
+    # Unchanged for turn.speaker is None: the wrapper carries no fallback
+    # data-unattributed of its own, and does not need one. hasSpeaker in
+    # rebuildPlain() (js/32-plain-text.js) already treats "no data-speaker on
+    # the turn" as "this block has no identity", which is exactly true here,
+    # and every bubble inside now renders its own [data-unattributed] chip
+    # (_render_bubble_html() above) that resolves --spk off ITS OWN
+    # attribute rather than inheriting one from this wrapper - so the
+    # wrapper needs nothing extra to make that render correctly.
     speaker_attr = (
         f' data-speaker="{turn.speaker}" data-palette="{_palette_index(turn.speaker)}"'
         if turn.speaker is not None
@@ -510,16 +553,25 @@ def _render_plain_html(
 
     previous_speaker tracks the last TURN's speaker, not a per-sentence value,
     since a heading can only start at a turn boundary in a server render.
+
+    previous_speaker starts as a private sentinel, not None: an unattributed
+    turn's own speaker IS None (see _render_bubble_html()'s docstring), so
+    seeding this with None would make the very first turn in a document look
+    like a continuation of a run that was never actually there whenever that
+    first turn happens to be unattributed - dropping its heading entirely.
+    The sentinel can never equal a real Turn.speaker (int | None), so the
+    first turn always starts a run, whatever its own speaker is.
     """
+    _no_previous_turn = object()
     s = partial(_t, strings)  # see _render_toolbar_html's s
 
     line_parts = []
     sentence_number = 1
-    previous_speaker = None
+    previous_speaker = _no_previous_turn
     for turn_id, turn in zip(turn_ids, turns):
         starts_run = turn.speaker != previous_speaker
         for idx, sentence in enumerate(turn.sentences()):
-            if idx == 0 and starts_run and speaker_label is not None and turn.speaker is not None:
+            if idx == 0 and starts_run and speaker_label is not None:
                 # Trailing colon, matching rebuildPlain()'s heading in
                 # js/32-plain-text.js - the two MUST produce identical text
                 # or the panel visibly rewrites itself the first time a
@@ -527,7 +579,18 @@ def _render_plain_html(
                 # stray one-word line, which matters most where this panel
                 # is actually used: pasted into an app that keeps none of
                 # the bold styling the heading has on screen.
-                name = html.escape(_speaker_fallback(speaker_label, turn.speaker))
+                #
+                # turn.speaker is None gets the same unattributed_speaker
+                # label the card's own chip uses (_render_bubble_html()
+                # above) rather than being skipped: the panel used to drop
+                # the heading entirely here, which silently merged an
+                # unattributed run into whichever named run happened to sit
+                # above it in the copied-out text.
+                name = (
+                    html.escape(_speaker_fallback(speaker_label, turn.speaker))
+                    if turn.speaker is not None
+                    else html.escape(strings.get("unattributed_speaker", "Unknown speaker"))
+                )
                 line_parts.append(
                     f'<div class="plain-heading" contenteditable="false">{name}:</div>'
                 )
