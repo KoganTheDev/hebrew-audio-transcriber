@@ -210,6 +210,9 @@ mid-block reassignment produces.
 
 ## 7. Export
 
+These first checks are the Firefox/no-File-System-Access path - unchanged from before this feature
+existed, so they double as a regression check.
+
 - [ ] Press "שמירת עותק" (or `Ctrl+S`). A file downloads and the status changes to "נשמר".
 - [ ] **Open the downloaded copy.** It contains your edits, speaker names, any added speakers and
       their colours, and any reassigned sentences; the speaker name boxes are filled in (not empty),
@@ -217,6 +220,29 @@ mid-block reassignment produces.
 - [ ] Edit the downloaded copy and reload it. Its own edits persist - it is a working editor, not a
       snapshot.
 - [ ] Export with the uncertain-words toggle on. The exported file has no shading baked into it.
+
+### Save to disk (Chrome/Edge - File System Access API)
+
+- [ ] The toolbar button reads **"שמירה"**, not "שמירת עותק", on first load.
+- [ ] Press it (or `Ctrl+S`). A native "Save As" dialog opens - **this is the first prompt of the
+      session, and it is the only one Save will ever ask for.**
+- [ ] Choose a destination. The dialog closes, the status pill reads "נשמר", and **the file at that
+      path now contains your edits.**
+- [ ] Type another edit. After the usual autosave pause, the file on disk updates again - **no
+      dialog this time.**
+- [ ] Reload the page (still the same session/tab). Edit again, then press Save. **No dialog** - it
+      writes straight to the same file, because the in-memory handle survived the reload.
+- [ ] Close the tab entirely and reopen the file, then press Save. **Exactly one permission prompt**
+      appears (not the full file picker) before it writes - this is the one-prompt-per-session cost
+      described in `docs/USING_THE_TRANSCRIPT.md`, and it cannot be skipped.
+- [ ] Press Save, then **cancel** the dialog instead of choosing a file. The status pill does **not**
+      flip to "נשמר", and a later Save opens the dialog again rather than silently reusing anything.
+- [ ] `Ctrl+Shift+S`. A **new** "Save As" dialog opens every time, regardless of whether Save already
+      has a file bound. Choose a different file - it is written once, and a subsequent plain Save
+      still goes to the original file, not this one.
+- [ ] With Save already bound to a file, delete or rename that file outside the browser, then edit
+      the page again. The status pill shows "השמירה נכשלה" and a toast names "Save a copy" as the
+      way out - the edit is still recoverable (reload from that browser tab; it is in local storage).
 
 ## 8. Appearance and access
 

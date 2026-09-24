@@ -23,6 +23,10 @@
   function save() {
     setStatus('saving');
     clearTimeout(saveTimer);
+    // Runs alongside the localStorage write below, not chained after it - see
+    // scheduleDiskAutosave()'s own comment in 56-export.js. A no-op until a
+    // Save has bound a file handle for this session.
+    scheduleDiskAutosave();
     // Debounced so a fast typist writes once per pause, not once per keystroke.
     saveTimer = setTimeout(function () {
       try {

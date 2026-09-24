@@ -56,18 +56,37 @@ Open it in a browser and:
 
 ### Where your edits actually live
 
-**This is worth understanding, because it is not what you would assume.** A
-page opened from a `file://` path cannot write back to its own file - browsers
-block that outright, and the API that would allow it is unavailable to
-documents loaded from disk. So:
+**This is worth understanding, because it is not what you would assume.**
+Every keystroke saves **instantly to your browser's local storage**, keyed to
+that transcript, regardless of anything below - close the tab, reopen the
+file, and your work is there. What differs is whether anything also reaches
+the `.html` file itself, and that depends on your browser.
 
-- Every keystroke saves **instantly to your browser's local storage**, keyed to that transcript. Close the tab, reopen the file, and your work is there. The status reads **"נשמר בדפדפן" / "Saved in browser"** to say exactly that.
-- The `.html` file on disk is **not** updated. To get a file containing your edits, press **"Save a copy"** (or `Ctrl+S`), which downloads a fresh, fully self-contained HTML with everything baked in. That copy is itself a working editor.
+- **Chrome, Edge, and other browsers with the File System Access API:** the
+  button reads **"Save"**. The first time you press it (or `Ctrl+S`), it asks
+  you to pick a file to write to; every Save after that - including
+  autosave, on the same 400ms debounce as the browser-only save - writes
+  straight to that file, no dialog. `Ctrl+Shift+S` ("Save a copy") always
+  asks for a different file instead, without changing where plain Save
+  writes.
+- **Firefox and any other browser without that API:** the button reads
+  **"Save a copy"**. Pressing it (or `Ctrl+S`/`Ctrl+Shift+S`, which do the
+  same thing here) downloads a fresh, fully self-contained copy with every
+  edit baked in - the `.html` on disk is never touched directly. That
+  download is itself a working editor.
 
-The practical consequence: edits live in the browser you made them in. Emailing
-the original `.html` to someone, or opening it on another machine, will not
-carry them - export a copy first. Re-running transcription on the same audio
-also produces a new document with a new identity, so its predecessor's saved
+**One prompt per browser session, and it cannot be avoided.** A `file://`
+document loses its file permission the moment it reloads - by design, not a
+bug in this app - so even the *same* file, chosen in a *previous* session,
+needs one more click through the browser's own permission prompt before the
+first Save of a new session can write to it. After that click, autosave
+writes to disk silently for the rest of that session.
+
+The practical consequence: until you have pressed Save at least once in a
+given browser, edits live only in that browser. Emailing the original
+`.html` to someone, or opening it on another machine, will not carry them -
+Save (or Save a copy) first. Re-running transcription on the same audio also
+produces a new document with a new identity, so its predecessor's saved
 edits no longer apply to it.
 
 If a file in a batch fails to transcribe, its section says so and every other

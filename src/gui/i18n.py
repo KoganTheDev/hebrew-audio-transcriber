@@ -329,6 +329,12 @@ STRINGS = {
     "doc_theme_dark": {"en": "Dark mode", "he": "מצב כהה"},
     "doc_toggle_theme": {"en": "Switch colour scheme", "he": "החלפת ערכת צבעים"},
     "doc_save_copy": {"en": "Save a copy", "he": "שמירת עותק"},
+    # Shown instead of doc_save_copy once the page script finds this browser
+    # can write files directly (File System Access API) - see
+    # syncSaveLabel() in core/assets/js/72-chrome.js. Two keys, not a
+    # capability-aware label built at render time: core/formatting cannot
+    # know the reader's browser, only the page script running in it can.
+    "doc_save": {"en": "Save", "he": "שמירה"},
     "doc_status_saved": {"en": "Saved", "he": "נשמר"},
     "doc_status_saving": {"en": "Saving...", "he": "שומר..."},
     # The state the reader is usually in, and the one worth being precise
@@ -417,15 +423,23 @@ STRINGS = {
         "in this browser, independent of your system's own setting.",
         "he": "מחליף את ערכת הצבעים של הדף וזוכר את הבחירה בדפדפן הזה, בנפרד מהגדרת המערכת שלכם.",
     },
-    "doc_help_save_title": {"en": "Save a copy", "he": "שמירת עותק"},
+    "doc_help_save_title": {"en": "Saving", "he": "שמירה"},
     "doc_help_save_desc": {
-        "en": "Downloads a fresh copy of this page with every edit baked "
-        "in. Opened from a file, the page can only save your edits "
-        "to this browser automatically - this is what actually "
-        "writes them to a file on disk.",
-        "he": "מוריד עותק חדש של הדף עם כל השינויים משולבים בו. כשהדף נפתח "
-        "מקובץ, הוא יכול לשמור את השינויים באופן אוטומטי רק בדפדפן "
-        "הזה - זו הפעולה שבאמת כותבת אותם לקובץ בדיסק.",
+        "en": "Writes this page's edits to a file. Where your browser "
+        'supports it, this button reads "Save", and Ctrl+S writes to '
+        "the same file every time once you have chosen one; "
+        "Ctrl+Shift+S always asks for a different file, without "
+        "changing where Ctrl+S goes. Otherwise both download a fresh "
+        "copy with every edit baked in - opened from a file, this "
+        "page can only save automatically to this browser, so that "
+        "download is what actually writes your edits to disk.",
+        "he": "כותב את השינויים בדף לקובץ. בדפדפן שתומך בכך הכפתור נקרא "
+        '"שמירה", ו-Ctrl+S כותב לאותו קובץ בכל פעם לאחר שנבחר קובץ '
+        "כזה; Ctrl+Shift+S תמיד מבקש קובץ אחר, מבלי לשנות לאן Ctrl+S "
+        "כותב. בדפדפן אחר שני הקיצורים מורידים עותק חדש עם כל השינויים "
+        "משולבים בו - כשהדף נפתח מקובץ, הוא יכול לשמור את השינויים "
+        "באופן אוטומטי רק בדפדפן הזה, כך שההורדה הזו היא הפעולה "
+        "שבאמת כותבת אותם לקובץ בדיסק.",
     },
     "doc_help_outline_title": {"en": "Files and speakers", "he": "קבצים ודוברים"},
     "doc_help_outline_desc": {

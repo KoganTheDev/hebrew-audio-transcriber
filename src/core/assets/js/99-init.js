@@ -38,6 +38,7 @@
 
   if (state.theme) { document.documentElement.dataset.theme = state.theme; }
   syncThemeLabel();
+  syncSaveLabel();
   if (state.flags) { setFlags(true); }
 
   // Restored edits live in this browser, not in any file, so open on "local"

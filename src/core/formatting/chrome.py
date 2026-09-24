@@ -246,11 +246,24 @@ def _render_toolbar_html(strings: dict[str, str]) -> str:
                     f'data-label-light="{s("theme_light", "Light mode")}"'
                 ),
             ),
+            # Server-rendered assuming no File System Access API (the safe,
+            # universal default - a plain download always works); the page
+            # script's syncSaveLabel() (core/assets/js/72-chrome.js) corrects
+            # the label once, on init, from data-label-save /
+            # data-label-save-copy if the browser can write files directly.
+            # Same idiom as #toggle-theme above, except this label never
+            # changes again after that first correction - the capability it
+            # names doesn't change over the page's lifetime the way the
+            # theme does.
             _button(
                 s("save_copy", "Save a copy"),
                 id_attr="export",
                 css_class="tb-btn primary",
                 icon="save",
+                extra=(
+                    f'data-label-save="{s("save", "Save")}" '
+                    f'data-label-save-copy="{s("save_copy", "Save a copy")}"'
+                ),
             ),
             # Last button in the group, not first: it explains every other
             # control in this row, so it reads as "more about the above".
@@ -388,13 +401,17 @@ def _render_help_html(strings: dict[str, str]) -> str:
         ),
         (
             "save",
-            s("help_save_title", "Save a copy"),
+            s("help_save_title", "Saving"),
             s(
                 "help_save_desc",
-                "Downloads a fresh copy of this page with every edit baked in. "
-                "Opened from a file, the page can only save your edits to this "
-                "browser automatically - this is what actually writes them to "
-                "a file on disk.",
+                "Writes this page's edits to a file. Where your browser supports "
+                'it, this button reads "Save", and Ctrl+S writes to the same '
+                "file every time once you have chosen one; Ctrl+Shift+S always "
+                "asks for a different file, without changing where Ctrl+S goes. "
+                "Otherwise both download a fresh copy with every edit baked in - "
+                "opened from a file, this page can only save automatically to "
+                "this browser, so that download is what actually writes your "
+                "edits to disk.",
             ),
         ),
         (

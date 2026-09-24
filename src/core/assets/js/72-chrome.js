@@ -22,6 +22,18 @@
     if (label && next) { label.textContent = next; }
   }
 
+  // #export's label depends on whether this browser can write files
+  // directly (supportsFileSystemAccess(), 56-export.js) - a capability that
+  // doesn't change over the page's lifetime the way the theme does, so
+  // unlike syncThemeLabel() this only ever needs to run once, on init.
+  function syncSaveLabel() {
+    var btn = document.getElementById('export');
+    if (!btn) { return; }
+    var label = btn.querySelector('span');
+    var next = supportsFileSystemAccess() ? btn.dataset.labelSave : btn.dataset.labelSaveCopy;
+    if (label && next) { label.textContent = next; }
+  }
+
   function bindSearchControls() {
     var searchInput = document.getElementById('search');
     if (searchInput) {
@@ -69,11 +81,16 @@
       // caret is. Consulting only one of them swallows a typed "/" mid-word.
       var typing = isTextEntry(e.target) || isTextEntry(document.activeElement);
 
-      // Ctrl/Cmd+S is what fingers do when they want the file written. There is
-      // no file to write, so it exports, which is the nearest true thing.
+      // Ctrl/Cmd+S writes to the document's own bound file (saveDocument(),
+      // 56-export.js), picking one first if none is bound yet; Ctrl+Shift+S
+      // always asks for a different destination without touching that
+      // binding (saveCopyAs()). Both fall back to the old Blob download in a
+      // browser with no File System Access API. Ctrl+S used to call
+      // exportCopy() unconditionally because there was nothing else to
+      // offer - that stopped being true once a real save existed.
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        exportCopy();
+        if (e.shiftKey) { saveCopyAs(); } else { saveDocument(); }
         return;
       }
       // "/" jumps to search, but not while the reader is mid-word.
@@ -96,7 +113,7 @@
     bindThemeToggle();
 
     var exportBtn = document.getElementById('export');
-    if (exportBtn) { exportBtn.addEventListener('click', exportCopy); }
+    if (exportBtn) { exportBtn.addEventListener('click', saveDocument); }
 
     // No beforeunload guard here on purpose: it fired on every close, not just
     // a losing one, because it could only see "unsaved" not "unsavable". The
