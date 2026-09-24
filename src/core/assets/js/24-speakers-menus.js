@@ -259,23 +259,42 @@
     entry.palette = palette;
     state.speakers[fileIndex][id] = entry;
 
-    var section = sectionFor(fileIndex);
-    if (section) {
-      section.querySelectorAll('.turn[data-speaker="' + id + '"]').forEach(function (turn) {
-        turn.dataset.palette = String(palette);
-      });
-      // Every bubble showing this speaker's id carries data-speaker - block
-      // default or per-sentence override alike - so this one selector reaches
-      // every card that needs repainting. Both the button and the bubble get
-      // the palette: 52-bubble.css reads --spk off the bubble's [data-palette].
-      section.querySelectorAll('.bubble-spk[data-speaker="' + id + '"]').forEach(function (btn) {
-        btn.dataset.palette = String(palette);
-        var bubble = btn.closest('.bubble');
-        if (bubble) { bubble.dataset.palette = String(palette); }
-      });
-    }
+    repaintSpeakerPalette(fileIndex, id, palette);
     save();
   }
+
+  // The transcript half of a recolour, split out from recolourSpeaker() so the
+  // LIVE path and the RELOAD path cannot disagree - which they did. A recolour
+  // repainted the roster row, the turns and the bubbles, but only the row's
+  // palette was ever persisted, and applySpeakerState() restored only the row.
+  // Every card kept the server-rendered data-palette (speaker % 8, see
+  // _palette_index() in formatting/chrome.py), so after a reload the sidebar
+  // dot and the cards showed two different colours for one speaker. Calling
+  // one function from both places is the fix; do not inline it back.
+  function repaintSpeakerPalette(fileIndex, id, palette) {
+    var section = sectionFor(fileIndex);
+    if (!section) { return; }
+    section.querySelectorAll('.turn[data-speaker="' + id + '"]').forEach(function (turn) {
+      turn.dataset.palette = String(palette);
+    });
+    // Every bubble showing this speaker's id carries data-speaker - block
+    // default or per-sentence override alike - so this one selector reaches
+    // every card that needs repainting. Both the button and the bubble get
+    // the palette: 52-bubble.css reads --spk off the bubble's [data-palette].
+    section.querySelectorAll('.bubble-spk[data-speaker="' + id + '"]').forEach(function (btn) {
+      btn.dataset.palette = String(palette);
+      var bubble = btn.closest('.bubble');
+      if (bubble) { bubble.dataset.palette = String(palette); }
+    });
+  }
+
+  // A speaker id is not a palette index. The eight [data-palette="N"] rules
+  // (00-tokens.css) only cover 0-7, so handing one a raw id of 8 or more
+  // matches nothing, --spk never resolves, and the element falls back to
+  // currentColor. The server has always used speaker % 8 (_palette_index() in
+  // formatting/chrome.py); this is that same rule, for the replay paths below
+  // where no roster row exists to read a real palette off.
+  function paletteFor(id) { return Number(id) % 8; }
 
   // Built fresh from the current speaker roster on every open rather than kept
   // in sync, so a speaker added or renamed after the page loaded is picked up
@@ -623,7 +642,7 @@
 
     var strip = stripFor(fileIndex);
     var row = strip && strip.querySelector('.speaker-row[data-speaker="' + id + '"]');
-    var palette = row ? row.dataset.palette : id;
+    var palette = row ? row.dataset.palette : paletteFor(id);
     var fallback = row ? row.querySelector('.speaker-name').placeholder : '';
 
     bubble.removeAttribute('data-unattributed');
@@ -813,11 +832,15 @@
         if (!row && entry.added) {
           row = createSpeakerRow(strip, Number(id), entry.fallback || '', entry.palette || 0);
         }
-        // The dot's colour is driven entirely by the row's own data-palette (see
-        // .speaker-row[data-palette] in the stylesheet (core/assets/css/)) -
-        // nothing else on the row needs updating to reflect a recolour.
+        // The row's dot is driven by the row's own data-palette (see
+        // .speaker-row[data-palette] in the stylesheet), but the transcript is
+        // NOT: every turn and bubble carries its own data-palette, baked in by
+        // the server as speaker % 8. Repainting only the row here is what let
+        // a recoloured speaker come back with a sidebar dot in the new colour
+        // and cards still in the old one.
         if (row && typeof entry.palette === 'number') {
           row.dataset.palette = String(entry.palette);
+          repaintSpeakerPalette(fileIndex, id, entry.palette);
         }
       });
       // After every create and every tombstone, not per entry: the count only
@@ -835,7 +858,7 @@
       var section = turn.closest('.source');
       var strip = stripFor(section.dataset.file);
       var row = strip && strip.querySelector('.speaker-row[data-speaker="' + newId + '"]');
-      var palette = row ? row.dataset.palette : newId;
+      var palette = row ? row.dataset.palette : paletteFor(newId);
       var fallback = row ? row.querySelector('.speaker-name').placeholder : '';
 
       turn.dataset.speaker = newId;
