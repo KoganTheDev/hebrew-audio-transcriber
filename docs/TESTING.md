@@ -111,7 +111,13 @@ shipping a change to `core/assets/`.
   transcript_to_rttm.py <exported.html> <out.rttm>` on a hand-corrected export
   from this app's own editor to turn its speaker corrections into an RTTM
   reference (see `tests/eval/fixtures/diarization/hebrew_2spk.rttm`'s header
-  for what it does and does not measure).
+  for what it does and does not measure). For a recording with no app export
+  at all, only a hand-typed transcript with speaker encoded as text colour,
+  `tests/eval/docx_to_rttm.py <transcript.docx> <audio> <out.rttm>`
+  transcribes the audio itself and aligns each coloured line onto the
+  result inside its docx block's time window (see
+  `tests/eval/fixtures/diarization/hebrew_avi_naor.rttm`'s header for the
+  method and its measured reconstruction error).
 
   This writes both transcripts side by side for reading, plus speed and
   confidence metrics. Without a reference transcript there is no accuracy

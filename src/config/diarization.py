@@ -270,3 +270,42 @@ DIARIZATION_EMBED_MIN_CLEAN_SECONDS = 0.5
 # to 4.79s on Hebrew and from 47.93s to 5.35s on AMI. The condition for
 # running phase 4 - confusion still dominant after the embedding fix - was
 # not met.
+#
+# Phase 5 - does the phase 1 win replicate, or was hebrew_2spk one lucky
+# sample? Two more Hebrew recordings, engine=sherpa, num_speakers=2
+# (pinned), full audio. Neither is this app's own export: both are hand-
+# typed .docx transcripts with speaker encoded as text COLOUR, turned into
+# RTTM by tests/eval/docx_to_rttm.py (transcribe with this app's own
+# Transcriber, align each colour-coded line onto the transcribed word
+# timings inside its docx block's time window). That method was validated
+# against test#1's own known-good RTTM before being trusted - see
+# eval_output/hebrew_multi_recording_sweep.json's "validation" key and the
+# fixtures' own header comments: confusion reconstructs to 99.3% correct,
+# which is the one thing this sweep depends on; absolute DER does not
+# reconstruct as cleanly (missed_speech is a systematic undercount from
+# text-matched span boundaries, not a speaker mixup) so is not compared
+# against hand-drawn references, only used for A/B between embedding models.
+# Full numbers in eval_output/hebrew_multi_recording_sweep.json.
+#
+#     fixture (partner)        model      DER      confusion   recall (partner/נאור)
+#     hebrew_2spk (יאיר)*      campplus   0.5154    74.98s     0.88 / 0.25
+#     hebrew_2spk (יאיר)*      titanet    0.2290     4.79s     0.92 / 0.91
+#     hebrew_avi_naor (אבי)   campplus   0.4971    84.12s     0.21 / 0.74
+#     hebrew_avi_naor (אבי)   titanet    0.2466     9.01s     0.80 / 0.90
+#     hebrew_alon_naor (אלון)  campplus   0.7129   386.04s     0.91 / 0.11
+#     hebrew_alon_naor (אלון)  titanet    0.3758    31.11s     0.89 / 0.90
+#     * phase 1's original single-sample result, repeated here for comparison.
+#
+# The win REPLICATES on both new recordings, in the same direction and
+# comparable magnitude as the original: confusion drops 89% on
+# hebrew_avi_naor and 92% on hebrew_alon_naor (versus 94% on hebrew_2spk).
+# נאור appears in all three recordings, with three different partners and
+# three different acoustic conditions - the strongest consistency check
+# available. Under titanet his recall is 0.91 / 0.90 / 0.90 - essentially
+# flat. Under campplus it is 0.25 / 0.74 / 0.11 - never above 0.75 and twice
+# below 0.75, i.e. campplus does not reliably find him regardless of who he
+# is talking to, while titanet reliably does. This is not the signature of
+# one lucky sample; it is the signature of an embedding that genuinely
+# separates this speaker's voice. DIARIZATION_EMBEDDING_MODEL's default is
+# unchanged by this phase - phase 1 already made that change, and this
+# measurement finds no reason to reconsider it.

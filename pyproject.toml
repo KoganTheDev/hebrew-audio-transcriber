@@ -66,6 +66,9 @@ dev = [
     "mypy>=1.0",
     # Enforces the core-must-not-import-the-GUI contract at lint time.
     "import-linter>=2.0",
+    # tests/eval/docx_to_rttm.py reads colour-coded speaker turns out of a
+    # hand-annotated .docx transcript - a dev-only eval tool, not shipped code.
+    "python-docx>=1.0",
 ]
 
 [project.urls]
