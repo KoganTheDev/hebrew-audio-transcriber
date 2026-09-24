@@ -125,6 +125,18 @@ section 10 below for the sidebar itself.
       was persisted.
 - [ ] After deleting the middle speaker of three, add a new one. Its colour and default name must
       differ from both survivors - a new speaker taking an existing one's colour is the bug here.
+- [ ] **Splitting a card.** Find a card where the diarizer ran two people together. Select the part
+      that belongs to the other speaker and let go. A speaker list appears - with no
+      "המשפט הזה / כל הבלוק" row, because the selection already says what the scope is.
+- [ ] Pick the other speaker. The card becomes two, the selected text sits in its own card under
+      that speaker, and the rest keeps the original. **Click the new card's timestamp** - the audio
+      must start where that speaker actually starts talking, not at a rounded-off guess.
+- [ ] The new card's play and copy buttons both work. (They are bound by delegation now; bound
+      per-element they would be dead on any card created after load.)
+- [ ] **Reload.** The split is still two cards. If they merge back into one, the saved paragraph
+      array went out of step with the DOM - see writeParagraphs().
+- [ ] Select an entire sentence rather than part of one. No split menu appears; that is the chip's
+      job, and splitting there would leave an empty card.
 
 ## 3. Uncertain words
 

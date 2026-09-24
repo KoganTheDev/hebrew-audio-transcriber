@@ -108,9 +108,10 @@ def _build_payload(
     other rendering step, so callers get it back alongside the dict it also
     lives inside of.
 
-    payload["low"] starts empty and is filled in as a side effect of rendering
-    each document's turns (_render_document_html appends to it): a turn's
-    flagged words aren't known until its own Turn object is walked.
+    payload["low"] and payload["words"] start empty and are filled in as a
+    side effect of rendering each document's turns (_render_document_html
+    appends to them): a turn's flagged words and its per-sentence word timings
+    aren't known until its own Turn object is walked.
     """
     strings = dict(ui_strings or {})
     payload = {
@@ -118,6 +119,23 @@ def _build_payload(
         "filename": title or "transcript",
         "strings": strings,
         "low": {},
+        # Per-sentence word timings, keyed by the same data-line id the bubble
+        # carries: {"0-1-2": [[start, end, "word"], ...]}.
+        #
+        # Splitting a card in two needs a timestamp for the second half, and
+        # the document otherwise carries nothing finer than the sentence's own
+        # data-start/data-end - so a split could only interpolate, which is a
+        # guess dressed up as a timestamp. With these the new card starts at a
+        # real word boundary.
+        #
+        # Measured cost before adding it: 31 KB for 1060 words (a 9-minute
+        # recording) against a ~1.2 MB document, most of which is the base64
+        # backdrop. Roughly 2.5%, and it buys the difference between an
+        # accurate feature and an approximate one.
+        #
+        # Positional arrays rather than {"start":..,"end":..,"text":..}: the
+        # key names would outweigh the values at this count.
+        "words": {},
         # A speaker added client-side (no diarization run invents one for it)
         # still needs a translated "Speaker N" fallback, and the page has no
         # other way to reach the format string that produced every other

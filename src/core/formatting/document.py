@@ -103,6 +103,16 @@ def _render_document_html(
         if flagged:
             payload["low"][turn_id] = flagged
         sentences = turn.sentences()
+        # Keyed by the same line id _render_turn_html() gives each bubble, so
+        # the page can look a card's words up by its own data-line. Sentences
+        # with no word timings (a segment transcribed without them) simply
+        # contribute no entry - the page treats a missing key as "cannot split
+        # this one accurately" rather than guessing.
+        for idx, sentence in enumerate(sentences):
+            if sentence.words:
+                payload["words"][f"{turn_id}-{idx}"] = [
+                    [round(w.start, 2), round(w.end, 2), w.text] for w in sentence.words
+                ]
         lines.append(
             _render_turn_html(
                 turn,

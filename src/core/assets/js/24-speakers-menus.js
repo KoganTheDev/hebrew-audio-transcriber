@@ -288,6 +288,233 @@
     });
   }
 
+  // --- splitting a card -----------------------------------------------
+  //
+  // Diarization gets a boundary wrong far more often than it gets a whole
+  // turn wrong: two people's speech lands in one sentence card, and until
+  // now the only repair was to reassign the whole card to one of them and
+  // accept that half of it is then attributed to the wrong person.
+  //
+  // Selecting the text that belongs to someone else and picking them from
+  // the menu is one gesture for the whole repair. The selection IS the
+  // scope, which is why this menu carries no "this sentence / this block"
+  // group the way a chip's own menu does.
+
+  // Character offset of `node`/`offset` within `root`'s text, so a DOM
+  // Range can be turned into a plain string index into the card's text.
+  function offsetWithin(root, node, offset) {
+    var total = 0;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var current;
+    while ((current = walker.nextNode())) {
+      if (current === node) { return total + offset; }
+      total += current.textContent.length;
+    }
+    return total;
+  }
+
+  // The time a split at `charOffset` should land on, from the per-sentence
+  // word timings in the payload (DATA.words, keyed by data-line - see
+  // _build_payload() in core/formatting).
+  //
+  // Walks the words accumulating their own lengths rather than measuring the
+  // rendered text: the two agree, because the server joined exactly these
+  // words to produce it. Returns null when this sentence has no word timings
+  // (a segment transcribed without them), and the caller then refuses to
+  // split rather than inventing a timestamp - a made-up boundary would seek
+  // the audio to the wrong place, which is worse than not offering the
+  // action.
+  function timeAtOffset(lineId, charOffset) {
+    var words = DATA.words && DATA.words[lineId];
+    if (!words || !words.length) { return null; }
+    var seen = 0;
+    for (var i = 0; i < words.length; i++) {
+      var text = words[i][2] || '';
+      // A word that straddles the offset belongs to the FIRST half, so the
+      // second card starts at the next word's start - splitting mid-word
+      // would put a fragment of one speaker's word on the other's card.
+      if (seen + text.length >= charOffset) {
+        return i + 1 < words.length ? words[i + 1][0] : words[i][1];
+      }
+      seen += text.length;
+    }
+    return words[words.length - 1][1];
+  }
+
+  // Clones a bubble, giving the copy its own line id, span and text. The
+  // clone route rather than building markup here: a bubble carries a chip
+  // anchor, a timestamp button and a copy button, all with their own
+  // attributes and contenteditable="false" flags, and every one of them
+  // would have to be kept in step with _render_bubble_html() by hand.
+  function cloneBubble(source, lineId, text, start, end) {
+    var clone = source.cloneNode(true);
+    clone.dataset.line = lineId;
+    clone.dataset.start = start.toFixed(2);
+    clone.dataset.end = end.toFixed(2);
+    var p = clone.querySelector('p');
+    if (p) { p.textContent = text; }
+    var ts = clone.querySelector('.ts span');
+    if (ts) { ts.textContent = PLAIN_LRI + formatSentenceRange(start, end) + PLAIN_PDI; }
+    // A split half is a fresh sentence, not the one whose override was set,
+    // so it starts from its block's identity until told otherwise.
+    clone.removeAttribute('data-override');
+    return clone;
+  }
+
+  // Splits `bubble` at `charOffset` and gives the SECOND half to `newId`.
+  //
+  // Both halves stay inside the same .turn on purpose. DATA.low is keyed by
+  // data-turn with occurrence indices counted across the whole turn
+  // (low_confidence() in core/formatting/turns.py), so moving one half into a
+  // new turn would silently misalign every low-confidence highlight after it.
+  function splitBubble(bubble, charOffset, newId) {
+    var p = bubble.querySelector('p');
+    if (!p) { return false; }
+    var text = p.textContent;
+    var head = text.slice(0, charOffset).replace(/\s+$/, '');
+    var tail = text.slice(charOffset).replace(/^\s+/, '');
+    if (!head || !tail) { return false; }
+
+    var lineId = bubble.dataset.line;
+    var cut = timeAtOffset(lineId, charOffset);
+    if (cut === null) { return false; }
+
+    var start = Number(bubble.dataset.start);
+    var end = Number(bubble.dataset.end);
+    // Keep the cut inside the card's own span: a word timing slightly outside
+    // it (rounding, or VAD padding on the sentence's own ends) would produce
+    // a card whose timestamp reads backwards.
+    cut = Math.min(Math.max(cut, start), end);
+
+    // A suffixed child id, never a renumbering of the siblings: data-line is
+    // the key for state.assignLine and the plain panel's own lines, so
+    // renumbering would orphan every saved override in the turn.
+    var childId = lineId + '-1';
+    var n = 1;
+    while (document.querySelector('.bubble[data-line="' + childId + '"]')) {
+      n += 1;
+      childId = lineId + '-' + n;
+    }
+
+    var second = cloneBubble(bubble, childId, tail, cut, end);
+    p.textContent = head;
+    bubble.dataset.end = cut.toFixed(2);
+    var ts = bubble.querySelector('.ts span');
+    if (ts) { ts.textContent = PLAIN_LRI + formatSentenceRange(start, cut) + PLAIN_PDI; }
+    bubble.insertAdjacentElement('afterend', second);
+
+    // The edit replay keys turns by paragraph POSITION (writeParagraphs() in
+    // js/16-edits.js), so a stored array from before the split would merge
+    // the halves back on reload. Re-reading now keeps the saved paragraphs
+    // and the DOM the same length.
+    var turn = bubble.closest('.turn');
+    var body = turn && turn.querySelector('.body');
+    if (turn && body && state.turns[turn.dataset.turn]) {
+      state.turns[turn.dataset.turn] = readParagraphs(body);
+    }
+
+    reassignLine(second, newId);
+    return true;
+  }
+
+  // The popover that offers the speaker list for a selection inside a card.
+  //
+  // No scope group, unlike a chip's own menu: a chip click is ambiguous about
+  // whether it means this sentence or the whole block, and a selection is
+  // not - the selection IS the scope.
+  function openSplitMenu(bubble, p, startOffset, endOffset) {
+    var section = bubble.closest('.source');
+    if (!section) { return; }
+    var fileIndex = section.dataset.file;
+    closeMenu();
+
+    var menu = buildSpeakerMenu(fileIndex, null);
+    menu.classList.add('split-menu');
+    menu.dataset.line = bubble.dataset.line;
+    // Detached to <body> and positioned, like .swatch-menu: a card sits
+    // inside .source's own scrolling/stacking context, and a menu anchored
+    // inside it would be clipped by the card it is about to split.
+    document.body.appendChild(menu);
+    positionDetachedMenu(menu, p);
+    splitTarget = { bubble: bubble, p: p, start: startOffset, end: endOffset };
+
+    var first = menu.querySelector('[role="menuitemradio"]');
+    if (first) { first.focus(); }
+  }
+
+  // Set while a split menu is open, cleared when it closes or is used. Not
+  // derived from the DOM selection at click time: focusing the menu collapses
+  // the selection, so the offsets have to be captured when the menu opens.
+  var splitTarget = null;
+
+  function bindSplitSelection() {
+    document.addEventListener('mouseup', function () {
+      // Deferred a tick: on mouseup the selection is not yet final in every
+      // browser, and a menu opened from a stale range would split at the
+      // wrong place.
+      setTimeout(function () {
+        if (openMenuBtn || splitTarget) { return; }
+        var sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount) { return; }
+        var range = sel.getRangeAt(0);
+        var node = range.commonAncestorContainer;
+        var p = node.nodeType === 1
+          ? node.closest('p')
+          : (node.parentElement && node.parentElement.closest('p'));
+        if (!p) { return; }
+        var bubble = p.closest('.bubble');
+        // Only inside a real card, and only where a split could be accurate:
+        // without word timings for this sentence there is no honest
+        // timestamp for the second half, so the action is not offered at all
+        // rather than offered and then refused.
+        if (!bubble || !bubble.dataset.line) { return; }
+        if (!DATA.words || !DATA.words[bubble.dataset.line]) { return; }
+
+        var startOffset = offsetWithin(p, range.startContainer, range.startOffset);
+        var endOffset = offsetWithin(p, range.endContainer, range.endOffset);
+        if (startOffset === endOffset) { return; }
+        // A selection reaching the very start AND the very end is the whole
+        // sentence - that is a plain reassignment, which the chip already
+        // does, not a split.
+        var len = p.textContent.length;
+        if (startOffset <= 0 && endOffset >= len) { return; }
+
+        openSplitMenu(bubble, p, startOffset, endOffset);
+      }, 0);
+    });
+  }
+
+  // Applies a pick from the split menu. The cut lands at whichever end of the
+  // selection is not already a card boundary, so selecting the tail of a
+  // sentence gives that tail to the chosen speaker and selecting the head
+  // gives the head.
+  function applySplitChoice(newId, target) {
+    splitTarget = null;
+    if (!target) { return; }
+
+    var len = target.p.textContent.length;
+    if (target.end >= len) {
+      splitBubble(target.bubble, target.start, newId);
+    } else if (target.start <= 0) {
+      // Head selected: split at its end, then the FIRST half is the one that
+      // changes hands, so the second keeps the block's identity.
+      var blockId = target.bubble.dataset.speaker;
+      if (splitBubble(target.bubble, target.end, blockId)) {
+        reassignLine(target.bubble, newId);
+      }
+    } else {
+      // A selection in the middle needs two cuts: tail off first so the
+      // second offset is still valid against the original text, then the
+      // head, leaving the selection as its own card.
+      if (splitBubble(target.bubble, target.end, target.bubble.dataset.speaker)) {
+        splitBubble(target.bubble, target.start, newId);
+      }
+    }
+    var section = target.bubble.closest('.source');
+    if (section) { schedulePlain(section); }
+    save();
+  }
+
   // A speaker id is not a palette index. The eight [data-palette="N"] rules
   // (00-tokens.css) only cover 0-7, so handing one a raw id of 8 or more
   // matches nothing, --spk never resolves, and the element falls back to
@@ -419,6 +646,10 @@
     if (menuOpenCard) { menuOpenCard.classList.remove('menu-open'); menuOpenCard = null; }
     openMenuBtn = null;
     openMenuScope = 'line';
+    // A split menu dismissed without a pick must not leave its captured
+    // offsets behind - the next selection would otherwise be refused by
+    // bindSplitSelection()'s "a menu is already open" guard.
+    splitTarget = null;
   }
 
   // A fixed-position popover has no DOM relationship to the scrolled container
@@ -761,6 +992,19 @@
       }
 
       var item = e.target.closest ? e.target.closest('.spk-menu-item') : null;
+      // A split menu has no opening button to read state back from - it was
+      // opened by a text selection - so it is handled before the chip path
+      // below, which assumes openMenuBtn.
+      if (item && item.closest('.split-menu')) {
+        var chosen = item.dataset.speaker;
+        // Captured BEFORE closeMenu(), which clears splitTarget as part of
+        // tearing a dismissed menu down - reading it afterwards always found
+        // null and the split silently did nothing.
+        var target = splitTarget;
+        closeMenu();
+        applySplitChoice(chosen, target);
+        return;
+      }
       if (item) {
         var menu = item.closest('.spk-menu');
         var turn = menu ? menu.closest('.turn') : null;

@@ -4,6 +4,7 @@
   bindEditing();
   bindSpeakers();
   bindMenus();
+  bindSplitSelection();
   bindPlain();
   bindAudio();
   bindChrome();

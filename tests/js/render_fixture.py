@@ -8,9 +8,9 @@ tests/js/render_fixture.py <kind>`, precisely so the jsdom tests exercise
 core.formatting.render_html's REAL output rather than a
 hand-written stand-in page that could quietly drift out of sync with what
 the app actually generates. See tests/test_formatting.py's seg()/doc()
-helpers, which the two fixtures below are built the same way as.
+helpers, which the fixtures below are built the same way as.
 
-Two fixtures, selected by the one CLI argument:
+Fixtures, selected by the one CLI argument:
 
   full        Two files, each with a speaker on part of it, and timestamps
               on (the default) - exercises every one of the tour's eight
@@ -51,6 +51,15 @@ Two fixtures, selected by the one CLI argument:
               that can exercise deleting one - and deleting the MIDDLE id is
               what leaves the roster non-contiguous, which addSpeaker() has
               to survive.
+
+  split       One file, two sentences under one speaker, and the ONLY fixture
+              with real per-word timings. Every other one builds words with
+              word(), which pins start=0/end=1 because it exists to carry a
+              probability for the low-confidence tests - useless for
+              splitting, which needs the boundary between two adjacent words
+              to be a distinct number. Six words with clean one-second spans,
+              so a test can assert a cut landed on a specific boundary rather
+              than merely somewhere inside.
 
 
 doc_id is pinned per fixture (not left to render_html()'s own random uuid4)
@@ -242,12 +251,52 @@ def render_three_speakers():
     )
 
 
+def render_split():
+    # The only fixture with REAL per-word timings. Every other one builds
+    # words with word(), which pins start=0/end=1 because it exists to carry a
+    # probability for the low-confidence tests - useless for splitting, which
+    # needs the boundary between two adjacent words to be a distinct number.
+    #
+    # Two sentences under one speaker, six words with clean one-second spans,
+    # so a test can assert the cut landed on a specific boundary rather than
+    # merely "somewhere inside".
+    timed = [
+        Word(start=0.0, end=1.0, text="אחד", probability=0.99),
+        Word(start=1.0, end=2.0, text=" שתיים", probability=0.99),
+        Word(start=2.0, end=3.0, text=" שלוש.", probability=0.99),
+        Word(start=3.0, end=4.0, text=" ארבע", probability=0.99),
+        Word(start=4.0, end=5.0, text=" חמש", probability=0.99),
+        Word(start=5.0, end=6.0, text=" שש", probability=0.99),
+    ]
+    documents = [
+        doc(
+            "recording-one.wav",
+            [
+                Segment(
+                    start=0.0, end=6.0, text="אחד שתיים שלוש. ארבע חמש שש", speaker=0, words=timed
+                ),
+                seg(8, 10, "שבע שמונה", speaker=1),
+            ],
+        ),
+    ]
+    return render_html(
+        documents,
+        speaker_label="Speaker {n}",
+        timestamps=True,
+        title="fixture-split",
+        ui_strings=UI_STRINGS,
+        doc_id="js-fixture-split",
+        vista="vista-03.webp",
+    )
+
+
 _FIXTURES = {
     "full": render_full,
     "degenerate": render_degenerate,
     "triple": render_triple,
     "unattributed": render_unattributed,
     "three-speakers": render_three_speakers,
+    "split": render_split,
 }
 
 

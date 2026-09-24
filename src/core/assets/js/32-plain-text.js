@@ -463,14 +463,17 @@
       });
     });
 
-    document.querySelectorAll('.copy-line').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var bubble = btn.closest('.bubble');
-        // Anchored the same way the panel's copy is: this text opens with a
-        // bracketed timestamp, an LTR run, so an app guessing direction from
-        // the first strong character would left-align the Hebrew after it.
-        copy(anchorRtl(bubblePlainText(bubble, true, true)), btn);
-      });
+    // Delegated, not bound per button at load, for the same reason the play
+    // button's handler is (js/64-audio.js): a card created later by splitting
+    // one in two would otherwise get a copy button that does nothing.
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.copy-line') : null;
+      if (!btn) { return; }
+      var bubble = btn.closest('.bubble');
+      // Anchored the same way the panel's copy is: this text opens with a
+      // bracketed timestamp, an LTR run, so an app guessing direction from
+      // the first strong character would left-align the Hebrew after it.
+      copy(anchorRtl(bubblePlainText(bubble, true, true)), btn);
     });
   }
 

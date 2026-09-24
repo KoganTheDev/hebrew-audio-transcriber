@@ -75,8 +75,14 @@
     // regardless of whether the visible timestamp span is even rendered - see
     // that same function's docstring), so a bubble click has to read its
     // range from the ancestor, while a header click still reads its own.
-    document.querySelectorAll('.ts').forEach(function (btn) {
-      btn.addEventListener('click', function () {
+    // Delegated from the document, not bound per .ts at load: cards can be
+    // created after this runs (splitting one sentence card into two - see
+    // splitBubble() in js/24-speakers-menus.js), and a per-element listener
+    // would leave every new card's play button dead. Same reasoning as
+    // bindMenus()'s delegated listener.
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.ts') : null;
+      if (btn) {
         var section = btn.closest('.source');
         var file = section.dataset.audio;
         if (!file) { return; }
@@ -102,7 +108,7 @@
         // clock right after the click must not see a stale value from load.
         updatePlayerReadout(audio, timeEl);
         audio.play().catch(function () { /* the error listener handles it */ });
-      });
+      }
     });
 
     audio.addEventListener('loadedmetadata', function () {
