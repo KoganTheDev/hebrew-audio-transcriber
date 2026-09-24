@@ -178,7 +178,9 @@ def _diarize_before(samples, sample_rate: int, num_speakers: int):
                 model=diarization._SEGMENTATION_MODEL
             ),
         ),
-        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=diarization._EMBEDDING_MODEL),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=diarization._embedding_model_path()
+        ),
         clustering=sherpa_onnx.FastClusteringConfig(
             num_clusters=num_speakers if num_speakers and num_speakers > 0 else -1,
             threshold=0.5,
@@ -235,26 +237,35 @@ def _assign_speakers_before_e2e(segments, spans) -> list[tuple[float, float, str
 
 
 @contextlib.contextmanager
-def _engine_override(engine: str, cluster_threshold: float | None):
-    """Temporarily point config.DIARIZATION_ENGINE and, if given,
-    config.DIARIZATION_CLUSTER_THRESHOLD at the values under test, restoring
-    both afterwards. Same monkeypatch-the-module-global approach as
-    run_e2e_mode's VAD_FILTER override, extended to two knobs so --engine
-    and --cluster-threshold can each be swept without hand-editing config.py -
-    which is the whole reason those two flags exist (see module docstring).
+def _engine_override(
+    engine: str, cluster_threshold: float | None, embedding_model: str | None = None
+):
+    """Temporarily point config.DIARIZATION_ENGINE, config.DIARIZATION_CLUSTER_THRESHOLD
+    (if given) and config.DIARIZATION_EMBEDDING_MODEL (if given) at the values under
+    test, restoring all three afterwards. Same monkeypatch-the-module-global approach
+    as run_e2e_mode's VAD_FILTER override, extended to three knobs so --engine,
+    --cluster-threshold and --embedding-model can each be swept without hand-editing
+    config.py - which is the whole reason these flags exist (see module docstring).
+    core.diarization reads config.DIARIZATION_EMBEDDING_MODEL at call time (see
+    core/diarization.py's _embedding_model_path/_embedding_model_url), so this
+    override reaches it the same way it already reaches the engine and threshold.
     """
     import config as app_config
 
     previous_engine = app_config.DIARIZATION_ENGINE
     previous_threshold = app_config.DIARIZATION_CLUSTER_THRESHOLD
+    previous_embedding_model = app_config.DIARIZATION_EMBEDDING_MODEL
     app_config.DIARIZATION_ENGINE = engine
     if cluster_threshold is not None:
         app_config.DIARIZATION_CLUSTER_THRESHOLD = cluster_threshold
+    if embedding_model is not None:
+        app_config.DIARIZATION_EMBEDDING_MODEL = embedding_model
     try:
         yield
     finally:
         app_config.DIARIZATION_ENGINE = previous_engine
         app_config.DIARIZATION_CLUSTER_THRESHOLD = previous_threshold
+        app_config.DIARIZATION_EMBEDDING_MODEL = previous_embedding_model
 
 
 def _report_recall_and_count(reference, hypothesis) -> dict:
@@ -301,6 +312,7 @@ def run_span_mode(
     reference,
     engines: list[str],
     cluster_thresholds: list[float | None],
+    embedding_model: str | None = None,
 ) -> dict:
     """
     Score sherpa-onnx's raw spans against the reference - see the module
@@ -330,7 +342,7 @@ def run_span_mode(
             label = f"after (engine={engine}, cluster_threshold={threshold_label})"
             print(f"\n=== span-level: {label} ===", flush=True)
             start = time.time()
-            with _engine_override(engine, threshold):
+            with _engine_override(engine, threshold, embedding_model):
                 spans = diarization.diarize(
                     samples, sample_rate=sample_rate, num_speakers=num_speakers
                 )
@@ -370,6 +382,7 @@ def run_e2e_mode(
     engines: list[str],
     cluster_thresholds: list[float | None],
     no_vad: bool = False,
+    embedding_model: str | None = None,
 ) -> dict:
     """
     Score labelled transcript segments - what a user actually sees - against
@@ -426,7 +439,7 @@ def run_e2e_mode(
                 flush=True,
             )
             diarize_start = time.time()
-            with _engine_override(engine, threshold):
+            with _engine_override(engine, threshold, embedding_model):
                 spans = diarization.diarize(
                     samples, sample_rate=sample_rate, num_speakers=num_speakers
                 )
@@ -527,6 +540,15 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         "Default: whatever config.py currently sets.",
     )
     parser.add_argument(
+        "--embedding-model",
+        default=None,
+        help="config.DIARIZATION_EMBEDDING_MODEL filename to diarize with, e.g. "
+        "nemo_en_titanet_large.onnx - a bare filename from the same sherpa-onnx "
+        "speaker-recongition-models release as the default. Downloaded to "
+        "config.DIARIZATION_MODELS_ROOT on first use via the existing "
+        "core.diarization._download helper. Default: whatever config.py currently sets.",
+    )
+    parser.add_argument(
         "--model",
         default=DEFAULT_E2E_MODEL,
         help=f"--mode e2e only: config.MODELS key or raw repo id (default: {DEFAULT_E2E_MODEL})",
@@ -613,6 +635,7 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
                 reference,
                 engines,
                 cluster_thresholds,
+                embedding_model=args.embedding_model,
             )
         )
     if args.mode in ("e2e", "both"):
@@ -629,6 +652,7 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
                     engines,
                     cluster_thresholds,
                     no_vad=args.no_vad,
+                    embedding_model=args.embedding_model,
                 )
             )
         except Exception as e:

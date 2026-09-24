@@ -82,10 +82,10 @@ def diarize_powerset(
     # too, and sherpa-onnx must not be a hard import for paths that never
     # diarize.
     from core.diarization import (
-        _EMBEDDING_MODEL,
         _SEGMENTATION_MODEL,
         DiarizationUnavailable,
         SpeakerSpan,
+        _embedding_model_path,
         ensure_models,
     )
 
@@ -112,7 +112,7 @@ def diarize_powerset(
 
     active = marginals >= onset  # (W, F, K)
     embeddings, owners = _embed_windows(
-        sherpa_onnx, _EMBEDDING_MODEL, samples, active, starts, mask_overlap
+        sherpa_onnx, _embedding_model_path(), samples, active, starts, mask_overlap
     )
 
     if not embeddings:

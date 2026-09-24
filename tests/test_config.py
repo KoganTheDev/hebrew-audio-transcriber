@@ -306,7 +306,7 @@ class TestDiarizationModelsRoot:
 
         assert diarization.MODELS_DIR == config.DIARIZATION_MODELS_ROOT
         assert os.path.isabs(diarization._SEGMENTATION_MODEL)
-        assert os.path.isabs(diarization._EMBEDDING_MODEL)
+        assert os.path.isabs(diarization._embedding_model_path())
 
     def test_resolving_does_not_create_the_directory(self, tmp_path, monkeypatch):
         """

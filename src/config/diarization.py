@@ -62,6 +62,31 @@ DIARIZATION_MIN_DURATION_OFF = 0.5
 # and the pairing to avoid is squeezing ctranslate2 down to 2.
 DIARIZATION_NUM_THREADS = min(4, os.cpu_count() or 1)
 
+# Which sherpa-onnx speaker-embedding model computes the vectors that get
+# clustered. A bare filename, not a path: core/diarization.py joins it onto
+# MODELS_DIR for the local path and onto the release prefix for the download
+# URL, both derived from this one constant so a swap here is the only edit
+# needed (see core/diarization.py:_embedding_model_path/_embedding_model_url).
+# All candidates ship in the same GitHub release - note the upstream tag is
+# really spelled "speaker-recongition-models", not a typo to fix here.
+#
+# nemo_en_titanet_large.onnx (96.7 MB), not the VoxCeleb-trained campplus
+# model (28.2 MB) this app shipped with until this was measured. The old
+# comment here argued campplus was chosen because "embeddings capture voice
+# timbre more than language-specific phonetics", so any VoxCeleb-family
+# model would separate two unfamiliar Hebrew voices. That argument had no
+# Hebrew data behind it, and measuring it against real Hebrew speaker labels
+# (see the results table at the end of this file) showed it was wrong:
+# campplus and both WeSpeaker ResNet alternatives from the same release all
+# leave Hebrew confusion at 75-79s of 252s - one speaker absorbing most of
+# the other's turns. TitaNet-L is the outlier that actually separates the
+# two speakers (confusion 4.79s) and was the only candidate that cleared
+# the improve-recall-without-regressing-AMI gate. Timbre-vs-phonetics may
+# still be true of embeddings in general; it did not predict which specific
+# model tells these two people apart, which is the only thing that matters
+# here.
+DIARIZATION_EMBEDDING_MODEL = "nemo_en_titanet_large.onnx"
+
 # Cosine-distance threshold FastClustering merges two embeddings at, when
 # num_clusters is not pinned to an exact count. Embeddings are vectors in the
 # campplus model's speaker-embedding space; two windows cluster into one
@@ -147,9 +172,12 @@ DIARIZATION_INTERJECTION_MIN_COVERAGE = 0.8
 #
 # Fewer, longer spans and less detected overlap is the WRONG direction for a
 # conversation full of short interjections, which is the complaint this work
-# started from. So "powerset" is opt-in until someone measures it against
-# Hebrew audio with real speaker labels - which does not exist yet, and is
-# the single thing that would most improve confidence here.
+# started from. That measurement against Hebrew audio with real speaker
+# labels now exists (tests/eval/fixtures/diarization/hebrew_2spk.rttm, hand-
+# corrected), and powerset lost it outright: engine=sherpa DER 0.5154 vs
+# engine=powerset DER 0.6030 on the same 300s, same num_speakers=2, same
+# embedding model (see the results table at the end of this file). "sherpa"
+# stays the default on real data, not just on the AMI split decision above.
 #
 # One constant reverts everything, which is why it is a constant and not a
 # rewrite.
@@ -175,3 +203,70 @@ DIARIZATION_OVERLAP_COUNT = 1.10
 # vector like that is worse than leaving those frames to the neighbouring
 # windows that do have a confident opinion.
 DIARIZATION_EMBED_MIN_CLEAN_SECONDS = 0.5
+
+# --- DIARIZATION_EMBEDDING_MODEL sweep (Hebrew fixture, real speaker labels) --
+#
+# Full numbers in eval_output/hebrew_2spk_diarization_sweep.json. Fixture:
+# tests/eval/fixtures/diarization/hebrew_2spk.rttm (hand-corrected), audio
+# mp3_test/diarization_test/<same Hebrew recording>, first 300s, two known
+# speakers - יאיר and נאור, נאור being the minority speaker at ~30% of talk
+# time and the one whose recall exposes confusion.
+#
+# First, a claim that has to be settled before any of this sweep means
+# anything: sherpa_onnx.FastClusteringConfig.threshold is READ but NOT USED
+# when num_clusters > 0 (this app always pins a known count from the GUI).
+# Verified empirically: engine=sherpa, num_speakers=2, cluster_threshold in
+# {0.3, 0.7} produced byte-identical output (DER 0.5154, 77 spans, same
+# recall) at both values. So with a known speaker count, this constant does
+# nothing, and the only levers against a confusion-dominated error are the
+# embedding model and min_duration_on.
+#
+# Phase 1 - engine=sherpa, num_speakers=2 (pinned), all from the same
+# sherpa-onnx speaker-recongition-models release:
+#
+#     model                                                    MB    DER     conf    recall יאיר/נאור
+#     campplus_sv_en_voxceleb_16k (CURRENT, then default)      28.2  0.5154   74.98s  0.88 / 0.25
+#     campplus_sv_zh_en_16k-common_advanced (bilingual)        27.0  0.5234   79.18s  0.93 / 0.13
+#     nemo_en_titanet_large (WINNER)                           96.7  0.2290    4.79s  0.92 / 0.91
+#     wespeaker_en_voxceleb_resnet152_LM                       75.5  0.5207   78.72s  0.93 / 0.13
+#     wespeaker_en_voxceleb_resnet293_LM                      109.0  0.5224   79.26s  0.93 / 0.12
+#
+# All four VoxCeleb-family losers land in the same place - confusion at
+# 75-79s of 252s, נאור recall 0.12-0.13, no better than the control they were
+# meant to improve on. Being bigger, more bilingual, or higher on the
+# VoxCeleb leaderboard did not help; none of that measures separability on
+# Hebrew voices specifically. TitaNet-L is the outlier: confusion drops 94%
+# and נאור's recall goes from "usually not found" to "usually found". The
+# two ResNet losers were also 9-24x slower to run (531s/1419s vs ~50-115s for
+# the others) for a worse result - recorded so nobody re-tries them for speed
+# reasons either.
+#
+# Phase 2 - best two by נאור recall (titanet, campplus control), engine=
+# sherpa, num_speakers=0 (inferred), threshold swept 0.3-0.7. LOSING
+# direction across the board: threshold only matters when the count is
+# unknown, and inferring it here fragments two real speakers into 11-45
+# clusters at every threshold tried. Best of the whole grid (titanet @ 0.7,
+# DER 0.5297) is still more than double titanet's pinned-count DER (0.2290).
+# This confirms the app is right to keep pinning num_speakers from the GUI,
+# and that the threshold grid was never where the fix could live (per the
+# inertness finding above) - full grid in the JSON.
+#
+# Phase 3 - regression check, winning config against AMI ES2004a (first
+# 300s, num_speakers=3, the pre-existing sherpa reference point):
+#
+#     known sherpa/campplus baseline   DER 0.4700   conf 47.93s   2/3 found
+#     sherpa/titanet                   DER 0.1919   conf  5.35s   2/3 found
+#
+# No regression - AMI improves too, on the same error term. Gate (improve
+# נאור recall on Hebrew AND do not regress AMI) is met on both axes, so
+# DIARIZATION_EMBEDDING_MODEL's default changed to nemo_en_titanet_large.onnx
+# despite the 3.4x size increase (28.2 MB -> 96.7 MB): a 94% confusion
+# reduction is not the "rounding error" case size should veto, which is
+# exactly why the two other 75+ MB candidates were rejected instead - they
+# paid the same size tax and got nothing for it.
+#
+# Phase 4 (DIARIZATION_MIN_DURATION_ON sweep) was skipped: confusion was the
+# dominant error this sweep targeted, and phase 1 alone took it from 74.98s
+# to 4.79s on Hebrew and from 47.93s to 5.35s on AMI. The condition for
+# running phase 4 - confusion still dominant after the embedding fix - was
+# not met.

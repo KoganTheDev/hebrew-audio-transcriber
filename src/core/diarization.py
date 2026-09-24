@@ -54,16 +54,24 @@ _SEGMENTATION_MODEL = os.path.join(
     MODELS_DIR, "sherpa-onnx-pyannote-segmentation-3-0", "model.onnx"
 )
 
-# VoxCeleb-trained rather than one of the Chinese-corpus alternatives. Speaker
-# embeddings capture voice timbre more than language-specific phonetics, so
-# any of them would function on Hebrew, but VoxCeleb is by far the most
-# speaker-diverse training set of the options offered, which is the property
-# that actually matters for telling two unfamiliar voices apart.
-_EMBEDDING_URL = (
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
-    "speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
-)
-_EMBEDDING_MODEL = os.path.join(MODELS_DIR, "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx")
+
+# Which embedding model is in play is config.DIARIZATION_EMBEDDING_MODEL, not
+# a constant here - see that name's comment in config/diarization.py for the
+# measurement behind the default and the results table of the alternatives.
+# Both functions read config at CALL time, not at import time, so that
+# tests/eval/compare_diarization.py's --embedding-model can monkeypatch
+# config.DIARIZATION_EMBEDDING_MODEL the same way it already does for
+# DIARIZATION_ENGINE and DIARIZATION_CLUSTER_THRESHOLD and have it actually
+# take effect.
+def _embedding_model_url() -> str:
+    return (
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+        f"speaker-recongition-models/{config.DIARIZATION_EMBEDDING_MODEL}"
+    )
+
+
+def _embedding_model_path() -> str:
+    return os.path.join(MODELS_DIR, config.DIARIZATION_EMBEDDING_MODEL)
 
 
 class DiarizationUnavailable(Exception):
@@ -71,7 +79,7 @@ class DiarizationUnavailable(Exception):
 
 
 def models_present() -> bool:
-    return os.path.exists(_SEGMENTATION_MODEL) and os.path.exists(_EMBEDDING_MODEL)
+    return os.path.exists(_SEGMENTATION_MODEL) and os.path.exists(_embedding_model_path())
 
 
 def ensure_models(progress: Callable[[int, int], None] | None = None) -> None:
@@ -86,8 +94,8 @@ def ensure_models(progress: Callable[[int, int], None] | None = None) -> None:
 
     os.makedirs(MODELS_DIR, exist_ok=True)
 
-    if not os.path.exists(_EMBEDDING_MODEL):
-        _download(_EMBEDDING_URL, _EMBEDDING_MODEL, progress)
+    if not os.path.exists(_embedding_model_path()):
+        _download(_embedding_model_url(), _embedding_model_path(), progress)
 
     if not os.path.exists(_SEGMENTATION_MODEL):
         archive = os.path.join(MODELS_DIR, "segmentation.tar.bz2")
@@ -199,7 +207,7 @@ def diarize(
             provider=config.DIARIZATION_PROVIDER,
         ),
         embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-            model=_EMBEDDING_MODEL,
+            model=_embedding_model_path(),
             num_threads=config.DIARIZATION_NUM_THREADS,
             provider=config.DIARIZATION_PROVIDER,
         ),
