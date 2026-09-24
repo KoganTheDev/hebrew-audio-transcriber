@@ -9,7 +9,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 import app as app_module
+import config
 from core.log_bidi import VisualOrderFormatter
 
 # Driven by TestBackgroundWorkStopsBeforeExit. Kept at module level rather than
@@ -397,3 +400,79 @@ class TestReexecIntoProjectVenv:
         app_module._reexec_into_project_venv()
 
         assert calls == []
+
+
+class TestStartupFailuresAreVisible:
+    """
+    The launchers now start the app with pythonw.exe, which has no console
+    (run.bat/run.ps1). Every failure BEFORE the Qt crash handler is installed
+    therefore has no stream anyone will ever read - it used to be a log line
+    and a bare sys.exit(1), i.e. a window that simply never appeared.
+
+    fatal() is the replacement, and these pin the two properties that make it
+    worth having: it tells the user something, and it still exits non-zero.
+    A native MessageBox rather than a Qt dialog because these failures include
+    "PyQt5 would not import".
+    """
+
+    def test_fatal_exits_non_zero(self, monkeypatch):
+        monkeypatch.setattr(app_module.sys, "platform", "linux")
+        with pytest.raises(SystemExit) as excinfo:
+            app_module.fatal("boom")
+        assert excinfo.value.code == 1
+
+    def test_fatal_shows_a_message_box_on_windows(self, monkeypatch):
+        """The whole point: a console-less launch still puts the reason on screen."""
+        shown = []
+
+        class FakeUser32:
+            @staticmethod
+            def MessageBoxW(handle, text, title, flags):
+                shown.append((text, title, flags))
+                return 1
+
+        class FakeWindll:
+            user32 = FakeUser32()
+
+        monkeypatch.setattr(app_module.sys, "platform", "win32")
+        monkeypatch.setitem(sys.modules, "ctypes", type("C", (), {"windll": FakeWindll()}))
+
+        with pytest.raises(SystemExit):
+            app_module.fatal("The interface could not be loaded.", "PyQt5: no module")
+
+        assert len(shown) == 1, "expected exactly one message box"
+        text, title, _flags = shown[0]
+        assert "The interface could not be loaded." in text
+        assert "PyQt5: no module" in text, "the detail has to survive - it names the cause"
+        # Without the log path the dialog is a dead end: the traceback that
+        # actually identifies the failure only exists in the file.
+        assert "speech_to_text" in text.lower() or ".log" in text.lower()
+        assert title == config.APP_NAME
+
+    def test_fatal_still_exits_when_the_message_box_itself_fails(self, monkeypatch):
+        """
+        The reporting path must not be able to turn a startup failure into a
+        hang or a traceback of its own - the exit code is what the launcher
+        and any packaging harness see.
+        """
+
+        class Exploding:
+            @property
+            def user32(self):
+                raise OSError("no user32 here")
+
+        monkeypatch.setattr(app_module.sys, "platform", "win32")
+        monkeypatch.setitem(sys.modules, "ctypes", type("C", (), {"windll": Exploding()}))
+
+        with pytest.raises(SystemExit) as excinfo:
+            app_module.fatal("boom")
+        assert excinfo.value.code == 1
+
+    def test_say_survives_a_console_less_launch(self, monkeypatch):
+        """
+        Under pythonw sys.stdout is None, so a bare print() raises
+        AttributeError - inside _reexec_into_project_venv(), which runs before
+        logging exists and would take the whole launch down with it.
+        """
+        monkeypatch.setattr(app_module.sys, "stdout", None)
+        app_module._say("this must not raise")

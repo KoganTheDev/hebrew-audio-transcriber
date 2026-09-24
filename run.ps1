@@ -255,39 +255,48 @@ To set it up, from this folder run:
         Invoke-Setup
     }
 
-    $exe = $venvPython
+    # pythonw.exe, not python.exe: pythonw is the GUI-subsystem interpreter,
+    # so Windows attaches no console and the end user never sees a black
+    # window they cannot interpret. Falls back to python.exe if a venv somehow
+    # lacks it - a visible console beats not starting at all.
+    #
+    # Startup failures stay visible without it: app.py's fatal() raises a
+    # native message box for anything that goes wrong before Qt exists, and
+    # gui/crash_handler.py covers everything after. Nothing is allowed to fail
+    # silently just because nobody is watching a console.
+    $venvPythonw = Join-Path (Split-Path $venvPython -Parent) 'pythonw.exe'
+    $exe = if (Test-Path $venvPythonw) { $venvPythonw } else { $venvPython }
     $exeArgs = @()
 
     Write-Host "Using: $exe $($exeArgs -join ' ') $entryPoint" -ForegroundColor DarkGray
 
-    # The console's output code page defaults to the system's legacy one
-    # (often 862/1255 on a Hebrew locale, 437/1252 elsewhere), not UTF-8 -
-    # the app's DEBUG log prints Hebrew segment text straight to this
-    # console, and on a non-UTF-8 page that renders as mojibake or "?".
-    # Setting [Console]::OutputEncoding is PowerShell's equivalent of
-    # run.bat's "chcp 65001": on Windows it calls SetConsoleOutputCP under
-    # the hood, so it changes the same thing chcp changes, without shelling
-    # out to chcp.com or its "Active code page: ..." echo. Restored in
-    # finally so the launcher doesn't leave the user's console in a
-    # different state than it found it.
+    # The [Console]::OutputEncoding dance that used to sit here is gone with
+    # the console it existed for: it forced UTF-8 so the app's Hebrew DEBUG
+    # lines did not render as mojibake on a legacy code page. Nothing prints
+    # to a console any more, and the log file was always written in UTF-8
+    # independently of it.
+    #
     # app.py puts src/ on sys.path itself; this covers what it SPAWNS - the
     # worker process inherits the environment, not an in-process edit.
     # $root, not $PSScriptRoot: the latter is empty in some double-click
     # hosts, and Join-Path then throws.
     $env:PYTHONPATH = Join-Path $root 'src'
 
-    $prevOutputEncoding = [Console]::OutputEncoding
-    try {
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        & $exe @exeArgs $entryPoint
-    }
-    finally {
-        [Console]::OutputEncoding = $prevOutputEncoding
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        Fail "The app exited with code $LASTEXITCODE - scroll up or check speech_to_text.log for details."
-    }
+    # Start-Process without -Wait, not the call operator: "& $exe ..." blocks
+    # until the app exits, which would hold this console open for the whole
+    # session - exactly the window this change exists to get rid of. Handing
+    # off and returning lets the launcher close as soon as the app is up.
+    #
+    # The cost is that $LASTEXITCODE can no longer be checked here, and that
+    # check is deliberately not replaced: it could only ever be READ by
+    # someone watching a console, and there is no longer one to watch. app.py's
+    # fatal() shows startup failures in a native message box and
+    # gui/crash_handler.py shows later ones, both of which reach the user
+    # whether or not a launcher is still running.
+    $startArgs = @()
+    $startArgs += $exeArgs
+    $startArgs += $entryPoint
+    Start-Process -FilePath $exe -ArgumentList $startArgs -WorkingDirectory $root
 }
 catch {
     Fail $_.Exception.Message

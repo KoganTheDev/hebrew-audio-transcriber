@@ -197,15 +197,20 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
     exit /b 0
 )
 
-"%~dp0.venv\Scripts\python.exe" "%~dp0src\app.py"
-set "_exitcode=%errorlevel%"
+REM pythonw.exe, not python.exe: pythonw is the GUI-subsystem interpreter, so
+REM Windows attaches no console to it and the end user never sees a black
+REM window they cannot interpret. python.exe would keep this console open for
+REM the app's whole lifetime.
+REM
+REM "start" so this script does not wait on it, letting the console close
+REM immediately instead of lingering behind the app window. The empty ""
+REM is start's title argument - without it, start treats the quoted path AS
+REM the title and fails to launch anything.
+REM
+REM The cost of a console-less launch is that a failure before the GUI exists
+REM would be completely invisible, so app.py's fatal() shows those in a native
+REM message box and the crash handler (gui/crash_handler.py) covers everything
+REM after Qt is up. Nothing here is allowed to fail silently just because
+REM nobody is watching a console.
 if defined _prev_codepage chcp %_prev_codepage% >nul
-REM Hold the window open only when something actually failed - a normal
-REM close of the app (exit code 0) should let the console go away too.
-REM Checked via %_exitcode%, captured above, rather than %errorlevel% -
-REM the chcp restore on the previous line would otherwise overwrite it.
-if not "%_exitcode%"=="0" (
-    echo.
-    echo The app exited with an error - see the messages above or speech_to_text.log
-    pause
-)
+start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0src\app.py"

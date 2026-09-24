@@ -20,6 +20,62 @@ from core.log_bidi import VisualOrderFormatter
 _REEXEC_MARKER = "SPEECH_TO_TEXT_REEXEC"
 
 
+def _say(message: str) -> None:
+    """Print, but survive a console-less launch.
+
+    Under pythonw.exe there is no console and sys.stdout is None, so a bare
+    print() raises AttributeError and takes down a path whose whole job was
+    to report something. The log file is the durable record either way; this
+    is only for the case where someone IS watching a console.
+    """
+    if sys.stdout is None:
+        return
+    try:
+        print(message, flush=True)
+    except (AttributeError, OSError):
+        pass
+
+
+def fatal(message: str, detail: str = "") -> None:
+    """Log a startup failure, show it, and exit non-zero.
+
+    The launcher now starts the app with pythonw.exe so no console window is
+    ever shown (see run.bat) - which means every pre-GUI failure below used
+    to be COMPLETELY invisible: logged to a file nobody knew to open, then a
+    bare sys.exit(1) and a window that never appeared. "It just doesn't
+    start" is the least actionable bug report there is.
+
+    A native MessageBox rather than a Qt dialog on purpose: every one of
+    these failures can happen BEFORE PyQt5 is importable - a missing
+    dependency, a broken venv, the PyQt5 import itself failing - so the
+    reporting path cannot be allowed to depend on the thing that failed.
+    ctypes reaches user32 with no imports of our own at all.
+
+    Falls back to stderr off Windows, or if the MessageBox call itself
+    fails; the log line above it has already been written either way.
+    """
+    logger.critical(message + (f"\n\n{detail}" if detail else ""))
+    body = message if not detail else f"{message}\n\n{detail}"
+    body += f"\n\nFull details: {config.resolve_log_path()}"
+    shown = False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            # MB_ICONERROR | MB_SETFOREGROUND, so it is not lost behind
+            # whatever the user was looking at when they double-clicked.
+            ctypes.windll.user32.MessageBoxW(None, body, config.APP_NAME, 0x10 | 0x10000)
+            shown = True
+        except Exception:
+            logger.debug("Could not show the startup error dialog", exc_info=True)
+    if not shown and sys.stderr is not None:
+        try:
+            print(body, file=sys.stderr, flush=True)
+        except (AttributeError, OSError):
+            pass
+    sys.exit(1)
+
+
 def _reexec_into_project_venv() -> None:
     """Restart on the project's .venv if started on some other interpreter.
 
@@ -48,7 +104,7 @@ def _reexec_into_project_venv() -> None:
         return
 
     os.environ[_REEXEC_MARKER] = "1"
-    print(f"Switching to the project's Python: {venv_python}", flush=True)
+    _say(f"Switching to the project's Python: {venv_python}")
     try:
         # subprocess and exit, not os.execv: Windows has no real exec, so
         # execv returns control to the console immediately, detaching the app
@@ -61,7 +117,7 @@ def _reexec_into_project_venv() -> None:
         # Carry on: the dependency check still gives a better message than a
         # bare spawn traceback.
         del os.environ[_REEXEC_MARKER]
-        print(f"Could not switch interpreters ({exc}); continuing on this one.", flush=True)
+        _say(f"Could not switch interpreters ({exc}); continuing on this one.")
         return
     sys.exit(completed.returncode)
 
@@ -161,8 +217,11 @@ def main() -> None:
     logger.info("Checking dependencies...")
     logger.debug(f"Required packages: {config.REQUIRED_PACKAGES}")
     if not ensure_dependencies(config.REQUIRED_PACKAGES):
-        logger.critical("Failed to install required dependencies. Exiting.")
-        sys.exit(1)
+        fatal(
+            "Some required components could not be installed.",
+            "Check your internet connection and run the launcher again. If it keeps "
+            "failing, the log names the package that could not be installed.",
+        )
 
     logger.info("✓ All dependencies available")
 
@@ -177,8 +236,7 @@ def main() -> None:
 
         logger.debug("faster_whisper imported (establishes DLL load order before PyQt5)")
     except ImportError as e:
-        logger.error(f"Failed to import faster_whisper: {e}", exc_info=True)
-        sys.exit(1)
+        fatal("The transcription engine could not be loaded.", f"faster-whisper: {e}")
 
     logger.info("Initializing GUI...")
 
@@ -194,8 +252,7 @@ def main() -> None:
 
         logger.debug("PyQt5 imports successful")
     except ImportError as e:
-        logger.error(f"Failed to import PyQt5: {e}", exc_info=True)
-        sys.exit(1)
+        fatal("The application's interface could not be loaded.", f"PyQt5: {e}")
 
     try:
         # On Windows, the taskbar groups/icons processes by AppUserModelID
@@ -270,18 +327,17 @@ def main() -> None:
     except OSError as e:
         logger.error(f"OSError during application startup: {e}", exc_info=True)
         if "DLL" in str(e) or "dynamic link library" in str(e):
-            logger.critical(
-                "Native DLL loading failed - missing or conflicting C++ runtime "
-                "dependencies.\n"
-                "This usually means a required Visual C++ runtime DLL is missing, "
-                "or a different copy bundled by PyQt5/faster-whisper conflicts with it.\n"
-                "Possible solutions:\n"
-                "  1. Install/repair the Microsoft Visual C++ Redistributable (x64):\n"
-                "     https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
-                "  2. Or reinstall PyQt5 and faster-whisper:\n"
-                "     pip install --upgrade --force-reinstall PyQt5 faster-whisper"
+            fatal(
+                "A Windows component the app depends on is missing.",
+                "This usually means the Microsoft Visual C++ Redistributable (x64) is "
+                "not installed, or a copy bundled by PyQt5/faster-whisper conflicts "
+                "with it.\n\n"
+                "Install or repair it from:\n"
+                "https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
+                "If it is already installed, reinstalling the two packages usually "
+                "clears the conflict:\n"
+                "pip install --upgrade --force-reinstall PyQt5 faster-whisper",
             )
-            sys.exit(1)
         else:
             logger.error(f"Unexpected OSError: {e}", exc_info=True)
             raise
