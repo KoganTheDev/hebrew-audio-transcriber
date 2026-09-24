@@ -257,7 +257,7 @@ def _cluster(sherpa_onnx: Any, embeddings: list[np.ndarray], num_speakers: int) 
     clustering = sherpa_onnx.FastClustering(
         sherpa_onnx.FastClusteringConfig(
             num_clusters=num_speakers if num_speakers and num_speakers > 0 else -1,
-            threshold=0.5,
+            threshold=config.DIARIZATION_CLUSTER_THRESHOLD,
         )
     )
     return list(clustering(matrix))

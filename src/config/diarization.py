@@ -62,6 +62,19 @@ DIARIZATION_MIN_DURATION_OFF = 0.5
 # and the pairing to avoid is squeezing ctranslate2 down to 2.
 DIARIZATION_NUM_THREADS = min(4, os.cpu_count() or 1)
 
+# Cosine-distance threshold FastClustering merges two embeddings at, when
+# num_clusters is not pinned to an exact count. Embeddings are vectors in the
+# campplus model's speaker-embedding space; two windows cluster into one
+# speaker when their cosine distance is below this number. NOT YET SWEPT - it
+# is only a named constant so a future measurement pass can vary it, not
+# because 0.5 has been checked against alternatives. It is suspect for the
+# same reason num_clusters=4 was: on AMI ES2004a (see DIARIZATION_ENGINE
+# below), asking for 4 speakers by count still returned 3 - the clusterer
+# merged two real people even with the count pinned, which is exactly the
+# failure this threshold controls when the count is NOT pinned, and there is
+# no measurement yet showing it is not also merging people in the pinned case.
+DIARIZATION_CLUSTER_THRESHOLD = 0.5
+
 # onnxruntime execution provider. "cpu" is stated rather than left implicit
 # because the installed onnxruntime here reports only Azure and CPU providers
 # - there is no CUDA provider to fall back from, and naming it keeps a future

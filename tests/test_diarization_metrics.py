@@ -11,6 +11,8 @@ from tests.eval.diarization_metrics import (
     DERResult,
     compute_der,
     read_rttm,
+    speaker_count_error,
+    speaker_recall,
 )
 
 
@@ -152,3 +154,74 @@ class TestComputeDer:
         assert "missed=1.00s" in text
         assert "false_alarm=2.00s" in text
         assert "confusion=3.00s" in text
+
+
+class TestSpeakerRecall:
+    def test_one_of_two_speakers_never_found_but_der_looks_unremarkable(self):
+        """
+        The case this whole stage exists for: a hypothesis that covers
+        speaker A perfectly but never mentions speaker B at all. DER, being
+        time-weighted over the whole file, reports this as "half the speech
+        is missed" - a mediocre number, not an alarming one - because B's
+        lost speech is indistinguishable in the DER formula from any other
+        missed_speech. speaker_recall must show it as 1 of 2 speakers found,
+        with B's own coverage at 0.0.
+        """
+        reference = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+        hypothesis = [(0.0, 5.0, "spk0")]
+
+        der = compute_der(reference, hypothesis)
+        assert 0.4 < der.der < 0.6  # unremarkable-looking DER
+
+        result = speaker_recall(reference, hypothesis)
+        assert result.found_count == 1
+        assert result.total_count == 2
+        assert result.per_speaker["A"] == 1.0
+        assert result.per_speaker["B"] == 0.0
+
+    def test_perfect_coverage_finds_every_speaker(self):
+        reference = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+        hypothesis = [(0.0, 5.0, "spk0"), (5.0, 10.0, "spk1")]
+        result = speaker_recall(reference, hypothesis)
+        assert result.found_count == 2
+        assert result.total_count == 2
+        assert result.per_speaker["A"] == 1.0
+        assert result.per_speaker["B"] == 1.0
+
+    def test_zero_coverage_speaker_is_not_found(self):
+        reference = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+        hypothesis = [(20.0, 25.0, "spk0")]  # entirely outside both speakers
+        result = speaker_recall(reference, hypothesis)
+        assert result.found_count == 0
+        assert result.per_speaker["A"] == 0.0
+        assert result.per_speaker["B"] == 0.0
+
+    def test_partial_coverage_is_a_fraction_not_a_boolean(self):
+        reference = [(0.0, 10.0, "A")]
+        hypothesis = [(0.0, 3.0, "spk0")]  # covers 3 of A's 10 seconds
+        result = speaker_recall(reference, hypothesis)
+        assert result.per_speaker["A"] == 0.3
+        assert result.found_count == 1  # 0.3 is well above the "found" floor
+
+
+class TestSpeakerCountError:
+    def test_matching_counts_is_zero_error(self):
+        reference = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+        hypothesis = [(0.0, 5.0, "spk0"), (5.0, 10.0, "spk1")]
+        result = speaker_count_error(reference, hypothesis)
+        assert result.error == 0
+
+    def test_under_clustering_two_people_collapsed_into_one_is_negative(self):
+        """Two reference speakers, one hypothesis label - the "second speaker
+        isn't recognised at all" failure mode reported at
+        src/config/diarization.py's AMI finding."""
+        reference = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+        hypothesis = [(0.0, 10.0, "spk0")]
+        result = speaker_count_error(reference, hypothesis)
+        assert result.error == -1
+
+    def test_over_clustering_one_person_split_into_several_is_positive(self):
+        reference = [(0.0, 10.0, "A")]
+        hypothesis = [(0.0, 5.0, "spk0"), (5.0, 10.0, "spk1")]
+        result = speaker_count_error(reference, hypothesis)
+        assert result.error == 1

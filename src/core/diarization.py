@@ -207,7 +207,7 @@ def diarize(
             # num_clusters wins when set; threshold is only consulted when the
             # count is unknown (-1).
             num_clusters=num_speakers if num_speakers and num_speakers > 0 else -1,
-            threshold=0.5,
+            threshold=config.DIARIZATION_CLUSTER_THRESHOLD,
         ),
         # Equal to sherpa-onnx's own defaults, but stated explicitly - see
         # config.py.

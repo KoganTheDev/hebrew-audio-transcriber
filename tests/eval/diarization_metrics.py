@@ -252,6 +252,145 @@ def _brute_force_mapping(
     return best_mapping
 
 
+def _overlap_with_label(
+    turn_start: float, turn_end: float, hyp_label: str, hypothesis: list[Turn]
+) -> float:
+    """Total duration of ONE hypothesis speaker's turns that overlaps
+    [turn_start, turn_end), merging that speaker's own overlapping turns so
+    double-covered time is not counted twice."""
+    intervals = sorted(
+        (max(turn_start, s), min(turn_end, e))
+        for s, e, spk in hypothesis
+        if spk == hyp_label and e > turn_start and s < turn_end
+    )
+    merged: list[list[float]] = []
+    for start, end in intervals:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return sum(end - start for start, end in merged)
+
+
+# Below this fraction of a reference speaker's total speech time being
+# covered by their mapped hypothesis speaker, that speaker counts as "not
+# found" rather than "found but under-covered" - a sliver of accidental
+# overlap from a neighbouring speaker's boundary rounding should not count
+# as detection.
+_SPEAKER_FOUND_THRESHOLD = 0.05
+
+
+@dataclass
+class SpeakerRecallResult:
+    """
+    Per-reference-speaker coverage under the SAME optimal one-to-one
+    reference-to-hypothesis mapping compute_der uses (see
+    _confusion_matrix/_optimal_mapping): for each real speaker, what fraction
+    of their speech is covered by the hypothesis speaker THEY were mapped to.
+
+    Raw "covered by any hypothesis turn at all" was tried first and rejected:
+    it cannot tell "found" from "merged into someone else's cluster", because
+    a merged cluster's spans still physically sit on top of the swallowed
+    speaker's speech in time - only the speaker LABEL is wrong, and a
+    label-blind overlap check does not notice. Routing through the same
+    one-to-one mapping DER already computes does notice: when the hypothesis
+    has fewer distinct speakers than the reference (exactly AMI ES2004a's
+    sherpa failure - asking for 3, sherpa returns 2 clusters), the mapping
+    can assign each hypothesis speaker to at most one reference speaker, so
+    whichever reference speaker loses that competition is correctly left
+    unmapped and scores zero here - which is what "found 2 of 3 speakers"
+    actually means.
+
+    DER is time-weighted, so a hypothesis that never finds a reference
+    speaker at all still posts a merely-bad DER rather than an alarming one:
+    the lost speaker's speech becomes ordinary missed_speech (or confusion,
+    if merged), indistinguishable from "the boundary was 200ms off" by
+    looking at DER alone. speaker_recall makes "found N of M speakers" -
+    previously a fact a human read off a printout - a number, and keeps the
+    per-speaker detail rather than collapsing straight to a count, because
+    knowing WHICH speaker was lost (not just how many) is what makes the
+    finding actionable.
+    """
+
+    per_speaker: dict[str, float]  # reference speaker -> fraction covered by its mapped speaker
+    found_count: int  # reference speakers with coverage above _SPEAKER_FOUND_THRESHOLD
+    total_count: int  # total distinct reference speakers
+
+    def __str__(self) -> str:
+        detail = ", ".join(f"{spk}={frac:.2f}" for spk, frac in sorted(self.per_speaker.items()))
+        return f"speaker_recall={self.found_count}/{self.total_count} ({detail})"
+
+
+def speaker_recall(
+    reference: list[Turn],
+    hypothesis: list[Turn],
+    max_brute_force_speakers: int = _MAX_BRUTE_FORCE_SPEAKERS,
+) -> SpeakerRecallResult:
+    """For each reference speaker, the fraction of their total speech time
+    covered by the hypothesis speaker the optimal mapping assigns them to -
+    zero if the mapping leaves them unassigned. See SpeakerRecallResult for
+    why this, not raw time-overlap, is the number that catches "the second
+    speaker isn't recognised at all" (whether missed outright or merged into
+    another speaker's label) before it reaches a user.
+    """
+    speakers = sorted({speaker for _, _, speaker in reference})
+    ref_speakers, hyp_speakers, matrix = _confusion_matrix(reference, hypothesis)
+    mapping = _optimal_mapping(ref_speakers, hyp_speakers, matrix, max_brute_force_speakers)
+
+    per_speaker: dict[str, float] = {}
+    for speaker in speakers:
+        turns = [(s, e) for s, e, spk in reference if spk == speaker]
+        total = sum(e - s for s, e in turns)
+        if total <= 0:
+            per_speaker[speaker] = 0.0
+            continue
+        hyp_label = mapping.get(speaker)
+        if hyp_label is None:
+            per_speaker[speaker] = 0.0
+            continue
+        covered = sum(_overlap_with_label(s, e, hyp_label, hypothesis) for s, e in turns)
+        # Clamp: a reference speaker's own turns can themselves overlap (see
+        # the module docstring's note on simultaneous speech), which could
+        # otherwise push a naive sum above 1.0.
+        per_speaker[speaker] = min(1.0, covered / total)
+
+    found_count = sum(1 for frac in per_speaker.values() if frac > _SPEAKER_FOUND_THRESHOLD)
+    return SpeakerRecallResult(
+        per_speaker=per_speaker, found_count=found_count, total_count=len(speakers)
+    )
+
+
+@dataclass
+class SpeakerCountResult:
+    """
+    Signed difference between distinct hypothesis and reference speaker
+    counts. Positive means the hypothesis invented extra speakers
+    (over-clustering/fragmentation); negative means it collapsed real people
+    together (under-clustering/merging). DER's confusion component cannot
+    tell these apart - both look like "wrong speaker at this instant" - but
+    they call for opposite fixes: a higher cluster threshold for the former,
+    a lower one (or a correct num_clusters) for the latter.
+    """
+
+    hyp_speakers: int
+    ref_speakers: int
+
+    @property
+    def error(self) -> int:
+        return self.hyp_speakers - self.ref_speakers
+
+    def __str__(self) -> str:
+        sign = "+" if self.error > 0 else ""
+        return f"speaker_count_error={sign}{self.error} (hyp={self.hyp_speakers}, ref={self.ref_speakers})"
+
+
+def speaker_count_error(reference: list[Turn], hypothesis: list[Turn]) -> SpeakerCountResult:
+    """Distinct hypothesis labels minus distinct reference speakers, signed."""
+    ref_speakers = len({speaker for _, _, speaker in reference})
+    hyp_speakers = len({speaker for _, _, speaker in hypothesis})
+    return SpeakerCountResult(hyp_speakers=hyp_speakers, ref_speakers=ref_speakers)
+
+
 def _greedy_mapping(
     ref_speakers: list[str], hyp_speakers: list[str], matrix: dict[tuple[str, str], float]
 ) -> dict[str, str]:

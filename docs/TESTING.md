@@ -104,6 +104,10 @@ shipping a change to `core/assets/`.
 
       python -m tests.eval.compare_models path/to/audio.m4a --models medium ivrit-turbo
 
+  `compare_diarization.py` also takes `--engine sherpa|powerset|both`,
+  `--num-speakers 0` (infer the count), and `--cluster-threshold` (repeatable
+  or comma-separated) to sweep DIARIZATION_CLUSTER_THRESHOLD.
+
   This writes both transcripts side by side for reading, plus speed and
   confidence metrics. Without a reference transcript there is no accuracy
   percentage to report: confidence figures correlate with quality but do not

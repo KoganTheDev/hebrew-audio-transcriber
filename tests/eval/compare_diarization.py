@@ -92,6 +92,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import json
 import logging
 import os
@@ -118,6 +119,22 @@ DEFAULT_NUM_SPEAKERS = 4
 # config.py changes.
 DEFAULT_E2E_MODEL = "medium"
 DEFAULT_E2E_LANGUAGE = "en"
+
+
+def _parse_cluster_thresholds(raw: list[str] | None) -> list[float | None]:
+    """--cluster-threshold values (repeated flag and/or comma-separated) into
+    a flat list of floats, or [None] (meaning "leave config.py's value
+    alone") when the flag was never given - a sweep is then one invocation
+    instead of one hand-edit of config.py per value."""
+    if not raw:
+        return [None]
+    values: list[float | None] = []
+    for item in raw:
+        for piece in item.split(","):
+            piece = piece.strip()
+            if piece:
+                values.append(float(piece))
+    return values or [None]
 
 
 def _spans_to_turns(spans) -> list[tuple[float, float, str]]:
@@ -217,6 +234,54 @@ def _assign_speakers_before_e2e(segments, spans) -> list[tuple[float, float, str
     return turns
 
 
+@contextlib.contextmanager
+def _engine_override(engine: str, cluster_threshold: float | None):
+    """Temporarily point config.DIARIZATION_ENGINE and, if given,
+    config.DIARIZATION_CLUSTER_THRESHOLD at the values under test, restoring
+    both afterwards. Same monkeypatch-the-module-global approach as
+    run_e2e_mode's VAD_FILTER override, extended to two knobs so --engine
+    and --cluster-threshold can each be swept without hand-editing config.py -
+    which is the whole reason those two flags exist (see module docstring).
+    """
+    import config as app_config
+
+    previous_engine = app_config.DIARIZATION_ENGINE
+    previous_threshold = app_config.DIARIZATION_CLUSTER_THRESHOLD
+    app_config.DIARIZATION_ENGINE = engine
+    if cluster_threshold is not None:
+        app_config.DIARIZATION_CLUSTER_THRESHOLD = cluster_threshold
+    try:
+        yield
+    finally:
+        app_config.DIARIZATION_ENGINE = previous_engine
+        app_config.DIARIZATION_CLUSTER_THRESHOLD = previous_threshold
+
+
+def _report_recall_and_count(reference, hypothesis) -> dict:
+    """speaker_recall + speaker_count_error alongside DER for one hypothesis.
+
+    See tests/eval/diarization_metrics.py's SpeakerRecallResult docstring for
+    why these travel with every run now: DER alone cannot distinguish "found
+    everyone, mixed a few words up" from "never found the second speaker at
+    all" - the second is this app's actual complaint, and DER posts a merely
+    mediocre number for it rather than an alarming one.
+    """
+    from tests.eval.diarization_metrics import speaker_count_error, speaker_recall
+
+    recall_result = speaker_recall(reference, hypothesis)
+    count_result = speaker_count_error(reference, hypothesis)
+    print(f"  {recall_result}", flush=True)
+    print(f"  {count_result}", flush=True)
+    return {
+        "speaker_recall_found": recall_result.found_count,
+        "speaker_recall_total": recall_result.total_count,
+        "speaker_recall_per_speaker": {
+            spk: round(frac, 4) for spk, frac in recall_result.per_speaker.items()
+        },
+        "speaker_count_error": count_result.error,
+    }
+
+
 def _report_der(label: str, result, prefix: str = "  ") -> dict:
     print(f"{prefix}{label}: {result}", flush=True)
     return {
@@ -229,8 +294,22 @@ def _report_der(label: str, result, prefix: str = "  ") -> dict:
     }
 
 
-def run_span_mode(samples, sample_rate: int, num_speakers: int, reference) -> dict:
-    """Score sherpa-onnx's raw spans against the reference - see the module docstring."""
+def run_span_mode(
+    samples,
+    sample_rate: int,
+    num_speakers: int,
+    reference,
+    engines: list[str],
+    cluster_thresholds: list[float | None],
+) -> dict:
+    """
+    Score sherpa-onnx's raw spans against the reference - see the module
+    docstring. "before" stays a fixed, sherpa-only regression check (it
+    reproduces the pre-min_duration-constants call, not an engine choice);
+    the headline is now the --engine x --cluster-threshold sweep below,
+    reported with speaker_recall and speaker_count_error alongside DER.
+    """
+    import config as app_config
     from core import diarization
     from tests.eval.diarization_metrics import compute_der
 
@@ -244,26 +323,40 @@ def run_span_mode(samples, sample_rate: int, num_speakers: int, reference) -> di
     before_report["spans"] = len(before_spans)
     before_report["diarize_seconds"] = round(before_elapsed, 1)
 
-    print(
-        "\n=== span-level: after (config.DIARIZATION_MIN_DURATION_ON/OFF, explicit) ===", flush=True
-    )
-    start = time.time()
-    after_spans = diarization.diarize(samples, sample_rate=sample_rate, num_speakers=num_speakers)
-    after_elapsed = time.time() - start
-    print(f"  {len(after_spans)} span(s) in {after_elapsed:.1f}s", flush=True)
-    after_result = compute_der(reference, _spans_to_turns(after_spans))
-    after_report = _report_der("after", after_result)
-    after_report["spans"] = len(after_spans)
-    after_report["diarize_seconds"] = round(after_elapsed, 1)
+    runs = []
+    for engine in engines:
+        for threshold in cluster_thresholds:
+            threshold_label = "default" if threshold is None else threshold
+            label = f"after (engine={engine}, cluster_threshold={threshold_label})"
+            print(f"\n=== span-level: {label} ===", flush=True)
+            start = time.time()
+            with _engine_override(engine, threshold):
+                spans = diarization.diarize(
+                    samples, sample_rate=sample_rate, num_speakers=num_speakers
+                )
+                effective_threshold = app_config.DIARIZATION_CLUSTER_THRESHOLD
+            elapsed = time.time() - start
+            print(f"  {len(spans)} span(s) in {elapsed:.1f}s", flush=True)
 
-    before_der, after_der = before_report["der"], after_report["der"]
-    print(f"\nspan-level DER before: {before_der}")
-    print(f"span-level DER after:  {after_der}")
-    if before_der == after_der:
-        print("Identical, as expected - config.py's values were deliberately kept equal to")
-        print("sherpa-onnx's own defaults, so this change alone is behaviour-neutral.")
+            hypothesis = _spans_to_turns(spans)
+            result = compute_der(reference, hypothesis)
+            report = _report_der(label, result)
+            report.update(_report_recall_and_count(reference, hypothesis))
+            report["engine"] = engine
+            report["cluster_threshold"] = effective_threshold
+            report["spans"] = len(spans)
+            report["diarize_seconds"] = round(elapsed, 1)
+            runs.append(report)
 
-    return {"mode": "span", "before": before_report, "after": after_report}
+    print(f"\nspan-level DER before: {before_report['der']}")
+    for report in runs:
+        print(
+            f"span-level DER {report['engine']} threshold={report['cluster_threshold']}: "
+            f"{report['der']}  speaker_recall={report['speaker_recall_found']}/"
+            f"{report['speaker_recall_total']}  speaker_count_error={report['speaker_count_error']}"
+        )
+
+    return {"mode": "span", "before": before_report, "runs": runs}
 
 
 def run_e2e_mode(
@@ -274,12 +367,19 @@ def run_e2e_mode(
     model: str,
     language: str,
     reference,
+    engines: list[str],
+    cluster_thresholds: list[float | None],
     no_vad: bool = False,
 ) -> dict:
     """
     Score labelled transcript segments - what a user actually sees - against
     the reference. See the module docstring's "Two modes" section for why
     this is the only mode that can show the word-boundary splitting change.
+
+    Transcription runs once (it does not depend on the diarization engine);
+    diarization then runs once per --engine x --cluster-threshold combination,
+    each producing its own "before" (old whole-segment majority vote) and
+    "after" (word-boundary splitting, headline) hypothesis.
     """
     # transcriber.transcribe() reads config.VAD_FILTER at call time, so a
     # module-level override here reaches it without threading a new argument
@@ -316,38 +416,66 @@ def run_e2e_mode(
         raise RuntimeError("Transcription failed")
     print(f"  {len(segments)} transcribed segment(s) in {transcribe_elapsed:.1f}s", flush=True)
 
-    print("\n=== end-to-end: diarizing (spans shared by both hypotheses) ===", flush=True)
-    diarize_start = time.time()
-    spans = diarization.diarize(samples, sample_rate=sample_rate, num_speakers=num_speakers)
-    print(f"  {len(spans)} span(s) in {time.time() - diarize_start:.1f}s", flush=True)
+    runs = []
+    for engine in engines:
+        for threshold in cluster_thresholds:
+            threshold_label = "default" if threshold is None else threshold
+            print(
+                f"\n=== end-to-end: diarizing (engine={engine}, "
+                f"cluster_threshold={threshold_label}) ===",
+                flush=True,
+            )
+            diarize_start = time.time()
+            with _engine_override(engine, threshold):
+                spans = diarization.diarize(
+                    samples, sample_rate=sample_rate, num_speakers=num_speakers
+                )
+                effective_threshold = app_config.DIARIZATION_CLUSTER_THRESHOLD
+            print(f"  {len(spans)} span(s) in {time.time() - diarize_start:.1f}s", flush=True)
 
-    # Both hypotheses read segment.words/.start/.end only, never mutate them,
-    # so the same `segments` list can feed both without cross-contamination.
-    # (assign_speakers below DOES set .speaker on unsplit segments in place,
-    # but that happens after _assign_speakers_before_e2e has already copied
-    # out everything it needs into plain tuples.)
-    print("\n=== end-to-end: before (old whole-segment majority vote) ===", flush=True)
-    before_turns = _assign_speakers_before_e2e(segments, spans)
-    before_result = compute_der(reference, before_turns)
-    before_report = _report_der("before", before_result)
-    before_report["segments"] = len(segments)
+            # Both hypotheses read segment.words/.start/.end only, never
+            # mutate them, so the same `segments` list can feed both without
+            # cross-contamination. (assign_speakers below DOES set .speaker
+            # on unsplit segments in place, but that happens after
+            # _assign_speakers_before_e2e has already copied out everything
+            # it needs into plain tuples.)
+            print("  before (old whole-segment majority vote):", flush=True)
+            before_turns = _assign_speakers_before_e2e(segments, spans)
+            before_result = compute_der(reference, before_turns)
+            before_report = _report_der("before", before_result, prefix="    ")
+            before_report["segments"] = len(segments)
 
-    print("\n=== end-to-end: after (word-boundary splitting) ===", flush=True)
-    after_segments = diarization.assign_speakers(segments, spans)
-    after_result = compute_der(reference, _segments_to_turns(after_segments))
-    after_report = _report_der("after", after_result)
-    after_report["segments"] = len(after_segments)
+            print("  after (word-boundary splitting, headline):", flush=True)
+            after_segments = diarization.assign_speakers(segments, spans)
+            hypothesis = _segments_to_turns(after_segments)
+            after_result = compute_der(reference, hypothesis)
+            after_report = _report_der("after", after_result, prefix="    ")
+            after_report.update(_report_recall_and_count(reference, hypothesis))
+            after_report["segments"] = len(after_segments)
 
-    before_der, after_der = before_report["der"], after_report["der"]
-    print(f"\nend-to-end DER before: {before_der}  ({before_report['segments']} segments)")
-    print(f"end-to-end DER after:  {after_der}  ({after_report['segments']} segments)")
+            runs.append(
+                {
+                    "engine": engine,
+                    "cluster_threshold": effective_threshold,
+                    "before": before_report,
+                    "after": after_report,
+                }
+            )
+
+    for run in runs:
+        print(
+            f"\nend-to-end DER (engine={run['engine']}, "
+            f"cluster_threshold={run['cluster_threshold']}) "
+            f"before: {run['before']['der']}  after: {run['after']['der']}  "
+            f"speaker_recall={run['after']['speaker_recall_found']}/"
+            f"{run['after']['speaker_recall_total']}"
+        )
 
     return {
         "mode": "e2e",
         "model": model,
         "language": language,
-        "before": before_report,
-        "after": after_report,
+        "runs": runs,
     }
 
 
@@ -371,7 +499,8 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         "--num-speakers",
         type=int,
         default=DEFAULT_NUM_SPEAKERS,
-        help=f"Known speaker count, or -1 to infer (default: {DEFAULT_NUM_SPEAKERS})",
+        help="Known speaker count, or 0 (or -1) to infer it - the same "
+        f"num_clusters=-1 the diarize() docstring describes (default: {DEFAULT_NUM_SPEAKERS})",
     )
     parser.add_argument(
         "--mode",
@@ -380,6 +509,22 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         help="span: sherpa-onnx spans only (fast, default). "
         "e2e: labelled transcript segments (slow - runs real transcription). "
         "both: run both.",
+    )
+    parser.add_argument(
+        "--engine",
+        choices=["sherpa", "powerset", "both"],
+        default="sherpa",
+        help="Which config.DIARIZATION_ENGINE to diarize with (default: sherpa). "
+        "'both' runs the sweep under each engine, monkeypatching config.DIARIZATION_ENGINE "
+        "around each run rather than requiring a hand-edit of config.py.",
+    )
+    parser.add_argument(
+        "--cluster-threshold",
+        action="append",
+        default=None,
+        help="config.DIARIZATION_CLUSTER_THRESHOLD value(s) to sweep - repeat the flag or "
+        "give a comma-separated list (e.g. --cluster-threshold 0.4,0.5,0.6). "
+        "Default: whatever config.py currently sets.",
     )
     parser.add_argument(
         "--model",
@@ -455,10 +600,20 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         print("Reference RTTM has no turns within the diarized window.", file=sys.stderr)
         return 1
 
+    engines = ["sherpa", "powerset"] if args.engine == "both" else [args.engine]
+    cluster_thresholds = _parse_cluster_thresholds(args.cluster_threshold)
+
     results = []
     if args.mode in ("span", "both"):
         results.append(
-            run_span_mode(samples, audio_source.SAMPLE_RATE, args.num_speakers, reference)
+            run_span_mode(
+                samples,
+                audio_source.SAMPLE_RATE,
+                args.num_speakers,
+                reference,
+                engines,
+                cluster_thresholds,
+            )
         )
     if args.mode in ("e2e", "both"):
         try:
@@ -471,6 +626,8 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
                     args.model,
                     args.language,
                     reference,
+                    engines,
+                    cluster_thresholds,
                     no_vad=args.no_vad,
                 )
             )

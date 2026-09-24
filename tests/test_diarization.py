@@ -498,6 +498,21 @@ class TestDiarizeBuildsSherpaConfig:
         assert built.min_duration_on == app_config.DIARIZATION_MIN_DURATION_ON
         assert built.min_duration_off == app_config.DIARIZATION_MIN_DURATION_OFF
 
+    def test_passes_the_named_cluster_threshold_through(self, monkeypatch):
+        """DIARIZATION_CLUSTER_THRESHOLD replaced a hard-coded 0.5 so Stage 5's
+        sweep has a knob to vary; this pins the constant, not the number, as
+        the source of truth reaching sherpa-onnx."""
+        import config as app_config
+
+        fake_config_cls = _install_fake_sherpa_onnx(monkeypatch)
+        monkeypatch.setattr(diarization, "models_present", lambda: True)
+
+        samples = np.zeros(1600, dtype=np.float32)
+        diarization.diarize(samples, sample_rate=16000, num_speakers=2)
+
+        built = fake_config_cls.last_instance
+        assert built.clustering.threshold == app_config.DIARIZATION_CLUSTER_THRESHOLD
+
     def test_passes_thread_count_and_provider_to_both_models(self, monkeypatch):
         """
         num_threads/provider have to reach BOTH model configs, not just one.
