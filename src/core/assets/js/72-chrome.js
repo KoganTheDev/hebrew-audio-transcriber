@@ -57,17 +57,6 @@
     });
   }
 
-  function bindUnloadGuard() {
-    window.addEventListener('beforeunload', function (e) {
-      // Only nag when there is real work no file on disk contains yet. Renames
-      // count as much as text edits.
-      if (!exported && hasLocalChanges()) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    });
-  }
-
   function isTextEntry(node) {
     return !!node && (node.isContentEditable
       || node.tagName === 'INPUT' || node.tagName === 'TEXTAREA');
@@ -109,6 +98,11 @@
     var exportBtn = document.getElementById('export');
     if (exportBtn) { exportBtn.addEventListener('click', exportCopy); }
 
-    bindUnloadGuard();
+    // No beforeunload guard here on purpose: it fired on every close, not just
+    // a losing one, because it could only see "unsaved" not "unsavable". The
+    // real failure mode - a full localStorage quota (see 08-storage.js) - is
+    // already covered by the one-shot toast in save() and the status pill's
+    // "local" state, which speak when a save actually fails instead of
+    // nagging on the way out. Do not re-add it.
     bindGlobalShortcuts();
   }

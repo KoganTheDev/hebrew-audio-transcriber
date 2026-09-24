@@ -8,6 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
 import { getFixtureHtml, buildWindow } from './harness.mjs';
 
 function click(el) {
@@ -111,4 +112,36 @@ test('a pointerdown clears the keyboard-modality flag again', () => {
   assert.equal(document.documentElement.hasAttribute('data-kbd'), false);
 
   window.close();
+});
+
+test('loading the document registers no beforeunload guard', () => {
+  // buildWindow() cannot be reused here: transcript.js's inline <script> runs
+  // to completion during `new JSDOM(...)` itself (runScripts: 'dangerously'
+  // executes it as the parser meets it), so a spy attached after buildWindow()
+  // returns would already be too late to see what bindChrome() registered.
+  // The spy has to go up in beforeParse, same as jsdom's other stubs.
+  const registered = [];
+  const dom = new JSDOM(getFixtureHtml('full'), {
+    url: 'https://transcript.test/transcript.html',
+    runScripts: 'dangerously',
+    resources: 'usable',
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      window.matchMedia = function (query) {
+        return { media: query, matches: false, addEventListener() {}, removeEventListener() {} };
+      };
+      window.HTMLElement.prototype.scrollIntoView = function () {};
+      const original = window.addEventListener.bind(window);
+      window.addEventListener = function (type, ...rest) {
+        registered.push(type);
+        return original(type, ...rest);
+      };
+    },
+  });
+
+  assert.equal(registered.includes('beforeunload'), false,
+    'the closed-tab warning was removed on purpose - see the comment at bindChrome() in 72-chrome.js');
+  assert.equal(dom.window.onbeforeunload, null);
+
+  dom.window.close();
 });

@@ -59,7 +59,8 @@ only origin that matters here, and it is the one with the restrictions.
       that ate them would be persisted.
 - [ ] Paste formatted text (from Word, or a web page) into a sentence card. It arrives as plain text - no
       fonts, colours or markup follow it in.
-- [ ] Edit a card, then try to close the tab. The browser warns about leaving.
+- [ ] Edit a card, then close the tab. No "Changes you made may not be saved" dialog appears - the
+      edit is already in localStorage, so there is nothing the dialog would be protecting.
 
 ## 2. Speaker names, colours and reassignment
 
