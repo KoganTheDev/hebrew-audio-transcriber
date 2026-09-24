@@ -116,6 +116,39 @@ class TestMergeTurns:
         turns = merge_turns(bubbles, names)
         assert turns[0].speaker == "Yair_Shizaf"
 
+    def test_sub_threshold_gap_still_merges(self):
+        """A same-speaker gap at or below max_merge_gap is a pause within one
+        turn, not a break - it still merges."""
+        html = _bubble("0.00", "5.00", "0") + _bubble("5.40", "9.00", "0")
+        bubbles, names = parse_transcript(html)
+        turns = merge_turns(bubbles, names, max_merge_gap=0.5)
+        assert len(turns) == 1
+        assert turns[0].start == 0.00
+        assert turns[0].end == 9.00
+
+    def test_above_threshold_gap_splits_into_two_turns(self):
+        """A same-speaker gap longer than max_merge_gap is silence, not the
+        same turn continuing - bridging it would record silence as speech."""
+        html = _bubble("0.00", "5.00", "0") + _bubble("6.00", "9.00", "0")
+        bubbles, names = parse_transcript(html)
+        turns = merge_turns(bubbles, names, max_merge_gap=0.5)
+        assert len(turns) == 2
+        assert turns[0] == turns[0].__class__(start=0.00, end=5.00, speaker="0")
+        assert turns[1] == turns[1].__class__(start=6.00, end=9.00, speaker="0")
+
+    def test_max_merge_gap_is_configurable(self):
+        """The same 1.0s gap merges when the threshold is raised to allow it,
+        and splits when it is not - the threshold, not a hardcoded value,
+        decides."""
+        html = _bubble("0.00", "5.00", "0") + _bubble("6.00", "9.00", "0")
+        bubbles, names = parse_transcript(html)
+
+        merged = merge_turns(bubbles, names, max_merge_gap=1.0)
+        assert len(merged) == 1
+
+        split = merge_turns(bubbles, names, max_merge_gap=0.5)
+        assert len(split) == 2
+
 
 class TestBuildRttm:
     def test_round_trips_through_read_rttm(self):

@@ -111,9 +111,25 @@ class Turn:
     speaker: str  # resolved label - human name where known, else the raw id
 
 
-def merge_turns(bubbles: list[Bubble], speaker_names: dict[str, str]) -> list[Turn]:
+DEFAULT_MAX_MERGE_GAP_SECONDS = 0.5
+"""
+Same-speaker bubbles separated by more than this many seconds are two turns,
+not one. Set equal to DIARIZATION_MIN_DURATION_OFF (src/config/diarization.py)
+- the app's own definition of the minimum silence gap that ends a speaker
+span - so the reference and the pipeline agree on what counts as a break.
+"""
+
+
+def merge_turns(
+    bubbles: list[Bubble],
+    speaker_names: dict[str, str],
+    max_merge_gap: float = DEFAULT_MAX_MERGE_GAP_SECONDS,
+) -> list[Turn]:
     """
-    Merge consecutive same-speaker bubbles into one contiguous turn.
+    Merge consecutive same-speaker bubbles into one contiguous turn, but only
+    across a gap of at most max_merge_gap seconds. A longer gap is silence,
+    not the same turn continuing, and bridging it would record silence as
+    speech in the reference.
 
     RTTM turns are "one speaker talking, uninterrupted"; a Whisper segment
     boundary inside a run by the same speaker is not a turn boundary, and
@@ -133,7 +149,14 @@ def merge_turns(bubbles: list[Bubble], speaker_names: dict[str, str]) -> list[Tu
         # after it and corrupt parsing. Underscore-join rather than drop the
         # space, so the name stays recognisable in the file.
         label = "_".join(raw_label.split())
-        if turns and turns[-1].speaker == label and bubble.start >= turns[-1].end - 1e-6:
+        gap = bubble.start - turns[-1].end if turns else None
+        if (
+            turns
+            and turns[-1].speaker == label
+            and gap is not None
+            and gap >= -1e-6
+            and gap <= max_merge_gap
+        ):
             # Extend the open turn rather than start a new one. Bubbles are
             # assumed to arrive in chronological, non-overlapping order (as
             # the app itself renders them); a same-speaker bubble starting
@@ -179,15 +202,25 @@ _HEADER_TEMPLATE = """\
 # hand-drawn reference (AMI's included), so A/B comparison BETWEEN
 # diarization configurations on this fixture stays valid, but absolute DER
 # here is not comparable to AMI's absolute DER.
+# Consecutive same-speaker bubbles are merged into one turn only when the gap
+# between them is at most {max_merge_gap:.1f}s (DIARIZATION_MIN_DURATION_OFF,
+# src/config/diarization.py) - a longer gap is emitted as two turns, not
+# bridged as speech.
 """
 
 
-def build_rttm(html: str, file_id: str, source: str) -> str:
+def build_rttm(
+    html: str,
+    file_id: str,
+    source: str,
+    max_merge_gap: float = DEFAULT_MAX_MERGE_GAP_SECONDS,
+) -> str:
     bubbles, speaker_names = parse_transcript(html)
     if not bubbles:
         raise ValueError("No labelled bubbles found in transcript - is this an exported HTML?")
-    turns = merge_turns(bubbles, speaker_names)
-    return _HEADER_TEMPLATE.format(source=source) + turns_to_rttm(turns, file_id)
+    turns = merge_turns(bubbles, speaker_names, max_merge_gap=max_merge_gap)
+    header = _HEADER_TEMPLATE.format(source=source, max_merge_gap=max_merge_gap)
+    return header + turns_to_rttm(turns, file_id)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -200,6 +233,16 @@ def main(argv: list[str] | None = None) -> int:
         "--file-id",
         default=None,
         help="RTTM file-id field (default: the transcript filename's stem)",
+    )
+    parser.add_argument(
+        "--max-merge-gap",
+        type=float,
+        default=DEFAULT_MAX_MERGE_GAP_SECONDS,
+        help=(
+            "Merge consecutive same-speaker bubbles only when the gap between "
+            f"them is at most this many seconds (default: {DEFAULT_MAX_MERGE_GAP_SECONDS}, "
+            "matching DIARIZATION_MIN_DURATION_OFF)"
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -215,7 +258,12 @@ def main(argv: list[str] | None = None) -> int:
     default_id = os.path.splitext(os.path.basename(args.transcript_html))[0]
     file_id = args.file_id or "_".join(default_id.split())
 
-    rttm = build_rttm(html, file_id=file_id, source=os.path.basename(args.transcript_html))
+    rttm = build_rttm(
+        html,
+        file_id=file_id,
+        source=os.path.basename(args.transcript_html),
+        max_merge_gap=args.max_merge_gap,
+    )
 
     with open(args.output_rttm, "w", encoding="utf-8") as handle:
         handle.write(rttm)
