@@ -106,7 +106,12 @@ shipping a change to `core/assets/`.
 
   `compare_diarization.py` also takes `--engine sherpa|powerset|both`,
   `--num-speakers 0` (infer the count), and `--cluster-threshold` (repeatable
-  or comma-separated) to sweep DIARIZATION_CLUSTER_THRESHOLD.
+  or comma-separated) to sweep DIARIZATION_CLUSTER_THRESHOLD. `--audio`/`--rttm`
+  accept any real recording, not just the AMI fixture: run `tests/eval/
+  transcript_to_rttm.py <exported.html> <out.rttm>` on a hand-corrected export
+  from this app's own editor to turn its speaker corrections into an RTTM
+  reference (see `tests/eval/fixtures/diarization/hebrew_2spk.rttm`'s header
+  for what it does and does not measure).
 
   This writes both transcripts side by side for reading, plus speed and
   confidence metrics. Without a reference transcript there is no accuracy
