@@ -309,3 +309,22 @@ DIARIZATION_EMBED_MIN_CLEAN_SECONDS = 0.5
 # separates this speaker's voice. DIARIZATION_EMBEDDING_MODEL's default is
 # unchanged by this phase - phase 1 already made that change, and this
 # measurement finds no reason to reconsider it.
+
+# --- what these two fixtures CANNOT measure ------------------------------
+#
+# A docx-derived reference holds only what a person bothered to type. On 300s
+# of hebrew_alon_naor, withholding the blocks the aligner could not fully
+# match (the .uem beside the RTTM - see compute_der's `scored` parameter)
+# moves false alarm 57.27s -> 46.15s and DER 0.3729 -> 0.3658. So its own
+# holes explain about a fifth of that fixture's false alarm.
+#
+# The other 46s survives inside blocks where EVERY line aligned: the
+# diarizer hears speech there and the transcript has nothing. That is what a
+# human typing up a conversation leaves out - backchannels, laughter, false
+# starts, crosstalk - all of it real speech to a diarizer.
+#
+# So: judge CONFUSION and SPEAKER RECALL on these fixtures, which is what
+# they are authoritative about and what decided the embedding model above.
+# For FALSE ALARM use AMI, whose reference was drawn by hand and whose
+# silence really is silence. A future change that appears to improve false
+# alarm here has most likely just stopped detecting speech.
