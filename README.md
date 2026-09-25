@@ -15,6 +15,23 @@ A desktop application that transcribes Hebrew audio and video into timestamped, 
 | English      | ![File selection screen](docs/screenshot-file-select.png) | ![Model picking screen](docs/screenshot-model-picking.png) |
 | Hebrew (RTL) | ![File selection screen in Hebrew](docs/screenshot-file-select-he.png) | ![Model picking screen in Hebrew](docs/screenshot-model-picking-he.png) |
 
+### The transcript you get
+
+Every run produces one self-contained HTML file: speaker-labelled cards with
+their own timestamps, an editable body, a speaker roster you can rename and
+recolour, search, a plain-text view and an audio player - all offline, in one
+file you can email.
+
+|            |                                                                    |
+| ---------- | ------------------------------------------------------------------ |
+| Dark       | ![Transcript document, dark](docs/screenshot-transcript-dark.jpg)   |
+| Light      | ![Transcript document, light](docs/screenshot-transcript-light.jpg) |
+
+The dialogue in those two is invented, and no transcription ran to produce
+them - `tools/render_demo_transcript.py` hands a written-out conversation
+straight to the renderer, so the screenshots never contain anyone's real
+recording.
+
 ## Flow Chart
 
 ![Architecture diagram](docs/architecture.jpg)

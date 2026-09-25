@@ -69,6 +69,13 @@ dev = [
     # tests/eval/docx_to_rttm.py reads colour-coded speaker turns out of a
     # hand-annotated .docx transcript - a dev-only eval tool, not shipped code.
     "python-docx>=1.0",
+    # tools/build_vistas.py (backdrop encoding) and
+    # tools/render_demo_transcript.py (README screenshots) both import PIL.
+    # build_vistas has needed it since it was written and never declared it,
+    # so `pip install -e .[dev]` produced a checkout where that tool could
+    # not run. The app itself never imports it - the vistas ship as finished
+    # .webp bytes.
+    "pillow>=10.0",
 ]
 
 [project.urls]
