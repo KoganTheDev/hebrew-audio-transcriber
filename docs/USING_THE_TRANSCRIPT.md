@@ -56,38 +56,24 @@ Open it in a browser and:
 
 ### Where your edits actually live
 
-**This is worth understanding, because it is not what you would assume.**
-Every keystroke saves **instantly to your browser's local storage**, keyed to
-that transcript, regardless of anything below - close the tab, reopen the
-file, and your work is there. What differs is whether anything also reaches
-the `.html` file itself, and that depends on your browser.
+Every keystroke saves instantly to your browser's local storage, whatever
+browser you are in. Whether it also reaches the `.html` file on disk depends
+on which one:
 
-- **Chrome, Edge, and other browsers with the File System Access API:** the
-  button reads **"Save"**. The first time you press it (or `Ctrl+S`), it asks
-  you to pick a file to write to; every Save after that - including
-  autosave, on the same 400ms debounce as the browser-only save - writes
-  straight to that file, no dialog. `Ctrl+Shift+S` ("Save a copy") always
-  asks for a different file instead, without changing where plain Save
-  writes.
-- **Firefox and any other browser without that API:** the button reads
-  **"Save a copy"**. Pressing it (or `Ctrl+S`/`Ctrl+Shift+S`, which do the
-  same thing here) downloads a fresh, fully self-contained copy with every
-  edit baked in - the `.html` on disk is never touched directly. That
-  download is itself a working editor.
+- **Chrome or Edge:** the button reads **"Save"**. The first press each time
+  you open the document asks the browser's permission to write the file;
+  after that, autosave writes straight to it with no further dialog.
+  `Ctrl+Shift+S` saves a copy elsewhere without changing where Save writes.
+  The repeated prompt is the browser's rule, not ours - a `file://` page
+  loses its file permission on every reload.
+- **Firefox:** the button reads **"Save a copy"** and downloads a fresh
+  self-contained copy, which is itself a working editor. Firefox has no API
+  for writing the file in place, so the original is never touched.
 
-**One prompt per browser session, and it cannot be avoided.** A `file://`
-document loses its file permission the moment it reloads - by design, not a
-bug in this app - so even the *same* file, chosen in a *previous* session,
-needs one more click through the browser's own permission prompt before the
-first Save of a new session can write to it. After that click, autosave
-writes to disk silently for the rest of that session.
-
-The practical consequence: until you have pressed Save at least once in a
-given browser, edits live only in that browser. Emailing the original
-`.html` to someone, or opening it on another machine, will not carry them -
-Save (or Save a copy) first. Re-running transcription on the same audio also
-produces a new document with a new identity, so its predecessor's saved
-edits no longer apply to it.
+Until you press Save at least once, your edits live only in that browser -
+emailing the original `.html` or opening it elsewhere will not carry them.
+Re-running transcription on the same audio produces a new document with a new
+identity, so the old one's saved edits no longer apply to it.
 
 If a file in a batch fails to transcribe, its section says so and every other
 file's transcript is still produced - one bad recording doesn't cost you the
