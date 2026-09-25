@@ -199,7 +199,7 @@ class TestAlignBlocks:
         ]
         segments = [_segment(words)]
 
-        bubbles, matched, dropped = align_blocks([block], segments, pad=3.0)
+        bubbles, matched, dropped, scored = align_blocks([block], segments, pad=3.0)
         assert matched == 1
         assert dropped == 0
         assert len(bubbles) == 1
@@ -215,7 +215,7 @@ class TestAlignBlocks:
         words = [_Word(0.0, 0.5, "שלום")]  # same word, far outside the window
         segments = [_segment(words)]
 
-        bubbles, matched, dropped = align_blocks([block], segments, pad=3.0)
+        bubbles, matched, dropped, scored = align_blocks([block], segments, pad=3.0)
         assert matched == 0
         assert dropped == 1
         assert bubbles == []
@@ -229,7 +229,9 @@ class TestAlignBlocks:
         words = [_Word(0.5, 1.0, "משהו"), _Word(1.1, 1.6, "אחר")]
         segments = [_segment(words)]
 
-        bubbles, matched, dropped = align_blocks([block], segments, pad=3.0, min_line_coverage=0.5)
+        bubbles, matched, dropped, scored = align_blocks(
+            [block], segments, pad=3.0, min_line_coverage=0.5
+        )
         assert matched == 0
         assert dropped == 1
         assert bubbles == []
@@ -248,8 +250,52 @@ class TestAlignBlocks:
         ]
         segments = [_segment(words)]
 
-        bubbles, matched, dropped = align_blocks([block], segments, pad=3.0)
+        bubbles, matched, dropped, scored = align_blocks([block], segments, pad=3.0)
         assert matched == 2 and dropped == 0
         by_speaker = {b.speaker: (b.start, b.end) for b in bubbles}
         assert by_speaker["אבי"] == (1.0, 2.0)
         assert by_speaker["נאור"] == (5.0, 5.9)
+
+
+class TestScoredRegions:
+    """
+    A block that lost a line is a HOLE, not silence: the human transcript
+    says somebody spoke somewhere in that window and the reference cannot
+    say where or who. Scoring it counts correctly-detected speech as
+    invented, so the whole block is withheld - the whole block, because
+    nothing identifies which part of the window the dropped line occupied.
+    """
+
+    def test_a_fully_matched_block_is_scored(self):
+        block = Block(start=0.0, end=10.0, lines=[("אבי", "מה שלומך")])
+        words = [_Word(1.0, 1.4, "מה"), _Word(1.5, 2.0, "שלומך")]
+
+        _bubbles, matched, dropped, scored = align_blocks([block], [_segment(words)], pad=3.0)
+
+        assert (matched, dropped) == (1, 0)
+        # Padded the same way the matching window is, so a word straddling
+        # the human's clock-glance is inside the region that scores it.
+        assert scored == [(-3.0, 13.0)]
+
+    def test_a_block_that_lost_a_line_is_withheld_entirely(self):
+        block = Block(
+            start=0.0,
+            end=10.0,
+            lines=[("אבי", "מה שלומך"), ("נאור", "מילים שלא הוקלטו בכלל ולא יימצאו")],
+        )
+        words = [_Word(1.0, 1.4, "מה"), _Word(1.5, 2.0, "שלומך")]
+
+        _bubbles, matched, dropped, scored = align_blocks([block], [_segment(words)], pad=3.0)
+
+        assert (matched, dropped) == (1, 1)
+        assert scored == [], "one dropped line withholds the whole block, not just its own span"
+
+    def test_only_the_intact_blocks_are_scored(self):
+        good = Block(start=0.0, end=10.0, lines=[("אבי", "מה שלומך")])
+        bad = Block(start=30.0, end=40.0, lines=[("נאור", "מילים שלא הוקלטו בכלל ולא יימצאו")])
+        words = [_Word(1.0, 1.4, "מה"), _Word(1.5, 2.0, "שלומך")]
+
+        _bubbles, matched, dropped, scored = align_blocks([good, bad], [_segment(words)], pad=3.0)
+
+        assert (matched, dropped) == (1, 1)
+        assert scored == [(-3.0, 13.0)]

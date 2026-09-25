@@ -1,0 +1,16 @@
+# Scored regions for the RTTM beside this file: the docx blocks in
+# which EVERY line aligned. A block that lost a line is a hole - the
+# human transcript says somebody spoke somewhere in that window and
+# the reference cannot say where or who - so it is withheld rather
+# than scored as silence. See compute_der()'s `scored` parameter.
+hebrew_alon_naor 1 -3.00 184.00
+hebrew_alon_naor 1 212.00 253.00
+hebrew_alon_naor 1 270.00 375.00
+hebrew_alon_naor 1 422.00 523.00
+hebrew_alon_naor 1 563.00 639.00
+hebrew_alon_naor 1 642.00 703.00
+hebrew_alon_naor 1 725.00 786.00
+hebrew_alon_naor 1 860.00 1022.00
+hebrew_alon_naor 1 1042.00 1074.00
+hebrew_alon_naor 1 1098.00 1115.00
+hebrew_alon_naor 1 1140.00 1227.00

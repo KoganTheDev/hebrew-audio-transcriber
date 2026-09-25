@@ -113,6 +113,12 @@ OUTPUT_DIR = "eval_output"
 # clustering-without-a-known-count).
 DEFAULT_NUM_SPEAKERS = 4
 
+# Scored regions from a .uem beside the reference, or None for "score the
+# whole timeline". Module-level because every compute_der() call in this file
+# has to use the same mask - a run that scored one hypothesis against the
+# holes and another without them would be comparing two different questions.
+_SCORED_REGIONS: list[tuple[float, float]] | None = None
+
 # See "English audio, on purpose" in the module docstring: AMI is English,
 # and the app's own default model/language pair (ivrit-turbo, Hebrew) is
 # actively wrong for it. These are eval-only defaults - nothing in
@@ -330,7 +336,7 @@ def run_span_mode(
     before_spans = _diarize_before(samples, sample_rate, num_speakers)
     before_elapsed = time.time() - start
     print(f"  {len(before_spans)} span(s) in {before_elapsed:.1f}s", flush=True)
-    before_result = compute_der(reference, _spans_to_turns(before_spans))
+    before_result = compute_der(reference, _spans_to_turns(before_spans), scored=_SCORED_REGIONS)
     before_report = _report_der("before", before_result)
     before_report["spans"] = len(before_spans)
     before_report["diarize_seconds"] = round(before_elapsed, 1)
@@ -351,7 +357,7 @@ def run_span_mode(
             print(f"  {len(spans)} span(s) in {elapsed:.1f}s", flush=True)
 
             hypothesis = _spans_to_turns(spans)
-            result = compute_der(reference, hypothesis)
+            result = compute_der(reference, hypothesis, scored=_SCORED_REGIONS)
             report = _report_der(label, result)
             report.update(_report_recall_and_count(reference, hypothesis))
             report["engine"] = engine
@@ -454,14 +460,14 @@ def run_e2e_mode(
             # it needs into plain tuples.)
             print("  before (old whole-segment majority vote):", flush=True)
             before_turns = _assign_speakers_before_e2e(segments, spans)
-            before_result = compute_der(reference, before_turns)
+            before_result = compute_der(reference, before_turns, scored=_SCORED_REGIONS)
             before_report = _report_der("before", before_result, prefix="    ")
             before_report["segments"] = len(segments)
 
             print("  after (word-boundary splitting, headline):", flush=True)
             after_segments = diarization.assign_speakers(segments, spans)
             hypothesis = _segments_to_turns(after_segments)
-            after_result = compute_der(reference, hypothesis)
+            after_result = compute_der(reference, hypothesis, scored=_SCORED_REGIONS)
             after_report = _report_der("after", after_result, prefix="    ")
             after_report.update(_report_recall_and_count(reference, hypothesis))
             after_report["segments"] = len(after_segments)
@@ -501,6 +507,20 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
     )
     parser.add_argument(
         "--rttm", default=DEFAULT_RTTM, help=f"Reference RTTM (default: {DEFAULT_RTTM})"
+    )
+    parser.add_argument(
+        "--uem",
+        default=None,
+        help="Scored-region file. Defaults to a .uem beside --rttm when one exists. "
+        "A reference built by aligning a human transcript has holes where a line could "
+        "not be matched, and scoring those counts correctly-detected speech as invented "
+        "(see compute_der()'s `scored` parameter).",
+    )
+    parser.add_argument(
+        "--no-uem",
+        action="store_true",
+        help="Score the whole timeline even when a .uem exists - use to measure how much "
+        "of a fixture's false alarm is its own holes rather than the pipeline.",
     )
     parser.add_argument(
         "--seconds",
@@ -587,6 +607,22 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
     try:
         from core import diarization
     except ImportError as e:
+        # A missing OPTIONAL dependency is a legitimate skip: a checkout that
+        # never installed sherpa-onnx should no-op rather than explode. Not
+        # being able to import `core` at all is a different thing entirely -
+        # it means PYTHONPATH is wrong (this is a src-layout; pytest.ini sets
+        # `pythonpath = src`, but this script is run directly), and exiting 0
+        # there reports success for a run that measured nothing.
+        #
+        # This cost a real debugging detour: four sweep runs "passed" in
+        # silence, having done no work, because the message named the wrong
+        # cause and the exit code agreed with it.
+        missing = getattr(e, "name", "") or ""
+        if missing.split(".")[0] == "core":
+            print(f"Cannot import the app's own modules: {e}")
+            print("Run from the repo root with src/ on the path, e.g.")
+            print("  PYTHONPATH=src python -m tests.eval.compare_diarization ...")
+            return 2
         print(f"Diarization dependencies not available - skipping. ({e})")
         return 0
 
@@ -598,7 +634,7 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
         return 0
 
     from core import audio_source
-    from tests.eval.diarization_metrics import read_rttm
+    from tests.eval.diarization_metrics import read_rttm, read_uem
 
     print(f"Decoding {args.audio} ...", flush=True)
     channels, _two_party = audio_source.load(args.audio)
@@ -621,6 +657,25 @@ def main(argv=None) -> int:  # noqa: C901 - argparse CLI for a dev harness, not 
     if not reference:
         print("Reference RTTM has no turns within the diarized window.", file=sys.stderr)
         return 1
+
+    # A .uem beside the .rttm restricts scoring to the regions the reference
+    # can actually vouch for. docx_to_rttm.py writes one because a block it
+    # could not fully align is a HOLE, not silence, and scoring it counts
+    # correctly-detected speech as invented. Picked up by filename rather than
+    # requiring a flag, so a fixture that has one is never scored without it
+    # by accident; --no-uem is there to measure the difference on purpose.
+    global _SCORED_REGIONS
+    uem_path = args.uem or (os.path.splitext(args.rttm)[0] + ".uem")
+    if not args.no_uem and os.path.exists(uem_path):
+        _SCORED_REGIONS = read_uem(uem_path)
+        if args.seconds:
+            _SCORED_REGIONS = [
+                (s, min(e, args.seconds)) for s, e in _SCORED_REGIONS if s < args.seconds
+            ]
+        scored_total = sum(e - s for s, e in _SCORED_REGIONS)
+        print(f"  scoring {scored_total:.0f}s across {len(_SCORED_REGIONS)} region(s) ({uem_path})")
+    elif args.no_uem and os.path.exists(uem_path):
+        print(f"  ignoring {uem_path} (--no-uem): holes in the reference count as silence")
 
     engines = ["sherpa", "powerset"] if args.engine == "both" else [args.engine]
     cluster_thresholds = _parse_cluster_thresholds(args.cluster_threshold)

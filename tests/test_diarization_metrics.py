@@ -7,10 +7,13 @@ future change to compute_der's per-interval formula has something exact to
 be checked against, not just "the number changed, is that good or bad".
 """
 
+import pytest
+
 from tests.eval.diarization_metrics import (
     DERResult,
     compute_der,
     read_rttm,
+    read_uem,
     speaker_count_error,
     speaker_recall,
 )
@@ -225,3 +228,65 @@ class TestSpeakerCountError:
         hypothesis = [(0.0, 5.0, "spk0"), (5.0, 10.0, "spk1")]
         result = speaker_count_error(reference, hypothesis)
         assert result.error == 1
+
+
+class TestScoredRegions:
+    """
+    compute_der's `scored` mask, and read_uem.
+
+    A reference built by aligning a human transcript onto machine timings has
+    HOLES: a line the aligner could not confidently match is dropped rather
+    than guessed at, leaving a gap the reference cannot tell apart from
+    silence. Speech correctly detected in a hole was being counted as
+    invented - measured at 218s of one real fixture's span, which was also the
+    fixture with by far the highest false alarm.
+    """
+
+    def test_a_hole_in_the_reference_inflates_false_alarm_when_scored(self):
+        """The bug, stated as a test: the hypothesis is RIGHT about 0-10, and
+        the reference simply does not cover 5-10."""
+        reference = [(0.0, 5.0, "A")]
+        hypothesis = [(0.0, 10.0, "spk0")]
+
+        unmasked = compute_der(reference, hypothesis)
+        assert unmasked.false_alarm == pytest.approx(5.0)
+
+        # Withhold the hole, and the same hypothesis scores clean.
+        masked = compute_der(reference, hypothesis, scored=[(0.0, 5.0)])
+        assert masked.false_alarm == pytest.approx(0.0)
+        assert masked.der == pytest.approx(0.0)
+
+    def test_the_mask_clips_both_sides_not_just_the_hypothesis(self):
+        """Reference speech outside a scored region must not count toward
+        missed speech either - otherwise the denominator includes time the
+        run was never asked about."""
+        reference = [(0.0, 10.0, "A")]
+        hypothesis = [(0.0, 5.0, "spk0")]
+
+        masked = compute_der(reference, hypothesis, scored=[(0.0, 5.0)])
+        assert masked.total_ref_speech == pytest.approx(5.0)
+        assert masked.missed_speech == pytest.approx(0.0)
+
+    def test_no_mask_scores_the_whole_timeline(self):
+        """AMI's reference is hand-drawn, so a gap there really is silence -
+        passing no mask has to keep counting it."""
+        reference = [(0.0, 5.0, "A")]
+        hypothesis = [(0.0, 10.0, "spk0")]
+        assert compute_der(reference, hypothesis, scored=None).false_alarm == pytest.approx(5.0)
+
+    def test_a_mask_that_excludes_all_reference_speech_is_an_error(self):
+        """Not silently a DER of 0: scoring nothing is a misconfigured run,
+        and the existing empty-reference guard is the right place to land."""
+        with pytest.raises(ValueError):
+            compute_der([(0.0, 5.0, "A")], [(0.0, 5.0, "spk0")], scored=[(90.0, 95.0)])
+
+    def test_read_uem_parses_regions_and_skips_comments(self, tmp_path):
+        path = tmp_path / "f.uem"
+        path.write_text(
+            "# a comment line, the same shape read_rttm tolerates\n"
+            "\n"
+            "myfile 1 0.00 12.50\n"
+            "myfile 1 20.00 33.25\n",
+            encoding="utf-8",
+        )
+        assert read_uem(str(path)) == [(0.0, 12.5), (20.0, 33.25)]

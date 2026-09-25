@@ -124,18 +124,69 @@ class DERResult:
         )
 
 
+def read_uem(path: str) -> list[tuple[float, float]]:
+    """Scored regions, in NIST's UEM format: `<file-id> <channel> <start> <end>`.
+
+    See compute_der's `scored` parameter for what this is for. Blank lines and
+    `#` comments are skipped, the same way read_rttm tolerates them.
+    """
+    regions: list[tuple[float, float]] = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            regions.append((float(parts[2]), float(parts[3])))
+    return sorted(regions)
+
+
+def _clip(turns: list[Turn], scored: list[tuple[float, float]]) -> list[Turn]:
+    """Every turn, cut down to the parts that fall inside a scored region."""
+    out: list[Turn] = []
+    for start, end, speaker in turns:
+        for r0, r1 in scored:
+            lo, hi = max(start, r0), min(end, r1)
+            if hi > lo:
+                out.append((lo, hi, speaker))
+    return out
+
+
 def compute_der(
     reference: list[Turn],
     hypothesis: list[Turn],
     max_brute_force_speakers: int = _MAX_BRUTE_FORCE_SPEAKERS,
+    scored: list[tuple[float, float]] | None = None,
 ) -> DERResult:
     """
     Standard DER: missed + false alarm + confusion, over total reference
     speech, with the optimal reference-to-hypothesis speaker mapping.
 
+    `scored` restricts both sides to a set of regions before anything is
+    measured, the job NIST's UEM file does. It exists because a reference can
+    have HOLES - stretches where speech certainly happened but the reference
+    does not say who was speaking. tests/eval/docx_to_rttm.py produces exactly
+    that: it aligns a human transcript onto machine word timings, and a line
+    it cannot confidently match is dropped rather than guessed at, leaving a
+    gap the reference cannot distinguish from silence.
+
+    Scoring those gaps punishes the diarizer for being right. Measured on the
+    alon_naor fixture: 218s of its span sits inside a block the human
+    transcript marks as speech while carrying no reference turn, and that
+    fixture's false alarm was the highest of the three by a wide margin. Speech
+    detected there is correct and was being counted as invented.
+
+    Without `scored` the whole timeline counts, which is right for a
+    hand-drawn reference like AMI's where a gap really does mean silence.
+
     Raises ValueError if reference is empty - a DER against no reference
     speech at all is undefined (division by zero), not zero or one.
     """
+    if scored:
+        reference = _clip(reference, scored)
+        hypothesis = _clip(hypothesis, scored)
     if not reference:
         raise ValueError("Cannot compute DER against an empty reference")
 
