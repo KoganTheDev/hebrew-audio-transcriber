@@ -312,16 +312,23 @@ DIARIZATION_EMBED_MIN_CLEAN_SECONDS = 0.5
 
 # --- what these two fixtures CANNOT measure ------------------------------
 #
-# A docx-derived reference holds only what a person bothered to type. On 300s
-# of hebrew_alon_naor, withholding the blocks the aligner could not fully
-# match (the .uem beside the RTTM - see compute_der's `scored` parameter)
-# moves false alarm 57.27s -> 46.15s and DER 0.3729 -> 0.3658. So its own
-# holes explain about a fifth of that fixture's false alarm.
+# A docx-derived reference holds only what a person bothered to type.
+# Withholding the blocks the aligner could not fully match (the .uem beside
+# the RTTM - see compute_der's `scored` parameter) on hebrew_alon_naor:
 #
-# The other 46s survives inside blocks where EVERY line aligned: the
-# diarizer hears speech there and the transcript has nothing. That is what a
-# human typing up a conversation leaves out - backchannels, laughter, false
-# starts, crosstalk - all of it real speech to a diarizer.
+#     window        false alarm          DER               removed
+#     whole file    284.59s -> 186.28s   0.3758 -> 0.3688   35%
+#     first 300s     57.27s ->  46.15s   0.3729 -> 0.3658   19%
+#
+# Measure this on the WHOLE file. The holes are spread across it, so a short
+# window under-samples them and understates the correction by nearly half -
+# the 300s row is here only to show that.
+#
+# What survives the mask is inside blocks where EVERY line aligned: 186s of
+# it, a quarter of the scored reference speech. The diarizer hears speech
+# there and the transcript has nothing. That is what a human typing up a
+# conversation leaves out - backchannels, laughter, false starts, crosstalk -
+# all of it real speech to a diarizer.
 #
 # So: judge CONFUSION and SPEAKER RECALL on these fixtures, which is what
 # they are authoritative about and what decided the embedding model above.
