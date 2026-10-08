@@ -38,6 +38,19 @@ word alignment against the reference and called:
     neither - wrong before and still wrong (or no reference word to compare)
 "broke" is the failure this pass most has to avoid: it puts a plausible real
 word into a real sentence, and nobody notices without the audio.
+
+What it has measured (2026-10-08, ivrit-turbo, one 23-term list frozen from
+the references before any output was read, all three fixtures)
+---------------------------------------------------------------------------
+* The correction pass at the 0.55 gate: 0 fixed, 0 broke, after the
+  known-word guard (main broke 1: ענבל for אבל). ivrit-turbo already wrote
+  33/33 term mentions in the podcast right; on the calls the names it missed
+  came out CONFIDENT (ציל for צליל at 0.96, יופי for יוסי at 0.98).
+* Lowering the gate does not reach them safely: with no gate, 1 fixed for
+  every ~5 broken, and even with the guard 1 real flag in 18.
+* --hotwords (the terms in faster-whisper's decoder prompt) is far worse:
+  WER 2.9% -> 47% on the podcast, 10-13% -> 45-53% on the calls - repeated
+  phrases, dropped sentences, digits spelled out. Do not ship it.
 """
 
 from __future__ import annotations
@@ -83,8 +96,9 @@ FIXTURES = [
 ]
 
 
-def _cache_path(name: str, model: str) -> str:
-    return os.path.join(CACHE_DIR, f"{name}.{model}.segments.json")
+def _cache_path(name: str, model: str, variant: str = "") -> str:
+    label = f"{model}.{variant}" if variant else model
+    return os.path.join(CACHE_DIR, f"{name}.{label}.segments.json")
 
 
 def _reference_text(path: str) -> str:
@@ -100,7 +114,7 @@ def _reference_text(path: str) -> str:
 # --- transcribe ---------------------------------------------------------------
 
 
-def transcribe(model: str, only: list[str] | None) -> None:
+def transcribe(model: str, only: list[str] | None, hotwords_file: str | None = None) -> None:
     import config
     from core import audio_source
     from core.transcriber import Transcriber
@@ -111,10 +125,27 @@ def transcribe(model: str, only: list[str] | None) -> None:
     if not transcriber.load_model():
         raise SystemExit(f"could not load model {model}")
 
+    variant = ""
+    if hotwords_file:
+        # Measure-before-building: inject faster-whisper's `hotwords` into the
+        # loaded model's own transcribe() rather than threading a new option
+        # through core/transcriber.py, so every other decode setting is
+        # production's, untouched.
+        import functools
+
+        from core.hebrew_corrections import TermList
+
+        hotwords = ", ".join(TermList.load(hotwords_file).terms)
+        transcriber.model.transcribe = functools.partial(  # type: ignore[method-assign]
+            transcriber.model.transcribe, hotwords=hotwords
+        )
+        variant = "hotwords"
+        print(f"hotwords: {hotwords}")
+
     for name, audio, _reference in FIXTURES:
         if only and name not in only:
             continue
-        out = _cache_path(name, model)
+        out = _cache_path(name, model, variant)
         if os.path.exists(out):
             print(f"{name}: cached at {out}, skipping")
             continue
@@ -152,10 +183,10 @@ def transcribe(model: str, only: list[str] | None) -> None:
 # --- score --------------------------------------------------------------------
 
 
-def _load_segments(name: str, model: str):
+def _load_segments(name: str, model: str, variant: str = ""):
     from core.segments import Segment, Word
 
-    with open(_cache_path(name, model), encoding="utf-8") as handle:
+    with open(_cache_path(name, model, variant), encoding="utf-8") as handle:
         data = json.load(handle)
     return [
         Segment(
@@ -248,6 +279,7 @@ def score(
     only: list[str] | None,
     out: str | None,
     threshold: float | None = None,
+    variant: str = "",
 ) -> None:
     from core import hebrew_corrections
     from core.segments import plain_text
@@ -263,11 +295,11 @@ def score(
     for name, _audio, reference in FIXTURES:
         if only and name not in only:
             continue
-        if not os.path.exists(_cache_path(name, model)):
+        if not os.path.exists(_cache_path(name, model, variant)):
             print(f"{name}: no cached transcription - run `transcribe` first")
             continue
         ref_text = _reference_text(reference)
-        before = _load_segments(name, model)
+        before = _load_segments(name, model, variant)
         after = copy.deepcopy(before)
         hebrew_corrections.correct(after, terms, gate)
 
@@ -330,6 +362,14 @@ def main(argv=None) -> int:
         p = sub.add_parser(command)
         p.add_argument("--model", default=config.DEFAULT_MODEL)
         p.add_argument("--only", nargs="*", help="fixture names to run")
+        if command == "transcribe":
+            p.add_argument(
+                "--hotwords", help="term list file to pass to faster-whisper as hotwords"
+            )
+        else:
+            p.add_argument(
+                "--variant", default="", help='cached transcription to score, e.g. "hotwords"'
+            )
         if command == "score":
             p.add_argument("--terms", required=True, help="term list file")
             p.add_argument("--out", help="also write the full report as JSON")
@@ -341,9 +381,9 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "transcribe":
-        transcribe(args.model, args.only)
+        transcribe(args.model, args.only, args.hotwords)
     else:
-        score(args.model, args.terms, args.only, args.out, args.threshold)
+        score(args.model, args.terms, args.only, args.out, args.threshold, args.variant)
     return 0
 
 
