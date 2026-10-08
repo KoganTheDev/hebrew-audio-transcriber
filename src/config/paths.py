@@ -1,10 +1,19 @@
 """Where models are downloaded to and where transcripts are written.
 
-The only real logic in the config package: resolving an absolute model
-download root, and naming a transcription run's output file.
+The only real logic in the config package: resolving absolute paths (model
+caches, the log, the term list) and naming a transcription run's output file.
 """
 
 import os
+
+
+def _repo_root() -> str:
+    """The checkout this code runs from, however the process was started."""
+    # config/paths.py -> config/ -> src/ -> repo root, which is where an
+    # already-downloaded cache sits. Walking one level further would reach
+    # outside the repo and could match a stray directory beside it.
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.dirname(src_dir)
 
 
 # WhisperModel's download_root controls both where faster-whisper looks for
@@ -54,20 +63,19 @@ def _cache_root(dir_name: str) -> str:
     time as a bare relative "./diarization_models" precisely because this
     reasoning lived only in the Whisper half.
     """
-    # config/paths.py -> config/ -> src/ -> repo root, which is where an
-    # already-downloaded cache sits. Walking one level further would reach
-    # outside the repo and could match a stray directory beside it.
-    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    repo_root = os.path.dirname(src_dir)
-    beside = os.path.join(repo_root, dir_name)
+    beside = os.path.join(_repo_root(), dir_name)
     if os.path.isdir(beside):
         return beside
+    return os.path.join(_user_data_dir(), dir_name)
 
+
+def _user_data_dir() -> str:
+    """The per-user data directory, for anything without a checkout to live in."""
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
     else:
         base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    return os.path.join(base, "speech-to-text", dir_name)
+    return os.path.join(base, "speech-to-text")
 
 
 def _default_model_download_root() -> str:
@@ -148,8 +156,7 @@ def _log_directory() -> str:
     where the model caches go) because a log is reproducible noise, not
     something whose loss costs the user a download.
     """
-    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    repo_root = os.path.dirname(src_dir)
+    repo_root = _repo_root()
     if os.path.isfile(os.path.join(repo_root, "pyproject.toml")):
         return repo_root
 
@@ -210,8 +217,33 @@ def output_path_for(audio_files: list[str]) -> str:
 
 
 # User-maintained list of domain terms (names, places, jargon) that a general
-# model reliably mishears. One term per line, UTF-8, "#" for comments. Looked
-# for in the working directory; absent means the correction pass does nothing,
-# which is the intended default - see core/hebrew_corrections.py.
+# model reliably mishears. One term per line, UTF-8, "#" for comments. Absent
+# means the correction pass does nothing, which is the intended default - see
+# core/hebrew_corrections.py.
 TERMS_FILENAME = "hebrew_terms.txt"
 CHECKPOINT_FILENAME = "transcription_checkpoint.txt"
+
+
+def resolve_terms_path() -> str:
+    """Absolute path of the term list - the one file both the GUI's terms
+    dialog writes and the worker's correction pass reads.
+
+    It was the bare TERMS_FILENAME, resolved against the working directory:
+    the bug resolve_log_path() and the two model roots above were each fixed
+    for. It only ever worked because the launchers cd to the repo root first,
+    so a checkout keeps it at the repo root - an existing list is found where
+    it already is. Now that the app writes this file, a second copy in a
+    stray working directory would be worse than a missed read: the dialog and
+    the worker would silently be editing and reading different lists.
+
+    A src/ tree with no pyproject.toml above it gets the per-user data
+    directory instead, by _log_directory()'s rule. Data, not state: this is
+    the user's own work, not reproducible noise like a log.
+    """
+    override = os.environ.get("SPEECH_TO_TEXT_TERMS_FILE")
+    if override:
+        return os.path.abspath(override)
+    repo_root = _repo_root()
+    if os.path.isfile(os.path.join(repo_root, "pyproject.toml")):
+        return os.path.join(repo_root, TERMS_FILENAME)
+    return os.path.join(_user_data_dir(), TERMS_FILENAME)

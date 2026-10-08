@@ -97,6 +97,17 @@ class TestGUI:
         assert thread.options.audio_durations == [10.0, 20.0]
         assert thread.options.total_duration == 30.0
 
+    def test_transcription_thread_reads_the_resolved_terms_path(self, monkeypatch):
+        """Not a re-derived one: the terms dialog writes resolve_terms_path(),
+        so the worker must read exactly that file."""
+        import config
+        from gui.main_window import TranscriptionThread
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_TERMS_FILE", raising=False)
+        thread = TranscriptionThread(audio_files=["a.mp3"], model_size="small", device="cpu")
+
+        assert thread.options.terms_file == config.resolve_terms_path()
+
 
 class TestFileSelectStepFolderExpansion:
     """Dropping a folder expands to the supported audio directly inside it."""

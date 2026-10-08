@@ -431,3 +431,64 @@ class TestLogPath:
         """
         assert config.LOG_MAX_BYTES > 0
         assert config.LOG_BACKUP_COUNT > 0
+
+
+class TestTermsPath:
+    """
+    The fifth thing that resolved against the working directory.
+
+    The term list was the bare TERMS_FILENAME. Read-only, that cost a missed
+    list when the app started from elsewhere; now that the terms dialog
+    writes it too, the dialog and the worker could edit and read two
+    different files without anything saying so.
+    """
+
+    def test_the_path_is_absolute(self, monkeypatch):
+        from config.paths import resolve_terms_path
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_TERMS_FILE", raising=False)
+        assert os.path.isabs(resolve_terms_path())
+
+    def test_it_does_not_move_with_the_working_directory(self, tmp_path, monkeypatch):
+        from config.paths import resolve_terms_path
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_TERMS_FILE", raising=False)
+        here = os.getcwd()
+        try:
+            first = resolve_terms_path()
+            os.chdir(tmp_path)
+            second = resolve_terms_path()
+        finally:
+            os.chdir(here)
+
+        assert first == second, "the term list moved with the working directory"
+
+    def test_a_checkout_keeps_the_list_where_the_launchers_always_found_it(self, monkeypatch):
+        """run.bat and run.ps1 cd to the repo root, so an existing list is there."""
+        from config.paths import TERMS_FILENAME, resolve_terms_path
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_TERMS_FILE", raising=False)
+        path = resolve_terms_path()
+
+        assert os.path.basename(path) == TERMS_FILENAME
+        assert os.path.isfile(os.path.join(os.path.dirname(path), "pyproject.toml"))
+
+    def test_a_copy_without_a_checkout_uses_the_per_user_data_directory(
+        self, tmp_path, monkeypatch
+    ):
+        from config import paths
+
+        monkeypatch.delenv("SPEECH_TO_TEXT_TERMS_FILE", raising=False)
+        monkeypatch.setattr(paths.os.path, "isfile", lambda _p: False)
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+        path = paths.resolve_terms_path()
+
+        assert path == os.path.join(str(tmp_path), "speech-to-text", paths.TERMS_FILENAME)
+
+    def test_an_explicit_override_wins_and_is_made_absolute(self, tmp_path, monkeypatch):
+        from config.paths import resolve_terms_path
+
+        monkeypatch.setenv("SPEECH_TO_TEXT_TERMS_FILE", str(tmp_path / "my_terms.txt"))
+        assert resolve_terms_path() == str(tmp_path / "my_terms.txt")

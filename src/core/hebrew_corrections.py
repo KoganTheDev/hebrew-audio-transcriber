@@ -35,6 +35,7 @@ import os
 import re
 from collections.abc import Iterator, Sequence
 
+from core import term_store
 from core.hebrew_text import CLITICS, normalize_word
 from core.segments import Segment, Word
 
@@ -167,11 +168,9 @@ class TermList:
             logger.debug(f"No Hebrew term list at {path}; correction disabled")
             return cls([])
         try:
-            with open(path, encoding="utf-8") as handle:
-                lines = [
-                    line for line in handle if line.strip() and not line.lstrip().startswith("#")
-                ]
-            terms = cls(lines)
+            # The same parser the terms dialog writes through, so "what counts
+            # as a term line" has one definition.
+            terms = cls(term_store.read_terms(path))
             logger.info(f"Loaded {len(terms)} Hebrew correction term(s) from {path}")
             return terms
         except Exception as e:

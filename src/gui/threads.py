@@ -129,7 +129,7 @@ class TranscriptionThread(QThread):
         if not self.options.ui_strings:
             self.options.ui_strings = document_strings()
         if self.options.terms_file is None:
-            self.options.terms_file = config.TERMS_FILENAME
+            self.options.terms_file = config.resolve_terms_path()
         self._is_running = True
         self._process: multiprocessing.Process | None = None
         logger.debug(f"TranscriptionThread created: {len(audio_files)} file(s)")

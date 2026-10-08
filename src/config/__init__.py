@@ -56,6 +56,7 @@ from config.paths import (
     output_path_for,
     resolve_log_path,
     resolve_model_download_root,
+    resolve_terms_path,
 )
 from config.transcription import (
     AUDIO_MINUTES_PER_100MB,
@@ -127,4 +128,5 @@ __all__ = [
     "hf_repo_id",
     "output_path_for",
     "resolve_log_path",
+    "resolve_terms_path",
 ]
