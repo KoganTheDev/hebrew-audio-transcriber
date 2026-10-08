@@ -36,6 +36,7 @@ def _node_executable():
     return shutil.which("node")
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     _node_executable() is None,
     reason="node is not on PATH - the tests/js/ jsdom suite needs Node.js (see package.json)",

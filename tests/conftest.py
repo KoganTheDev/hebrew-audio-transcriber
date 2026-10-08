@@ -1,44 +1,28 @@
 """
-Pytest configuration and shared fixtures for testing.
+Pytest configuration shared by the whole suite.
+
+The two environment guards below run when pytest loads this file - before any
+test module is imported - because both act at import time of the code they
+guard: Qt reads its platform plugin when PyQt5 is first imported, and app.py
+decides whether to re-launch itself the moment it is imported.
 """
 
 import os
-import tempfile
-from unittest.mock import MagicMock, patch
 
 import pytest
 
+# No window ever opens during a run, locally or in CI (where there is no
+# display at all). setdefault: a developer who wants to watch a GUI test can
+# still export QT_QPA_PLATFORM=windows.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for testing."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield tmpdir
-
-
-@pytest.fixture
-def sample_audio_path(temp_dir):
-    """Create a sample audio file path for testing."""
-    audio_path = os.path.join(temp_dir, "sample_audio.mp3")
-    # Create an empty file for testing
-    open(audio_path, "a").close()
-    return audio_path
-
-
-@pytest.fixture
-def mock_hardware():
-    """Create a mocked hardware detector."""
-    with patch("hardware_detection.psutil") as mock_psutil:
-        mock_psutil.cpu_count.return_value = 4
-        mock_psutil.virtual_memory.return_value = MagicMock(total=8 * 1000**3)
-        yield mock_psutil
-
-
-@pytest.fixture
-def mock_whisper_model():
-    """Create a mocked WhisperModel."""
-    with patch("core.transcriber.WhisperModel") as mock_model:
-        yield mock_model
+# app.py re-launches itself on the project's .venv when imported on any other
+# interpreter (see _reexec_into_project_venv), and waits for that child to
+# exit. Under pytest that child is the whole app: `pytest` run from a global
+# Python hung in collection, on test_main.py's `import app`, until the timeout.
+# The marker is the guard app.py already has against re-launching twice; the
+# tests that exercise the re-launch itself clear it with monkeypatch.
+os.environ.setdefault("SPEECH_TO_TEXT_REEXEC", "1")
 
 
 @pytest.fixture(autouse=True)

@@ -19,31 +19,19 @@ except ImportError:
     psutil = None
 
 
-def _format_duration(seconds: int, elide_zero: bool) -> str:
-    """Render a whole-second duration as "Xs" / "Xm Ys" / "Xh Ym", the
-    <60s / <1h / else ladder used by both estimate_transcription_time's
-    reason string and get_time_estimate_display.
-
-    The two callers genuinely differ on one thing: the reason string always
-    shows both components once past the 60s mark ("5m 0s"), while the
-    display shown directly to the user drops a zero trailing component
-    ("5m") because a bare minute count reads cleaner in the UI than a
-    "0s"/"0m" that adds nothing. elide_zero picks which behaviour a caller
-    wants rather than forcing one on both.
+def _format_duration(seconds: int) -> str:
+    """Render a whole-second duration as "Xs" / "Xm Ys" / "Xh Ym" for
+    estimate_transcription_time's log line. English on purpose: the log does
+    not follow the UI language. What the user sees is i18n.format_duration.
     """
     if seconds < 60:
         return f"{seconds}s"
     elif seconds < 3600:
         mins, secs = divmod(seconds, 60)
-        if elide_zero and secs == 0:
-            return f"{mins}m"
         return f"{mins}m {secs}s"
     else:
         hours, remainder = divmod(seconds, 3600)
-        mins = remainder // 60
-        if elide_zero and mins == 0:
-            return f"{hours}h"
-        return f"{hours}h {mins}m"
+        return f"{hours}h {remainder // 60}m"
 
 
 def _required_ram_gb(model_size: str, default: int = 5) -> int:
@@ -321,14 +309,10 @@ class HardwareDetector:
 
         # Generate reason string
         audio_min = audio_duration_seconds / 60
-        time_str = _format_duration(estimated_seconds, elide_zero=False)
+        time_str = _format_duration(estimated_seconds)
 
         reason = f"Model: {model_size.title()} | Device: {device_desc} | Audio: {audio_min:.1f}m → ~{time_str}"
 
         logger.debug(f"Time estimation: {reason}")
 
         return estimated_seconds, reason
-
-    def get_time_estimate_display(self, seconds: int) -> str:
-        """Format seconds into human-readable time."""
-        return _format_duration(seconds, elide_zero=True)

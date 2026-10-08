@@ -35,9 +35,6 @@ def test_every_span_is_the_subtraction_of_its_own_boundaries():
     assert ps.FILE_LOCAL_TRANSCRIBE_SPAN == (
         ps.FILE_LOCAL_TRANSCRIBE_END - ps.FILE_LOCAL_TRANSCRIBE_START
     )
-    assert ps.FILE_LOCAL_SPEAKER_ID_SPAN == (
-        ps.FILE_LOCAL_SPEAKER_ID_END - ps.FILE_LOCAL_TRANSCRIBE_END
-    )
     assert ps.BATCH_TRANSCRIBE_SPAN == (ps.BATCH_TRANSCRIBE_END - ps.BATCH_TRANSCRIBE_START)
 
 

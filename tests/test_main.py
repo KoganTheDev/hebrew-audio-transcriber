@@ -53,23 +53,6 @@ print('THREAD_RUNNING=%s' % running)
 """
 
 
-class TestMain:
-    """Test main module."""
-
-    def test_main_imports(self):
-        """Test that main module imports are correct."""
-        import app
-
-        assert hasattr(app, "main")
-        assert callable(app.main)
-
-    def test_main_callable(self):
-        """Test that main function is callable."""
-        from app import main
-
-        assert callable(main)
-
-
 class TestLoggingHandlers:
     """
     Regression coverage for the thing that actually matters here: the
@@ -153,6 +136,7 @@ class TestHighDpiEntryPointOrdering:
         )
 
 
+@pytest.mark.slow
 class TestHighDpiRendering:
     """
     Pin that gui.main_window enables Qt's high-DPI
@@ -215,6 +199,7 @@ class TestHighDpiRendering:
         assert "policy=5" in result.stdout, result.stdout
 
 
+@pytest.mark.slow
 class TestShippedEntryPointAppliesStylesheet:
     """
     app.setStyleSheet(theme.app_stylesheet()) used to exist only inside
@@ -291,6 +276,7 @@ class TestShippedEntryPointAppliesStylesheet:
         )
 
 
+@pytest.mark.slow
 class TestBackgroundWorkStopsBeforeExit:
     """
     main() must not return while the calibration thread is still running.

@@ -27,13 +27,9 @@ directly, not QSS, so the stylesheet half of configure_application is not
 needed either).
 """
 
-import os
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-import pytest  # noqa: E402
-from PyQt5.QtGui import QColor, QPainter, QPixmap  # noqa: E402
-from PyQt5.QtWidgets import (  # noqa: E402
+import pytest
+from PyQt5.QtGui import QColor, QPainter, QPixmap
+from PyQt5.QtWidgets import (
     QCheckBox,
     QProxyStyle,
     QStyle,
@@ -41,8 +37,8 @@ from PyQt5.QtWidgets import (  # noqa: E402
     QStyleOptionFocusRect,
 )
 
-from gui.checkbox_style import PaintedCheckboxStyle  # noqa: E402
-from gui.theme import COLORS  # noqa: E402
+from gui.checkbox_style import PaintedCheckboxStyle
+from gui.theme import COLORS
 
 # Antialiasing softens edge pixels toward the background, so exact-match
 # comparisons on a stroked/rounded shape are flaky by construction. This is

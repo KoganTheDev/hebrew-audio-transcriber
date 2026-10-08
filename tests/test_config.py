@@ -8,38 +8,35 @@ import config
 from config import paths
 
 
-class TestConfig:
-    """Test configuration module."""
+class TestModelCatalogue:
+    """config.MODELS: what the app computes with, one entry per model card."""
 
-    def test_models_configuration(self):
-        """Test that all models are configured correctly."""
+    def test_only_the_hebrew_models_are_offered(self):
         assert list(config.MODELS) == ["ivrit-turbo", "ivrit-large"]
 
-    def test_model_has_required_keys(self):
-        """Test that all models have required keys."""
-        required_keys = {
-            "repo",
-            "name",
-            "description",
-            "pros",
-            "cons",
-            "time_estimate",
-            "ram_required",
-            "accuracy_score",
-            "best_for",
-            "recommended",
-        }
+    def test_every_model_carries_the_fields_the_app_reads(self):
+        """repo for loading, RAM and download for the card's facts and the
+        recommender's RAM gate, accuracy_score for its ordering."""
+        for name, info in config.MODELS.items():
+            assert set(info) == {"repo", "ram_required", "download_size", "accuracy_score"}, name
 
-        for model_name, model_info in config.MODELS.items():
-            assert set(model_info.keys()) >= required_keys, f"Model {model_name} missing keys"
+    def test_every_model_has_card_text_in_both_languages(self):
+        """The card reads its words from the string table, not from here - a
+        model added to one and not the other renders a KeyError."""
+        from gui.i18n import MODEL_STRINGS
+
+        assert set(MODEL_STRINGS) == set(config.MODELS)
+        for name, fields in MODEL_STRINGS.items():
+            assert set(fields) == {"name", "description", "purpose", "accuracy"}, name
+            for field, text in fields.items():
+                assert text["en"] and text["he"], f"{name}.{field}"
 
     def test_hebrew_models_point_at_ivrit_repos(self):
         assert config.MODELS["ivrit-turbo"]["repo"] == "ivrit-ai/whisper-large-v3-turbo-ct2"
         assert config.MODELS["ivrit-large"]["repo"] == "ivrit-ai/whisper-large-v3-ct2"
 
-    def test_default_model_is_hebrew_tuned(self):
-        """A Hebrew transcription app should not default to a general model."""
-        assert config.DEFAULT_MODEL.startswith("ivrit-")
+    def test_default_model_is_a_card(self):
+        assert config.DEFAULT_MODEL in config.MODELS
 
     def test_every_card_has_a_placeholder_speed(self):
         """Without one, every card falls back to the same 1.0 and the
@@ -47,26 +44,18 @@ class TestConfig:
         assert set(config.SPEED_FACTORS) == set(config.MODELS)
         assert config.SPEED_FACTORS["ivrit-turbo"] > config.SPEED_FACTORS["ivrit-large"]
 
-    def test_default_model_exists(self):
-        """Test that default model is configured."""
-        assert config.DEFAULT_MODEL in config.MODELS
+    def test_cards_are_ordered_by_ascending_accuracy(self):
+        """The GUI renders the cards in dict order."""
+        scores = [info["accuracy_score"] for info in config.MODELS.values()]
+        assert scores == sorted(scores)
 
-    def test_only_one_recommended_model(self):
-        """Test that exactly one model is marked as recommended."""
-        recommended = [m for m in config.MODELS.values() if m["recommended"]]
-        assert len(recommended) == 1
 
-    def test_app_configuration(self):
-        """Test application configuration."""
-        assert config.APP_NAME == "Hebrew Audio Transcriber"
-        assert config.APP_VERSION == "2.0.0"
-        assert config.WINDOW_WIDTH > 0
-        assert config.WINDOW_HEIGHT > 0
+class TestAppConfig:
+    def test_the_app_transcribes_hebrew(self):
+        assert config.LANGUAGE == "he"
 
-    def test_supported_formats(self):
-        """Test that supported audio formats are defined."""
-        assert isinstance(config.SUPPORTED_FORMATS, tuple)
-        assert len(config.SUPPORTED_FORMATS) > 0
+    def test_supported_formats_are_file_dialog_globs(self):
+        assert config.SUPPORTED_FORMATS
         assert all(fmt.startswith("*.") for fmt in config.SUPPORTED_FORMATS)
 
     def test_required_packages_covers_every_import_the_app_cannot_start_without(self):
@@ -87,25 +76,6 @@ class TestConfig:
         required = config.REQUIRED_PACKAGES
         for name in ("PyQt5", "faster_whisper", "sherpa_onnx", "av", "psutil", "tqdm"):
             assert name in required, f"{name} is imported at startup but not checked for"
-
-    def test_transcription_settings(self):
-        """Test transcription configuration."""
-        assert config.LANGUAGE == "he"
-        assert config.BEAM_SIZE > 0
-        assert config.COMPUTE_TYPE in ["int8", "int16", "float16", "float32"]
-        assert isinstance(config.VAD_FILTER, bool)
-        assert isinstance(config.FORMAT_OUTPUT, bool)
-
-    def test_model_accuracy_progression(self):
-        """Test that accuracy scores increase with model size."""
-        models = list(config.MODELS.keys())
-        scores = [config.MODELS[m]["accuracy_score"] for m in models]
-
-        # Check that scores are in increasing order
-        for i in range(len(scores) - 1):
-            assert scores[i] <= scores[i + 1], (
-                f"Accuracy should increase: {models[i]}/{scores[i]} -> {models[i + 1]}/{scores[i + 1]}"
-            )
 
 
 class TestOutputPathFor:

@@ -56,7 +56,7 @@ def build(**overrides) -> TranscriptionRequest:
     """The builder with sensible defaults, so each test states only its point."""
     kwargs = {
         "files": ["C:/audio/meeting.m4a"],
-        "model": "small",
+        "model": "ivrit-turbo",
         "durations": [12.5],
         "hardware": FakeHardware(),
         "identify_speakers": True,
@@ -240,8 +240,8 @@ def test_the_model_and_durations_are_carried_through_in_order():
     durations are positional: entry n is the length of file n, and the
     worker's duration-weighted progress arithmetic depends on that pairing.
     """
-    request = build(files=["a.m4a", "b.m4a"], durations=[60.0, 30.0], model="medium")
-    assert request.model == "medium"
+    request = build(files=["a.m4a", "b.m4a"], durations=[60.0, 30.0], model="ivrit-large")
+    assert request.model == "ivrit-large"
     assert request.durations == [60.0, 30.0]
 
 

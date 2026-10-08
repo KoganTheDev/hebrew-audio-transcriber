@@ -58,7 +58,7 @@ def test_the_whole_object_survives_the_trip_into_the_worker_process():
     run time, in the child, as an error nobody could trace back to options.
     """
     options = TranscriptionOptions(
-        model_size="tiny",
+        model_size="ivrit-large",
         audio_durations=[3.0, 4.0],
         speaker_label="דובר {n}",
         failed_label="Transcription failed",

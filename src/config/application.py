@@ -5,8 +5,6 @@ import os
 APP_NAME = "Hebrew Audio Transcriber"
 APP_VERSION = "2.0.0"
 APP_ID = "speechtotext.transcriber.2"  # Windows AppUserModelID, for correct taskbar icon grouping
-WINDOW_WIDTH = 950
-WINDOW_HEIGHT = 800
 
 # dirname twice: this module sits in config/, so its own
 # directory's parent is the package root that assets/ lives beside.

@@ -48,7 +48,6 @@ FILE_LOCAL_TRANSCRIBE_SPAN = FILE_LOCAL_TRANSCRIBE_END - FILE_LOCAL_TRANSCRIBE_S
 # anyway so every number meaning "this file's own progress" lives here.
 FILE_LOCAL_ANALYZING_PERCENT = 2  # decoding has started
 FILE_LOCAL_SPEAKER_ID_END = 97  # diarization's own sub-band ends here
-FILE_LOCAL_SPEAKER_ID_SPAN = FILE_LOCAL_SPEAKER_ID_END - FILE_LOCAL_TRANSCRIBE_END  # 7
 FILE_LOCAL_CORRECTING_PERCENT = 98  # Hebrew term correction has started
 
 BATCH_INIT_PERCENT = 2

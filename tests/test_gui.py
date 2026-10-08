@@ -1,28 +1,23 @@
 """
-Tests for GUI components (limited GUI testing due to PyQt5 complexity).
+Tests for the GUI: the three wizard steps, the main window and its threads.
 
-FileSelectStep tests build real widgets under Qt's "offscreen" platform
-plugin (verified to work in this environment) rather than mocking QWidget
-internals - the drag-and-drop/list-row logic these tests care about (folder
-expansion, dedup, removal, signal shape) lives in real methods on the real
-widget, and mocking around it would just re-describe the implementation.
+Real widgets under Qt's "offscreen" platform plugin (set in conftest.py)
+rather than mocked QWidget internals - the logic these tests care about (folder
+expansion, dedup, model cards, keyboard guards, signal shape) lives in real
+methods on the real widgets, and mocking around it would just re-describe the
+implementation.
 """
 
 import os
 import threading
 import time
+from unittest.mock import MagicMock, patch
 
-# Must be set before PyQt5 is imported - Qt reads the platform plugin at import
-# time, so the noqa: E402 below is load-bearing, not a style waiver.
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+import pytest
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import QApplication
 
-from unittest.mock import MagicMock, patch  # noqa: E402
-
-import pytest  # noqa: E402
-from PyQt5.QtCore import Qt, QThread, pyqtSignal  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
-
-from gui.i18n import t  # noqa: E402
+from gui.i18n import t
 
 # No local `qapp` fixture here on purpose: these tests take pytest-qt's
 # session-scoped one. A local definition shadows it, and a module-scoped
@@ -73,26 +68,20 @@ def file_select_step(qtbot, hardware_stub):
     step.stop_probing()
 
 
-class TestGUI:
-    @pytest.mark.skipif(True, reason="PyQt5 GUI testing requires X11 or mocking display")
-    def test_main_window_creation(self):
-        """Test main window creation."""
-        pass
-
-    @patch("gui.main_window.QMainWindow")
-    def test_transcription_thread_initialization(self, mock_main_window):
+class TestTranscriptionThread:
+    def test_transcription_thread_initialization(self):
         """TranscriptionThread takes a batch: a list of files and matching durations."""
         from gui.main_window import TranscriptionThread
 
         thread = TranscriptionThread(
             audio_files=["a.mp3", "b.mp3"],
-            model_size="small",
+            model_size="ivrit-turbo",
             device="cpu",
             durations=[10.0, 20.0],
         )
 
         assert thread.audio_files == ["a.mp3", "b.mp3"]
-        assert thread.model_size == "small"
+        assert thread.model_size == "ivrit-turbo"
         assert thread.device == "cpu"
         assert thread.options.audio_durations == [10.0, 20.0]
         assert thread.options.total_duration == 30.0
@@ -104,7 +93,7 @@ class TestGUI:
         from gui.main_window import TranscriptionThread
 
         monkeypatch.delenv("SPEECH_TO_TEXT_TERMS_FILE", raising=False)
-        thread = TranscriptionThread(audio_files=["a.mp3"], model_size="small", device="cpu")
+        thread = TranscriptionThread(audio_files=["a.mp3"], model_size="ivrit-turbo", device="cpu")
 
         assert thread.options.terms_file == config.resolve_terms_path()
 
@@ -515,7 +504,7 @@ class TestTranscriptionStepResultPathElision:
     def test_allocated_height_matches_minimum_size_hint(self, qapp, step):
         from PyQt5.QtGui import QFontMetrics
 
-        step.set_file_info("meeting.m4a", "tiny")
+        step.set_file_info("meeting.m4a", "ivrit-turbo")
         step.show_result(r"C:\Users\yuval\Desktop\meeting_transcription.html")
         qapp.processEvents()
 
@@ -551,7 +540,7 @@ class TestTranscriptionStepResultPathElision:
 
     def test_the_displayed_line_is_elided_but_the_full_path_is_recoverable(self, qapp, step):
         long_path = r"C:\Users\yuval\Desktop\a very long meeting name that will not fit on one line without eliding.html"
-        step.set_file_info("meeting.m4a", "tiny")
+        step.set_file_info("meeting.m4a", "ivrit-turbo")
         step.show_result(long_path)
         qapp.processEvents()
 
@@ -569,7 +558,7 @@ class TestTranscriptionStepResultPathElision:
     def test_reflows_when_the_panel_is_resized_narrower(self, qapp, step):
         """The elision has to track the panel's actual width, not just the width at show_result time."""
         long_path = r"C:\Users\yuval\Desktop\a very long meeting name that will not fit on one line without eliding.html"
-        step.set_file_info("meeting.m4a", "tiny")
+        step.set_file_info("meeting.m4a", "ivrit-turbo")
         step.show_result(long_path)
         qapp.processEvents()
         wide_text = step.result_path.text()
@@ -980,7 +969,6 @@ class TestMainWindowKeyboardGuards:
         }
         hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
-        hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
@@ -1058,7 +1046,6 @@ class TestMainWindowStepNavigation:
         }
         hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
-        hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
@@ -1126,7 +1113,7 @@ class TestMainWindowStepNavigation:
         from gui.steps import Step
 
         main_window.selected_files = ["a.wav"]
-        main_window.selected_model = "tiny"
+        main_window.selected_model = "ivrit-turbo"
         main_window.audio_duration = 120
         main_window._set_next_button_mode("new_file")
 
@@ -1167,7 +1154,6 @@ class TestMainWindowCancelConfirm:
         }
         hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
-        hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
@@ -1263,7 +1249,6 @@ class TestMainWindowResizing:
         }
         hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
-        hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
 
@@ -1302,7 +1287,7 @@ class TestMainWindowResizing:
 
         main_window.resize(config.GUI_WINDOW_MIN_WIDTH, config.GUI_WINDOW_MIN_HEIGHT)
         ts = main_window.transcription_step
-        ts.set_file_info("meeting.m4a", "tiny")
+        ts.set_file_info("meeting.m4a", "ivrit-turbo")
         ts.show_result(r"C:\Users\yuval\Desktop\meeting_transcription.html")
         main_window.stacked_widget.setCurrentWidget(ts)
         qapp.processEvents()
@@ -1408,7 +1393,6 @@ def model_hardware_stub():
     hw.tiny_seconds_per_audio_second = None  # calibration not yet run - see the tests below
     hw.recommend_model.return_value = ("ivrit-turbo", "stub")
     hw.estimate_transcription_time.return_value = (60, "stub")
-    hw.get_time_estimate_display.return_value = "~1 min"
     return hw
 
 
@@ -1706,7 +1690,6 @@ class TestCalibrationThreadTeardown:
         }
         hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
-        hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
         monkeypatch.setattr(main_window_module, "HardwareDetector", lambda: hw)
         monkeypatch.setattr(main_window_module, "CalibrationThread", _FakeCalibrationThread)
@@ -1898,7 +1881,7 @@ class TestWorkStreamRelay:
         from gui.main_window import TranscriptionThread
 
         return TranscriptionThread(
-            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+            audio_files=["a.mp3"], model_size="ivrit-turbo", device="cpu", durations=[10.0]
         )
 
     def test_a_work_message_arrives_unchanged(self, qtbot):
@@ -2044,7 +2027,7 @@ class TestTimeReadout:
 
         step.start()
         step.stop()
-        step.update_progress("w_loading_model", {"model": "tiny"}, 5)
+        step.update_progress("w_loading_model", {"model": "ivrit-turbo"}, 5)
 
         assert "calculating" in step.time_label.text()
 
@@ -2135,7 +2118,7 @@ class TestAFinishedRunIsNotReportedAsAFailure:
         from gui.main_window import TranscriptionThread
 
         return TranscriptionThread(
-            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+            audio_files=["a.mp3"], model_size="ivrit-turbo", device="cpu", durations=[10.0]
         )
 
     def test_a_result_still_in_flight_is_waited_for(self, qtbot):
@@ -2489,7 +2472,7 @@ class TestFailedFileRelay:
         from gui.main_window import TranscriptionThread
 
         thread = TranscriptionThread(
-            audio_files=["a.mp3"], model_size="small", device="cpu", durations=[10.0]
+            audio_files=["a.mp3"], model_size="ivrit-turbo", device="cpu", durations=[10.0]
         )
         errors = []
         thread.error.connect(lambda *args: errors.append(args))

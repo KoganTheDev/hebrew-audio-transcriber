@@ -8,16 +8,11 @@ write the developer's real hebrew_terms.txt. qapp is pytest-qt's shared one -
 see "The shared QApplication" in docs/TESTING.md.
 """
 
-import os
+from unittest.mock import MagicMock
 
-# Must be set before PyQt5 is imported - Qt reads the platform plugin at import.
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-from unittest.mock import MagicMock  # noqa: E402
-
-import pytest  # noqa: E402
-from PyQt5.QtCore import Qt  # noqa: E402
-from PyQt5.QtWidgets import QFrame, QLabel, QPushButton  # noqa: E402
+import pytest
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QFrame, QLabel, QPushButton
 
 
 @pytest.fixture
@@ -54,7 +49,6 @@ def hardware_stub():
     hw.tiny_seconds_per_audio_second = None
     hw.recommend_model.return_value = ("ivrit-turbo", "stub")
     hw.estimate_transcription_time.return_value = (60, "stub")
-    hw.get_time_estimate_display.return_value = "~1 min"
     return hw
 
 

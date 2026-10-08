@@ -10,7 +10,7 @@ Nothing in core may import this module.
 """
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from PyQt5.QtCore import QObject, QSettings, pyqtSignal
 
@@ -758,12 +758,10 @@ STRINGS = {
 
 # Per-model card texts, keyed by the model names in config.MODELS. Model
 # names themselves stay Latin in both languages (they're technical
-# identifiers, like the ivrit.ai repo names they map to). "name",
-# "description", "purpose" and "accuracy" are rendered in the GUI; the rest mirror
-# config.MODELS so any future card expansion is already translated.
-# dict[str, str] values are a single per-language string; the
-# list[dict[str, str]] ones (pros, cons) hold one such dict per bullet.
-MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
+# identifiers, like the ivrit.ai repo names they map to). Every field is
+# rendered on the model step: the card's name, purpose and accuracy fact, and
+# the description its radio announces to a screen reader.
+MODEL_STRINGS: dict[str, dict[str, dict[str, str]]] = {
     "ivrit-turbo": {
         "name": {"en": "Ivrit Turbo", "he": "Ivrit Turbo"},
         "description": {
@@ -782,34 +780,6 @@ MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
             + ".",
         },
         "accuracy": {"en": "High", "he": "גבוה"},
-        "pros": [
-            {
-                "en": "✓ Trained specifically on Hebrew speech",
-                "he": "✓ אומן במיוחד על דיבור בעברית",
-            },
-            {
-                "en": "✓ Far fewer misheard Hebrew words than stock Whisper",
-                "he": "✓ הרבה פחות מילים שגויות בעברית מ-Whisper הרגיל",
-            },
-            {
-                "en": "✓ Turbo decoder: about 5x faster than Ivrit Large",
-                "he": "✓ מפענח Turbo: מהיר פי 5 בערך מ-Ivrit Large",
-            },
-            {"en": "✓ Best choice for Hebrew content", "he": "✓ הבחירה הטובה ביותר לתוכן בעברית"},
-        ],
-        "cons": [
-            {
-                "en": "✗ One-time 1.6 GB download on first use",
-                "he": "✗ הורדה חד-פעמית של 1.6 GB בשימוש הראשון",
-            },
-            {"en": "✗ Requires 3 GB RAM", "he": "✗ דורש 3 GB זיכרון"},
-            {
-                "en": "✗ Slightly less accurate than Ivrit Large on hard audio",
-                "he": "✗ מעט פחות מדויק מ-Ivrit Large באודיו קשה",
-            },
-        ],
-        "time_estimate": {"en": "~8-12 hours", "he": "כ-8-12 שעות"},
-        "best_for": {"en": "Hebrew transcription (RECOMMENDED)", "he": "תמלול בעברית (מומלץ)"},
     },
     "ivrit-large": {
         "name": {"en": "Ivrit Large", "he": "Ivrit Large"},
@@ -822,30 +792,6 @@ MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
             "he": "להקלטות קשות לשמיעה או קריטיות, כשאפשר לחכות. מעט מדויק יותר, איטי בהרבה.",
         },
         "accuracy": {"en": "Highest", "he": "הגבוה ביותר"},
-        "pros": [
-            {
-                "en": "✓ Most accurate Hebrew option available",
-                "he": "✓ האפשרות המדויקת ביותר לעברית",
-            },
-            {
-                "en": "✓ Best for critical or hard-to-hear recordings",
-                "he": "✓ הטוב ביותר להקלטות קריטיות או קשות לשמיעה",
-            },
-        ],
-        "cons": [
-            {
-                "en": "✗ One-time 3.1 GB download on first use",
-                "he": "✗ הורדה חד-פעמית של 3.1 GB בשימוש הראשון",
-            },
-            {"en": "✗ Very slow (40+ hours)", "he": "✗ איטי מאוד (מעל 40 שעות)"},
-            {"en": "✗ High RAM requirement (8 GB)", "he": "✗ דרישת זיכרון גבוהה (8 GB)"},
-            {
-                "en": "✗ Rarely worth it over Ivrit Turbo",
-                "he": "✗ לרוב לא שווה את זה לעומת Ivrit Turbo",
-            },
-        ],
-        "time_estimate": {"en": "~40+ hours", "he": "מעל כ-40 שעות"},
-        "best_for": {"en": "Critical Hebrew content", "he": "תוכן קריטי בעברית"},
     },
 }
 
@@ -943,14 +889,11 @@ def document_strings() -> dict[str, str]:
 def format_duration(seconds: int, elide_zero: bool = True) -> str:
     """A duration in the current language: "1m 46s" / "1 דק' 46 שנ'".
 
-    The same <60s / <1h / else ladder as
-    hardware_detection._format_duration, and the same elide_zero meaning -
-    drop a trailing zero component ("5m", not "5m 0s") when the string is
-    going in front of a user. That function stays where it is and keeps its
-    English output: it also builds the debug "reason" line that goes to the
-    log, which should not follow the UI language. This is the display half,
-    and it lives here because the unit words are string-table data like any
-    other.
+    The same <60s / <1h / else ladder as hardware_detection._format_duration,
+    which builds the English log line. elide_zero drops a trailing zero
+    component ("5m", not "5m 0s") when the string is going in front of a
+    user. This is the display half, and it lives here because the unit words
+    are string-table data like any other.
     """
     if seconds < 60:
         return t("dur_s", seconds=seconds)
@@ -966,19 +909,7 @@ def format_duration(seconds: int, elide_zero: bool = True) -> str:
     return t("dur_hm", hours=hours, minutes=minutes)
 
 
-def model_text(model: str, field: str, index: int | None = None) -> str:
-    """Translated text for a config.MODELS-derived field (e.g. card description).
-
-    `index` picks one bullet out of a list-valued field (pros, cons); every
-    other field holds a single per-language dict and takes no index. Which
-    fields are lists is a fixed property of the table above, so the pairing
-    is a fact about the call site rather than something to re-check at
-    runtime - hence casts rather than isinstance guards.
-    """
-    value = MODEL_STRINGS[model][field]
-    entry = (
-        cast("list[dict[str, str]]", value)[index]
-        if index is not None
-        else cast("dict[str, str]", value)
-    )
+def model_text(model: str, field: str) -> str:
+    """Translated text for one model card field (name, description, ...)."""
+    entry = MODEL_STRINGS[model][field]
     return entry.get(_current_lang) or entry["en"]

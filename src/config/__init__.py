@@ -22,8 +22,6 @@ from config.application import (
     ICON_PATH,
     INSTALL_TIMEOUT_SECONDS,
     REQUIRED_PACKAGES,
-    WINDOW_HEIGHT,
-    WINDOW_WIDTH,
 )
 from config.diarization import (
     DIARIZATION_CLUSTER_THRESHOLD,
@@ -122,8 +120,6 @@ __all__ = [
     "TERMS_FILENAME",
     "TRANSCRIPTION_OVERHEAD_SECONDS",
     "VAD_FILTER",
-    "WINDOW_HEIGHT",
-    "WINDOW_WIDTH",
     "compute_type_for_device",
     "hf_repo_id",
     "output_path_for",

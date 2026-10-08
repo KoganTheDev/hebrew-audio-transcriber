@@ -1,7 +1,9 @@
 """The model catalogue: what the GUI offers and what faster-whisper loads."""
 
 # The dict key is this app's identifier for a model (used by the GUI cards,
-# i18n.MODEL_STRINGS, RELATIVE_COMPUTE_COST and the settings we persist).
+# i18n.MODEL_STRINGS, RELATIVE_COMPUTE_COST and SPEED_FACTORS). This table
+# holds only what the app computes with; everything a card displays - name,
+# description, purpose, accuracy - is translated text in i18n.MODEL_STRINGS.
 # "repo" is what actually gets handed to faster-whisper's WhisperModel - either
 # a bare Whisper size or a HuggingFace repo id holding CTranslate2 weights.
 #
@@ -44,56 +46,15 @@ MODELS = {
     # faster-whisper loads - so using them costs nothing but the download.
     "ivrit-turbo": {
         "repo": "ivrit-ai/whisper-large-v3-turbo-ct2",
-        "name": "Ivrit Turbo",
-        "description": "Hebrew-tuned, fast and accurate",
-        "purpose": (
-            "The right choice for almost every recording: Hebrew-tuned, "
-            "and about 5x faster than Ivrit Large."
-        ),
-        "accuracy": "High",
-        "pros": [
-            "✓ Trained specifically on Hebrew speech",
-            "✓ Far fewer misheard Hebrew words than stock Whisper",
-            "✓ Turbo decoder: about 5x faster than Ivrit Large",
-            "✓ Best choice for Hebrew content",
-        ],
-        "cons": [
-            "✗ One-time 1.6 GB download on first use",
-            "✗ Requires 3 GB RAM",
-            "✗ Slightly less accurate than Ivrit Large on hard audio",
-        ],
-        "time_estimate": "~8-12 hours",
         "ram_required": "3 GB",
         "download_size": "1.6 GB",
         "accuracy_score": 5,
-        "best_for": "Hebrew transcription (RECOMMENDED)",
-        "recommended": True,
     },
     "ivrit-large": {
         "repo": "ivrit-ai/whisper-large-v3-ct2",
-        "name": "Ivrit Large",
-        "description": "Hebrew-tuned, highest accuracy, slow",
-        "purpose": (
-            "For hard-to-hear or critical recordings, when you can wait. "
-            "Slightly more accurate, much slower."
-        ),
-        "accuracy": "Highest",
-        "pros": [
-            "✓ Most accurate Hebrew option available",
-            "✓ Best for critical or hard-to-hear recordings",
-        ],
-        "cons": [
-            "✗ One-time 3.1 GB download on first use",
-            "✗ Very slow (40+ hours)",
-            "✗ High RAM requirement (8 GB)",
-            "✗ Rarely worth it over Ivrit Turbo",
-        ],
-        "time_estimate": "~40+ hours",
         "ram_required": "8 GB",
         "download_size": "3.1 GB",
         "accuracy_score": 5.5,
-        "best_for": "Critical Hebrew content",
-        "recommended": False,
     },
 }
 

@@ -33,9 +33,9 @@ class TestTranscriber:
 
     def test_transcriber_initialization(self):
         """Test transcriber initialization."""
-        transcriber = Transcriber(model_size="small", device="cpu", language="he")
+        transcriber = Transcriber(model_size="ivrit-large", device="cpu", language="he")
 
-        assert transcriber.model_size == "small"
+        assert transcriber.model_size == "ivrit-large"
         assert transcriber.device == "cpu"
         assert transcriber.language == "he"
         assert transcriber.model is None

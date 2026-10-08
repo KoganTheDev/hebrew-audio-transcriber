@@ -7,13 +7,25 @@ actually keep true.
 ## Running
 
 ```
-pytest                       # everything, with coverage, ~40s
-pytest -q --no-cov           # faster when iterating
-QT_QPA_PLATFORM=offscreen pytest    # required with no display (CI does this)
+pytest                              # everything, with coverage, ~65s
+pytest -q --no-cov -m "not slow"    # the fast loop while iterating, ~10s
 ```
 
-The package is a src-layout; `pytest.ini` sets `pythonpath = src`, so no install
-is needed to run the suite.
+Run it on the project's `.venv` (`.venv\Scripts\python -m pytest`): that is
+where `pip install -e .[dev]` put the dev dependencies, `python-docx` among
+them. The package is a src-layout; `pytest.ini` sets `pythonpath = src`, so no
+install of the app itself is needed.
+
+`tests/conftest.py` sets two environment variables before any test module is
+imported, so a plain `pytest` needs no setup:
+
+- `QT_QPA_PLATFORM=offscreen` - GUI tests build real widgets and no window ever
+  opens (CI has no display at all).
+- `SPEECH_TO_TEXT_REEXEC=1` - importing `app.py` on any interpreter other than
+  the project's `.venv` re-launches the whole app on the venv and waits for it.
+  Under pytest that hung collection at `test_main.py`'s `import app`. The marker
+  is app.py's own guard against re-launching twice; the tests of the re-launch
+  itself clear it.
 
 ## CI checks
 
@@ -165,14 +177,19 @@ exercises end to end rather than line by line.
 
 ## Markers
 
-`pytest.ini` declares `slow`, `integration` and `unit`. Only `integration` is
-actually used, on the six tests in `test_integration.py`; `slow` and `unit` are
-declared and applied nowhere, so `-m "not slow"` deselects nothing. Either apply
-them or drop them from `pytest.ini` - a declared marker that filters nothing is
-worse than no marker, because it reads like a working switch.
+Two, both applied, both enforced by `--strict-markers`:
 
-    pytest -m integration        # the six that exercise modules together
-    pytest -m "not integration"  # everything else
+- **`slow`** - a test that launches a process: the jsdom suite
+  (`test_js_behaviour.py`, ~50s of the ~65s total) and the three
+  `test_main.py` classes that start the real app in a subprocess.
+  `-m "not slow"` is the fast loop; CI runs everything.
+- **`integration`** - crosses module boundaries rather than testing one
+  module: `test_integration.py`, Transcriber's segments rendered into the
+  saved document.
+
+A new test that starts a process gets `slow`. A marker nobody applies gets
+deleted from `pytest.ini` - a declared marker that filters nothing reads like
+a working switch.
 
 ## The shared QApplication
 
