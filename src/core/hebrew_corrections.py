@@ -33,6 +33,7 @@ not general Hebrew misrecognition - only a better model does that.
 import logging
 import os
 import re
+from collections import Counter
 from collections.abc import Iterator, Sequence
 
 from core import term_store
@@ -57,6 +58,15 @@ MAX_RELATIVE_DISTANCE = 0.34
 # model's guess in place.
 MIN_MARGIN = 0.5
 
+# A word the model wrote with at least this confidence, at least this many
+# times in the same recording, is taken to be a real word it knows - never a
+# misheard term. Measured on real calls (tests/eval/compare_term_correction):
+# the term ענבל kept "correcting" אבל ("but"), which the same recording held
+# 29 times at confidence 1.0. Two sightings, not one, because a misheard
+# name can itself come out confident once (ציל for צליל, at 0.96).
+KNOWN_WORD_CONFIDENCE = 0.9
+KNOWN_WORD_MIN_COUNT = 2
+
 # Letters routinely confused because they sound identical or near-identical in
 # modern pronunciation, so a difference between them is weak evidence that this
 # is a different word - hence a cost below 1.0. א/ה/ע are silent or
@@ -73,6 +83,25 @@ _CONFUSION_GROUPS: Sequence[tuple[str, float]] = (
 )
 
 _HEBREW_WORD = re.compile(r"^[א-ת]+$")
+
+# Punctuation faster-whisper attaches to a word ("לכיסריה." "יוסי,"), split
+# off before matching and put back after. Without this every name at the end
+# of a sentence or before a comma failed _HEBREW_WORD and was never looked
+# at. Only the edges are touched, so gershayim inside an acronym (צה"ל) stay
+# put. Apostrophe and geresh are left out entirely: they can END a word
+# (ג'ורג'), and such a word should stay unmatched rather than lose a letter.
+_PUNCTUATION_CLASS = r'[.,!?;:"()\[\]{}«»“”„…–—\-־]'
+_EDGE_PUNCTUATION = re.compile(rf"^({_PUNCTUATION_CLASS}*)(.*?)({_PUNCTUATION_CLASS}*)$")
+
+
+def _split_punctuation(text: str) -> tuple[str, str, str]:
+    """(leading punctuation, word, trailing punctuation)."""
+    match = _EDGE_PUNCTUATION.match(text)
+    if match is None:  # unreachable - every group can be empty - but typed
+        return "", text, ""
+    lead, core, trail = match.groups()
+    return lead, core, trail
+
 
 _SUBSTITUTION_COST: dict[tuple[str, str], float] = {}
 for _group, _cost in _CONFUSION_GROUPS:
@@ -328,7 +357,7 @@ def _phrase_distance(
 
 
 def _correction_for(
-    word: Word, terms: TermList, confidence_threshold: float
+    word: Word, terms: TermList, confidence_threshold: float, known: frozenset[str]
 ) -> tuple[str, str] | None:
     """Decide what one word should be replaced with, or None to leave it alone.
 
@@ -340,27 +369,28 @@ def _correction_for(
         return None
 
     bare = word.text.strip()
-    if not _HEBREW_WORD.match(normalize_word(bare)):
+    lead, core, trail = _split_punctuation(bare)
+    if not _HEBREW_WORD.match(normalize_word(core)) or normalize_word(core) in known:
         return None
 
-    match = terms.best_match(bare)
+    match = terms.best_match(core)
     if match is None:
         return None
 
     replacement, distance, margin = match
-    if replacement == bare:
+    if replacement == core:
         return None
 
     logger.info(
-        f"Hebrew correction: {bare!r} -> {replacement!r} "
+        f"Hebrew correction: {core!r} -> {replacement!r} "
         f"(confidence {word.probability:.2f}, distance {distance:.2f}, "
         f"margin {margin:.2f})"
     )
-    return bare, replacement
+    return bare, lead + replacement + trail
 
 
 def _phrase_correction_for(
-    window: Sequence[Word], terms: TermList, confidence_threshold: float
+    window: Sequence[Word], terms: TermList, confidence_threshold: float, known: frozenset[str]
 ) -> list[str] | None:
     """What a run of words should become as one multi-word term, or None.
 
@@ -371,23 +401,35 @@ def _phrase_correction_for(
     if not any(uncertain):
         return None
 
-    bares = [word.text.strip() for word in window]
-    if not all(_HEBREW_WORD.match(normalize_word(bare)) for bare in bares):
+    pieces = [_split_punctuation(word.text.strip()) for word in window]
+    # Punctuation may open the phrase or close it, not sit inside it: a comma
+    # between two words says they are not one name.
+    if any(trail for _lead, _core, trail in pieces[:-1]):
+        return None
+    if any(lead for lead, _core, _trail in pieces[1:]):
+        return None
+    cores = [core for _lead, core, _trail in pieces]
+    if not all(_HEBREW_WORD.match(normalize_word(core)) for core in cores):
+        return None
+    if any(doubted and normalize_word(core) in known for core, doubted in zip(cores, uncertain)):
         return None
 
-    match = terms.best_phrase_match(bares, uncertain)
+    match = terms.best_phrase_match(cores, uncertain)
     if match is None:
         return None
 
     replacement, distance, margin = match
-    if replacement == bares:
+    if replacement == cores:
         return None
 
     logger.info(
-        f"Hebrew correction: {' '.join(bares)!r} -> {' '.join(replacement)!r} "
+        f"Hebrew correction: {' '.join(cores)!r} -> {' '.join(replacement)!r} "
         f"(confidence {min(word.probability for word in window):.2f}, "
         f"distance {distance:.2f}, margin {margin:.2f})"
     )
+    replacement = list(replacement)
+    replacement[0] = pieces[0][0] + replacement[0]
+    replacement[-1] = replacement[-1] + pieces[-1][2]
     return replacement
 
 
@@ -418,6 +460,7 @@ def correct(
         return []
 
     changes: list[tuple[str, str, float]] = []
+    known = _known_words(segments)
 
     for segment in segments:
         if not segment.words:
@@ -426,8 +469,8 @@ def correct(
         # Multi-word terms first, so a word a phrase claimed is not then
         # "corrected" again on its own.
         replacements: dict[int, str] = {}
-        _correct_phrases(segment.words, terms, confidence_threshold, replacements, changes)
-        _correct_words(segment.words, terms, confidence_threshold, replacements, changes)
+        _correct_phrases(segment.words, terms, confidence_threshold, known, replacements, changes)
+        _correct_words(segment.words, terms, confidence_threshold, known, replacements, changes)
         if not replacements:
             continue
 
@@ -441,10 +484,21 @@ def correct(
 _Change = tuple[str, str, float]
 
 
+def _known_words(segments: Sequence[Segment]) -> frozenset[str]:
+    """Words this recording itself shows the model knows - see KNOWN_WORD_*."""
+    counts: Counter[str] = Counter()
+    for segment in segments:
+        for word in segment.words:
+            if word.probability >= KNOWN_WORD_CONFIDENCE:
+                counts[normalize_word(_split_punctuation(word.text.strip())[1])] += 1
+    return frozenset(word for word, n in counts.items() if n >= KNOWN_WORD_MIN_COUNT)
+
+
 def _correct_phrases(
     words: Sequence[Word],
     terms: TermList,
     confidence_threshold: float,
+    known: frozenset[str],
     replacements: dict[int, str],
     changes: list[_Change],
 ) -> None:
@@ -455,7 +509,7 @@ def _correct_phrases(
             if any(index in replacements for index in span):
                 continue
             window = [words[index] for index in span]
-            phrase = _phrase_correction_for(window, terms, confidence_threshold)
+            phrase = _phrase_correction_for(window, terms, confidence_threshold, known)
             if phrase is None:
                 continue
             for index, word, new_bare in zip(span, window, phrase):
@@ -469,6 +523,7 @@ def _correct_words(
     words: Sequence[Word],
     terms: TermList,
     confidence_threshold: float,
+    known: frozenset[str],
     replacements: dict[int, str],
     changes: list[_Change],
 ) -> None:
@@ -476,7 +531,7 @@ def _correct_words(
     for index, word in enumerate(words):
         if index in replacements:
             continue
-        correction = _correction_for(word, terms, confidence_threshold)
+        correction = _correction_for(word, terms, confidence_threshold, known)
         if correction is None:
             continue
         bare, replacement = correction

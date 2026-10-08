@@ -289,3 +289,96 @@ class TestMultiWordTerms:
         seg = segment_of(word("יובל "), word("כוגן", probability=0.2))
         correct([seg], TermList(["יובל   קוגן"]))
         assert seg.text == "יובל קוגן"
+
+
+class TestPunctuationAttachedToWords:
+    """
+    faster-whisper attaches punctuation to the word before it, so every name
+    at the end of a sentence or before a comma used to fail the plain-Hebrew
+    check and was never even considered.
+    """
+
+    def test_a_word_before_a_full_stop_is_corrected_and_keeps_it(self):
+        seg = segment_of(word("נסענו "), word("לכיסריה.", probability=0.2))
+        changes = correct([seg], TermList(["קיסריה"]))
+
+        assert seg.text == "נסענו לקיסריה."
+        assert changes[0][:2] == ("לכיסריה.", "לקיסריה.")
+
+    @pytest.mark.parametrize("mark", [",", "?", "!", "...", ":", ";", "?!"])
+    def test_trailing_marks_survive(self, mark):
+        seg = segment_of(word("כיסריה" + mark, probability=0.2))
+        correct([seg], TermList(["קיסריה"]))
+        assert seg.text == "קיסריה" + mark
+
+    def test_quotes_and_brackets_on_both_sides_survive(self):
+        seg = segment_of(word('"כיסריה",', probability=0.2))
+        correct([seg], TermList(["קיסריה"]))
+        assert seg.text == '"קיסריה",'
+
+    def test_a_word_ending_in_geresh_is_not_cut_short(self):
+        """ג'ורג' ends in a geresh that is part of the word; stripping it as
+        punctuation would hand the matcher a different, shorter word."""
+        seg = segment_of(word("ג'ורג'", probability=0.2))
+        assert correct([seg], TermList(["ג'ורג"])) == []
+        assert seg.text == "ג'ורג'"
+
+    def test_punctuation_alone_is_not_a_word(self):
+        seg = segment_of(word("...", probability=0.1))
+        assert correct([seg], TermList(["קיסריה"])) == []
+
+    def test_a_phrase_at_the_end_of_a_sentence(self):
+        seg = segment_of(word("עם "), word("יובל "), word("כוגן.", probability=0.2))
+        correct([seg], TermList(["יובל קוגן"]))
+        assert seg.text == "עם יובל קוגן."
+
+    def test_a_phrase_in_quotes_keeps_both_quotes(self):
+        seg = segment_of(word('"יובל '), word('כוגן"', probability=0.2))
+        correct([seg], TermList(["יובל קוגן"]))
+        assert seg.text == '"יובל קוגן"'
+
+    def test_a_comma_inside_the_window_means_it_is_not_one_name(self):
+        """ "יובל, כוגן" is two things said in a row, not a misheard name."""
+        seg = segment_of(word("יובל, "), word("כוגן", probability=0.2))
+        assert correct([seg], TermList(["יובל קוגן"])) == []
+        assert seg.text == "יובל, כוגן"
+
+
+class TestWordsTheRecordingShowsTheModelKnows:
+    """
+    Found on a real call (tests/eval/compare_term_correction): the term ענבל
+    kept rewriting אבל ("but") - 1.25 apart, inside the 1.36 limit - although
+    the same recording held אבל 29 times at confidence 1.0. A word the model
+    has written confidently and repeatedly is a word it knows, not a
+    misheard name, whatever term it happens to be close to.
+    """
+
+    def test_a_common_word_seen_confidently_elsewhere_is_left_alone(self):
+        known = segment_of(word("אבל ", 1.0), word("טוב ", 1.0), word("אבל", 0.98))
+        doubted = segment_of(word("אבל", probability=0.13))
+        assert correct([known, doubted], TermList(["ענבל"])) == []
+        assert doubted.text == "אבל"
+
+    def test_the_same_word_with_no_confident_sightings_is_still_corrected(self):
+        """Control: the guard, not the matcher, is what refused above."""
+        doubted = segment_of(word("אבל", probability=0.13))
+        assert correct([doubted], TermList(["ענבל"])) != []
+
+    def test_one_confident_sighting_is_not_enough(self):
+        """A misheard name can itself come out confident once - ציל for צליל
+        at 0.96 on the same call - and must not then shield its other
+        occurrences from correction."""
+        once = segment_of(word("ציל", probability=0.96))
+        doubted = segment_of(word("ציל", probability=0.3))
+        correct([once, doubted], TermList(["צליל"]))
+        assert doubted.text == "צליל"
+
+    def test_punctuation_does_not_hide_a_known_word(self):
+        known = segment_of(word("אבל, ", 1.0), word("אבל.", 1.0))
+        doubted = segment_of(word("אבל...", probability=0.45))
+        assert correct([known, doubted], TermList(["ענבל"])) == []
+
+    def test_a_known_doubted_word_blocks_a_phrase_too(self):
+        known = segment_of(word("נדבר ", 1.0), word("נדבר", 1.0))
+        doubted = segment_of(word("יוסי "), word("נדבר", probability=0.3))
+        assert correct([known, doubted], TermList(["יוסי נאור"])) == []
