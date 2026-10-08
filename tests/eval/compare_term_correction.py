@@ -54,6 +54,11 @@ the references before any output was read, all three fixtures)
   where the speaker said ניצור). main's corrector on the same words: 3
   fixed, 22 broke - אבל -> ענבל throughout. The known-word guard is the
   difference; the term list earns its place for anyone on a smaller model.
+* Click-to-fix suggestions (annotate_suggestions), both models: 0 words got
+  a suggestion menu - every doubted word near a term was either confidently
+  auto-corrected or a word the recording shows the model knows. On Small,
+  all 10 auto-corrections are restorable, including the 4 wrong-to-wrong
+  ones; on this data "restore original" is the menu's measured value.
 * --hotwords (the terms in faster-whisper's decoder prompt) is far worse:
   WER 2.9% -> 47% on the podcast, 10-13% -> 45-53% on the calls - repeated
   phrases, dropped sentences, digits spelled out. Do not ship it.
@@ -263,6 +268,29 @@ def _verdicts(ref_tokens, before, after) -> list[dict]:
     return results
 
 
+def _menu_stats(ref_tokens: list[str], segments) -> dict:
+    """What the transcript page's click-to-fix menu would show.
+
+    menus: words given term suggestions. menu_has_reference: of those, how
+    many offer the word the human transcript has there - the menu's hit
+    rate. restorable: auto-corrected words, whose menu offers the original.
+    """
+    hyp, owner = _token_stream(segments)
+    reference_at = dict(zip(owner, _aligned_reference(ref_tokens, hyp)))
+    stats = {"menus": 0, "menu_has_reference": 0, "restorable": 0}
+    for si, segment in enumerate(segments):
+        for wi, word in enumerate(segment.words):
+            if getattr(word, "original", None):
+                stats["restorable"] += 1
+            options = getattr(word, "suggestions", None) or []
+            if not options:
+                continue
+            stats["menus"] += 1
+            if reference_at.get((si, wi)) in {" ".join(tokens(o)) for o in options}:
+                stats["menu_has_reference"] += 1
+    return stats
+
+
 def _term_hits(terms: list[str], text: str) -> int:
     """How many times any term's normalised word sequence occurs in text."""
     words = tokens(text)
@@ -308,6 +336,9 @@ def score(
         before = _load_segments(name, model, variant)
         after = copy.deepcopy(before)
         hebrew_corrections.correct(after, terms, gate)
+        # Older commits (scored through a worktree) predate suggestions.
+        if hasattr(hebrew_corrections, "annotate_suggestions"):
+            hebrew_corrections.annotate_suggestions(after, terms, gate)
 
         hyp_before, hyp_after = plain_text(before), plain_text(after)
         changes = _verdicts(tokens(ref_text), before, after)
@@ -323,6 +354,7 @@ def score(
             "term_hits_reference": _term_hits(list(terms.terms), ref_text),
             "term_hits_before": _term_hits(list(terms.terms), hyp_before),
             "term_hits_after": _term_hits(list(terms.terms), hyp_after),
+            "menus": _menu_stats(tokens(ref_text), after),
             "changes": changes,
             **counts,
         }
@@ -340,6 +372,12 @@ def score(
         print(
             f"   changes: {len(changes)}  fixed {counts['fixed']}  broke {counts['broke']}  "
             f"neither {counts['neither']}"
+        )
+        menus = row["menus"]
+        print(
+            f"   click-to-fix: {menus['menus']} words with suggestions "
+            f"({menus['menu_has_reference']} offer the reference word), "
+            f"{menus['restorable']} auto-corrections restorable"
         )
         for c in changes:
             print(
