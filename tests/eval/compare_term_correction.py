@@ -48,6 +48,12 @@ the references before any output was read, all three fixtures)
   came out CONFIDENT (ציל for צליל at 0.96, יופי for יוסי at 0.98).
 * Lowering the gate does not reach them safely: with no gate, 1 fixed for
   every ~5 broken, and even with the guard 1 real flag in 18.
+* On Small (--model small), where mistakes are far more often uncertain
+  (WER 8%/30%/44%), the same list and gate: 6 names fixed, 0 broke, 4
+  already-wrong words turned into a different wrong name (ניתור -> נאור
+  where the speaker said ניצור). main's corrector on the same words: 3
+  fixed, 22 broke - אבל -> ענבל throughout. The known-word guard is the
+  difference; the term list earns its place for anyone on a smaller model.
 * --hotwords (the terms in faster-whisper's decoder prompt) is far worse:
   WER 2.9% -> 47% on the podcast, 10-13% -> 45-53% on the calls - repeated
   phrases, dropped sentences, digits spelled out. Do not ship it.
