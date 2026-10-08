@@ -190,10 +190,50 @@ STRINGS = {
     # --- Step 2: model selection ---
     "choose_model": {"en": "Choose Model", "he": "בחירת מודל"},
     "recommended_badge": {"en": "RECOMMENDED", "he": "מומלץ"},
-    "identify_speakers": {"en": "Identify speakers", "he": "זהה דוברים"},
-    "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
-    # --- Step 2: the custom terms dialog (gui/terms_dialog.py) ---
-    "terms_button": {"en": "Custom terms ({n})", "he": "מונחים מותאמים ({n})"},
+    # The four facts under each model card's purpose line.
+    "model_fact_time": {"en": "Est. time", "he": "זמן משוער"},
+    "model_fact_accuracy": {"en": "Accuracy", "he": "דיוק"},
+    "model_fact_memory": {"en": "Memory", "he": "זיכרון"},
+    "model_fact_first_use": {"en": "First use", "he": "שימוש ראשון"},
+    "model_ready": {"en": "Ready", "he": "מוכן"},
+    # The "First use" fact for a model not in the local download cache yet
+    # (see model_select.py's _model_is_downloaded). model_download_tooltip
+    # below spells the same fact out in words.
+    "model_download_fact": {"en": "↓ {size}", "he": "↓ " + _LRI + "{size}" + _PDI},
+    # Under the cards: what the estimates above assume. Speaker
+    # identification is a second pass over the audio, so it changes them.
+    "estimate_footnote_speakers": {
+        "en": "Times are estimated for {duration} of audio, with speaker labels.",
+        "he": "הזמנים משוערים ל-{duration} של אודיו, כולל סימון דוברים.",
+    },
+    "estimate_footnote": {
+        "en": "Times are estimated for {duration} of audio.",
+        "he": "הזמנים משוערים ל-{duration} של אודיו.",
+    },
+    # --- Step 2: the speakers panel ---
+    "speakers_title": {"en": "Speakers", "he": "דוברים"},
+    "speakers_sub": {
+        "en": "Marks who is talking in each part of the transcript.",
+        "he": "מסמן מי מדבר בכל קטע בתמלול.",
+    },
+    # A count of one is how the run skips speaker identification.
+    "speakers_sub_one": {
+        "en": "One person, so no speaker labels.",
+        "he": "אדם אחד, ולכן בלי סימון דוברים.",
+    },
+    "speaker_count": {"en": "People", "he": "אנשים"},
+    "speakers_fewer": {"en": "Fewer people", "he": "פחות אנשים"},
+    "speakers_more": {"en": "More people", "he": "יותר אנשים"},
+    # --- Step 2: the custom terms panel, and the dialog it opens (gui/terms_dialog.py) ---
+    "terms_sub": {
+        "en": "Names and jargon the app fixes when the model is unsure.",
+        "he": "שמות ומונחים שהאפליקציה מתקנת כשהמודל לא בטוח.",
+    },
+    "terms_edit": {"en": "Edit", "he": "עריכה"},
+    # Hebrew opens with a Hebrew word: a leading "+4" is all weak characters
+    # and lands on whichever side the bidi pass resolves it to.
+    "terms_more": {"en": "+{n} more", "he": "ועוד {n}"},
+    "terms_none": {"en": "No terms yet.", "he": "אין עדיין מונחים."},
     "terms_button_tooltip": {
         "en": "Names, places and jargon the app corrects in transcripts. Saved in {path}",
         "he": "שמות, מקומות ומונחים שהאפליקציה מתקנת בתמלול. נשמר ב-" + _LRI + "{path}" + _PDI,
@@ -235,7 +275,6 @@ STRINGS = {
         "en": "Transcription failed: {message}",
         "he": "התמלול נכשל: {message}",
     },
-    "model_desc_est": {"en": "{desc} | Est: {time}", "he": "{desc} | משוער: {time}"},
     # Duration units, for format_duration() below. The abbreviations match
     # file_info/files_summary above on purpose: a Hebrew user reading a
     # file's length on step 1 and the model card's estimate on step 2 sees
@@ -245,38 +284,12 @@ STRINGS = {
     "dur_ms": {"en": "{minutes}m {seconds}s", "he": "{minutes} דק' {seconds} שנ'"},
     "dur_h": {"en": "{hours}h", "he": "{hours} שע'"},
     "dur_hm": {"en": "{hours}h {minutes}m", "he": "{hours} שע' {minutes} דק'"},
-    # RAM required, shown on the model card's tooltip and folded into its
-    # radio's accessible description - not inline in the caption text (see
-    # ModelSelectStep._desc_text): it applies to every card, always, and the
-    # caption doesn't have room to say so for all seven without overflowing
-    # in Hebrew on the RECOMMENDED card specifically (measured).
+    # RAM required and, below, the download note: the card's tooltip and its
+    # radio's accessible description, the spoken form of the card's facts.
     "model_ram_tooltip": {
         "en": "Requires {ram} RAM",
         "he": "דורש " + _LRI + "{ram}" + _PDI + " זיכרון RAM",
     },
-    # Appended to a card's caption ONLY for a model not yet present in the
-    # local download cache (see model_select.py's _model_is_downloaded) -
-    # the one fact that changes a decision right now, for the one or two
-    # models that actually need it. Most cards carry no extra text at all.
-    #
-    # Deliberately terse (a bare down-arrow, not the word "download"/"הורדה"):
-    # measured against the RECOMMENDED card - the one this note is most
-    # likely to land on, since the app's own default recommendation is
-    # usually the least-downloaded model - the full word pushed the caption
-    # past the scroll area's actual viewport width (was 539px against a
-    # ~514px budget once the vertical scrollbar is showing; the word alone
-    # cost ~45 of those px). The arrow trades a few px of self-explanation
-    # for fitting at all; model_download_tooltip below (on the card and the
-    # radio's accessible description) carries the full sentence for anyone
-    # who needs it spelled out.
-    "model_download_pending": {
-        "en": "| ↓ " + _LRI + "{size}" + _PDI,
-        "he": "| ↓ " + _LRI + "{size}" + _PDI,
-    },
-    # Full sentence version of the note above, for the card's tooltip and
-    # the radio's accessible description - a screen reader or a hovering
-    # mouse gets the words a screen glance at "↓ 1.6 GB" doesn't have room
-    # to spell out.
     "model_download_tooltip": {
         "en": "Not downloaded yet - {size} on first use",
         "he": "טרם הורד - " + _LRI + "{size}" + _PDI + " בשימוש הראשון",
@@ -745,147 +758,42 @@ STRINGS = {
 
 # Per-model card texts, keyed by the model names in config.MODELS. Model
 # names themselves stay Latin in both languages (they're technical
-# identifiers, like the Whisper model names they map to). Only "name" and
-# "description" are rendered in the GUI today; the rest mirror
+# identifiers, like the ivrit.ai repo names they map to). "name",
+# "description", "purpose" and "accuracy" are rendered in the GUI; the rest mirror
 # config.MODELS so any future card expansion is already translated.
 # dict[str, str] values are a single per-language string; the
 # list[dict[str, str]] ones (pros, cons) hold one such dict per bullet.
 MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
-    "tiny": {
-        "name": {"en": "Tiny", "he": "Tiny"},
-        "description": {
-            "en": "Ultra-fast, lowest quality",
-            "he": "מהיר במיוחד, האיכות הנמוכה ביותר",
-        },
-        "pros": [
-            {
-                "en": "✓ Fastest option (~30 min for 60-min audio)",
-                "he": "✓ האפשרות המהירה ביותר (כ-30 דק' לשעת אודיו)",
-            },
-            {"en": "✓ Minimal RAM (1 GB)", "he": "✓ זיכרון מינימלי (1 GB)"},
-            {
-                "en": "✓ Good for: Quick rough drafts, testing",
-                "he": "✓ מתאים לטיוטות מהירות ובדיקות",
-            },
-        ],
-        "cons": [
-            {"en": "✗ Lowest accuracy", "he": "✗ הדיוק הנמוך ביותר"},
-            {"en": "✗ Many errors and misheard words", "he": "✗ שגיאות רבות ומילים שגויות"},
-            {"en": "✗ Poor Hebrew support", "he": "✗ תמיכה חלשה בעברית"},
-        ],
-        "time_estimate": {"en": "~30 minutes", "he": "כ-30 דקות"},
-        "best_for": {"en": "Quick testing only", "he": "בדיקות מהירות בלבד"},
-    },
-    "base": {
-        "name": {"en": "Base", "he": "Base"},
-        "description": {
-            "en": "Good balance of speed and quality",
-            "he": "איזון טוב בין מהירות לאיכות",
-        },
-        "pros": [
-            {"en": "✓ Reasonable speed (3-5 hours)", "he": "✓ מהירות סבירה (3-5 שעות)"},
-            {"en": "✓ Moderate RAM (2 GB)", "he": "✓ זיכרון בינוני (2 GB)"},
-            {
-                "en": "✓ Better than tiny, acceptable for casual use",
-                "he": "✓ טוב מ-Tiny, מספיק לשימוש יומיומי",
-            },
-        ],
-        "cons": [
-            {"en": "✗ Moderate accuracy (some errors)", "he": "✗ דיוק בינוני (מעט שגיאות)"},
-            {"en": "✗ Not ideal for Hebrew", "he": "✗ לא אידיאלי לעברית"},
-            {
-                "en": "✗ Professional users may notice mistakes",
-                "he": "✗ משתמשים מקצועיים יבחינו בטעויות",
-            },
-        ],
-        "time_estimate": {"en": "~3-5 hours", "he": "כ-3-5 שעות"},
-        "best_for": {"en": "Casual transcription", "he": "תמלול יומיומי"},
-    },
-    "small": {
-        "name": {"en": "Small", "he": "Small"},
-        "description": {"en": "Better accuracy for Hebrew", "he": "דיוק משופר לעברית"},
-        "pros": [
-            {"en": "✓ Good accuracy for Hebrew", "he": "✓ דיוק טוב לעברית"},
-            {"en": "✓ Reasonable time (8-10 hours)", "he": "✓ זמן סביר (8-10 שעות)"},
-            {"en": "✓ 3 GB RAM, manageable", "he": "✓ 3 GB זיכרון, סביר"},
-        ],
-        "cons": [
-            {"en": "✗ Slower than base", "he": "✗ איטי מ-Base"},
-            {"en": "✗ Still not perfect accuracy", "he": "✗ הדיוק עדיין אינו מושלם"},
-            {"en": "✗ Not recommended for critical content", "he": "✗ לא מומלץ לתוכן קריטי"},
-        ],
-        "time_estimate": {"en": "~8-10 hours", "he": "כ-8-10 שעות"},
-        "best_for": {"en": "Good quality transcription", "he": "תמלול באיכות טובה"},
-    },
-    "medium": {
-        "name": {"en": "Medium", "he": "Medium"},
-        "description": {"en": "High accuracy general-purpose model", "he": "מודל כללי בדיוק גבוה"},
-        "pros": [
-            {"en": "✓ Good accuracy across languages", "he": "✓ דיוק טוב במגוון שפות"},
-            {"en": "✓ Professional quality results", "he": "✓ תוצאות באיכות מקצועית"},
-            {"en": "✓ Good balance of quality/time", "he": "✓ איזון טוב בין איכות לזמן"},
-        ],
-        "cons": [
-            {"en": "✗ Longer processing (~20-24 hours)", "he": "✗ עיבוד ממושך (כ-20-24 שעות)"},
-            {"en": "✗ Requires 5 GB RAM", "he": "✗ דורש 5 GB זיכרון"},
-            {
-                "en": "✗ Slower and less accurate on Hebrew than Ivrit Turbo",
-                "he": "✗ איטי ופחות מדויק בעברית מ-Ivrit Turbo",
-            },
-        ],
-        "time_estimate": {"en": "~20-24 hours", "he": "כ-20-24 שעות"},
-        "best_for": {"en": "General-purpose transcription", "he": "תמלול כללי"},
-    },
-    "large": {
-        "name": {"en": "Large", "he": "Large"},
-        "description": {
-            "en": "Best general-purpose model, very slow",
-            "he": "המודל הכללי הטוב ביותר, איטי מאוד",
-        },
-        "pros": [
-            {
-                "en": "✓ Highest accuracy of the general-purpose models",
-                "he": "✓ הדיוק הגבוה ביותר מבין המודלים הכלליים",
-            },
-            {"en": "✓ Handles mixed-language audio well", "he": "✓ מתמודד היטב עם אודיו רב-לשוני"},
-            {"en": "✓ Fewest errors outside Hebrew", "he": "✓ הכי מעט שגיאות מחוץ לעברית"},
-        ],
-        "cons": [
-            {"en": "✗ Very slow (40+ hours)", "he": "✗ איטי מאוד (מעל 40 שעות)"},
-            {"en": "✗ High RAM requirement (8 GB)", "he": "✗ דרישת זיכרון גבוהה (8 GB)"},
-            {
-                "en": "✗ May run out of memory on limited systems",
-                "he": "✗ הזיכרון עלול להיגמר במערכות מוגבלות",
-            },
-            {
-                "en": "✗ Still trained mostly on non-Hebrew speech",
-                "he": "✗ אומן בעיקר על דיבור שאינו עברית",
-            },
-        ],
-        "time_estimate": {"en": "~40+ hours", "he": "מעל כ-40 שעות"},
-        "best_for": {
-            "en": "Mixed-language or non-Hebrew content",
-            "he": "תוכן רב-לשוני או שאינו עברית",
-        },
-    },
     "ivrit-turbo": {
         "name": {"en": "Ivrit Turbo", "he": "Ivrit Turbo"},
         "description": {
-            "en": "Hebrew-tuned, fast and accurate (recommended)",
-            "he": "מותאם לעברית, מהיר ומדויק (מומלץ)",
+            "en": "Hebrew-tuned, fast and accurate",
+            "he": "מותאם לעברית, מהיר ומדויק",
         },
+        "purpose": {
+            "en": "The right choice for almost every recording: Hebrew-tuned, and about 5x faster than Ivrit Large.",
+            # Isolated, with a non-breaking space: otherwise the line can
+            # break inside the Latin name and the bidi pass reorders the
+            # halves ("Ivrit-מ" ... "Large").
+            "he": "הבחירה הנכונה כמעט לכל הקלטה: מותאם לעברית, ומהיר פי 5 בערך מ-"
+            + _LRI
+            + "Ivrit Large"
+            + _PDI
+            + ".",
+        },
+        "accuracy": {"en": "High", "he": "גבוה"},
         "pros": [
             {
                 "en": "✓ Trained specifically on Hebrew speech",
                 "he": "✓ אומן במיוחד על דיבור בעברית",
             },
             {
-                "en": "✓ Far fewer misheard Hebrew words than any model above",
-                "he": "✓ הרבה פחות מילים שגויות בעברית מכל מודל שמעליו",
+                "en": "✓ Far fewer misheard Hebrew words than stock Whisper",
+                "he": "✓ הרבה פחות מילים שגויות בעברית מ-Whisper הרגיל",
             },
             {
-                "en": "✓ Turbo decoder: faster than Medium despite being larger",
-                "he": "✓ מפענח Turbo: מהיר מ-Medium למרות שהוא גדול יותר",
+                "en": "✓ Turbo decoder: about 5x faster than Ivrit Large",
+                "he": "✓ מפענח Turbo: מהיר פי 5 בערך מ-Ivrit Large",
             },
             {"en": "✓ Best choice for Hebrew content", "he": "✓ הבחירה הטובה ביותר לתוכן בעברית"},
         ],
@@ -896,8 +804,8 @@ MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
             },
             {"en": "✗ Requires 3 GB RAM", "he": "✗ דורש 3 GB זיכרון"},
             {
-                "en": "✗ Hebrew only - weaker on other languages than Large",
-                "he": "✗ עברית בלבד - חלש יותר משפות אחרות מ-Large",
+                "en": "✗ Slightly less accurate than Ivrit Large on hard audio",
+                "he": "✗ מעט פחות מדויק מ-Ivrit Large באודיו קשה",
             },
         ],
         "time_estimate": {"en": "~8-12 hours", "he": "כ-8-12 שעות"},
@@ -909,6 +817,11 @@ MODEL_STRINGS: dict[str, dict[str, dict[str, str] | list[dict[str, str]]]] = {
             "en": "Hebrew-tuned, highest accuracy, slow",
             "he": "מותאם לעברית, הדיוק הגבוה ביותר, איטי",
         },
+        "purpose": {
+            "en": "For hard-to-hear or critical recordings, when you can wait. Slightly more accurate, much slower.",
+            "he": "להקלטות קשות לשמיעה או קריטיות, כשאפשר לחכות. מעט מדויק יותר, איטי בהרבה.",
+        },
+        "accuracy": {"en": "Highest", "he": "הגבוה ביותר"},
         "pros": [
             {
                 "en": "✓ Most accurate Hebrew option available",

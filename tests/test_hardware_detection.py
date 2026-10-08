@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import config
 from hardware_detection import HardwareDetector
 
 
@@ -50,7 +51,7 @@ class TestHardwareDetector:
 
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
             detector = HardwareDetector()
-            can_run, reason = detector.can_run_model("medium")
+            can_run, reason = detector.can_run_model("ivrit-turbo")
             assert can_run is True
             assert "enough RAM" in reason
 
@@ -63,9 +64,22 @@ class TestHardwareDetector:
 
         with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
             detector = HardwareDetector()
-            can_run, reason = detector.can_run_model("large")
+            can_run, reason = detector.can_run_model("ivrit-large")
             assert can_run is False
             assert "Insufficient RAM" in reason
+
+    @patch("hardware_detection.psutil")
+    def test_recommend_model_without_enough_ram_still_names_a_card(self, mock_psutil):
+        """The model step looks the recommendation up among its cards, so a
+        fallback to a model with no card (it used to be "tiny") raises there."""
+        mock_psutil.cpu_count.return_value = 4
+        mock_psutil.virtual_memory.return_value = MagicMock(total=2 * 1000**3)
+
+        with patch.object(HardwareDetector, "_detect_gpu", return_value=False):
+            detector = HardwareDetector()
+            model, _ = detector.recommend_model()
+            assert model == config.DEFAULT_MODEL
+            assert model in config.MODELS
 
     @patch("hardware_detection.psutil")
     def test_get_hardware_info(self, mock_psutil):

@@ -429,6 +429,64 @@ def card_qss(object_name: str, selected: bool = False) -> str:
     """
 
 
+def card_facts_qss(object_name: str) -> str:
+    """The hairline that separates a model card's facts from its purpose line."""
+    return f"""
+    QFrame#{object_name} {{
+        background: transparent;
+        border: none;
+        border-top: {Border.HAIRLINE}px solid {COLORS["border"]};
+    }}
+    """
+
+
+def option_panel_qss(object_name: str) -> str:
+    """The speakers and custom terms panels under the model cards.
+
+    A step darker than the cards and outlined with the decorative hairline,
+    not control_border: the panel is a container, not something to pick, so
+    its edge should not compete with the cards' selectable outlines.
+    """
+    return f"""
+    QFrame#{object_name} {{
+        background-color: {COLORS["bg_secondary"]};
+        border: {Border.HAIRLINE}px solid {COLORS["border"]};
+        border-radius: {Radius.PANEL}px;
+    }}
+    """
+
+
+def round_button_qss() -> str:
+    """The speaker count's - and + buttons: secondary buttons, fully round."""
+    return button_secondary_qss(padding="0px") + "QPushButton { border-radius: 16px; }"
+
+
+def count_pill_qss() -> str:
+    """The term count beside the custom terms title."""
+    return f"""
+    QLabel {{
+        background-color: {COLORS["text_secondary"]};
+        color: {COLORS["accent_text"]};
+        border-radius: 8px;
+        padding: 1px 7px;
+        font-weight: 700;
+        font-size: 9pt;
+    }}
+    """
+
+
+def term_chip_qss() -> str:
+    return f"""
+    QLabel {{
+        background-color: {COLORS["bg_tertiary"]};
+        color: {COLORS["text_primary"]};
+        border: {Border.HAIRLINE}px solid {COLORS["border"]};
+        border-radius: 10px;
+        padding: 2px 9px;
+    }}
+    """
+
+
 def progress_bar_qss() -> str:
     """No text-align/color rule here, and the bar itself runs with
     setTextVisible(False) - see TranscriptionStep. QProgressBar centres its

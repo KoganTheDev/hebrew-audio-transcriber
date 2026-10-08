@@ -4,20 +4,19 @@ import logging
 import os
 from typing import cast
 
-from PyQt5.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QShowEvent
+from PyQt5.QtCore import QEvent, QObject, QSize, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QResizeEvent, QShowEvent
 from PyQt5.QtWidgets import (
-    QAbstractSpinBox,
     QApplication,
     QButtonGroup,
-    QCheckBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QRadioButton,
     QScrollArea,
-    QSpinBox,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -27,7 +26,7 @@ from gui import theme
 from gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from gui.i18n import format_duration, is_rtl, model_text, t
 from gui.icons import ICONS, svg_to_pixmap
-from gui.terms_dialog import TermsDialog, term_count
+from gui.terms_dialog import TermsDialog, read_term_list
 from gui.theme import COLORS, Fonts, Spacing
 from gui.widgets import make_label
 from hardware_detection import HardwareDetector
@@ -81,6 +80,99 @@ def _model_is_downloaded(repo: str) -> bool:
         return False
 
 
+# The speaker count's range. One person means "skip speaker identification":
+# there is nobody to tell apart, and it is how a run turns the second pass
+# off now that there is no separate checkbox for it. Ten keeps the clustering
+# meaningful - beyond that the count is realistically unknown.
+MIN_SPEAKERS = 1
+MAX_SPEAKERS = 10
+DEFAULT_SPEAKERS = 2
+
+# Chips past this many are never built, however wide the panel gets: the
+# "+N more" label covers the rest, and a list can run to hundreds of terms.
+_MAX_CHIPS = 12
+
+
+class _TermChips(QWidget):
+    """A single row of term chips, as many as fit, then "+N more".
+
+    Qt has no flow layout, and a wrapping one would make the panel's height
+    depend on the term list. One row whose chip count follows the width keeps
+    the panel a fixed height in both languages and at any window size.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._terms: list[str] = []
+        self._chips: list[QLabel] = []
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(Spacing.XS + 2)
+        self._more = make_label(font=Fonts.CAPTION, color="text_tertiary")
+        self._row.addWidget(self._more)
+        self._row.addStretch()
+        # Ignored, not Preferred: the chips' own widths must never push the
+        # panel (and with it the window's minimum width) wider - the panel
+        # decides the width, and _fit decides how many chips fill it.
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+
+    def set_terms(self, terms: list[str]) -> None:
+        for chip in self._chips:
+            self._row.removeWidget(chip)
+            chip.deleteLater()
+        self._terms = list(terms)
+        self._chips = []
+        for i, term in enumerate(self._terms[:_MAX_CHIPS]):
+            chip = QLabel(term)
+            chip.setFont(Fonts.CAPTION)
+            chip.setStyleSheet(theme.term_chip_qss())
+            self._row.insertWidget(i, chip)
+            self._chips.append(chip)
+        self._fit()
+
+    def sizeHint(self) -> QSize:
+        return QSize(0, self._more.sizeHint().height() + 6)
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
+        super().resizeEvent(a0)
+        self._fit()
+
+    def retranslate(self) -> None:
+        self._fit()
+
+    def _more_text(self, hidden: int) -> str:
+        return t("terms_more", n=hidden)
+
+    def _fit(self) -> None:
+        if not self._terms:
+            for chip in self._chips:
+                chip.hide()
+            self._more.setText(t("terms_none"))
+            self._more.show()
+            return
+        spacing = self._row.spacing()
+        metrics = self._more.fontMetrics()
+        width = self.width()
+        used = 0
+        shown = 0
+        for i, chip in enumerate(self._chips):
+            need = chip.sizeHint().width() + (spacing if i else 0)
+            rest = len(self._terms) - (i + 1)
+            reserve = metrics.horizontalAdvance(self._more_text(rest)) + spacing if rest else 0
+            if used + need + reserve > width:
+                break
+            used += need
+            shown += 1
+        for i, chip in enumerate(self._chips):
+            chip.setVisible(i < shown)
+        hidden = len(self._terms) - shown
+        self._more.setText(self._more_text(hidden))
+        self._more.setVisible(hidden > 0)
+
+
 class ModelSelectStep(QFrame):
     """Step 2: Model Selection with recommendation and time estimates."""
 
@@ -105,7 +197,18 @@ class ModelSelectStep(QFrame):
         _create_model_card populates these as it goes.
         """
         self.audio_duration = 0
-        self._desc_labels: dict[str, QLabel] = {}  # model -> "description | Est: ..."
+        self._time_labels: dict[str, QLabel] = {}  # model -> its "Est. time" value
+        self._first_use_labels: dict[str, QLabel] = {}  # model -> "Ready" / "↓ 1.6 GB"
+        self._purpose_labels: dict[str, QLabel] = {}
+        self._accuracy_labels: dict[str, QLabel] = {}
+        # (label, i18n key) for every fact caption, so retranslate() can
+        # re-render them without knowing which card each belongs to.
+        self._fact_captions: list[tuple[QLabel, str]] = []
+        # Every label pinned with _card_text_alignment(): retranslate() has
+        # to flip all of them when the language (and so the side) changes.
+        self._aligned_labels: list[QLabel] = []
+        self._card_radios: dict[QObject, QRadioButton] = {}  # card -> its radio
+        self._speaker_count = DEFAULT_SPEAKERS
         # model_name -> last computed estimate, in SECONDS. Seconds, not the
         # rendered string: the units are translated (see i18n.format_duration),
         # so a cached string would survive a language toggle - retranslate()
@@ -146,13 +249,14 @@ class ModelSelectStep(QFrame):
     def _build_page_layout(self) -> QVBoxLayout:
         """The step's own vertical layout, on the page with the least room.
 
-        Seven model cards already need a QScrollArea to fit at 650x600, so
-        the spacing and margins here are set tighter than either neighbouring
-        step and are kept in one place rather than tuned per widget.
+        The card list, the speaker row and the error/calibration strips all
+        share 600px of height, so the spacing and margins here are set
+        tighter than either neighbouring step and are kept in one place
+        rather than tuned per widget.
         """
         layout = QVBoxLayout(self)
         # Tighter than steps 1/3 (XS, not SM) - every px of vertical gap
-        # here is a px the seven-card scroll area doesn't get.
+        # here is a px the card list's scroll area doesn't get.
         layout.setSpacing(Spacing.XS)
         # Horizontal margin widened XL -> XXL like the other two steps (it
         # costs no vertical room, which is the scarce resource on this
@@ -165,8 +269,7 @@ class ModelSelectStep(QFrame):
         # No page title here any more - "Choose Model" is now carried by
         # the wizard step indicator above the stacked widget (see
         # gui/stepper.py). Dropping it also buys back height on the one
-        # step that has none to spare (seven model cards already need a
-        # QScrollArea to fit at 650x600 - see the room analysis in
+        # step that has the least to spare (see the room analysis in
         # theme.Spacing's docstring).
         return layout
 
@@ -235,21 +338,15 @@ class ModelSelectStep(QFrame):
             self._set_calibration_note("calibration_pending")
 
     def _build_model_cards(self, layout: QVBoxLayout) -> None:
-        """The scrollable card list, and the speaker row that feeds it."""
-        # The cards used to be laid out directly, sized so all five fit the
-        # fixed window without scrolling. Adding the two Hebrew-tuned models
-        # broke that: seven cards overflow a 600px window and the last ones
-        # became unreachable. They now live in a scroll area, which keeps every
-        # option reachable at any window size instead of silently clipping.
+        """The scrollable page body: the model cards, the line saying what
+        their estimates assume, and the speakers and custom terms panels.
+        """
+        # One scroll area for all of it, so a short window scrolls the page
+        # rather than squeezing or clipping the panels at the bottom.
         models_container = QWidget()
         models_layout = QVBoxLayout(models_container)
-        models_layout.setSpacing(Spacing.XS + 2)
+        models_layout.setSpacing(Spacing.SM + 2)
         models_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Built before the cards, not after: each card's time estimate depends
-        # on whether speaker identification is on, so the controls have to
-        # exist before _desc_text runs.
-        speaker_row = self._build_speaker_row()
 
         models_scroll = self._build_models_scroll(models_container)
 
@@ -266,16 +363,19 @@ class ModelSelectStep(QFrame):
             )
             models_layout.addWidget(model_card)
 
-        models_layout.addStretch()
-        # Stretch factor 1: the scroll area takes the leftover vertical space
-        # rather than the trailing spacer, so the card list grows with the
-        # window instead of staying short and scrolling unnecessarily.
-        layout.addWidget(models_scroll, 1)
-        layout.addWidget(speaker_row)
+        self.estimate_footnote = self._aligned_label(Fonts.CAPTION, "text_tertiary")
+        self.estimate_footnote.setWordWrap(True)
+        models_layout.addWidget(self.estimate_footnote)
+        self._refresh_footnote()
 
-        # Scroll the recommended card into view on first show. It is no longer
-        # guaranteed to be among the first few cards, and a user who never
-        # scrolls should still see what the app is recommending.
+        models_layout.addStretch()
+        models_layout.addWidget(self._build_options_row())
+        # Stretch factor 1: the scroll area takes the leftover vertical space,
+        # so the page grows with the window instead of scrolling needlessly.
+        layout.addWidget(models_scroll, 1)
+
+        # Scroll the recommended card into view on first show: in a short
+        # window it can start off below the fold.
         self._scroll_area = models_scroll
 
     def _build_models_scroll(self, models_container: QWidget) -> QScrollArea:
@@ -306,155 +406,197 @@ class ModelSelectStep(QFrame):
 
     def _build_tab_chain(self) -> None:
         """Wire Tab to follow the page's visual order, not creation order."""
-        # Explicit Tab chain, matching the page's visual top-to-bottom order:
-        # every model radio in config.MODELS order, then the speaker-identify
-        # checkbox, then the speaker-count spin box below the card list. Not
-        # left to Qt's default (creation-order) chain because the speaker row
-        # is built BEFORE the cards (see the comment above speaker_row in
-        # _build_model_cards) so its widgets would otherwise sit ahead of the
-        # cards in the implicit chain - backwards from how the page reads top
-        # to bottom.
+        # Every model radio in config.MODELS order, then the speaker count's
+        # - and + buttons, then the custom terms Edit button - top to bottom,
+        # then leading to trailing edge.
         radios_in_order = [self.model_radios[name] for name in config.MODELS]
         for earlier, later in zip(radios_in_order, radios_in_order[1:]):
             self.setTabOrder(earlier, later)
-        self.setTabOrder(radios_in_order[-1], self.identify_speakers_check)
-        self.setTabOrder(self.identify_speakers_check, self.speaker_count_spin)
-        self.setTabOrder(self.speaker_count_spin, self.terms_button)
+        self.setTabOrder(radios_in_order[-1], self.speakers_minus_btn)
+        self.setTabOrder(self.speakers_minus_btn, self.speakers_plus_btn)
+        self.setTabOrder(self.speakers_plus_btn, self.terms_button)
 
-    def _build_speaker_row(self) -> QFrame:
-        """The "identify speakers" toggle and speaker count.
-
-        Sits below the model list because it applies to the run as a whole
-        rather than to any one model. The count is a spin box rather than free
-        text because telling the clustering step exactly how many people are
-        present is the single biggest accuracy lever in diarization, and a
-        typo'd value would quietly degrade every label.
+    def _aligned_label(self, font: QFont, color: str, text: str = "") -> QLabel:
+        """A label pinned to the radio's side of the card (see
+        _card_text_alignment), registered so retranslate() can re-pin it.
         """
-        row = QFrame()
+        label = make_label(text, font=font, color=color, align=self._card_text_alignment())
+        self._aligned_labels.append(label)
+        return label
+
+    def _build_options_row(self) -> QWidget:
+        """The speakers and custom terms panels, side by side.
+
+        Under the cards rather than beside them because both apply to the run
+        as a whole, not to whichever model is picked.
+        """
+        row = QWidget()
         row.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(Spacing.SM)
-
-        self.identify_speakers_check = QCheckBox(t("identify_speakers"))
-        self.identify_speakers_check.setChecked(True)
-        self.identify_speakers_check.setFont(Fonts.BODY)
-        self.identify_speakers_check.setStyleSheet(theme.text_qss("text_primary"))
-        layout.addWidget(self.identify_speakers_check)
-
-        self.speaker_count_label = make_label(
-            t("speaker_count"), font=Fonts.BODY, color="text_secondary"
-        )
-        layout.addWidget(self.speaker_count_label)
-
-        self.speaker_count_spin = QSpinBox()
-        self.speaker_count_spin.setObjectName("speakerCountSpin")
-        # Lower bound 2: diarizing a single speaker is a contradiction, and the
-        # app is for conversations. Upper bound 10 keeps the clustering
-        # meaningful - beyond that the count is realistically unknown.
-        self.speaker_count_spin.setRange(2, 10)
-        self.speaker_count_spin.setValue(2)
-        self.speaker_count_spin.setFont(Fonts.BODY)
-        # speaker_count_label is a plain QLabel, not a buddy - QSpinBox has
-        # no visible label of its own baked into the control the way
-        # identify_speakers_check's QCheckBox(text) does, so without this a
-        # screen reader would announce it as an unlabelled number field.
-        self.speaker_count_spin.setAccessibleName(t("speaker_count"))
-        # Stepper buttons removed: the row reads as clutter next to an
-        # otherwise clean checkbox+label, and 2-10 is a range typed faster
-        # than clicked up to. NoButtons only hides the ::up-button/
-        # ::down-button subcontrols - QAbstractSpinBox still owns Up/Down,
-        # PageUp/PageDown, direct typing and the scroll wheel regardless of
-        # setButtonSymbols, so nothing about how the value can be changed is
-        # lost. Chosen over zeroing ::up-button/::down-button in QSS because
-        # this is a per-widget behavioural setting, not a shared theme rule:
-        # it doesn't touch app_stylesheet()'s QSpinBox block (which stays
-        # correct for any spin box added later that DOES want buttons), and
-        # it sidesteps re-balancing the field's padding by hand where a
-        # subcontrol used to reserve space - Qt simply stops reserving it.
-        #
-        # This is also why the RTL button-mirroring fix that used to live
-        # here as _apply_spin_button_direction() was deleted rather than
-        # kept dormant: with no buttons, there is nothing left to mirror.
-        # The Qt finding it recorded is still worth having on file, in case
-        # a future spin box on this row (or elsewhere) brings buttons back
-        # and hits the same bug fresh:
-        #
-        #   app_stylesheet()'s QSpinBox::up-button/::down-button rules never
-        #   set subcontrol-position, so Qt falls back to its built-in default
-        #   of "top right"/"bottom right" - and that default is NEVER
-        #   logically re-resolved against the widget's layoutDirection, so
-        #   the buttons stay physically right even under RTL. The tempting
-        #   fix - branch on is_rtl() and hand the widget an explicit "top
-        #   left"/"bottom left" for RTL - does NOT work: Qt mirrors an
-        #   EXPLICITLY-declared subcontrol-position a SECOND time for RTL
-        #   widgets (the same visualPos()/visualRect() logic a style uses for
-        #   RTL generally), so a literal "left" fed to RTL gets flipped back
-        #   to physical right, cancelling the fix against itself. Mirroring
-        #   only engages once a value is actually declared - the undeclared
-        #   built-in default never goes through it at all, which is the
-        #   actual root cause. The correct fix is therefore simpler than the
-        #   tempting one: declare the plain LTR-correct position ("top
-        #   right"/"bottom right") unconditionally, once, per widget (an
-        #   object-name-scoped stylesheet, since app_stylesheet() is shared
-        #   across every QSpinBox), and let Qt's own mirroring - which only
-        #   fires on a declared value - do the flip for RTL. No is_rtl()
-        #   branch needed, and no re-declaration on a language toggle either,
-        #   since the declared value itself never changes.
-        layout.addWidget(self.speaker_count_spin)
-        self.speaker_count_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        # Centred because the field is wider than most of what it holds.
-        # QSpinBox sizes itself for its widest possible value ("10"), so a
-        # single-digit count - which is every value from 2 to 9, i.e. almost
-        # all of them - sat against the leading edge of a box with visible
-        # empty space beside it. That read as an unfinished control once the
-        # stepper buttons stopped filling that space. Centring is
-        # direction-neutral, so it needs no RTL counterpart.
-        self.speaker_count_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        layout.addStretch()
-
-        # At the row's trailing end rather than on a row of its own: this
-        # page has no vertical room to spare (see _build_page_layout), and the
-        # row already ends in a stretch. It belongs with the speaker controls
-        # anyway - both apply to the run as a whole, not to one model.
-        self.terms_button = QPushButton()
-        self.terms_button.setObjectName("termsButton")
-        self.terms_button.setFont(Fonts.CAPTION_BOLD)
-        self.terms_button.setStyleSheet(theme.button_secondary_qss(padding="5px 14px"))
-        self.terms_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.terms_button.clicked.connect(self._open_terms)
-        self._refresh_terms_button()
-        layout.addWidget(self.terms_button)
-
-        self.identify_speakers_check.toggled.connect(self._on_identify_toggled)
-        self._on_identify_toggled(True)
+        layout.setSpacing(Spacing.MD)
+        layout.addWidget(self._build_speakers_panel(), 1)
+        layout.addWidget(self._build_terms_panel(), 1)
         return row
 
-    def _refresh_terms_button(self) -> None:
-        """Label and tooltip from the list as it is on disk right now."""
-        self.terms_button.setText(t("terms_button", n=term_count()))
+    def _option_panel(
+        self, object_name: str, icon: str, title: QLabel
+    ) -> tuple[QFrame, QVBoxLayout, QHBoxLayout]:
+        """A panel frame with its icon-and-title header row already in place;
+        the header comes back too, for a panel that adds to its end.
+        """
+        panel = QFrame()
+        panel.setObjectName(object_name)
+        panel.setStyleSheet(theme.option_panel_qss(object_name))
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(Spacing.LG, Spacing.MD, Spacing.LG, Spacing.MD)
+        layout.setSpacing(Spacing.XS + 2)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(Spacing.SM)
+        icon_label = QLabel()
+        icon_label.setPixmap(
+            svg_to_pixmap(ICONS[icon], 20, COLORS["accent"], dpr=self.devicePixelRatioF())
+        )
+        icon_label.setStyleSheet("background: transparent;")
+        header.addWidget(icon_label)
+        header.addWidget(title)
+        header.addStretch()
+        layout.addLayout(header)
+        return panel, layout, header
+
+    def _build_speakers_panel(self) -> QFrame:
+        """How many people are in the recording, as a - n + stepper.
+
+        Telling the clustering step exactly how many people are present is the
+        single biggest accuracy lever in diarization, so this is a count the
+        user sets, not a guess. Buttons rather than a spin box: the range is
+        small, and a spin box's free text could be typo'd into a value that
+        quietly degrades every label.
+        """
+        self.speakers_title = self._aligned_label(
+            Fonts.BODY_BOLD, "text_primary", t("speakers_title")
+        )
+        panel, layout, _ = self._option_panel("speakersPanel", "users", self.speakers_title)
+
+        self.speakers_sub = self._aligned_label(Fonts.CAPTION, "text_secondary")
+        self.speakers_sub.setWordWrap(True)
+        layout.addWidget(self.speakers_sub)
+        # Pushes the count row to the bottom edge, so it lines up with the
+        # chips row in the terms panel beside it.
+        layout.addStretch()
+
+        count_row = QHBoxLayout()
+        count_row.setContentsMargins(0, 0, 0, 0)
+        count_row.setSpacing(Spacing.SM)
+        self.speaker_count_label = self._aligned_label(
+            Fonts.CAPTION, "text_tertiary", t("speaker_count")
+        )
+        self.speaker_count_label.setWordWrap(True)
+        count_row.addWidget(self.speaker_count_label, 1)
+
+        self.speakers_minus_btn = self._speaker_step_button("minus", -1)
+        count_row.addWidget(self.speakers_minus_btn)
+        self.speaker_count_value = make_label(
+            font=Fonts.SUBTITLE_BOLD, color="text_primary", align=Qt.AlignmentFlag.AlignCenter
+        )
+        self.speaker_count_value.setMinimumWidth(28)
+        count_row.addWidget(self.speaker_count_value)
+        self.speakers_plus_btn = self._speaker_step_button("plus", 1)
+        count_row.addWidget(self.speakers_plus_btn)
+        layout.addLayout(count_row)
+
+        self._sync_speaker_controls()
+        return panel
+
+    def _speaker_step_button(self, icon: str, step: int) -> QPushButton:
+        button = QPushButton()
+        button.setFixedSize(32, 32)
+        button.setIcon(
+            QIcon(
+                svg_to_pixmap(ICONS[icon], 14, COLORS["text_primary"], dpr=self.devicePixelRatioF())
+            )
+        )
+        button.setIconSize(QSize(14, 14))
+        button.setStyleSheet(theme.round_button_qss())
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(lambda: self._step_speakers(step))
+        return button
+
+    def _step_speakers(self, step: int) -> None:
+        count = max(MIN_SPEAKERS, min(MAX_SPEAKERS, self._speaker_count + step))
+        if count == self._speaker_count:
+            return
+        self._speaker_count = count
+        self._sync_speaker_controls()
+        # Speaker identification is a second pass over the audio, so going to
+        # or from one person changes every card's estimate.
+        self._refresh_desc_labels(recompute=True)
+        self._refresh_footnote()
+
+    def _sync_speaker_controls(self) -> None:
+        """Count, the sentence above it, the buttons' limits and their names."""
+        count = self._speaker_count
+        self.speaker_count_value.setText(str(count))
+        self.speaker_count_value.setAccessibleName(t("speaker_count"))
+        self.speakers_sub.setText(t("speakers_sub" if count > 1 else "speakers_sub_one"))
+        self.speakers_minus_btn.setEnabled(count > MIN_SPEAKERS)
+        self.speakers_plus_btn.setEnabled(count < MAX_SPEAKERS)
+        self.speakers_minus_btn.setAccessibleName(t("speakers_fewer"))
+        self.speakers_plus_btn.setAccessibleName(t("speakers_more"))
+
+    def _build_terms_panel(self) -> QFrame:
+        """The custom term list at a glance: how many, the first few, Edit."""
+        self.terms_title = self._aligned_label(Fonts.BODY_BOLD, "text_primary", t("terms_title"))
+        panel, layout, header = self._option_panel("termsPanel", "tag", self.terms_title)
+
+        self.terms_count_label = QLabel()
+        self.terms_count_label.setStyleSheet(theme.count_pill_qss())
+        # Straight after the title, ahead of the header's trailing stretch.
+        header.insertWidget(header.indexOf(self.terms_title) + 1, self.terms_count_label)
+
+        self.terms_button = QPushButton(t("terms_edit"))
+        self.terms_button.setObjectName("termsButton")
+        self.terms_button.setFont(Fonts.CAPTION_BOLD)
+        self.terms_button.setStyleSheet(theme.button_secondary_qss(padding="0px 12px"))
+        # Exactly twice Radius.CONTROL: Qt draws no rounding at all once a
+        # radius exceeds half the button's height, so a shorter button would
+        # come out square-cornered.
+        self.terms_button.setFixedHeight(2 * theme.Radius.CONTROL)
+        self.terms_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.terms_button.clicked.connect(self._open_terms)
+        header.addWidget(self.terms_button)
+
+        self.terms_sub = self._aligned_label(Fonts.CAPTION, "text_secondary", t("terms_sub"))
+        self.terms_sub.setWordWrap(True)
+        layout.addWidget(self.terms_sub)
+        layout.addStretch()
+
+        self.term_chips = _TermChips()
+        layout.addWidget(self.term_chips)
+        self._refresh_terms()
+        return panel
+
+    def _refresh_terms(self) -> None:
+        """Count, chips and tooltip from the list as it is on disk right now."""
+        terms = read_term_list()
+        self.terms_count_label.setText(str(len(terms)))
+        self.term_chips.set_terms(terms)
         self.terms_button.setToolTip(t("terms_button_tooltip", path=config.resolve_terms_path()))
+        self.terms_button.setAccessibleName(t("terms_title") + ": " + t("terms_edit"))
 
     def _open_terms(self) -> None:
         TermsDialog(self).exec_()
-        self._refresh_terms_button()
-
-    def _on_identify_toggled(self, enabled: bool) -> None:
-        """Speaker count is meaningless when identification is off."""
-        self.speaker_count_label.setEnabled(enabled)
-        self.speaker_count_spin.setEnabled(enabled)
-        # Speaker identification adds a second pass over the audio, so every
-        # card's time estimate changes with this toggle.
-        self._refresh_desc_labels(recompute=True)
+        self._refresh_terms()
 
     @property
     def identify_speakers(self) -> bool:
-        return self.identify_speakers_check.isChecked()
+        return self._speaker_count > 1
 
     @property
     def num_speakers(self) -> int:
-        return self.speaker_count_spin.value()
+        return self._speaker_count
 
     def show_error(self, key: str, params: dict[str, object]) -> None:
         """Show an inline failure banner (used instead of a modal popup).
@@ -501,7 +643,8 @@ class ModelSelectStep(QFrame):
                 self._user_touched_model = True
 
     def _apply_selection(self, name: str) -> None:
-        """Move the accent border to whichever card's radio is currently picked.
+        """Move the accent border, and the accent on the time estimate, to
+        whichever card's radio is currently picked.
 
         Tried and dropped: a drop shadow on the selected card, matching the
         result panel's. Screenshotted it (see the redesign notes) and it
@@ -514,8 +657,10 @@ class ModelSelectStep(QFrame):
         carries "this one is selected" here.
         """
         for card_name, card in self._cards.items():
-            card.setStyleSheet(
-                theme.card_qss(f"modelCard_{card_name}", selected=(card_name == name))
+            selected = card_name == name
+            card.setStyleSheet(theme.card_qss(f"modelCard_{card_name}", selected=selected))
+            self._time_labels[card_name].setStyleSheet(
+                theme.text_qss("accent" if selected else "text_primary")
             )
 
     def _info_note(self, name: str) -> str:
@@ -532,34 +677,105 @@ class ModelSelectStep(QFrame):
         return note
 
     def _create_model_card(self, idx: int, name: str, is_recommended: bool = False) -> QFrame:
-        """Create and return a model selection card with radio button and details."""
+        """A model card: radio, name and badge; a sentence on when to pick
+        it; and a row of facts - time, accuracy, memory, download.
+        """
         card = QFrame()
         object_name = f"modelCard_{name}"
         card.setObjectName(object_name)
         # Initially, the recommended model is also the selected one.
         card.setStyleSheet(theme.card_qss(object_name, selected=is_recommended))
         # Mouse-hover equivalent of the radio's accessible description (set
-        # in _build_card_radio) - a sighted mouse user gets the same RAM
-        # (and, where it applies, download) information a screen reader
-        # announces, without any of it costing the caption's width.
+        # in _build_card_radio).
         card.setToolTip(self._info_note(name))
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        layout = QHBoxLayout(card)
-        layout.setContentsMargins(Spacing.MD, Spacing.XS, Spacing.MD, Spacing.XS)
-        layout.setSpacing(Spacing.MD)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(Spacing.LG, Spacing.MD, Spacing.LG, Spacing.MD)
+        layout.setSpacing(Spacing.XS + 2)
 
-        layout.addWidget(self._build_card_radio(idx, name, card, is_recommended))
-        layout.addLayout(self._build_card_text(name, is_recommended), 1)
+        radio = self._build_card_radio(idx, name, card, is_recommended)
+        layout.addLayout(self._build_card_name_row(name, radio, is_recommended))
 
-        # +2px over the pre-redesign 56: BODY_BOLD grew a point (11 -> 12pt,
-        # see Fonts) and moved to DemiBold, so the name label needs a
-        # little more room than before. Kept small deliberately - this is
-        # the one step where extra height is not free (each px here is a
-        # px the seven-card scroll area doesn't get - see the class
-        # docstring on why the cards need a QScrollArea at all).
-        card.setFixedHeight(58)
+        # The purpose line and facts start under the name, not under the
+        # radio, so the card reads as one indented block beside its control.
+        indent = radio.sizeHint().width() + Spacing.SM
+        purpose = self._aligned_label(Fonts.CAPTION, "text_secondary", model_text(name, "purpose"))
+        purpose.setWordWrap(True)
+        self._purpose_labels[name] = purpose
+        layout.addLayout(self._indented(purpose, indent))
+        layout.addLayout(self._indented(self._build_card_facts(name, is_recommended), indent))
+
+        # The whole card picks its model, not just the 18px radio: with a
+        # sentence and four facts on it, the card is what people aim at.
+        card.installEventFilter(self)
+        self._card_radios[card] = radio
         self._cards[name] = card
         return card
+
+    @staticmethod
+    def _indented(widget: QWidget, indent: int) -> QHBoxLayout:
+        """`widget` behind a leading gap. A row, not a left margin: an
+        QHBoxLayout mirrors under RTL, so the gap moves to the radio's side.
+        """
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addSpacing(indent)
+        row.addWidget(widget, 1)
+        return row
+
+    def _build_card_facts(self, name: str, is_recommended: bool) -> QFrame:
+        """Four captioned facts in a row, under a hairline."""
+        facts = QFrame()
+        object_name = f"modelFacts_{name}"
+        facts.setObjectName(object_name)
+        facts.setStyleSheet(theme.card_facts_qss(object_name))
+        grid = QGridLayout(facts)
+        grid.setContentsMargins(0, Spacing.SM, 0, 0)
+        grid.setHorizontalSpacing(Spacing.MD)
+        grid.setVerticalSpacing(2)
+
+        info = config.MODELS[name]
+        time_value = self._aligned_label(
+            Fonts.BODY_BOLD_SMALL, "accent" if is_recommended else "text_primary"
+        )
+        self._time_labels[name] = time_value
+        time_value.setText(self._time_text(name))
+        accuracy_value = self._aligned_label(
+            Fonts.BODY_BOLD_SMALL, "text_primary", model_text(name, "accuracy")
+        )
+        self._accuracy_labels[name] = accuracy_value
+        memory_value = self._aligned_label(
+            Fonts.BODY_BOLD_SMALL, "text_primary", str(info["ram_required"])
+        )
+        first_use_value = self._aligned_label(
+            Fonts.BODY_BOLD_SMALL, "success" if self._downloaded[name] else "text_primary"
+        )
+        first_use_value.setText(self._first_use_text(name))
+        self._first_use_labels[name] = first_use_value
+
+        columns = (
+            ("model_fact_time", time_value),
+            ("model_fact_accuracy", accuracy_value),
+            ("model_fact_memory", memory_value),
+            ("model_fact_first_use", first_use_value),
+        )
+        for col, (key, value) in enumerate(columns):
+            caption = self._aligned_label(Fonts.CAPTION, "text_tertiary", t(key))
+            self._fact_captions.append((caption, key))
+            grid.addWidget(caption, 0, col)
+            grid.addWidget(value, 1, col)
+            grid.setColumnStretch(col, 1)
+        return facts
+
+    def _first_use_text(self, name: str) -> str:
+        if self._downloaded[name]:
+            return t("model_ready")
+        # Direct dict access, not .get() - a model added to config.MODELS
+        # without a download_size should raise here at card-build time,
+        # not render a blank/"None" fact that's easy to miss in review.
+        return t("model_download_fact", size=config.MODELS[name]["download_size"])
 
     def _build_card_radio(
         self, idx: int, name: str, card: QFrame, is_recommended: bool
@@ -569,19 +785,16 @@ class ModelSelectStep(QFrame):
         radio -> card mapping the focus ring needs.
         """
         # Radio button. It carries no text of its own - the model name and
-        # description are separate QLabels beside it (see _build_card_text) -
-        # so without an explicit accessible name a screen reader would
-        # announce every one of these seven radios identically as just
-        # "radio button".
+        # description are separate QLabels beside it - so without an explicit
+        # accessible name a screen reader would announce every one of these
+        # radios identically as just "radio button".
         radio = QRadioButton()
         radio.setChecked(is_recommended)
         radio.toggled.connect(lambda checked: self._on_radio_toggled(name, checked))
         radio.setAccessibleName(model_text(name, "name"))
-        # RAM (and, when relevant, the pending-download sentence) lives here
-        # and in the card's tooltip (set in _create_model_card) rather than
-        # inline in the caption text - see _desc_text's comment on why: RAM
-        # applies to every card, always, and the caption doesn't have room
-        # to spell either out in full for all seven without overflowing.
+        # RAM and, when relevant, the pending download: the spoken form of
+        # the facts row, which a screen reader would otherwise read as eight
+        # unrelated labels.
         radio.setAccessibleDescription(
             model_text(name, "description") + ". " + self._info_note(name)
         )
@@ -593,65 +806,19 @@ class ModelSelectStep(QFrame):
         # card), so this step has to react on the radio's behalf.
         self._radio_cards[radio] = card
         radio.installEventFilter(self)
-        # No per-widget setStyleSheet here anymore: app_stylesheet() now has
-        # an app-wide QRadioButton color rule (plus the ::indicator rules a
-        # per-widget QRadioButton {} sheet couldn't touch anyway), so this
-        # would only have duplicated theme.py's COLORS['text_primary'].
         return radio
 
-    def _build_card_text(self, name: str, is_recommended: bool) -> QVBoxLayout:
-        """The two stacked rows beside the radio: name (with badge), caption."""
-        # Model name and description
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
-
-        # Explicit absolute alignment (see _card_text_alignment): without
-        # it each QLabel aligns by its own text's content direction (Latin
-        # model names one way, Hebrew descriptions the other), scattering
-        # the card's text block in RTL mode.
-        model_label = make_label(
-            model_text(name, "name"),
-            font=Fonts.BODY_BOLD,
-            color="text_primary",
-            align=self._card_text_alignment(),
-        )
-        self._name_labels[name] = model_label
-
-        text_layout.addLayout(self._build_card_name_row(name, model_label, is_recommended))
-
-        # Description + time estimate (kept up to date via update_audio_duration)
-        desc_label = make_label(
-            self._desc_text(name),
-            font=Fonts.CAPTION,
-            color="text_secondary",
-            align=self._card_text_alignment(),
-        )
-        text_layout.addWidget(desc_label)
-        self._desc_labels[name] = desc_label
-
-        return text_layout
-
     def _build_card_name_row(
-        self, name: str, model_label: QLabel, is_recommended: bool
+        self, name: str, radio: QRadioButton, is_recommended: bool
     ) -> QHBoxLayout:
-        """The model name and its RECOMMENDED badge, side by side.
-
-        The badge used to sit on the OUTER row, at the card's trailing edge,
-        sharing its width with the caption below via layout.addStretch() -
-        fine while the caption was short, but adding the RAM/download text
-        (see _desc_text) pushed the caption's own natural width past what was
-        left after the badge, on the exact card most likely to carry both:
-        the RECOMMENDED one. Measured before landing on this fix: on the
-        Ivrit Turbo card (this app's default recommendation) in English, and
-        on Ivrit Large in Hebrew, the badge was shoved half off the visible
-        card - not merely a tight fit, an actual clipped control. Moving the
-        badge onto this name row instead gives the caption row the card's
-        full width on every card, badge or not - the name row has plenty of
-        slack a two-or-three-word model name never gets close to using.
-        """
+        """The radio, the model name and its RECOMMENDED badge, side by side."""
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
-        name_row.setSpacing(Spacing.XS)
+        name_row.setSpacing(Spacing.SM)
+        name_row.addWidget(radio)
+
+        model_label = self._aligned_label(Fonts.BODY_BOLD, "text_primary", model_text(name, "name"))
+        self._name_labels[name] = model_label
         name_row.addWidget(model_label)
 
         # Recommended badge - always created so update_audio_duration can
@@ -681,8 +848,12 @@ class ModelSelectStep(QFrame):
         focus_out = QEvent.Type.FocusOut
         resize = QEvent.Type.Resize
         card = self._radio_cards.get(obj)
+        card_radio = self._card_radios.get(obj)
         if card is not None and event.type() in (focus_in, focus_out):
             self._sync_card_focus_ring(card, focused_in=event.type() == focus_in)
+        elif card_radio is not None and event.type() == QEvent.Type.MouseButtonRelease:
+            if cast(QMouseEvent, event).button() == Qt.MouseButton.LeftButton:
+                card_radio.setChecked(True)
         elif event.type() == resize:
             scroll = getattr(self, "_scroll_area", None)
             # getattr, not a plain attribute: the filter is installed while
@@ -793,6 +964,7 @@ class ModelSelectStep(QFrame):
         """
         self.audio_duration = seconds
         self._refresh_desc_labels(recompute=True)
+        self._refresh_footnote()
         # Only clear the note here if calibration is now actually known -
         # this is also called on every step-1-to-2 advance regardless of
         # calibration state (see MainWindow._go_next), so blindly hiding it
@@ -807,8 +979,8 @@ class ModelSelectStep(QFrame):
     def showEvent(self, event: QShowEvent | None) -> None:
         """Bring the recommended card into view whenever this step is shown.
 
-        With seven cards behind a scroll area the recommendation can start off
-        below the fold, and a user who doesn't scroll would never see it.
+        In a short window the recommendation can start off below the fold
+        of the scroll area, and a user who doesn't scroll would never see it.
 
         Also seeds Tab's starting point at the currently-selected model's
         radio (see FileSelectStep.showEvent for why this doesn't paint a
@@ -828,11 +1000,11 @@ class ModelSelectStep(QFrame):
         if card is not None:
             self._scroll_area.ensureWidgetVisible(card)
 
-    def _desc_text(self, name: str) -> str:
-        """Compose one card's "description | Est: ..." line in the current
-        language. The time estimate is cached: a language toggle only
-        re-renders text, so it must not re-run (and re-log) the hardware
-        estimator - only update_audio_duration recomputes.
+    def _time_text(self, name: str) -> str:
+        """One card's time estimate in the current language. The estimate is
+        cached in seconds: a language toggle only re-renders text, so it must
+        not re-run (and re-log) the hardware estimator - only
+        update_audio_duration and a speaker count change recompute.
         """
         seconds = self._time_secs.get(name)
         if seconds is None:
@@ -840,31 +1012,22 @@ class ModelSelectStep(QFrame):
                 self.audio_duration, name, identify_speakers=self.identify_speakers
             )
             self._time_secs[name] = seconds
-        text = t(
-            "model_desc_est", desc=model_text(name, "description"), time=format_duration(seconds)
-        )
-        if not self._downloaded[name]:
-            # Direct dict access, not .get() - a model added to config.MODELS
-            # without a download_size should raise here at card-build time,
-            # not render a blank/"None" note that's easy to miss in review.
-            size = config.MODELS[name]["download_size"]
-            # RAM (relevant to every card, always) lives in the card's
-            # tooltip/accessible description instead of this line (see
-            # _create_model_card and _build_card_radio) - putting both there
-            # and here was measured
-            # to overflow the caption's ~520px budget on the recommended
-            # card in Hebrew. Download size stays inline because it's the
-            # one fact that changes a decision RIGHT NOW, for the one or two
-            # models that actually need it - most cards carry no extra text
-            # at all once they're cached locally.
-            text = text + " " + t("model_download_pending", size=size)
-        return text
+        return format_duration(seconds)
 
     def _refresh_desc_labels(self, recompute: bool = False) -> None:
         if recompute:
             self._time_secs.clear()
-        for name, label in self._desc_labels.items():
-            label.setText(self._desc_text(name))
+        for name, label in self._time_labels.items():
+            label.setText(self._time_text(name))
+
+    def _refresh_footnote(self) -> None:
+        """Say what the estimates assume, once there is a real duration."""
+        if self.audio_duration <= 0:
+            self.estimate_footnote.hide()
+            return
+        key = "estimate_footnote_speakers" if self.identify_speakers else "estimate_footnote"
+        self.estimate_footnote.setText(t(key, duration=format_duration(self.audio_duration)))
+        self.estimate_footnote.show()
 
     @staticmethod
     def _card_text_alignment() -> Qt.Alignment:
@@ -891,11 +1054,30 @@ class ModelSelectStep(QFrame):
     def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""
         alignment = self._card_text_alignment()
+        for label in self._aligned_labels:
+            label.setAlignment(alignment)
+        self._retranslate_cards()
+        self._retranslate_options()
+        self._refresh_desc_labels()
+        self._refresh_footnote()
+        if self._calibration_note_key is not None:
+            self.calibration_note.setText(t(self._calibration_note_key))
+        if self._error_key is not None:
+            self.error_label.setText(
+                t("transcription_failed", message=t(self._error_key, **self._error_params))
+            )
+
+    def _retranslate_cards(self) -> None:
         for name, label in self._name_labels.items():
             label.setText(model_text(name, "name"))
-            label.setAlignment(alignment)
-        for label in self._desc_labels.values():
-            label.setAlignment(alignment)
+        for name, label in self._purpose_labels.items():
+            label.setText(model_text(name, "purpose"))
+        for name, label in self._accuracy_labels.items():
+            label.setText(model_text(name, "accuracy"))
+        for name, label in self._first_use_labels.items():
+            label.setText(self._first_use_text(name))
+        for caption, key in self._fact_captions:
+            caption.setText(t(key))
         for badge in self._badges.values():
             badge.setText(t("recommended_badge"))
         for name, radio in self.model_radios.items():
@@ -905,17 +1087,16 @@ class ModelSelectStep(QFrame):
             )
         for name, card in self._cards.items():
             card.setToolTip(self._info_note(name))
-        self.identify_speakers_check.setText(t("identify_speakers"))
+
+    def _retranslate_options(self) -> None:
+        self.speakers_title.setText(t("speakers_title"))
         self.speaker_count_label.setText(t("speaker_count"))
-        self.speaker_count_spin.setAccessibleName(t("speaker_count"))
-        self._refresh_terms_button()
-        self._refresh_desc_labels()
-        if self._calibration_note_key is not None:
-            self.calibration_note.setText(t(self._calibration_note_key))
-        if self._error_key is not None:
-            self.error_label.setText(
-                t("transcription_failed", message=t(self._error_key, **self._error_params))
-            )
+        self._sync_speaker_controls()
+        self.terms_title.setText(t("terms_title"))
+        self.terms_sub.setText(t("terms_sub"))
+        self.terms_button.setText(t("terms_edit"))
+        self._refresh_terms()
+        self.term_chips.retranslate()
 
     def _apply_recommendation(self, recommended_model: str) -> None:
         """Move the RECOMMENDED badge to recommended_model and, if the user

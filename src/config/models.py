@@ -12,6 +12,13 @@
 # Entries are ordered by ascending accuracy_score - the GUI renders the cards in
 # this order, and tests assert the ordering holds.
 #
+# Only Hebrew-tuned models are offered. The app always decodes with
+# language="he" (config.LANGUAGE), so the stock Whisper sizes this list used to
+# carry had no job left: each was less accurate on Hebrew than Ivrit Turbo, and
+# Medium and Large were slower as well. Stock sizes can still be passed by raw
+# name - calibration benchmarks "tiny" that way, and so can the eval harness
+# (see Transcriber.model_repo).
+#
 # "download_size" is the one-time HuggingFace download for a model faster-
 # whisper hasn't cached locally yet (figures from this repo's own README
 # table). It exists ONLY as this static, structured number - there is no
@@ -27,119 +34,10 @@
 # field to warn about the download BEFORE the model is picked, which is the
 # one place in the download's lifecycle this app can currently be honest.
 MODELS = {
-    "tiny": {
-        "repo": "tiny",
-        "name": "Tiny",
-        "description": "Ultra-fast, lowest quality",
-        "pros": [
-            "✓ Fastest option (~30 min for 60-min audio)",
-            "✓ Minimal RAM (1 GB)",
-            "✓ Good for: Quick rough drafts, testing",
-        ],
-        "cons": [
-            "✗ Lowest accuracy",
-            "✗ Many errors and misheard words",
-            "✗ Poor Hebrew support",
-        ],
-        "time_estimate": "~30 minutes",
-        "ram_required": "1 GB",
-        "download_size": "76 MB",
-        "accuracy_score": 2,
-        "best_for": "Quick testing only",
-        "recommended": False,
-    },
-    "base": {
-        "repo": "base",
-        "name": "Base",
-        "description": "Good balance of speed and quality",
-        "pros": [
-            "✓ Reasonable speed (3-5 hours)",
-            "✓ Moderate RAM (2 GB)",
-            "✓ Better than tiny, acceptable for casual use",
-        ],
-        "cons": [
-            "✗ Moderate accuracy (some errors)",
-            "✗ Not ideal for Hebrew",
-            "✗ Professional users may notice mistakes",
-        ],
-        "time_estimate": "~3-5 hours",
-        "ram_required": "2 GB",
-        "download_size": "145 MB",
-        "accuracy_score": 3,
-        "best_for": "Casual transcription",
-        "recommended": False,
-    },
-    "small": {
-        "repo": "small",
-        "name": "Small",
-        "description": "Better accuracy for Hebrew",
-        "pros": [
-            "✓ Good accuracy for Hebrew",
-            "✓ Reasonable time (8-10 hours)",
-            "✓ 3 GB RAM, manageable",
-        ],
-        "cons": [
-            "✗ Slower than base",
-            "✗ Still not perfect accuracy",
-            "✗ Not recommended for critical content",
-        ],
-        "time_estimate": "~8-10 hours",
-        "ram_required": "3 GB",
-        "download_size": "484 MB",
-        "accuracy_score": 3.5,
-        "best_for": "Good quality transcription",
-        "recommended": False,
-    },
-    "medium": {
-        "repo": "medium",
-        "name": "Medium",
-        "description": "High accuracy general-purpose model",
-        "pros": [
-            "✓ Good accuracy across languages",
-            "✓ Professional quality results",
-            "✓ Good balance of quality/time",
-        ],
-        "cons": [
-            "✗ Longer processing (~20-24 hours)",
-            "✗ Requires 5 GB RAM",
-            "✗ Slower and less accurate on Hebrew than Ivrit Turbo",
-        ],
-        "time_estimate": "~20-24 hours",
-        "ram_required": "5 GB",
-        "download_size": "1.5 GB",
-        "accuracy_score": 4,
-        "best_for": "General-purpose transcription",
-        "recommended": False,
-    },
-    "large": {
-        # Pinned explicitly. "large" is an alias whose target has moved between
-        # faster-whisper releases, so the bare name silently changed which model
-        # actually ran depending on the installed version.
-        "repo": "large-v3",
-        "name": "Large",
-        "description": "Best general-purpose model, very slow",
-        "pros": [
-            "✓ Highest accuracy of the general-purpose models",
-            "✓ Handles mixed-language audio well",
-            "✓ Fewest errors outside Hebrew",
-        ],
-        "cons": [
-            "✗ Very slow (40+ hours)",
-            "✗ High RAM requirement (8 GB)",
-            "✗ May run out of memory on limited systems",
-            "✗ Still trained mostly on non-Hebrew speech",
-        ],
-        "time_estimate": "~40+ hours",
-        "ram_required": "8 GB",
-        "download_size": "3.1 GB",
-        "accuracy_score": 4.5,
-        "best_for": "Mixed-language or non-Hebrew content",
-        "recommended": False,
-    },
     # Hebrew-specialised models (ivrit.ai).
     #
-    # Everything above is stock OpenAI Whisper, trained overwhelmingly on
-    # English; Hebrew is a small slice of its training data, which is the root
+    # Stock OpenAI Whisper is trained overwhelmingly on English; Hebrew is a
+    # small slice of its training data, which is the root
     # cause of the misheard-word problem this app exists to solve. ivrit.ai
     # fine-tunes Whisper on hundreds of hours of transcribed Hebrew speech and
     # publishes the result already converted to CTranslate2 - the exact format
@@ -147,17 +45,22 @@ MODELS = {
     "ivrit-turbo": {
         "repo": "ivrit-ai/whisper-large-v3-turbo-ct2",
         "name": "Ivrit Turbo",
-        "description": "Hebrew-tuned, fast and accurate (recommended)",
+        "description": "Hebrew-tuned, fast and accurate",
+        "purpose": (
+            "The right choice for almost every recording: Hebrew-tuned, "
+            "and about 5x faster than Ivrit Large."
+        ),
+        "accuracy": "High",
         "pros": [
             "✓ Trained specifically on Hebrew speech",
-            "✓ Far fewer misheard Hebrew words than any model above",
-            "✓ Turbo decoder: faster than Medium despite being larger",
+            "✓ Far fewer misheard Hebrew words than stock Whisper",
+            "✓ Turbo decoder: about 5x faster than Ivrit Large",
             "✓ Best choice for Hebrew content",
         ],
         "cons": [
             "✗ One-time 1.6 GB download on first use",
             "✗ Requires 3 GB RAM",
-            "✗ Hebrew only - weaker on other languages than Large",
+            "✗ Slightly less accurate than Ivrit Large on hard audio",
         ],
         "time_estimate": "~8-12 hours",
         "ram_required": "3 GB",
@@ -170,6 +73,11 @@ MODELS = {
         "repo": "ivrit-ai/whisper-large-v3-ct2",
         "name": "Ivrit Large",
         "description": "Hebrew-tuned, highest accuracy, slow",
+        "purpose": (
+            "For hard-to-hear or critical recordings, when you can wait. "
+            "Slightly more accurate, much slower."
+        ),
+        "accuracy": "Highest",
         "pros": [
             "✓ Most accurate Hebrew option available",
             "✓ Best for critical or hard-to-hear recordings",
@@ -189,8 +97,7 @@ MODELS = {
     },
 }
 
-# Default model. Hebrew-tuned, and its turbo decoder makes it faster than the
-# "medium" it replaced as well as considerably more accurate on Hebrew.
+# Default model. Nearly Ivrit Large's accuracy at about a fifth of its runtime.
 DEFAULT_MODEL = "ivrit-turbo"
 
 

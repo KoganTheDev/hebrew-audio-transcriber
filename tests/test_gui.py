@@ -978,7 +978,7 @@ class TestMainWindowKeyboardGuards:
             "has_gpu": False,
             "gpu_name": "",
         }
-        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
         hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
@@ -990,14 +990,15 @@ class TestMainWindowKeyboardGuards:
         yield window
         window.close()
 
-    def test_enter_does_not_advance_while_the_spinbox_has_focus(self, qapp, main_window):
-        # setFocus() is a no-op on a widget Qt considers invisible, and
-        # model_step starts hidden behind file_step in the QStackedWidget -
-        # bring it to the front first, the same way _go_next() would.
+    def test_enter_does_not_advance_while_a_text_field_has_focus(self, qapp, main_window):
+        from PyQt5.QtWidgets import QLineEdit
+
+        field = QLineEdit(main_window.model_step)
         main_window.stacked_widget.setCurrentWidget(main_window.model_step)
-        main_window.model_step.speaker_count_spin.setFocus()
+        field.show()
+        field.setFocus()
         qapp.processEvents()
-        assert qapp.focusWidget() is main_window.model_step.speaker_count_spin
+        assert qapp.focusWidget() is field
 
         with patch.object(main_window.next_btn, "click") as click:
             main_window._on_advance_shortcut()
@@ -1055,7 +1056,7 @@ class TestMainWindowStepNavigation:
             "has_gpu": False,
             "gpu_name": "",
         }
-        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
         hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
@@ -1164,7 +1165,7 @@ class TestMainWindowCancelConfirm:
             "has_gpu": False,
             "gpu_name": "",
         }
-        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
         hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
@@ -1260,7 +1261,7 @@ class TestMainWindowResizing:
             "has_gpu": False,
             "gpu_name": "",
         }
-        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
         hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")
@@ -1405,7 +1406,7 @@ def model_hardware_stub():
     """
     hw = MagicMock()
     hw.tiny_seconds_per_audio_second = None  # calibration not yet run - see the tests below
-    hw.recommend_model.return_value = ("tiny", "stub")
+    hw.recommend_model.return_value = ("ivrit-turbo", "stub")
     hw.estimate_transcription_time.return_value = (60, "stub")
     hw.get_time_estimate_display.return_value = "~1 min"
     return hw
@@ -1440,13 +1441,6 @@ class TestModelSelectStepCardWidth:
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
-        # The scenario needs the step narrower than the cards' natural width,
-        # so the container overhangs the viewport. Offscreen Qt has no real
-        # fonts and inflates text widths, which makes the speaker row - with
-        # the custom terms button at its end - the widest thing on the page
-        # (821px here, 510px with real fonts), and then the step can never get
-        # that narrow. The row is not what this test is about.
-        step.terms_button.hide()
         step.resize(600, 320)
         step.show()
         qapp.processEvents()
@@ -1501,11 +1495,11 @@ class TestModelSelectStepEstimateLanguage:
             i18n.set_language("en", save=False)
             step = ModelSelectStep(model_hardware_stub)
             qtbot.addWidget(step)
-            english = step._desc_labels["tiny"].text()
+            english = step._time_labels["ivrit-turbo"].text()
 
             i18n.set_language("he", save=False)
             step.retranslate()
-            hebrew = step._desc_labels["tiny"].text()
+            hebrew = step._time_labels["ivrit-turbo"].text()
 
             # The stub estimates 60s, which elides to a bare minute.
             assert "1m" in english, english
@@ -1513,6 +1507,57 @@ class TestModelSelectStepEstimateLanguage:
             assert "1m" not in hebrew, hebrew
         finally:
             i18n.set_language(original, save=False)
+
+
+class TestModelSelectStepSpeakers:
+    """The speaker count replaces the old identify-speakers checkbox: one
+    person is how a run skips speaker identification."""
+
+    @pytest.fixture
+    def step(self, qtbot, model_hardware_stub):
+        from gui.steps.model_select import ModelSelectStep
+
+        step = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(step)
+        return step
+
+    def test_defaults_to_two_people_with_identification_on(self, step):
+        assert step.num_speakers == 2
+        assert step.identify_speakers is True
+        assert step.speaker_count_value.text() == "2"
+
+    def test_one_person_turns_identification_off(self, step):
+        step.speakers_minus_btn.click()
+        assert step.num_speakers == 1
+        assert step.identify_speakers is False
+        assert not step.speakers_minus_btn.isEnabled()
+
+    def test_the_count_stops_at_ten(self, step):
+        for _ in range(20):
+            step.speakers_plus_btn.click()
+        assert step.num_speakers == 10
+        assert not step.speakers_plus_btn.isEnabled()
+
+    def test_changing_identification_recomputes_the_estimates(self, step, model_hardware_stub):
+        model_hardware_stub.estimate_transcription_time.reset_mock()
+        step.speakers_minus_btn.click()
+        calls = model_hardware_stub.estimate_transcription_time.call_args_list
+        assert calls, "the estimates were not recomputed"
+        assert all(call.kwargs["identify_speakers"] is False for call in calls)
+
+    def test_clicking_anywhere_on_a_card_picks_its_model(self, qtbot, step):
+        card = step._cards["ivrit-large"]
+        qtbot.mouseClick(card, Qt.LeftButton)
+        assert step.selected_model == "ivrit-large"
+        assert step.model_radios["ivrit-large"].isChecked()
+
+    def test_the_footnote_names_the_duration_and_speaker_labels(self, step):
+        assert step.estimate_footnote.isHidden()  # no file yet, nothing to estimate for
+        step.update_audio_duration(45 * 60)
+        assert "45m" in step.estimate_footnote.text()
+        assert "speaker labels" in step.estimate_footnote.text()
+        step.speakers_minus_btn.click()
+        assert "speaker labels" not in step.estimate_footnote.text()
 
 
 class TestModelSelectStepCalibrationNote:
@@ -1659,7 +1704,7 @@ class TestCalibrationThreadTeardown:
             "has_gpu": False,
             "gpu_name": "",
         }
-        hw.recommend_model.return_value = ("tiny", "stub")
+        hw.recommend_model.return_value = ("ivrit-turbo", "stub")
         hw.estimate_transcription_time.return_value = (60, "stub")
         hw.get_time_estimate_display.return_value = "~1 min"
         hw.get_device_recommendation.return_value = ("cpu", "stub")

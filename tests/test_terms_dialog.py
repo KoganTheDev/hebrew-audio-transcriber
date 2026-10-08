@@ -52,7 +52,7 @@ def hardware_stub():
     """Just enough of HardwareDetector for ModelSelectStep.__init__."""
     hw = MagicMock()
     hw.tiny_seconds_per_audio_second = None
-    hw.recommend_model.return_value = ("tiny", "stub")
+    hw.recommend_model.return_value = ("ivrit-turbo", "stub")
     hw.estimate_transcription_time.return_value = (60, "stub")
     hw.get_time_estimate_display.return_value = "~1 min"
     return hw
@@ -227,7 +227,7 @@ class TestLayout:
         assert label.alignment() & Qt.AlignLeft
 
 
-class TestTheButtonOnTheModelStep:
+class TestThePanelOnTheModelStep:
     @pytest.fixture
     def step(self, qapp, qtbot, hardware_stub, terms_file, english):
         from gui.steps.model_select import ModelSelectStep
@@ -237,9 +237,26 @@ class TestTheButtonOnTheModelStep:
         qtbot.addWidget(step)
         return step
 
-    def test_the_button_counts_the_terms_on_disk(self, step, terms_file):
-        assert step.terms_button.text() == "Custom terms (2)"
+    def test_the_panel_counts_the_terms_on_disk(self, step, terms_file):
+        assert step.terms_count_label.text() == "2"
+        assert step.term_chips._terms == ["קיסריה", "בראודה"]
         assert str(terms_file) in step.terms_button.toolTip()
+
+    def test_chips_that_do_not_fit_become_a_more_label(self, qapp, step, terms_file):
+        from core import term_store
+
+        for term in ("ירושלים", "באר שבע", "יובל קוגן", "מכללת בראודה", "קריית שמונה"):
+            term_store.add_term(str(terms_file), term)
+        step._refresh_terms()
+        chips = step.term_chips
+        # A real panel's width. Offscreen Qt has no real fonts and inflates
+        # text widths, so a narrower row can fit no chip at all.
+        chips.resize(320, chips.sizeHint().height())
+        chips._fit()
+
+        shown = sum(1 for chip in chips._chips if not chip.isHidden())
+        assert 0 < shown < 7
+        assert chips._more.text() == f"+{7 - shown} more"
 
     def test_the_count_updates_after_the_dialog_closes(self, step, terms_file, monkeypatch):
         from core import term_store
@@ -252,14 +269,16 @@ class TestTheButtonOnTheModelStep:
         monkeypatch.setattr(model_select.TermsDialog, "exec_", exec_and_add)
         step.terms_button.click()
 
-        assert step.terms_button.text() == "Custom terms (3)"
+        assert step.terms_count_label.text() == "3"
+        assert "נאור" in step.term_chips._terms
 
     def test_the_button_follows_a_live_language_switch(self, step):
         from gui import i18n
 
         i18n.set_language("he")
         step.retranslate()
-        assert step.terms_button.text() == "מונחים מותאמים (2)"
+        assert step.terms_title.text() == "מונחים מותאמים"
+        assert step.terms_button.text() == "עריכה"
 
     def test_an_unreadable_list_still_renders_the_button(self, step, monkeypatch):
         from core import term_store
@@ -269,4 +288,5 @@ class TestTheButtonOnTheModelStep:
 
         monkeypatch.setattr(term_store, "read_terms", unreadable)
         step.retranslate()
-        assert step.terms_button.text() == "Custom terms (0)"
+        assert step.terms_count_label.text() == "0"
+        assert step.term_chips._more.text() == "No terms yet."

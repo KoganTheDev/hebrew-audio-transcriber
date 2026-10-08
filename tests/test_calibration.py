@@ -17,6 +17,7 @@ import wave
 
 import pytest
 
+import config
 from core import calibration
 
 
@@ -112,29 +113,25 @@ class TestRelativeComputeCost:
         """The benchmark only ever times tiny; every other entry is a prediction."""
         assert calibration.RELATIVE_COMPUTE_COST["tiny"] == 1.0
 
-    def test_cost_rises_with_model_size(self):
-        sizes = ["tiny", "base", "small", "medium", "large"]
-        costs = [calibration.RELATIVE_COMPUTE_COST[size] for size in sizes]
-        assert costs == sorted(costs)
+    def test_every_card_has_a_cost(self):
+        """A card without one is costed as the slowest model, never by its own size."""
+        for name in config.MODELS:
+            assert name in calibration.RELATIVE_COMPUTE_COST
 
     def test_a_fine_tune_costs_the_same_as_the_architecture_it_was_tuned_from(self):
-        """ivrit-large is large-v3: a fine-tune changes weights, not shape."""
-        assert (
-            calibration.RELATIVE_COMPUTE_COST["ivrit-large"]
-            == (calibration.RELATIVE_COMPUTE_COST["large"])
-        )
+        """ivrit-large is large-v3 (1550M params): a fine-tune changes weights, not shape."""
+        assert calibration.RELATIVE_COMPUTE_COST["ivrit-large"] == 1550 / 39
 
-    def test_turbo_is_predicted_cheaper_than_medium(self):
+    def test_turbo_is_predicted_well_below_large(self):
         """
         The parameter-count proxy breaks down for turbo: it keeps large-v3's
         encoder but cuts the decoder from 32 layers to 4, and autoregressive
-        decoding dominates wall clock. Costing it by parameters alone put it
-        just above medium, which had the recommender skipping past it to a
-        model both slower in practice and worse at Hebrew.
+        decoding dominates wall clock. By parameters alone it would cost about
+        half of large; the real speedup is ~5x.
         """
         assert (
             calibration.RELATIVE_COMPUTE_COST["ivrit-turbo"]
-            < calibration.RELATIVE_COMPUTE_COST["medium"]
+            < calibration.RELATIVE_COMPUTE_COST["ivrit-large"] / 4
         )
 
 

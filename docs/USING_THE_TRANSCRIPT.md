@@ -84,9 +84,10 @@ transcripts on disk, ready to open.
 
 ## Speaker identification
 
-Enabled by default, with a speaker count you can set on the model screen.
-Telling it exactly how many people are in the recording matters: fixing the
-count is considerably more reliable than letting the app infer it.
+On by default. Set how many people are in the recording with the − / +
+buttons in the **Speakers** panel on the model screen; set it to 1 to skip
+speaker identification entirely. Telling it the exact count matters: fixing
+the count is considerably more reliable than letting the app infer it.
 
 Two paths, chosen automatically:
 
@@ -98,9 +99,11 @@ If speaker identification fails for any reason, the transcript is still saved - 
 ## Correcting names and jargon
 
 Words the model reliably mangles - people, places, organisations,
-professional vocabulary - go in **Custom terms** on the model screen: type a
-term and press Enter. The list is saved as `hebrew_terms.txt` in the app's
-folder (hover the button for the exact path) and stays editable by hand;
+professional vocabulary - go in the **Custom terms** panel on the model
+screen: press **Edit**, type a term and press Enter. The panel shows how many
+terms you have and the first few of them. The list is saved as
+`hebrew_terms.txt` in the app's folder (hover **Edit** for the exact path)
+and stays editable by hand;
 [`hebrew_terms.example.txt`](../hebrew_terms.example.txt) explains the
 format. With no terms, nothing happens.
 

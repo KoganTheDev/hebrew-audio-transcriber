@@ -68,7 +68,6 @@ class TestTranscriber:
             Transcriber(model_size="ivrit-turbo").model_repo
             == "ivrit-ai/whisper-large-v3-turbo-ct2"
         )
-        assert Transcriber(model_size="large").model_repo == "large-v3"
 
     def test_model_repo_passes_through_unknown_names(self):
         """

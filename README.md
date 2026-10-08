@@ -41,7 +41,7 @@ recording.
 
 Point it at one or more audio/video files (or drop a whole folder), and it walks you through a 3-step wizard: pick the file(s), pick a model, and transcribe.
 
-- **Hebrew-specialised models** - defaults to [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper, not stock Whisper (trained overwhelmingly on English); generic Whisper sizes remain available for mixed-language audio.
+- **Hebrew-specialised models** - uses [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper, not stock Whisper (trained overwhelmingly on English).
 - **Timestamped, speaker-labelled turns** - each block shows its position in the audio and, where identifiable, who's speaking.
 - **Batch transcription** - select several files or drop a folder, and get back one combined document from a single model load.
 - **Bilingual interface (English / עברית)** - a full, mirrored right-to-left Hebrew layout, one click or `Ctrl+Shift+L` away.
@@ -113,24 +113,21 @@ at all it stops and tells you to run the launcher.
 
 **Workflow:**
 1. **Select file(s)** - drag in audio/video files or a whole folder; your CPU/RAM/GPU and the total duration selected are shown alongside.
-2. **Choose a model** - pick from the table below. The app pre-selects the highest-accuracy model that will still finish in reasonable time on your hardware.
+2. **Choose a model** - one of the two below. Each card shows its estimated time for your files, its memory needs and whether it still has to download. The app pre-selects the more accurate one when it will still finish in reasonable time on your hardware. The same screen holds how many people are speaking and your custom terms.
 3. **Transcribe** - watch live progress, then open the finished transcript straight from the app.
 
 ### Models
 
 | Model | Description | RAM | First-use download |
 |---|---|---|---|
-| Tiny | Ultra-fast, lowest quality | 1 GB | 76 MB |
-| Base | Good balance of speed and quality | 2 GB | 145 MB |
-| Small | Better accuracy | 3 GB | 484 MB |
-| Medium | High accuracy, general purpose | 5 GB | 1.5 GB |
-| Large | Best general-purpose model, very slow | 8 GB | 3.1 GB |
 | **Ivrit Turbo** | **Hebrew-tuned, fast and accurate (default)** | **3 GB** | **1.6 GB** |
 | Ivrit Large | Hebrew-tuned, highest accuracy, slow | 8 GB | 3.1 GB |
 
-The two Ivrit models are [ivrit.ai](https://www.ivrit.ai/en/2025/02/13/training-whisper/) fine-tunes of Whisper trained on hundreds of hours of transcribed Hebrew. For Hebrew audio they make considerably fewer mistakes than any of the generic sizes above them, and Ivrit Turbo's reduced decoder makes it faster than Medium despite being a larger model. The generic sizes are still the better choice for mixed-language or non-Hebrew recordings.
+Both are [ivrit.ai](https://www.ivrit.ai/en/2025/02/13/training-whisper/) fine-tunes of Whisper trained on hundreds of hours of transcribed Hebrew, and make considerably fewer mistakes on Hebrew than stock Whisper. Ivrit Turbo's reduced decoder makes it about 5x faster than Ivrit Large for a small accuracy cost, so Large is worth it mainly for hard-to-hear recordings.
 
-Actual processing time isn't fixed: it's estimated from a one-time benchmark run on your own hardware the first time the app launches, then scaled by model size, the file's real duration, and whether speaker identification is enabled.
+Stock Whisper sizes (Tiny to Large) are no longer offered: the app always transcribes as Hebrew, and on Hebrew each of them was less accurate than Ivrit Turbo. If you used one in an earlier version, its download is still in `whisper_models/` and can be deleted (any `models--Systran--faster-whisper-*` folder except `-tiny`, which the speed benchmark uses).
+
+Actual processing time isn't fixed: it's estimated from a one-time benchmark run on your own hardware the first time the app launches, then scaled by model size, the file's real duration, and whether speaker identification is on.
 
 ## Working with the transcript
 
@@ -145,8 +142,8 @@ your browser's local storage, not back to the file on disk.** Press
 **"Save a copy"** (or `Ctrl+S`) to download a fresh HTML file with your edits
 baked in - that's the one to keep or send to someone else.
 
-Speaker identification is on by default (set how many speakers on the model
-screen). Names, places and jargon the model gets wrong go in **Custom terms**
+Speaker identification is on by default: set how many people are in the
+recording on the model screen, or 1 to skip it. Names, places and jargon the model gets wrong go in **Custom terms**
 on the same screen; the app corrects them where the model was unsure. In the
 transcript, every uncertain word is highlighted - click one to pick a term,
 type the right word, or keep it.

@@ -53,17 +53,17 @@ def text_alignment() -> Qt.Alignment:
     return cast(Qt.Alignment, side | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter)
 
 
-def term_count(path: str | None = None) -> int:
-    """How many terms the list holds, for the model step's button label.
+def read_term_list(path: str | None = None) -> list[str]:
+    """The terms on disk, for the model step's terms panel.
 
-    0 when the file cannot be read: the button must still render, and the
+    Empty when the file cannot be read: the panel must still render, and the
     dialog reports the actual problem when it is opened.
     """
     try:
-        return len(term_store.read_terms(path or config.resolve_terms_path()))
+        return list(term_store.read_terms(path or config.resolve_terms_path()))
     except (OSError, UnicodeDecodeError) as e:
         logger.warning(f"Could not read the term list: {e}")
-        return 0
+        return []
 
 
 class TermsDialog(QDialog):

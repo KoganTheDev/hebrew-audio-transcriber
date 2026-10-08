@@ -13,9 +13,7 @@ class TestConfig:
 
     def test_models_configuration(self):
         """Test that all models are configured correctly."""
-        assert len(config.MODELS) == 7
-        for name in ("tiny", "base", "small", "medium", "large", "ivrit-turbo", "ivrit-large"):
-            assert name in config.MODELS
+        assert list(config.MODELS) == ["ivrit-turbo", "ivrit-large"]
 
     def test_model_has_required_keys(self):
         """Test that all models have required keys."""
@@ -35,13 +33,6 @@ class TestConfig:
         for model_name, model_info in config.MODELS.items():
             assert set(model_info.keys()) >= required_keys, f"Model {model_name} missing keys"
 
-    def test_large_is_pinned_to_an_explicit_version(self):
-        """
-        The bare "large" alias has pointed at different Whisper versions across
-        faster-whisper releases, which silently changed which model ran.
-        """
-        assert config.MODELS["large"]["repo"] == "large-v3"
-
     def test_hebrew_models_point_at_ivrit_repos(self):
         assert config.MODELS["ivrit-turbo"]["repo"] == "ivrit-ai/whisper-large-v3-turbo-ct2"
         assert config.MODELS["ivrit-large"]["repo"] == "ivrit-ai/whisper-large-v3-ct2"
@@ -49,6 +40,12 @@ class TestConfig:
     def test_default_model_is_hebrew_tuned(self):
         """A Hebrew transcription app should not default to a general model."""
         assert config.DEFAULT_MODEL.startswith("ivrit-")
+
+    def test_every_card_has_a_placeholder_speed(self):
+        """Without one, every card falls back to the same 1.0 and the
+        pre-calibration estimates can't tell the models apart."""
+        assert set(config.SPEED_FACTORS) == set(config.MODELS)
+        assert config.SPEED_FACTORS["ivrit-turbo"] > config.SPEED_FACTORS["ivrit-large"]
 
     def test_default_model_exists(self):
         """Test that default model is configured."""

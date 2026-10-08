@@ -81,11 +81,9 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPo
 def _is_text_entry_widget(widget: QWidget | None) -> bool:
     """True for any widget where Enter means "confirm what I just typed here",
     not "advance to the next step" - the window-level Enter shortcut below
-    checks this before acting. The speaker-count QSpinBox on step 2 is the
-    concrete case that matters (typing "10" and pressing Enter must not
-    skip the screen), but every native Qt text-entry base class is covered
-    here rather than special-casing just that one widget, so a future text
-    field on any step gets the same protection for free.
+    checks this before acting (typing a value and pressing Enter must not
+    skip the screen). Every native Qt text-entry base class is covered, so
+    any text field on any step gets the same protection for free.
     """
     return isinstance(widget, (QAbstractSpinBox, QLineEdit, QTextEdit, QPlainTextEdit, QComboBox))
 
@@ -244,9 +242,8 @@ class MainWindow(QMainWindow):
     def _on_advance_shortcut(self) -> None:
         """Enter/Return: equivalent to clicking Next, guarded against firing
         while the user is mid-entry in a text field (see
-        _is_text_entry_widget - the speaker-count QSpinBox on step 2 is the
-        case that matters: typing "10" and pressing Enter must confirm the
-        number, not skip the screen).
+        _is_text_entry_widget: Enter there must confirm the value, not skip
+        the screen).
 
         DropZone (gui/widgets.py) already wins this race on step 1 via its
         own ShortcutOverride handling, so Enter there opens the browse
@@ -518,9 +515,10 @@ class MainWindow(QMainWindow):
         self.setTabOrder(self.lang_btn, self.file_step.drop_zone)
         self.setTabOrder(self.file_step.drop_zone, self.model_step.model_radios[first_model])
         self.setTabOrder(
-            self.model_step.model_radios[last_model], self.model_step.identify_speakers_check
+            self.model_step.model_radios[last_model], self.model_step.speakers_minus_btn
         )
-        self.setTabOrder(self.model_step.speaker_count_spin, self.model_step.terms_button)
+        self.setTabOrder(self.model_step.speakers_minus_btn, self.model_step.speakers_plus_btn)
+        self.setTabOrder(self.model_step.speakers_plus_btn, self.model_step.terms_button)
         self.setTabOrder(self.model_step.terms_button, self.back_btn)
         self.setTabOrder(self.back_btn, self.cancel_btn)
         self.setTabOrder(self.cancel_btn, self.transcription_step.open_button)

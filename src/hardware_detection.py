@@ -254,9 +254,11 @@ class HardwareDetector:
                 f"Highest accuracy this machine's RAM can support ({self.ram_gb:.1f}GB)",
             )
 
-        # Nothing fit (e.g. not even enough RAM for 'tiny') - fall back to
-        # the cheapest model anyway, since some result is better than none.
-        return "tiny", "Minimum viable option for this hardware"
+        # Nothing fit (less RAM than even Ivrit Turbo asks for) - fall back to
+        # the default anyway, since some result is better than none. It must
+        # be a config.MODELS key: the model step looks the recommendation up
+        # among its cards, and a model with no card there raises KeyError.
+        return config.DEFAULT_MODEL, "Below the recommended RAM for any model"
 
     def estimate_transcription_time(
         self,
@@ -276,14 +278,18 @@ class HardwareDetector:
 
         Args:
             audio_duration_seconds: Length of audio in seconds
-            model_size: Model size (tiny, small, base, medium, large)
+            model_size: A config.MODELS key, or a raw Whisper size such as "tiny"
 
         Returns:
             (estimated_seconds, reason_string)
 
         """
         if self.tiny_seconds_per_audio_second is not None:
-            relative_cost = RELATIVE_COMPUTE_COST.get(model_size, RELATIVE_COMPUTE_COST["medium"])
+            # Unknown models are costed as the slowest card, so an estimate
+            # errs long rather than promising a time it can't meet.
+            relative_cost = RELATIVE_COMPUTE_COST.get(
+                model_size, RELATIVE_COMPUTE_COST["ivrit-large"]
+            )
             seconds_per_audio_second = self.tiny_seconds_per_audio_second * relative_cost
             device_desc = (
                 f"GPU ({self.gpu_name})"

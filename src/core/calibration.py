@@ -46,31 +46,27 @@ CALIBRATION_SAMPLE_RATE = 16000
 # this third cache was missed by.
 CALIBRATION_CACHE_PATH = os.path.join(config.MODEL_DOWNLOAD_ROOT, ".calibration.json")
 
-# Relative inference cost of each model size vs. "tiny", derived from each
-# model's parameter count (tiny=39M, base=74M, small=244M, medium=769M,
-# large=1550M params). Whisper's encoder/decoder compute scales with model
-# width, so parameter-count ratios are a reasonable real-world proxy for
-# relative runtime - this is what lets one measured benchmark (tiny) predict
-# the other four sizes' time on the same hardware.
+# Relative inference cost of each model vs. "tiny", derived from parameter
+# count (tiny=39M, large-v3=1550M params). Whisper's encoder/decoder compute
+# scales with model width, so parameter-count ratios are a reasonable
+# real-world proxy for relative runtime - this is what lets one measured
+# benchmark (tiny) predict the real models' time on the same hardware.
+#
+# "tiny" stays here although it has no GUI card: it is the benchmark itself.
 _TINY_PARAMS = 39
 RELATIVE_COMPUTE_COST = {
     "tiny": 39 / _TINY_PARAMS,
-    "base": 74 / _TINY_PARAMS,
-    "small": 244 / _TINY_PARAMS,
-    "medium": 769 / _TINY_PARAMS,
-    "large": 1550 / _TINY_PARAMS,
     # The ivrit.ai models are fine-tunes, so they cost the same as the Whisper
     # architecture they were tuned from - a fine-tune changes weights, not
-    # shape. ivrit-large is large-v3, hence an identical cost.
+    # shape. ivrit-large is large-v3, hence the full large-v3 cost.
     #
     # Turbo is the one place the parameter-count proxy breaks down badly enough
     # to need overriding. It keeps large-v3's encoder but cuts the decoder from
     # 32 layers to 4. Decoding is autoregressive - one sequential pass per
     # token - so it dominates wall-clock time in a way its share of the
-    # parameter count (809M of 1550M) does not reflect. Costing turbo by
-    # parameters alone put it just above "medium", which had the recommender
-    # skipping straight past it to medium on long files, i.e. choosing a model
-    # that is both slower in practice and worse at Hebrew.
+    # parameter count (809M of 1550M) does not reflect. Costed by parameters
+    # alone, its estimates come out several times too long, and the
+    # recommender would wrongly rule it out on long files.
     #
     # _TURBO_SPEEDUP is empirical rather than derived: the calibration
     # benchmark only ever measures "tiny", so every other entry here is a

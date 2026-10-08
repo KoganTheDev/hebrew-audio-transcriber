@@ -24,13 +24,12 @@ def compute_type_for_device(device: str) -> str:
 # Placeholder speed factors, used only until the real per-machine
 # calibration benchmark (core.calibration) finishes on first
 # run - see HardwareDetector.estimate_transcription_time. Not used once a
-# real measurement is available.
+# real measurement is available. Keyed by config.MODELS, so the two cards
+# differ before calibration lands; a missing key falls back to 1.0.
 SPEED_FACTORS = {
-    "tiny": 2.5,  # 2.5x real-time (10 min audio = ~4 min processing)
-    "small": 1.8,  # 1.8x real-time
-    "base": 1.0,  # 1x real-time (baseline)
-    "medium": 0.65,  # 0.65x real-time (slower than real-time)
-    "large": 0.35,  # 0.35x real-time (very slow)
+    "ivrit-large": 0.35,  # large-v3 architecture, 0.35x real-time (very slow)
+    # Same ~5.5x turbo speedup core.calibration.RELATIVE_COMPUTE_COST uses.
+    "ivrit-turbo": 0.35 * 5.5,
 }
 
 # Used to scale time estimates across different CPU core counts.

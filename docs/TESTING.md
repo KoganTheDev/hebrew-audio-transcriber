@@ -105,6 +105,10 @@ shipping a change to `core/assets/`.
 
       python -m tests.eval.compare_models path/to/audio.m4a --models medium ivrit-turbo
 
+  `--models` takes `config.MODELS` keys or raw Whisper names: stock sizes
+  such as `medium` have no card in the app any more, but still load by name
+  as a baseline.
+
   `compare_diarization.py` also takes `--engine sherpa|powerset|both`,
   `--num-speakers 0` (infer the count), and `--cluster-threshold` (repeatable
   or comma-separated) to sweep DIARIZATION_CLUSTER_THRESHOLD. `--audio`/`--rttm`

@@ -163,7 +163,7 @@ _PDI = "\u2069"
 _ISOLATED_HEBREW_QUANTITIES = {
     "file_info": "{size} MB",
     "model_ram_tooltip": "{ram}",
-    "model_download_pending": "{size}",
+    "model_download_fact": "{size}",
     "model_download_tooltip": "{size}",
     "w_downloading_diarization": "36 MB",
 }
