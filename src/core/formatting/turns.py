@@ -70,7 +70,14 @@ class Turn:
         return " ".join(part for part in self._parts if part)
 
     def low_confidence(self, threshold: float) -> list[list]:
-        """Words the model was unsure about, as [text, probability, occurrence].
+        """Words the model was unsure about, as
+        [text, probability, occurrence, suggestions, original].
+
+        suggestions are terms for the page's click-to-fix menu and original
+        is what the model wrote before an auto-correction (None if the word
+        was not replaced) - see core.hebrew_corrections.annotate_suggestions.
+        Appended after the first three, which the page has always read by
+        position.
 
         The occurrence index counts how many times that exact token has
         already appeared in this turn, so a word that shows up twice with
@@ -89,7 +96,15 @@ class Turn:
             index = seen.get(token, 0)
             seen[token] = index + 1
             if word.probability < threshold:
-                flagged.append([token, round(float(word.probability), 3), index])
+                flagged.append(
+                    [
+                        token,
+                        round(float(word.probability), 3),
+                        index,
+                        list(word.suggestions),
+                        word.original,
+                    ]
+                )
 
         return flagged
 

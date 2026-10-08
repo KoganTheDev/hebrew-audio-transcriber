@@ -1118,9 +1118,14 @@ def _correct_hebrew(
         emit_progress(("w_correcting_terms", {}), FILE_LOCAL_CORRECTING_PERCENT)
         correct_start = time.perf_counter()
         changes = hebrew_corrections.correct(segments, terms)
+        # After correct(), so a word it replaced is offered alternatives to
+        # what the model heard rather than to the replacement.
+        suggested = hebrew_corrections.annotate_suggestions(segments, terms)
         _log_phase(progress_queue, WORK_PHASE_CORRECT, correct_start)
         if changes:
             logger.info(f"Applied {len(changes)} Hebrew term correction(s)")
+        if suggested:
+            logger.info(f"Offered term suggestions on {suggested} doubted word(s)")
 
     except Exception as e:
         logger.warning(f"Hebrew term correction skipped: {e}", exc_info=True)

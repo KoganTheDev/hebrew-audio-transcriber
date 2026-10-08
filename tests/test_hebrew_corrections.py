@@ -11,6 +11,7 @@ import pytest
 
 from core.hebrew_corrections import (
     TermList,
+    annotate_suggestions,
     correct,
     strip_clitics,
     weighted_distance,
@@ -382,3 +383,107 @@ class TestWordsTheRecordingShowsTheModelKnows:
         known = segment_of(word("נדבר ", 1.0), word("נדבר", 1.0))
         doubted = segment_of(word("יוסי "), word("נדבר", probability=0.3))
         assert correct([known, doubted], TermList(["יוסי נאור"])) == []
+
+
+class TestSuggestions:
+    """
+    What the transcript page's click-to-fix menu offers. Unlike correct(),
+    nothing here changes the transcript - a person picks - so ties are fine,
+    but noise is not: every junk entry is one more thing to read past.
+    """
+
+    def test_the_closest_term_is_offered_with_its_prefix(self):
+        assert TermList(["קיסריה"]).suggestions("בכיסריה") == ["בקיסריה"]
+
+    def test_one_entry_per_term_not_one_per_clitic_reading(self):
+        """Every clitic reading yields its own prefix+term; the mockup on
+        real output listed בכקיסריה beside בקיסריה until this rule."""
+        offered = TermList(["קיסריה"]).suggestions("בכיסריה")
+        assert len(offered) == 1
+
+    def test_a_tie_offers_both(self):
+        """Exactly what correct() refuses to decide - and a person can."""
+        assert set(TermList(["שרון", "שירן"]).suggestions("שרן")) == {"שרון", "שירן"}
+
+    def test_a_candidate_well_behind_the_best_is_not_offered(self, monkeypatch):
+        """Only near-ties of the best are a real choice; anything more than
+        SUGGESTION_SPREAD behind it is one more line to read past. The
+        distances are fixed here so the rule is tested, not the matcher."""
+        terms = TermList(["אאא", "בבב", "גגג"])
+        distances = {"אאא": 1.0, "בבב": 1.9, "גגג": 2.1}
+        monkeypatch.setattr(terms, "_near_matches", lambda prefix, cand: iter(distances.items()))
+        assert terms.suggestions("דדד") == ["אאא", "בבב"]
+
+    def test_best_first(self):
+        offered = TermList(["אורן", "אורון"]).suggestions("אורעון")
+        assert offered[0] == "אורון"
+
+    def test_at_most_three(self):
+        terms = TermList(["חתם", "חתן", "חתך", "חתר", "חתל"])
+        assert len(terms.suggestions("חתא")) <= 3
+
+    def test_the_word_itself_is_never_offered(self):
+        assert TermList(["קיסריה"]).suggestions("קיסריה") == []
+
+    def test_multi_word_terms_are_not_offered_for_one_word(self):
+        """Replacing one word with two would break the word timings the
+        page's playback and sentence splitting read."""
+        assert TermList(["באר שבע"]).suggestions("בארשבה") == []
+
+    def test_nothing_close_offers_nothing(self):
+        assert TermList(["קיסריה"]).suggestions("מחשב") == []
+
+
+class TestCorrectRecordsTheOriginal:
+    def test_a_replaced_word_keeps_what_the_model_wrote(self):
+        seg = segment_of(word("אני "), word("בכיסריה.", probability=0.2))
+        correct([seg], TermList(["קיסריה"]))
+        assert seg.words[1].text == "בקיסריה."
+        assert seg.words[1].original == "בכיסריה."
+        assert seg.words[0].original is None
+
+    def test_every_word_of_a_phrase_keeps_its_own(self):
+        seg = segment_of(word("יובל "), word("כוגן", probability=0.2))
+        correct([seg], TermList(["יובל קוגן"]))
+        assert seg.words[1].original == "כוגן"
+
+
+class TestAnnotateSuggestions:
+    def test_a_doubted_word_gets_suggestions(self):
+        seg = segment_of(word("שגם "), word("שרן", probability=0.44))
+        count = annotate_suggestions([seg], TermList(["שרון", "שירן"]))
+        assert set(seg.words[1].suggestions) == {"שרון", "שירן"}
+        assert count == 1
+
+    def test_a_confident_word_gets_none(self):
+        seg = segment_of(word("שרן", probability=0.9))
+        annotate_suggestions([seg], TermList(["שרון"]))
+        assert seg.words[0].suggestions == []
+
+    def test_punctuation_is_kept_on_each_suggestion(self):
+        seg = segment_of(word("שרן,", probability=0.4))
+        annotate_suggestions([seg], TermList(["שרון"]))
+        assert seg.words[0].suggestions == ["שרון,"]
+
+    def test_a_word_the_recording_shows_the_model_knows_gets_none(self):
+        """The same guard as correct(): without it a list holding ענבל
+        prompts "ענבל?" on every doubted אבל ("but") in a real call."""
+        known = segment_of(word("אבל ", 1.0), word("אבל", 1.0))
+        doubted = segment_of(word("אבל", probability=0.2))
+        annotate_suggestions([known, doubted], TermList(["ענבל"]))
+        assert doubted.words[0].suggestions == []
+
+    def test_an_auto_corrected_word_is_ranked_from_what_the_model_heard(self):
+        seg = segment_of(word("שרונ", probability=0.3))
+        terms = TermList(["שרון", "שירן"])
+        correct([seg], terms)
+        annotate_suggestions([seg], terms)
+
+        applied = seg.words[0].text
+        assert seg.words[0].original == "שרונ"
+        assert applied not in seg.words[0].suggestions
+
+    def test_no_terms_means_nothing_happens(self):
+        seg = segment_of(word("שרן", probability=0.4))
+        assert annotate_suggestions([seg], TermList([])) == 0
+        assert seg.words[0].suggestions == []

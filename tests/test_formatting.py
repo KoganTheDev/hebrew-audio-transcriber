@@ -474,7 +474,7 @@ class TestDataPayload:
             )
         ]
         data = payload(render_html([doc("a.wav", segments)]))
-        assert data["low"]["0-0"] == [["שתיים", 0.3, 0]]
+        assert data["low"]["0-0"] == [["שתיים", 0.3, 0, [], None]]
 
     def test_confident_words_are_not_published(self):
         segments = [seg(0, 4, "אחד שתיים", words=[word("אחד", 0.99), word("שתיים", 0.98)])]
@@ -504,7 +504,7 @@ class TestDataPayload:
             )
         ]
         data = payload(render_html([doc("a.wav", segments)]))
-        assert data["low"]["0-0"] == [["כן", 0.2, 1]]
+        assert data["low"]["0-0"] == [["כן", 0.2, 1, [], None]]
 
     def test_payload_escapes_angle_brackets_so_it_cannot_close_the_script(self):
         segments = [seg(0, 4, "x", words=[word("</script><b>", 0.1)])]
@@ -1501,3 +1501,37 @@ class TestEveryAssetReaderIsCached:
             assert formatting.assets._data_uri.cache_info().hits == 1
         finally:
             formatting.assets._data_uri.cache_clear()
+
+
+class TestSuggestionPayload:
+    """What the click-to-fix menu reads: suggestions and the pre-correction
+    original, appended after the three fields the page has always read."""
+
+    def test_suggestions_and_original_are_published(self):
+        segments = [
+            Segment(
+                start=0.0,
+                end=1.0,
+                text="a b",
+                words=[
+                    Word(0.0, 0.5, "a", 0.3, suggestions=["x", "y"]),
+                    Word(0.5, 1.0, " b", 0.2, original="c"),
+                ],
+            )
+        ]
+        data = payload(render_html([doc("a.wav", segments)]))
+        assert data["low"]["0-0"] == [["a", 0.3, 0, ["x", "y"], None], ["b", 0.2, 0, [], "c"]]
+
+    def test_a_suggestion_cannot_close_the_script_tag(self):
+        """Terms are typed by the user; the payload sits inside <script>."""
+        segments = [
+            Segment(
+                start=0.0,
+                end=1.0,
+                text="a",
+                words=[Word(0.0, 1.0, "a", 0.3, suggestions=["</script><b>x"])],
+            )
+        ]
+        html = render_html([doc("a.wav", segments)])
+        assert "</script><b>x" not in html
+        assert payload(html)["low"]["0-0"][0][3] == ["</script><b>x"]

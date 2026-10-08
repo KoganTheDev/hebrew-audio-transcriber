@@ -30,6 +30,12 @@ class Word:
     end: float
     text: str
     probability: float = 1.0
+    # What the model wrote, when the Hebrew pass replaced it - so the
+    # transcript page can offer "restore original" on an auto-correction.
+    original: str | None = None
+    # Terms from the user's list this word may have been meant to be, for
+    # the page's click-to-fix menu. Only ever filled for doubted words.
+    suggestions: list[str] = field(default_factory=list)
 
 
 @dataclass

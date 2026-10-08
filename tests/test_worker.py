@@ -1237,3 +1237,42 @@ class TestTheLoadFailureSaysWhich:
 
     def test_any_other_failure_keeps_the_general_message(self, tmp_path, monkeypatch):
         assert self._run(tmp_path, monkeypatch, False) == ("error", "err_load_model", {})
+
+
+class TestTheCorrectionStep:
+    """_correct_hebrew: the one place the worker runs the Hebrew pass, so the
+    one place both of its outputs - corrections and the page's click-to-fix
+    suggestions - have to be produced together."""
+
+    def _segment(self):
+        words = [
+            Word(0.0, 0.5, "נסענו", 0.99),
+            Word(0.5, 1.0, " לכיסריה", 0.2),
+            Word(1.0, 1.5, " עם", 0.99),
+            Word(1.5, 2.0, " שרן", 0.3),
+        ]
+        return Segment(0.0, 2.0, "".join(w.text for w in words), words=words)
+
+    def test_corrects_and_attaches_suggestions_from_the_term_file(self, tmp_path):
+        terms = tmp_path / "terms.txt"
+        terms.write_text("קיסריה\nשרון\nשירן\n", encoding="utf-8")
+        segment = self._segment()
+
+        worker._correct_hebrew(
+            [segment], TranscriptionOptions(terms_file=str(terms)), lambda *a: None, FakeQueue()
+        )
+
+        corrected, doubted = segment.words[1], segment.words[3]
+        assert corrected.text == " לקיסריה"
+        assert corrected.original == "לכיסריה"
+        assert set(doubted.suggestions) == {"שרון", "שירן"}
+
+    def test_no_term_file_changes_nothing(self, tmp_path):
+        segment = self._segment()
+        worker._correct_hebrew(
+            [segment],
+            TranscriptionOptions(terms_file=str(tmp_path / "absent.txt")),
+            lambda *a: None,
+            FakeQueue(),
+        )
+        assert all(w.original is None and not w.suggestions for w in segment.words)

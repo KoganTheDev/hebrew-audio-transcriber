@@ -67,6 +67,11 @@ MIN_MARGIN = 0.5
 KNOWN_WORD_CONFIDENCE = 0.9
 KNOWN_WORD_MIN_COUNT = 2
 
+# The transcript page's click-to-fix menu: at most this many terms, and only
+# those within this weighted distance of the best one (see suggestions()).
+SUGGESTION_LIMIT = 3
+SUGGESTION_SPREAD = 1.0
+
 # Letters routinely confused because they sound identical or near-identical in
 # modern pronunciation, so a difference between them is weak evidence that this
 # is a different word - hence a cost below 1.0. א/ה/ע are silent or
@@ -262,6 +267,41 @@ class TermList:
                     runner_up = distance
 
         return best, runner_up
+
+    def suggestions(self, word: str, limit: int = SUGGESTION_LIMIT) -> list[str]:
+        """Terms a person might pick for this word, best first.
+
+        Unlike best_match() there is no margin: a tie is exactly what a
+        pick-one menu is for. Two filters instead:
+        * one entry per TERM, at its best clitic reading - every reading
+          yields its own prefix+term, and a mockup over real output listed
+          junk like בכקיסריה beside בקיסריה until this rule;
+        * only candidates within SUGGESTION_SPREAD of the best, so a choice
+          is between near-ties rather than a long tail.
+        Single-word terms only: replacing one word with a phrase would break
+        the word timings every other feature of the page reads.
+        """
+        best: dict[str, tuple[float, str]] = {}
+        normalized = normalize_word(word)
+        for prefix, candidate in clitic_splits(normalized):
+            if len(candidate) < 2:
+                continue
+            for replacement, distance in self._near_matches(prefix, candidate):
+                term = replacement[len(prefix) :]
+                if " " in term:
+                    continue
+                if distance < best.get(term, (float("inf"), ""))[0]:
+                    best[term] = (distance, replacement)
+
+        ranked = sorted(best.values())
+        if not ranked:
+            return []
+        cutoff = ranked[0][0] + SUGGESTION_SPREAD
+        return [
+            replacement
+            for distance, replacement in ranked
+            if distance <= cutoff and normalize_word(replacement) != normalized
+        ][:limit]
 
     def best_match(self, word: str) -> tuple[str, float, float] | None:
         """Find the term this word was most likely meant to be.
@@ -475,13 +515,51 @@ def correct(
             continue
 
         for index, new_text in replacements.items():
-            segment.words[index].text = new_text
+            word = segment.words[index]
+            # Kept for the transcript page's "restore original" - the one
+            # undo a reader has for a correction they did not ask for.
+            word.original = word.text.strip()
+            word.text = new_text
         segment.text = "".join(word.text for word in segment.words)
 
     return changes
 
 
 _Change = tuple[str, str, float]
+
+
+def annotate_suggestions(
+    segments: Sequence[Segment],
+    terms: TermList,
+    confidence_threshold: float = CONFIDENCE_THRESHOLD,
+) -> int:
+    """Attach click-to-fix suggestions to every doubted word, in place.
+
+    Run after correct(). For a word correct() already replaced, alternatives
+    are ranked from what the model actually heard (word.original), minus the
+    one applied - "restore original" covers going back. The known-word guard
+    applies as it does to correct(): on real recordings a list holding ענבל
+    would otherwise prompt "ענבל?" on every doubted אבל ("but").
+
+    Returns how many words received at least one suggestion.
+    """
+    if not len(terms):
+        return 0
+    known = _known_words(segments)
+    annotated = 0
+    for segment in segments:
+        for word in segment.words:
+            if word.probability >= confidence_threshold:
+                continue
+            lead, core, trail = _split_punctuation(word.text.strip())
+            heard = _split_punctuation(word.original)[1] if word.original else core
+            if not _HEBREW_WORD.match(normalize_word(heard)) or normalize_word(heard) in known:
+                continue
+            options = [s for s in terms.suggestions(heard) if s != core]
+            word.suggestions = [lead + option + trail for option in options]
+            if word.suggestions:
+                annotated += 1
+    return annotated
 
 
 def _known_words(segments: Sequence[Segment]) -> frozenset[str]:
