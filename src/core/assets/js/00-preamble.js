@@ -14,9 +14,15 @@
   // Kept in its own bucket rather than folded into assign so the fixed replay
   // order (cluster first, see applyLineAssignments() in
   // js/24-speakers-menus.js) stays visible at the call site.
+  // picks[turnId]["<word>#<occurrence>"] = replacement, or null for "keep as
+  // is" - the click-to-fix menu's choices (js/42-fix-menu.js), kept apart
+  // from `turns` because a pick must not mark its card edited.
+  // flags starts on: uncertain words are the point of reviewing a
+  // transcript. A document whose reader turned highlighting off keeps it off,
+  // because load() merges the saved state over these defaults.
   var state = {
-    turns: {}, names: {}, flags: false, theme: null, opts: {},
-    speakers: {}, assign: {}, assignLine: {},
+    turns: {}, names: {}, flags: true, theme: null, opts: {},
+    speakers: {}, assign: {}, assignLine: {}, picks: {},
   };
   var exported = true;
   var saveTimer = null;

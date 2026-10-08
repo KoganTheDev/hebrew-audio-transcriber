@@ -162,6 +162,11 @@ _ICON_DEFS: dict[str, str] = {
     # become unattributed. The stronger glyph matches the stronger action.
     "trash": '<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/>'
     '<path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',
+    # The click-to-fix menu (js/42-fix-menu.js): "restore the word the model
+    # wrote" on an auto-corrected word - mirrored under RTL by the stylesheet,
+    # since an arrow encodes a direction - and "keep as is".
+    "undo": '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>',
+    "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
 }
 
 

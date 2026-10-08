@@ -10,6 +10,7 @@
   bindChrome();
   bindOutline();
   bindHelp();
+  bindFixMenu();
 
   syncToolbarHeight();
   window.addEventListener('resize', syncToolbarHeight);
@@ -26,6 +27,10 @@
   document.querySelectorAll('.speakers').forEach(function (s) {
     applyNames(s.dataset.file);
   });
+  // After the edits (an edited card is never re-rendered) and before the
+  // plain-text panels are built from the cards' text, so the panels carry
+  // the reader's picks. Called whatever the flag says: picks apply either way.
+  setFlags(state.flags);
 
   Object.keys(state.opts).forEach(function (file) {
     var panel = document.querySelector('.source[data-file="' + file + '"] .plain');
@@ -40,7 +45,6 @@
   if (state.theme) { document.documentElement.dataset.theme = state.theme; }
   syncThemeLabel();
   syncSaveLabel();
-  if (state.flags) { setFlags(true); }
 
   // Restored edits live in this browser, not in any file, so open on "local"
   // rather than a reassuring "Saved" that would be a lie.

@@ -140,11 +140,40 @@ section 10 below for the sidebar itself.
 
 ## 3. Uncertain words
 
-- [ ] Toggle "מילים לא ודאיות". Low-confidence words gain a tint **and** a dotted underline.
+- [ ] **Open a fresh transcript. Uncertain words are already highlighted** - a tint **and** a
+      dotted underline - with the "מילים לא ודאיות" toggle pressed. Words the app corrected from
+      the term list carry a **solid accent underline** instead, with no tint.
 - [ ] Hover one: the tooltip shows the confidence.
+- [ ] Toggle off, reload. It stays off - a reader's choice outlives the new default.
 - [ ] **Edit a shaded card. Its shading disappears** and does not come back on re-toggle - the
       confidence described the model's output, not what you just typed.
 - [ ] Toggle off. No leftover markup, no stray spacing.
+
+Click-to-fix (needs a term list with a name the model got wrong; the demo page from
+`.mockups/terms/real_transcript_shots.py` has one of each kind):
+
+- [ ] Click an uncertain word. A menu opens **directly below it**, never above and never over the
+      word, aligned to the word's start edge - right edge in Hebrew.
+- [ ] Do it on the **last line of the last card**. The page scrolls (or gains room at the bottom)
+      so the menu still opens below the word, fully visible. Closing it gives the room back.
+- [ ] A word with suggestions shows them with **key-cap** badges 1-3. Press 2: the second one is
+      applied.
+- [ ] Pick a suggestion. Only that word changes, it flashes once, and **the card's other
+      highlighted words stay highlighted**. Reload: the pick is still there.
+- [ ] An auto-corrected word's menu says what the model wrote and offers "החזרת המקור" with an undo
+      arrow pointing **right** (the way back in Hebrew). Restore puts the original back.
+- [ ] Type in "מילה אחרת…" and press Enter: the word is replaced, and a comma or full stop that was
+      attached to it is kept.
+- [ ] "להשאיר כמו שזה" removes the highlight and leaves the word as it was.
+- [ ] Esc closes the menu and the focus ring is back on the word. Tab to an uncertain word and
+      press Enter to open its menu from the keyboard; after a pick, focus moves to the next one.
+- [ ] Open a menu and scroll a little: it moves with its word. Scroll the word off screen: it
+      closes. **On a phone**, tap "מילה אחרת…": the keyboard opens and the menu stays open.
+- [ ] Repeat in dark mode and with Windows high contrast on: the menu border, key caps and the
+      solid underline are all clearly visible.
+- [ ] Save a copy after a pick and open it: the picked word is in the text as an ordinary word.
+- [ ] Known gap: splitting a card (section 2) rebuilds its text, so a pick inside a card that is
+      then split shows as plain text and can no longer be restored from the menu.
 
 ## 4. Audio
 

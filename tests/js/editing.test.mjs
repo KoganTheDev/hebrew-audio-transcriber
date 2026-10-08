@@ -49,13 +49,11 @@ test('editing a turn autosaves the new text to localStorage', async () => {
 });
 
 test('editing a flagged turn removes its low-confidence shading', () => {
+  // Highlighting starts on - no toolbar click needed.
   const { window, document } = buildWindow(getFixtureHtml('full'));
 
-  const flagsBtn = document.getElementById('toggle-flags');
-  flagsBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-
   const turn = document.querySelector('.turn[data-turn="0-0"]');
-  assert.ok(turn.querySelector('.lowconf'), 'expected the fixture\'s low-confidence word to be shaded once flags are on');
+  assert.ok(turn.querySelector('.lowconf'), 'expected the fixture\'s low-confidence word to be shaded by default');
 
   const body = turn.querySelector('.body');
   typeInto(body, 'no more uncertainty here');

@@ -1,0 +1,128 @@
+/* Click-to-fix: an uncertain word is a control, and its menu offers terms
+   from the user's list, the word the model wrote (for an auto-correction), a
+   field for any other word, and "keep as is". Built by js/42-fix-menu.js.
+   After 48-turn.css, which owns the base .lowconf shading this extends. */
+
+.lowconf { cursor: pointer; }
+.lowconf:hover { background: var(--accent-tint); }
+/* Changed by the app, not merely doubted by the model: a solid accent
+   underline and no warning fill, so "replaced" and "unsure" never read the
+   same. */
+.lowconf.autofixed {
+  background: transparent;
+  border-bottom: 2px solid var(--accent);
+}
+.lowconf.autofixed:hover { background: var(--accent-tint); }
+/* Keyboard focus only - a click opens the menu, which shows its own state;
+   see the STATED EXCEPTION comment in 48-turn.css for why data-kbd rather
+   than :focus-visible. */
+html[data-kbd] .lowconf:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+.lowconf.fix-open { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* A word just picked flashes once so the eye finds what changed. */
+.picked.just-picked { animation: fix-flash 1.2s ease-out; border-radius: 2px; }
+@keyframes fix-flash { from { background: var(--accent-tint); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  .picked.just-picked { animation: none; }
+}
+
+/* Detached to <body> and fixed-positioned, like .swatch-menu - a card's own
+   scrolling/stacking context would otherwise clip it. --panel, not --bg: a
+   popover reads as raised above the card it opened from. */
+.fix-menu {
+  position: fixed;
+  z-index: 50;
+  width: 16rem;
+  max-width: calc(100vw - 16px);
+  padding: 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+  font-size: 0.95rem;
+}
+.fix-head {
+  padding: 0.35rem 0.5rem 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.fix-head b { color: var(--text); font-weight: 600; }
+.fix-label {
+  padding: 0.3rem 0.5rem 0.1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.fix-none { padding: 0.15rem 0.5rem 0.35rem; color: var(--muted); font-size: 0.8rem; }
+
+.fix-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.fix-item:hover, .fix-item:focus-visible { background: var(--surface-hover); outline: none; }
+.fix-item.fix-top { font-weight: 600; }
+.fix-item.fix-quiet { color: var(--muted); }
+.fix-item.fix-quiet:hover, .fix-item.fix-quiet:focus-visible { color: var(--text); }
+
+/* A key cap, so "1" reads as "press 1" rather than as a list number. */
+.fix-key {
+  margin-inline-start: auto;
+  min-width: 1.45rem;
+  padding: 0.05rem 0.35rem 0.1rem;
+  border: 1px solid var(--control-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: 600 0.72rem/1.3 ui-monospace, Consolas, monospace;
+  text-align: center;
+}
+
+.fix-menu .icon { width: 16px; height: 16px; stroke-width: 1.9; }
+/* Restore undoes the app's own change - accent, the answer to the header's
+   "auto-corrected from". Keep is the do-nothing choice and stays quiet. */
+.fix-restore .icon { color: var(--accent); }
+.fix-quiet .icon { color: var(--muted); }
+.fix-quiet:hover .icon, .fix-quiet:focus-visible .icon { color: var(--accent); }
+/* An arrow encodes a direction: in a right-to-left menu "back" points right. */
+.fix-menu[dir="rtl"] .fix-restore .icon { transform: scaleX(-1); }
+
+.fix-sep { height: 1px; margin: 0.3rem 0.2rem; background: var(--rule); }
+.fix-other { position: relative; padding: 0.25rem 0.2rem; }
+.fix-other .icon {
+  position: absolute;
+  inset-inline-start: 0.75rem;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--muted);
+  pointer-events: none;
+}
+.fix-other input {
+  width: 100%;
+  min-height: 36px;
+  padding-block: 0;
+  padding-inline: 2rem 0.55rem;
+  border: var(--control-border-width, 1px) solid var(--control-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.fix-other input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+
+@media (prefers-contrast: more) {
+  .fix-menu { border-width: 2px; }
+  .lowconf.autofixed { border-bottom-width: 3px; }
+}

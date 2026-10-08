@@ -466,12 +466,24 @@ STRINGS = {
     },
     "doc_help_flags_title": {"en": "Show uncertain words", "he": "הצגת מילים לא ודאיות"},
     "doc_help_flags_desc": {
-        "en": "Highlights the words the model itself was least sure about, "
-        "with a tinted, dotted underline - worth a second look before "
-        "you trust them.",
-        "he": "מדגיש את המילים שהמודל היה הכי פחות בטוח לגביהן, בקו תחתון "
-        "מנוקד וצבוע - כדאי לבדוק אותן שוב לפני שסומכים עליהן.",
+        "en": "On by default: words the model was least sure about get a "
+        "tinted, dotted underline, and words the app corrected from your "
+        "term list a solid one. Click one to pick a fix, type your own "
+        "word, or keep it.",
+        "he": "פעיל כברירת מחדל: מילים שהמודל היה הכי פחות בטוח לגביהן "
+        "מסומנות בקו תחתון מנוקד וצבוע, ומילים שהאפליקציה תיקנה לפי "
+        "רשימת המונחים שלכם - בקו מלא. לחיצה על מילה פותחת תיקון: "
+        "בחירה מהרשימה, הקלדת מילה אחרת או השארה כמו שהיא.",
     },
+    # --- Click-to-fix menu on an uncertain word (js/42-fix-menu.js) ---
+    "doc_fix_menu": {"en": "Fix this word", "he": "תיקון המילה"},
+    "doc_fix_unsure": {"en": "The model was unsure", "he": "המודל לא היה בטוח"},
+    "doc_fix_autofixed": {"en": "Auto-corrected from", "he": "תוקן אוטומטית, במקור:"},
+    "doc_fix_terms": {"en": "From your terms", "he": "מהמונחים שלך"},
+    "doc_fix_none": {"en": "No close term in your list.", "he": "אין מונח קרוב ברשימה שלך."},
+    "doc_fix_restore": {"en": "Restore original", "he": "החזרת המקור"},
+    "doc_fix_other": {"en": "Another word…", "he": "מילה אחרת…"},
+    "doc_fix_keep": {"en": "Keep as is", "he": "להשאיר כמו שזה"},
     "doc_help_theme_title": {"en": "Light / dark mode", "he": "מצב בהיר / כהה"},
     "doc_help_theme_desc": {
         "en": "Switches this page's colour scheme and remembers your choice "
@@ -608,10 +620,12 @@ STRINGS = {
     },
     "doc_tour_flags_title": {"en": "Show uncertain words", "he": "הצגת מילים לא ודאיות"},
     "doc_tour_flags_body": {
-        "en": "This button highlights the words the model itself was "
-        "least sure about, so you know what's worth a second look.",
-        "he": "הכפתור הזה מדגיש את המילים שהמודל היה הכי פחות בטוח "
-        "לגביהן, כך שתדעו מה כדאי לבדוק שוב.",
+        "en": "Words the model was least sure about are highlighted, so "
+        "you know what's worth a second look - click one to fix it. This "
+        "button turns the highlighting off and on.",
+        "he": "מילים שהמודל היה הכי פחות בטוח לגביהן מודגשות, כך שתדעו "
+        "מה כדאי לבדוק שוב - לחצו על מילה כדי לתקן אותה. הכפתור הזה "
+        "מכבה ומדליק את ההדגשה.",
     },
     "doc_tour_export_title": {"en": "Save a copy", "he": "שמירת עותק"},
     "doc_tour_export_body": {

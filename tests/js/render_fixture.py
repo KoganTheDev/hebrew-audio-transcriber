@@ -290,7 +290,61 @@ def render_split():
     )
 
 
+def render_fixable():
+    # The click-to-fix menu's fixture (tests/js/fix-menu.test.mjs). Every
+    # token of each segment is in its word list, because the page counts
+    # occurrences over the card's whole text and the renderer over the word
+    # list - the two only agree when they cover the same words.
+    #
+    # Turn "0-0" holds one of each kind of uncertain word:
+    #   לקיסריה  auto-corrected from לכיסריה (original set, no suggestions)
+    #   שרן      doubted, two suggestions - and repeated later CONFIDENTLY, so
+    #            only occurrence 0 is flagged
+    #   נדחה.    doubted, no suggestions, with punctuation attached
+    # Turn "0-1" (another speaker) holds one more, so a pick in one card can
+    # be shown not to disturb another.
+    def w(text, probability, original=None, suggestions=()):
+        return Word(
+            start=0.0,
+            end=1.0,
+            text=text,
+            probability=probability,
+            original=original,
+            suggestions=list(suggestions),
+        )
+
+    first = [
+        w("נסענו", 0.99),
+        w(" לקיסריה", 0.3, original="לכיסריה"),
+        w(" עם", 0.99),
+        w(" שרן", 0.4, suggestions=("שרון", "שירן")),
+        w(" ועם", 0.99),
+        w(" שרן", 0.99),
+        w(" נדחה.", 0.5),
+    ]
+    second = [w("שלום", 0.99), w(" עולם", 0.3)]
+    documents = [
+        doc(
+            "recording-one.wav",
+            [
+                seg(0, 3, "".join(x.text for x in first), speaker=0, words=first),
+                seg(5, 7, "".join(x.text for x in second), speaker=1, words=second),
+            ],
+        ),
+    ]
+    return render_html(
+        documents,
+        speaker_label="Speaker {n}",
+        timestamps=True,
+        title="fixture-fixable",
+        ui_strings=UI_STRINGS,
+        doc_id="js-fixture-fixable",
+        vista="vista-03.webp",
+    )
+
+
 _FIXTURES = {
+    "fixable": render_fixable,
     "full": render_full,
     "degenerate": render_degenerate,
     "triple": render_triple,

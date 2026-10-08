@@ -186,7 +186,7 @@
 
     // The live DOM already holds the edits and names, so serialising it is the
     // export: the copy is a working editor with the same doc id.
-    var html = '<!doctype html>\n' + document.documentElement.outerHTML;
+    var html = stripPickMarkers('<!doctype html>\n' + document.documentElement.outerHTML);
     restore();
 
     if (wasFlagged) { setFlags(true); }
