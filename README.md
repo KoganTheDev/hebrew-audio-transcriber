@@ -26,6 +26,7 @@ file you can email.
 | ---------- | ------------------------------------------------------------------ |
 | Dark       | ![Transcript document, dark](docs/screenshot-transcript-dark.jpg)   |
 | Light      | ![Transcript document, light](docs/screenshot-transcript-light.jpg) |
+| Fixing a word | ![An uncertain word's fix menu, open below it](docs/screenshot-transcript-fix.jpg) |
 
 The dialogue in those two is invented, and no transcription ran to produce
 them - `tools/render_demo_transcript.py` hands a written-out conversation
@@ -145,12 +146,13 @@ your browser's local storage, not back to the file on disk.** Press
 baked in - that's the one to keep or send to someone else.
 
 Speaker identification is on by default (set how many speakers on the model
-screen), and a `hebrew_terms.txt` file next to the app corrects names and
-jargon the model gets wrong - copy
-[`hebrew_terms.example.txt`](hebrew_terms.example.txt) to get started.
+screen). Names, places and jargon the model gets wrong go in **Custom terms**
+on the same screen; the app corrects them where the model was unsure. In the
+transcript, every uncertain word is highlighted - click one to pick a term,
+type the right word, or keep it.
 
 See **[docs/USING_THE_TRANSCRIPT.md](docs/USING_THE_TRANSCRIPT.md)** for the
-full guide: editing, speaker renaming, confidence shading, audio playback,
+full guide: editing, speaker renaming, fixing uncertain words, audio playback,
 and exactly how speaker identification and term correction each work.
 
 ## Development

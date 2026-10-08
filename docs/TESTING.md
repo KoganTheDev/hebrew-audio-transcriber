@@ -95,7 +95,8 @@ shipping a change to `core/assets/`.
 ## Deliberately out of scope
 
 - **`tests/eval/*` are developer scripts, not tests.** `compare_models.py`,
-  `compare_transcription.py` and `compare_diarization.py` are argparse CLIs that
+  `compare_transcription.py`, `compare_diarization.py` and
+  `compare_term_correction.py` are argparse CLIs that
   need real audio, real models and minutes to hours of wall clock. pytest does
   not collect them (no `test_*` functions). The thin `test_compare_models.py` /
   `test_diarization_metrics.py` / `test_hebrew_metrics.py` wrappers exist only to
@@ -126,6 +127,15 @@ shipping a change to `core/assets/`.
   minutes of transcript and pass it with `--reference` to get a real word
   error rate, computed with Hebrew-appropriate normalization (nikud, final
   letters, and the app's own timestamps and speaker labels are all discounted).
+
+  `compare_term_correction.py` measures the Hebrew term pass against the
+  human transcripts of three local recordings: `transcribe` caches each
+  recording's words once (per model, `--model`), and `score --terms FILE`
+  reports WER before/after and calls every rewritten word fixed, broke or
+  neither. It scores whatever `core/` is first on `PYTHONPATH`, so an older
+  commit checked out with `git worktree` is compared on identical words.
+  Freeze the term list before reading any output, or the list gets tuned to
+  the errors. Its module docstring records what has been measured so far.
 - **No test downloads a model or touches the network.** Every heavy dependency
   is mocked. `test_js_behaviour.py` needs Node and skips - never fails - when
   `node_modules/` is absent.

@@ -82,7 +82,9 @@ def main() -> int:
     parser.add_argument("--lang", default="he", choices=["he", "en"])
     args = parser.parse_args()
 
-    i18n.set_language(args.lang)
+    # save=False: rendering a demo must not change the language the app
+    # itself opens in - set_language() persists to QSettings by default.
+    i18n.set_language(args.lang, save=False)
     html = render_html(
         [build_document()],
         speaker_label=i18n.t("speaker_label"),

@@ -1,10 +1,13 @@
 # Hebrew term list - domain vocabulary the transcription model gets wrong.
 #
-# Copy this file to "hebrew_terms.txt" (next to where you run the app) and
-# replace the examples with your own terms. If that file does not exist, or is
-# empty, the correction pass does nothing at all.
+# The easy way: "Custom terms" on the app's model screen edits your real
+# list for you. To edit by hand instead, copy this file to "hebrew_terms.txt"
+# in the app's folder (beside run.bat) and replace the examples with your own
+# terms. If that file does not exist, or is empty, the correction pass does
+# nothing at all.
 #
-# One term per line, UTF-8. Lines starting with "#" are ignored.
+# One term per line, UTF-8. Lines starting with "#" are ignored. A name of
+# two or three words (באר שבע, יובל קוגן) is matched as one unit.
 #
 # WHAT TO PUT HERE
 #
@@ -25,8 +28,10 @@
 #
 # Only words the model itself was unsure about are considered. Among those,
 # a term is substituted only when it is clearly the closest match and clearly
-# beats the runner-up; ties are left alone. Prefixes (ו ב כ ל מ ש ה) are
-# handled, so listing ירושלים also covers בירושלים and ולירושלים.
+# beats the runner-up; ties are left alone (the transcript then offers both in
+# its fix menu). Prefixes (ו ב כ ל מ ש ה) are handled, so listing ירושלים also
+# covers בירושלים and ולירושלים. A word the recording shows the model knows -
+# written confidently elsewhere in it - is never replaced.
 #
 # Every substitution is written to speech_to_text.log as
 # "Hebrew correction: <before> -> <after>", so you can check what it did and

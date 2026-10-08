@@ -42,7 +42,7 @@ src/                            on sys.path at run time; nothing is installed in
   config/                       grouped by what each constant is FOR, not where it was declared
     application.py                metadata, window geometry, dependency list
     models.py                     the MODELS table and the default
-    paths.py                      model-download root, output filenames, supported formats
+    paths.py                      absolute paths (model caches, log, term list), output names
     transcription.py              language, beam size, compute type, speed factors
     diarization.py                tuned constants, each with the AMI measurement behind it
   core/                         everything that runs in the worker process. No Qt, ever.
@@ -57,6 +57,7 @@ src/                            on sys.path at run time; nothing is installed in
     diarization_powerset.py       opt-in second engine, decodes the model itself
     powerset_decode.py            pure-numpy powerset decode maths
     hebrew_corrections.py         term-list correction of low-confidence Hebrew words
+    term_store.py                 reads the term list; line-preserving add/remove for the GUI
     hebrew_text.py                Hebrew normalization and BiDi isolation
     log_bidi.py                   visual-order console logging for Hebrew log lines
     keep_awake.py                 keeps the machine awake for the length of a run
@@ -69,6 +70,7 @@ src/                            on sys.path at run time; nothing is installed in
     presenters/                   decisions, with NO Qt import - see below
     main_window.py                the 3-step wizard shell, navigation, thread wiring
     steps/                        file select, model select, transcription
+    terms_dialog.py               the Custom terms editor, opened from the model step
     widgets.py                    DropZone, IconTextButton, and the make_label factory
     theme.py                      Catppuccin palette + QSS builders
     checkbox_style.py             QProxyStyle that paints the checkbox indicator
@@ -82,8 +84,10 @@ src/                            on sys.path at run time; nothing is installed in
 
 Outside `src/`: `tests/` holds the pytest suite plus `tests/js/` (jsdom) and
 `tests/eval/` (dev-only harnesses - see [TESTING.md](TESTING.md)); `tools/`
-holds two maintenance scripts (`build_vistas.py` downscales the transcript's
-backdrop photos, `doc_density.py` measures prose-vs-code ratio per file); and
+holds three maintenance scripts (`build_vistas.py` downscales the transcript's
+backdrop photos, `doc_density.py` measures prose-vs-code ratio per file,
+`render_demo_transcript.py` renders the README's demo page from invented
+dialogue); and
 `docs/` holds this file, `TESTING.md`, the architecture diagram's editable
 `.drawio` source and rendered `.jpg`, and `transcript-manual-checks.md` (the
 manual QA checklist for what neither test suite can cover - see TESTING.md).

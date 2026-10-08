@@ -47,7 +47,7 @@ Open it in a browser and:
 
 - **Edit any turn** by clicking into it and typing. No edit mode, no save button.
 - **Name, recolour and reassign speakers from the sidebar.** Type a real name once and every "דובר 1" in that recording becomes it. Names stay per file by default, since speaker 1 in one recording is rarely the same person as speaker 1 in another; one button copies them across when it really is the same meeting. If diarization missed someone or merged two people, "+ הוספת דובר" adds a speaker with its own colour from a verified eight-colour palette, and clicking any turn's speaker label opens a menu to move that turn to a different speaker.
-- **See what the model doubted.** Whisper records a confidence for every word, and the toolbar toggle shades the ones that fell below the same threshold the Hebrew term-correction pass uses. This is the difference between re-reading a whole transcript and looking at the twenty words that need it. Editing a turn clears its shading, because the confidence no longer describes what is now there.
+- **Fix what the model doubted.** Whisper records a confidence for every word, and the ones below the threshold the Hebrew term-correction pass uses are highlighted as soon as the transcript opens (the toolbar toggle turns that off, and the choice sticks). This is the difference between re-reading a whole transcript and looking at the twenty words that need it. Click one - or Tab to it and press Enter - and a menu opens right under it: the terms from your list it may have been (pick with 1-3), a field for the right word, or "keep as is". A word the app already corrected from your term list has a solid underline instead, and its menu offers the original back. A pick changes only that word, so the card's other highlights stay; typing in a card turns it into ordinary edited text and clears its highlights, because the confidence no longer describes what is now there.
 - **Listen exactly to a turn.** The transcript is written next to its audio, so clicking a timestamp seeks, plays, and pauses again at the turn's end - and the turn being spoken is highlighted while it plays. The player has its own seek bar and a "current / total" readout; dragging the seek bar past a turn's end plays on rather than snapping back, the same way pressing play/pause already overrides a turn's bounds. If the audio is moved away or is in a container the browser can't play, that recording's timestamps quietly become plain labels - the rest of the batch is unaffected.
 - **Search** across every file with `/`, stepping through matches with Enter. Matching ignores nikud and treats final letter forms as the same letter.
 - **Copy it out, and edit from either side.** Every section has an always-visible plain-text panel with checkboxes for timestamps and speaker names, plus a per-turn copy button. It is not read-only: each row is itself editable and tied to its card, so a fix typed into the plain-text panel updates the card above it, and vice versa - there is nothing to keep in sync by hand. Every copy - a turn or the whole panel - confirms itself with a brief toast.
@@ -98,16 +98,28 @@ If speaker identification fails for any reason, the transcript is still saved - 
 ## Correcting names and jargon
 
 Words the model reliably mangles - people, places, organisations,
-professional vocabulary - can be listed in a `hebrew_terms.txt` file next to
-where you run the app. Copy
-[`hebrew_terms.example.txt`](../hebrew_terms.example.txt) to get started.
-Without that file, nothing happens.
+professional vocabulary - go in **Custom terms** on the model screen: type a
+term and press Enter. The list is saved as `hebrew_terms.txt` in the app's
+folder (hover the button for the exact path) and stays editable by hand;
+[`hebrew_terms.example.txt`](../hebrew_terms.example.txt) explains the
+format. With no terms, nothing happens.
 
 Only words the model itself flagged as uncertain are considered, and only
 your listed terms are candidates. Matching is aware of how Hebrew is actually
-misheard (א/ע, כ/ק, ט/ת) and of prefixes, so listing `ירושלים` also covers
-`בירושלים`. Every substitution is written to `speech_to_text.log` so you can
-check it.
+misheard (א/ע, כ/ק, ט/ת), of prefixes - listing `ירושלים` also covers
+`בירושלים` - and of punctuation attached to a word. A two-word term such as
+`יובל קוגן` is matched against two words together, and only the doubted one
+may differ. A word the same recording shows the model writing confidently
+elsewhere is never replaced: otherwise a list holding `ענבל` turns `אבל`
+("but") into the name. Every substitution is written to `speech_to_text.log`,
+and the transcript's fix menu can restore any of them.
+
+What to expect, measured on three real recordings with human transcripts:
+Ivrit Turbo, the default, already wrote almost every name right, and the few
+it missed it missed confidently - out of reach of any correction afterwards.
+On the smaller models, whose mistakes are more often uncertain ones, the same
+list fixed six names and broke no correct word.
+`tests/eval/compare_term_correction.py` reruns the measurement.
 
 This is not a spell checker, and adding ordinary vocabulary makes it worse
 rather than better - see the comments in the example file for why.
