@@ -153,8 +153,21 @@ class TermList:
     def __init__(self, terms: Sequence[str]):
         # Keep the original spelling for output, key on the normalized form for
         # comparison.
-        self.terms = [t.strip() for t in terms if t.strip()]
+        self.terms = [" ".join(t.split()) for t in terms if t.strip()]
         self._normalized = [(normalize_word(t), t) for t in self.terms]
+        # Multi-word terms again, split and grouped by word count, for
+        # best_phrase_match(). Whisper emits one word at a time, so a term
+        # like "יובל קוגן" compared whole against single words never matched.
+        self._phrases: dict[int, list[tuple[list[str], list[str]]]] = {}
+        for normalized, original in self._normalized:
+            parts = normalized.split(" ")
+            if len(parts) > 1:
+                self._phrases.setdefault(len(parts), []).append((parts, original.split(" ")))
+
+    @property
+    def phrase_lengths(self) -> list[int]:
+        """Word counts of the multi-word terms, longest first."""
+        return sorted(self._phrases, reverse=True)
 
     def __len__(self) -> int:
         return len(self.terms)
@@ -231,14 +244,87 @@ class TermList:
             return None
 
         best, runner_up = self._rank(word)
-        if best is None:
+        return _decisive(best, runner_up)
+
+    def best_phrase_match(
+        self, words: Sequence[str], uncertain: Sequence[bool]
+    ) -> tuple[list[str], float, float] | None:
+        """Find the multi-word term these consecutive words were meant to be.
+
+        Words the model was confident about must equal their part of the term
+        exactly; only the uncertain ones may differ, each within the same
+        distance limit as a single word. Scoring the window as one string
+        instead would let a term spend its distance budget on a confident
+        word: "דנה לא" is close enough to a term "דנה לוי" as a string, and
+        לא is a common word the model has every right to be unsure of.
+
+        The first word may carry clitics (במכללת בראודה), split off and put
+        back as best_match() does. Returns (replacement words, distance,
+        margin), or None when nothing qualifies or the choice is ambiguous.
+        """
+        pool = self._phrases.get(len(words))
+        if not pool or not any(uncertain):
             return None
 
-        margin = runner_up - best[1]
-        if margin < MIN_MARGIN:
-            return None
+        normalized = [normalize_word(word) for word in words]
+        best: tuple[str, float] | None = None
+        runner_up = float("inf")
+        by_text: dict[str, list[str]] = {}
 
-        return best[0], best[1], margin
+        for prefix, stem in clitic_splits(normalized[0]):
+            if len(stem) < 2:
+                continue
+            reading = [stem] + normalized[1:]
+            for term_parts, original_parts in pool:
+                distance = _phrase_distance(reading, term_parts, uncertain)
+                if distance is None:
+                    continue
+                replacement = [prefix + original_parts[0]] + original_parts[1:]
+                text = " ".join(replacement)
+                by_text[text] = replacement
+                if best is None or distance < best[1]:
+                    if best is not None and best[0] != text:
+                        runner_up = best[1]
+                    best = (text, distance)
+                elif distance < runner_up and best[0] != text:
+                    runner_up = distance
+
+        decided = _decisive(best, runner_up)
+        if decided is None:
+            return None
+        text, distance, margin = decided
+        return by_text[text], distance, margin
+
+
+def _decisive(best: tuple[str, float] | None, runner_up: float) -> tuple[str, float, float] | None:
+    """(replacement, distance, margin) when the best candidate clearly wins."""
+    if best is None:
+        return None
+    margin = runner_up - best[1]
+    if margin < MIN_MARGIN:
+        return None
+    return best[0], best[1], margin
+
+
+def _phrase_distance(
+    words: Sequence[str], term: Sequence[str], uncertain: Sequence[bool]
+) -> float | None:
+    """Summed distance of uncertain words to their term word.
+
+    None if any confident word differs or any uncertain one is out of range.
+    """
+    total = 0.0
+    for word, part, doubted in zip(words, term, uncertain):
+        if not doubted:
+            if word != part:
+                return None
+            continue
+        limit = MAX_RELATIVE_DISTANCE * max(len(word), len(part))
+        distance = weighted_distance(word, part, cutoff=limit)
+        if distance > limit:
+            return None
+        total += distance
+    return total
 
 
 def _correction_for(
@@ -273,6 +359,49 @@ def _correction_for(
     return bare, replacement
 
 
+def _phrase_correction_for(
+    window: Sequence[Word], terms: TermList, confidence_threshold: float
+) -> list[str] | None:
+    """What a run of words should become as one multi-word term, or None.
+
+    The same gates as _correction_for: at least one word must be one the
+    model doubted, and every word must be plain Hebrew. Logs what it accepts.
+    """
+    uncertain = [word.probability < confidence_threshold for word in window]
+    if not any(uncertain):
+        return None
+
+    bares = [word.text.strip() for word in window]
+    if not all(_HEBREW_WORD.match(normalize_word(bare)) for bare in bares):
+        return None
+
+    match = terms.best_phrase_match(bares, uncertain)
+    if match is None:
+        return None
+
+    replacement, distance, margin = match
+    if replacement == bares:
+        return None
+
+    logger.info(
+        f"Hebrew correction: {' '.join(bares)!r} -> {' '.join(replacement)!r} "
+        f"(confidence {min(word.probability for word in window):.2f}, "
+        f"distance {distance:.2f}, margin {margin:.2f})"
+    )
+    return replacement
+
+
+def _keep_spacing(original: str, replacement: str) -> str:
+    """The replacement with the original word's surrounding whitespace.
+
+    Whitespace is attached to words by faster-whisper; keeping it is what
+    makes the rebuilt segment text space correctly.
+    """
+    leading = original[: len(original) - len(original.lstrip())]
+    trailing = original[len(original.rstrip()) :]
+    return leading + replacement + trailing
+
+
 def correct(
     segments: Sequence[Segment],
     terms: TermList,
@@ -294,21 +423,11 @@ def correct(
         if not segment.words:
             continue
 
+        # Multi-word terms first, so a word a phrase claimed is not then
+        # "corrected" again on its own.
         replacements: dict[int, str] = {}
-        for index, word in enumerate(segment.words):
-            correction = _correction_for(word, terms, confidence_threshold)
-            if correction is None:
-                continue
-            bare, replacement = correction
-
-            # Whitespace is attached to words by faster-whisper; keep it so the
-            # rebuilt segment text spaces correctly.
-            leading = word.text[: len(word.text) - len(word.text.lstrip())]
-            trailing = word.text[len(word.text.rstrip()) :]
-
-            replacements[index] = leading + replacement + trailing
-            changes.append((bare, replacement, word.probability))
-
+        _correct_phrases(segment.words, terms, confidence_threshold, replacements, changes)
+        _correct_words(segment.words, terms, confidence_threshold, replacements, changes)
         if not replacements:
             continue
 
@@ -317,3 +436,49 @@ def correct(
         segment.text = "".join(word.text for word in segment.words)
 
     return changes
+
+
+_Change = tuple[str, str, float]
+
+
+def _correct_phrases(
+    words: Sequence[Word],
+    terms: TermList,
+    confidence_threshold: float,
+    replacements: dict[int, str],
+    changes: list[_Change],
+) -> None:
+    """Record multi-word term fixes, longest terms first, in `replacements`."""
+    for size in terms.phrase_lengths:
+        for start in range(len(words) - size + 1):
+            span = range(start, start + size)
+            if any(index in replacements for index in span):
+                continue
+            window = [words[index] for index in span]
+            phrase = _phrase_correction_for(window, terms, confidence_threshold)
+            if phrase is None:
+                continue
+            for index, word, new_bare in zip(span, window, phrase):
+                replacements[index] = _keep_spacing(word.text, new_bare)
+            original = " ".join(word.text.strip() for word in window)
+            confidence = min(word.probability for word in window)
+            changes.append((original, " ".join(phrase), confidence))
+
+
+def _correct_words(
+    words: Sequence[Word],
+    terms: TermList,
+    confidence_threshold: float,
+    replacements: dict[int, str],
+    changes: list[_Change],
+) -> None:
+    """Record single-word fixes for every word no phrase already claimed."""
+    for index, word in enumerate(words):
+        if index in replacements:
+            continue
+        correction = _correction_for(word, terms, confidence_threshold)
+        if correction is None:
+            continue
+        bare, replacement = correction
+        replacements[index] = _keep_spacing(word.text, replacement)
+        changes.append((bare, replacement, word.probability))

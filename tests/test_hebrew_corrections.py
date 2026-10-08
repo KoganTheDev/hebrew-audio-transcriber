@@ -184,3 +184,108 @@ class TestCorrect:
         seg = segment_of(word("כיסריה", probability=0.2))
         correct([seg], TermList(["קיסריה"]))
         assert seg.words[0].text == "קיסריה"
+
+
+class TestMultiWordTerms:
+    """
+    Terms with a space in them, which never matched before.
+
+    faster-whisper emits one word at a time, and every word was compared to
+    the whole term - so "יובל קוגן" or "באר שבע" in a term list did nothing
+    unless the model happened to run the two words together.
+    """
+
+    def test_a_misheard_surname_is_fixed_inside_the_full_name(self):
+        seg = segment_of(word("יובל "), word("כוגן", probability=0.2))
+        changes = correct([seg], TermList(["יובל קוגן"]))
+
+        assert seg.text == "יובל קוגן"
+        assert changes == [("יובל כוגן", "יובל קוגן", pytest.approx(0.2))]
+
+    def test_each_word_keeps_its_own_timing(self):
+        """Word i of the term goes onto word i of the window, so playback and
+        sentence splitting see the same timeline as before."""
+        first = word("באר ", start=1.0, end=1.4)
+        second = word("שבה", probability=0.3, start=1.4, end=1.9)
+        seg = segment_of(first, second)
+        correct([seg], TermList(["באר שבע"]))
+
+        assert [(w.text, w.start, w.end) for w in seg.words] == [
+            ("באר ", 1.0, 1.4),
+            ("שבע", 1.4, 1.9),
+        ]
+
+    def test_a_prefix_on_the_first_word_is_kept(self):
+        seg = segment_of(word("במכללת "), word("ברודה", probability=0.3))
+        correct([seg], TermList(["מכללת בראודה"]))
+        assert seg.text == "במכללת בראודה"
+
+    def test_a_confident_word_is_never_rewritten_to_fit_a_term(self):
+        """
+        The confident word is evidence, not a candidate. Scored as one string,
+        "דנה לא" is close enough to "דנה לוי"; but here the doubted word is
+        the common לא, and the confident one would have had to change for
+        the term to fit.
+        """
+        seg = segment_of(word("דנה ", probability=0.3), word("לא"))
+        assert correct([seg], TermList(["דנה לוי"])) == []
+        assert seg.text == "דנה לא"
+
+    def test_a_doubted_common_word_too_far_from_the_term_is_left_alone(self):
+        seg = segment_of(word("דנה "), word("לא", probability=0.3))
+        assert correct([seg], TermList(["דנה לוי"])) == []
+
+    def test_no_doubted_word_means_no_change(self):
+        seg = segment_of(word("יובל "), word("כוגן"))
+        assert correct([seg], TermList(["יובל קוגן"])) == []
+
+    def test_an_already_correct_phrase_is_not_reported(self):
+        seg = segment_of(word("יובל "), word("קוגן", probability=0.2))
+        assert correct([seg], TermList(["יובל קוגן"])) == []
+
+    def test_two_equally_close_phrases_are_refused(self):
+        # Control: either term alone is close enough to be applied, so the
+        # refusal below is the tie and not some other limit.
+        alone = segment_of(word("דנה "), word("חתך", probability=0.2))
+        assert correct([alone], TermList(["דנה חתם"])) != []
+
+        tied = segment_of(word("דנה "), word("חתך", probability=0.2))
+        assert correct([tied], TermList(["דנה חתם", "דנה חתן"])) == []
+        assert tied.text == "דנה חתך"
+
+    def test_a_word_a_phrase_claimed_is_not_corrected_again_alone(self):
+        """The phrase pass runs first; its words are off-limits to the
+        single-word pass, which could otherwise undo or double the fix."""
+        seg = segment_of(word("יובל ", probability=0.2), word("כוגן", probability=0.2))
+        changes = correct([seg], TermList(["יובל קוגן", "יובלים"]))
+
+        assert seg.text == "יובל קוגן"
+        assert len(changes) == 1
+
+    def test_the_window_slides_across_the_segment(self):
+        seg = segment_of(
+            word("נפגשנו "),
+            word("עם "),
+            word("יובל "),
+            word("כוגן", probability=0.2),
+            word(" היום"),
+        )
+        correct([seg], TermList(["יובל קוגן"]))
+        assert seg.text == "נפגשנו עם יובל קוגן היום"
+
+    def test_a_three_word_term(self):
+        seg = segment_of(word("תל "), word("אביב "), word("יבו", probability=0.3))
+        correct([seg], TermList(["תל אביב יפו"]))
+        assert seg.text == "תל אביב יפו"
+
+    def test_single_word_terms_still_work_alongside_phrases(self):
+        seg = segment_of(
+            word("כיסריה ", probability=0.2), word("יובל "), word("כוגן", probability=0.2)
+        )
+        correct([seg], TermList(["קיסריה", "יובל קוגן"]))
+        assert seg.text == "קיסריה יובל קוגן"
+
+    def test_extra_spaces_inside_a_term_do_not_break_matching(self):
+        seg = segment_of(word("יובל "), word("כוגן", probability=0.2))
+        correct([seg], TermList(["יובל   קוגן"]))
+        assert seg.text == "יובל קוגן"
