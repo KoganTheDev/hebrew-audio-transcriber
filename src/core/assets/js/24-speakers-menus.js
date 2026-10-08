@@ -346,19 +346,71 @@
   // anchor, a timestamp button and a copy button, all with their own
   // attributes and contenteditable="false" flags, and every one of them
   // would have to be kept in step with _render_bubble_html() by hand.
-  function cloneBubble(source, lineId, text, start, end) {
+  function cloneBubble(source, lineId, content, start, end) {
     var clone = source.cloneNode(true);
     clone.dataset.line = lineId;
     clone.dataset.start = start.toFixed(2);
     clone.dataset.end = end.toFixed(2);
     var p = clone.querySelector('p');
-    if (p) { p.textContent = text; }
+    if (p) {
+      p.textContent = '';
+      p.appendChild(content);
+    }
     var ts = clone.querySelector('.ts span');
     if (ts) { ts.textContent = PLAIN_LRI + formatSentenceRange(start, end) + PLAIN_PDI; }
     // A split half is a fresh sentence, not the one whose override was set,
     // so it starts from its block's identity until told otherwise.
     clone.removeAttribute('data-override');
     return clone;
+  }
+
+  // The text node and offset inside `root` that sit `charOffset` characters
+  // into its text - offsetWithin() run backwards.
+  function textPointAt(root, charOffset) {
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var remaining = charOffset;
+    var node;
+    while ((node = walker.nextNode())) {
+      if (remaining <= node.length) { return { node: node, offset: remaining }; }
+      remaining -= node.length;
+    }
+    return { node: root, offset: root.childNodes.length };
+  }
+
+  // Moves everything in `p` from `charOffset` on into a fragment and returns
+  // it; the head stays in `p`. Elements are MOVED, not re-typed as text: a
+  // picked word's .picked marker carries the word it replaced (data-orig), and
+  // renderTurn() counts occurrences by it, so rewriting the card as plain text
+  // let a pick land on a different, confident copy of the same word on the
+  // next render. Uncertain-word spans survive the move the same way.
+  function splitParagraph(p, charOffset) {
+    var point = textPointAt(p, charOffset);
+    var holder = point.node.parentNode;
+    if (holder && holder !== p && holder.dataset && holder.dataset.orig !== undefined) {
+      var at = Array.prototype.indexOf.call(p.childNodes, holder);
+      if (point.offset === 0) {
+        point = { node: p, offset: at };
+      } else if (point.offset === point.node.length) {
+        point = { node: p, offset: at + 1 };
+      } else {
+        // A cut through the middle of a marked word: half a word cannot stand
+        // for the whole one it replaced, so that one marker goes.
+        var plain = document.createTextNode(holder.textContent);
+        holder.replaceWith(plain);
+        point = { node: plain, offset: point.offset };
+      }
+    }
+    var range = document.createRange();
+    range.setStart(point.node, point.offset);
+    range.setEnd(p, p.childNodes.length);
+    var tail = range.extractContents();
+
+    // The whitespace at the cut belongs to neither card.
+    var last = p.lastChild;
+    if (last && last.nodeType === 3) { last.data = last.data.replace(/\s+$/, ''); }
+    var first = tail.firstChild;
+    if (first && first.nodeType === 3) { first.data = first.data.replace(/^\s+/, ''); }
+    return tail;
   }
 
   // Splits `bubble` at `charOffset` and gives the SECOND half to `newId`.
@@ -396,8 +448,7 @@
       childId = lineId + '-' + n;
     }
 
-    var second = cloneBubble(bubble, childId, tail, cut, end);
-    p.textContent = head;
+    var second = cloneBubble(bubble, childId, splitParagraph(p, charOffset), cut, end);
     bubble.dataset.end = cut.toFixed(2);
     var ts = bubble.querySelector('.ts span');
     if (ts) { ts.textContent = PLAIN_LRI + formatSentenceRange(start, cut) + PLAIN_PDI; }

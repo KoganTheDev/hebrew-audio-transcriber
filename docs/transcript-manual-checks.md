@@ -172,8 +172,10 @@ Click-to-fix (needs a term list with a name the model got wrong; the demo page f
 - [ ] Repeat in dark mode and with Windows high contrast on: the menu border, key caps and the
       solid underline are all clearly visible.
 - [ ] Save a copy after a pick and open it: the picked word is in the text as an ordinary word.
-- [ ] Known gap: splitting a card (section 2) rebuilds its text, so a pick inside a card that is
-      then split shows as plain text and can no longer be restored from the menu.
+- [ ] Pick a word in a card that has the **same word again later, not highlighted**. Split the card
+      (section 2) after the picked word, toggle highlighting off and on, then reload. The picked word
+      stays changed and the other copy stays exactly as it was; the card's highlights survive the
+      split.
 
 ## 4. Audio
 

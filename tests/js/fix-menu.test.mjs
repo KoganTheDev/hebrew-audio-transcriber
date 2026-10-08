@@ -331,3 +331,99 @@ test('the menu closes once its word has scrolled off screen', async () => {
 
   window.close();
 });
+
+// Selects from the start of `fromWord` to the end of its card - a partial
+// selection, which is what opens the split menu (js/24-speakers-menus.js).
+// Walks the card's text nodes: after a pick a card is several nodes, not one.
+function selectFrom(win, doc, lineId, fromWord) {
+  const p = doc.querySelector(`.bubble[data-line="${lineId}"] p`);
+  const walker = doc.createTreeWalker(p, win.NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const at = node.data.indexOf(fromWord);
+    if (at === -1) { continue; }
+    const range = doc.createRange();
+    range.setStart(node, at);
+    range.setEnd(p, p.childNodes.length);
+    const sel = win.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    doc.dispatchEvent(new win.MouseEvent('mouseup', { bubbles: true }));
+    return;
+  }
+  throw new Error(`no text node holds ${fromWord}`);
+}
+
+function cards(document, turnId = '0-0') {
+  return Array.from(document.querySelectorAll(`.turn[data-turn="${turnId}"] .body .bubble p`))
+    .map((p) => p.textContent);
+}
+
+test('splitting a card after a pick keeps the pick on its own word', async () => {
+  // The bug this guards: a split rewrote the card as plain text, wiping the
+  // marker that says "this שרון was the first שרן". The next render then
+  // counted the confident SECOND שרן as the first and rewrote it too.
+  const { window, document } = buildWindow(getFixtureHtml('fixable'));
+  click(open(document, 'שרן').querySelector('.fix-item'));
+
+  selectFrom(window, document, '0-0-0', 'ועם');
+  await wait(10);
+  click(document.querySelector('.split-menu .spk-menu-item[data-speaker="1"]'));
+
+  assert.deepEqual(cards(document), ['נסענו לקיסריה עם שרון', 'ועם שרן נדחה.']);
+
+  const toggle = document.getElementById('toggle-flags');
+  click(toggle);
+  click(toggle);
+  assert.deepEqual(cards(document), ['נסענו לקיסריה עם שרון', 'ועם שרן נדחה.'],
+    'a re-render after the split must not move the pick onto the confident שרן');
+
+  const marker = document.querySelector('.turn[data-turn="0-0"] .picked');
+  assert.equal(marker && marker.dataset.orig, 'שרן', 'the pick keeps the word it replaced');
+  // Highlights survive the split too - they used to vanish with it.
+  assert.deepEqual(flagged(document), ['לקיסריה', 'נדחה.']);
+
+  window.close();
+});
+
+test('a split exactly at a picked word moves the word, marker and all', async () => {
+  const { window, document } = buildWindow(getFixtureHtml('fixable'));
+  click(open(document, 'שרן').querySelector('.fix-item'));
+
+  // Select from the picked word itself to the end of the card.
+  const p = document.querySelector('.bubble[data-line="0-0-0"] p');
+  const picked = p.querySelector('.picked');
+  const range = document.createRange();
+  range.setStart(picked.firstChild, 0);
+  range.setEnd(p, p.childNodes.length);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+  await wait(10);
+  click(document.querySelector('.split-menu .spk-menu-item[data-speaker="1"]'));
+
+  assert.deepEqual(cards(document), ['נסענו לקיסריה עם', 'שרון ועם שרן נדחה.']);
+  const moved = document.querySelectorAll('.turn[data-turn="0-0"] .bubble')[1].querySelector('.picked');
+  assert.equal(moved && moved.dataset.orig, 'שרן');
+
+  window.close();
+});
+
+test('after a pick and a split, a reload still puts the pick on the right word', async () => {
+  const first = buildWindow(getFixtureHtml('fixable'));
+  click(open(first.document, 'שרן').querySelector('.fix-item'));
+  selectFrom(first.window, first.document, '0-0-0', 'ועם');
+  await wait(10);
+  click(first.document.querySelector('.split-menu .spk-menu-item[data-speaker="1"]'));
+  await wait(500);
+  const saved = first.window.localStorage.getItem(KEY);
+  first.window.close();
+
+  const { window, document } = buildWindow(getFixtureHtml('fixable'), { [KEY]: saved });
+  const text = cards(document).join(' ');
+  assert.equal(text, 'נסענו לקיסריה עם שרון ועם שרן נדחה.',
+    'only the picked שרן is replaced, whether or not the split itself is replayed');
+
+  window.close();
+});

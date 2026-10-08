@@ -303,10 +303,15 @@ def render_fixable():
     #   נדחה.    doubted, no suggestions, with punctuation attached
     # Turn "0-1" (another speaker) holds one more, so a pick in one card can
     # be shown not to disturb another.
+    # Real, increasing timings (0.4s a word) so a card can be split - see
+    # "split" below for why the pinned 0-1 timings of word() cannot be.
+    clock = iter(i * 0.4 for i in range(100))
+
     def w(text, probability, original=None, suggestions=()):
+        start = next(clock)
         return Word(
-            start=0.0,
-            end=1.0,
+            start=start,
+            end=start + 0.4,
             text=text,
             probability=probability,
             original=original,
@@ -322,6 +327,7 @@ def render_fixable():
         w(" שרן", 0.99),
         w(" נדחה.", 0.5),
     ]
+    clock = iter(5 + i * 0.4 for i in range(100))
     second = [w("שלום", 0.99), w(" עולם", 0.3)]
     documents = [
         doc(
