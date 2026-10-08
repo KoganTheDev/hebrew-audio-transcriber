@@ -51,6 +51,10 @@ _RLM = "‏"
 # Both were rendered side by side before choosing.
 _LRI = "⁦"
 _PDI = "⁩"
+# FSI (U+2068) for a value whose script is not known in advance - a user's
+# term can be Hebrew or Latin - so the isolate takes the direction of the
+# value's own first strong letter instead of assuming LTR as LRI does.
+_FSI = "⁨"
 
 STRINGS = {
     # --- Main window ---
@@ -188,6 +192,45 @@ STRINGS = {
     "recommended_badge": {"en": "RECOMMENDED", "he": "מומלץ"},
     "identify_speakers": {"en": "Identify speakers", "he": "זהה דוברים"},
     "speaker_count": {"en": "How many people:", "he": "כמה אנשים:"},
+    # --- Step 2: the custom terms dialog (gui/terms_dialog.py) ---
+    "terms_button": {"en": "Custom terms ({n})", "he": "מונחים מותאמים ({n})"},
+    "terms_button_tooltip": {
+        "en": "Names, places and jargon the app corrects in transcripts. Saved in {path}",
+        "he": "שמות, מקומות ומונחים שהאפליקציה מתקנת בתמלול. נשמר ב-" + _LRI + "{path}" + _PDI,
+    },
+    "terms_title": {"en": "Custom terms", "he": "מונחים מותאמים"},
+    "terms_hint": {
+        "en": "Names, places and jargon only.",
+        "he": "שמות, מקומות ומונחים מקצועיים בלבד.",
+    },
+    "terms_placeholder": {"en": "Type a term and press Enter", "he": "הקלידו מונח ולחצו Enter"},
+    "terms_add": {"en": "Add", "he": "הוספה"},
+    "terms_done": {"en": "Done", "he": "סיום"},
+    "terms_count": {"en": "{n} terms", "he": "{n} מונחים"},
+    "terms_count_one": {"en": "1 term", "he": "מונח אחד"},
+    "terms_empty": {
+        "en": "No terms yet.\nAdd a name the model got wrong in your last transcript.",
+        "he": "אין עדיין מונחים.\nהוסיפו שם שהמודל טעה בו בתמלול האחרון.",
+    },
+    # Opens with a word in the UI's own language so the line takes that
+    # direction; the term is isolated so a Hebrew term inside English (or the
+    # reverse) cannot reorder the words around it.
+    "terms_duplicate": {
+        "en": "Already in the list: " + _FSI + "{term}" + _PDI,
+        "he": "כבר ברשימה: " + _FSI + "{term}" + _PDI,
+    },
+    "terms_comment": {
+        "en": "A term can't start with #, which marks a comment in the file.",
+        "he": "מונח לא יכול להתחיל ב-#, שמסמן הערה בקובץ.",
+    },
+    "terms_save_failed": {
+        "en": "Couldn't save the list: {error}",
+        "he": "לא ניתן לשמור את הרשימה: {error}",
+    },
+    "terms_remove": {
+        "en": "Remove " + _FSI + "{term}" + _PDI,
+        "he": "הסרת " + _FSI + "{term}" + _PDI,
+    },
     "transcription_failed": {
         "en": "Transcription failed: {message}",
         "he": "התמלול נכשל: {message}",

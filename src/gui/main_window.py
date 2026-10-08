@@ -520,7 +520,8 @@ class MainWindow(QMainWindow):
         self.setTabOrder(
             self.model_step.model_radios[last_model], self.model_step.identify_speakers_check
         )
-        self.setTabOrder(self.model_step.speaker_count_spin, self.back_btn)
+        self.setTabOrder(self.model_step.speaker_count_spin, self.model_step.terms_button)
+        self.setTabOrder(self.model_step.terms_button, self.back_btn)
         self.setTabOrder(self.back_btn, self.cancel_btn)
         self.setTabOrder(self.cancel_btn, self.transcription_step.open_button)
         self.setTabOrder(self.transcription_step.open_button, self.transcription_step.folder_button)

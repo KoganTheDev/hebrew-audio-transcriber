@@ -533,6 +533,58 @@ def error_banner_qss(object_name: str) -> str:
     """
 
 
+def line_edit_qss() -> str:
+    """A single-line text field, matching the control outline of the spin box
+    and secondary buttons. :focus rather than the kbdFocus property: a text
+    field shows its caret whichever way focus arrived, so the ring should too.
+    """
+    return f"""
+    QLineEdit {{
+        background-color: {COLORS["bg_tertiary"]};
+        color: {COLORS["text_primary"]};
+        border: {Border.CONTROL}px solid {COLORS["control_border"]};
+        border-radius: {Radius.CONTROL}px;
+        padding: 7px 12px;
+        selection-background-color: {COLORS["accent"]};
+        selection-color: {COLORS["accent_text"]};
+    }}
+    QLineEdit:focus {{
+        border-color: {COLORS["focus"]};
+    }}
+    """
+
+
+def term_row_qss(object_name: str) -> str:
+    """One row of the terms dialog's list, and its remove button - the same
+    icon-only button the step 1 file list uses, with the hover fill one step
+    darker because these rows already sit on bg_tertiary.
+
+    Scoped to the row's object name: a bare background rule on the list's
+    holder would cascade into every row and button inside it.
+    """
+    return f"""
+    QFrame#{object_name} {{
+        background-color: {COLORS["bg_tertiary"]};
+        border-radius: 10px;
+    }}
+    QFrame#{object_name}:hover {{
+        background-color: {COLORS["surface_hover"]};
+    }}
+    QFrame#{object_name} QPushButton {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+    }}
+    QFrame#{object_name} QPushButton:hover {{
+        background-color: {COLORS["bg_primary"]};
+    }}
+    QFrame#{object_name} QPushButton[kbdFocus="true"] {{
+        background-color: {COLORS["bg_primary"]};
+        border-color: {COLORS["focus"]};
+    }}
+    """
+
+
 def result_panel_qss(object_name: str) -> str:
     # Spacing.XL, not XXL - measured empirically (see TranscriptionStep's
     # layout-spacing comment): at XXL padding the panel's own minimum

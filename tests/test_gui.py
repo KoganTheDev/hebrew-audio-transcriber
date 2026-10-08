@@ -1440,6 +1440,13 @@ class TestModelSelectStepCardWidth:
 
         step = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(step)
+        # The scenario needs the step narrower than the cards' natural width,
+        # so the container overhangs the viewport. Offscreen Qt has no real
+        # fonts and inflates text widths, which makes the speaker row - with
+        # the custom terms button at its end - the widest thing on the page
+        # (821px here, 510px with real fonts), and then the step can never get
+        # that narrow. The row is not what this test is about.
+        step.terms_button.hide()
         step.resize(600, 320)
         step.show()
         qapp.processEvents()

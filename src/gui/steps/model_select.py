@@ -27,6 +27,7 @@ from gui import theme
 from gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from gui.i18n import format_duration, is_rtl, model_text, t
 from gui.icons import ICONS, svg_to_pixmap
+from gui.terms_dialog import TermsDialog, term_count
 from gui.theme import COLORS, Fonts, Spacing
 from gui.widgets import make_label
 from hardware_detection import HardwareDetector
@@ -318,6 +319,7 @@ class ModelSelectStep(QFrame):
             self.setTabOrder(earlier, later)
         self.setTabOrder(radios_in_order[-1], self.identify_speakers_check)
         self.setTabOrder(self.identify_speakers_check, self.speaker_count_spin)
+        self.setTabOrder(self.speaker_count_spin, self.terms_button)
 
     def _build_speaker_row(self) -> QFrame:
         """The "identify speakers" toggle and speaker count.
@@ -412,9 +414,31 @@ class ModelSelectStep(QFrame):
 
         layout.addStretch()
 
+        # At the row's trailing end rather than on a row of its own: this
+        # page has no vertical room to spare (see _build_page_layout), and the
+        # row already ends in a stretch. It belongs with the speaker controls
+        # anyway - both apply to the run as a whole, not to one model.
+        self.terms_button = QPushButton()
+        self.terms_button.setObjectName("termsButton")
+        self.terms_button.setFont(Fonts.CAPTION_BOLD)
+        self.terms_button.setStyleSheet(theme.button_secondary_qss(padding="5px 14px"))
+        self.terms_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.terms_button.clicked.connect(self._open_terms)
+        self._refresh_terms_button()
+        layout.addWidget(self.terms_button)
+
         self.identify_speakers_check.toggled.connect(self._on_identify_toggled)
         self._on_identify_toggled(True)
         return row
+
+    def _refresh_terms_button(self) -> None:
+        """Label and tooltip from the list as it is on disk right now."""
+        self.terms_button.setText(t("terms_button", n=term_count()))
+        self.terms_button.setToolTip(t("terms_button_tooltip", path=config.resolve_terms_path()))
+
+    def _open_terms(self) -> None:
+        TermsDialog(self).exec_()
+        self._refresh_terms_button()
 
     def _on_identify_toggled(self, enabled: bool) -> None:
         """Speaker count is meaningless when identification is off."""
@@ -884,6 +908,7 @@ class ModelSelectStep(QFrame):
         self.identify_speakers_check.setText(t("identify_speakers"))
         self.speaker_count_label.setText(t("speaker_count"))
         self.speaker_count_spin.setAccessibleName(t("speaker_count"))
+        self._refresh_terms_button()
         self._refresh_desc_labels()
         if self._calibration_note_key is not None:
             self.calibration_note.setText(t(self._calibration_note_key))
