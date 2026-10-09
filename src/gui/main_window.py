@@ -55,44 +55,20 @@ from hardware_detection import HardwareDetector
 logger = logging.getLogger(__name__)
 
 
-# High-DPI rendering: without these, Qt5 treats the app as DPI-unaware and
-# Windows falls back to bitmap-stretching the whole window at 125%/150%
-# scale - it renders, but every glyph and icon is a blurred upscale of the
-# 100% raster rather than something actually drawn at the higher
-# resolution. AA_EnableHighDpiScaling turns on Qt's own scaling of
-# geometry (so widget sizes/fonts/positions stay correct in logical pixels
-# while Qt asks the OS for physical-pixel-sharp output); AA_UseHighDpiPixmaps
-# makes QIcon/QPixmap request the right physical resolution for the
-# current scale instead of handing over a 100%-scale bitmap for Windows to
-# stretch. setHighDpiScaleFactorRoundingPolicy(PassThrough) additionally
-# stops Qt from ROUNDING a scale factor like 1.25 or 1.5 to the nearest
-# integer before applying it (its default policy since Qt 5.14) - without
-# this, 125% and 150% would both actually render at 100% or 200% internally
-# and only get bitmap-scaled to the requested factor after the fact, which
-# defeats the whole point of enabling high-DPI scaling in the first place.
-#
-# These three calls are QApplication/Qt *class*-level attributes, not
-# instance state, and Qt requires them to be set before the QApplication
-# object is constructed - setting them on an already-running instance is a
-# silent no-op. This module is imported (directly or via `from
-# gui import theme` pulling in sibling gui modules) by every
-# real and harness entry point - app.py, this module's own
-# main(), and the screenshot/probe scripts under scratchpad/ - strictly
-# before any of them calls `QApplication(sys.argv)`, so doing it here at
-# module import time, exactly once (Python's module cache guarantees that),
-# is the one place that is guaranteed to run first for all of them without
-# duplicating this call at every call site.
+# High-DPI: without these, Windows bitmap-stretches the window at 125%/150%
+# (blurry). AA_EnableHighDpiScaling scales geometry in logical pixels,
+# AA_UseHighDpiPixmaps requests pixmaps at the real resolution, and
+# PassThrough stops Qt rounding 1.25/1.5 to a whole factor. They are class
+# attributes that only work before QApplication is constructed, so they run
+# here at import time, which precedes that in every entry point.
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
 
 def _is_text_entry_widget(widget: QWidget | None) -> bool:
-    """True for any widget where Enter means "confirm what I just typed here",
-    not "advance to the next step" - the window-level Enter shortcut below
-    checks this before acting (typing a value and pressing Enter must not
-    skip the screen). Every native Qt text-entry base class is covered, so
-    any text field on any step gets the same protection for free.
+    """Whether Enter here confirms typed input rather than advancing the step -
+    true for every native text-entry widget.
     """
     return isinstance(widget, (QAbstractSpinBox, QLineEdit, QTextEdit, QPlainTextEdit, QComboBox))
 
@@ -100,12 +76,8 @@ def _is_text_entry_widget(widget: QWidget | None) -> bool:
 class MainWindow(QMainWindow):
     """Main application window - lightweight tool interface."""
 
-    # How long an armed Cancel (first press) stays armed before reverting
-    # to its resting state on its own - see _on_cancel_clicked. Long enough
-    # that a deliberate "yes, I meant that" second click isn't a race
-    # against the clock, short enough that walking away from the keyboard
-    # after an accidental first press doesn't leave the button looking
-    # dangerous indefinitely.
+    # How long an armed Cancel stays armed: long enough for a deliberate second
+    # press, short enough not to look dangerous after an accidental one.
     CANCEL_ARM_TIMEOUT_MS = 3000
 
     def __init__(self) -> None:
@@ -115,16 +87,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(t("app_title"))
         self.setWindowIcon(QIcon(config.ICON_PATH))
         self.move(100, 50)
-        # Resizable with a real floor, not setFixedSize(): a fixed size let
-        # the window sit at 650x600 while the transcription step's own
-        # content needed 628px, which is what the "result panel clipped on
-        # completion" bug actually was - the window was simply too short,
-        # and setFixedSize() meant nothing downstream ever had to notice or
-        # adapt. See config.py's GUI_WINDOW_MIN_HEIGHT comment for the
-        # measurement behind these numbers. The maximize hint that used to
-        # be stripped here comes back for the same reason: a maximize
-        # button next to a resizable window that silently refuses to
-        # maximize would be its own small bug.
+        # Resizable with a measured minimum (config's GUI_WINDOW_MIN_HEIGHT);
+        # a fixed size once clipped step 3's result panel.
         self.resize(config.GUI_WINDOW_WIDTH, config.GUI_WINDOW_HEIGHT)
         self.setMinimumSize(config.GUI_WINDOW_MIN_WIDTH, config.GUI_WINDOW_MIN_HEIGHT)
         # Main window background is set by theme.app_stylesheet() on the
@@ -186,12 +150,8 @@ class MainWindow(QMainWindow):
         logger.debug("Refreshed model time estimates with calibrated values")
 
     def _on_unhandled_crash(self, message: str, traceback_text: str) -> None:
-        """Show CrashDialog for whatever install_global_exception_hook() caught.
-
-        Deliberately defensive: the exception is already logged by the hook
-        before this signal ever fires, so a bug in the dialog itself must not
-        be able to throw from inside a crash handler and take the process
-        down a second time with no trace at all.
+        """Show CrashDialog for a caught exception. Defensive: it is already
+        logged, so a bug in the dialog must not crash the crash handler.
         """
         try:
             CrashDialog(self, message, traceback_text).exec_()
@@ -216,17 +176,9 @@ class MainWindow(QMainWindow):
         logger.debug(f"Window centered at ({x}, {y})")
 
     def _init_shortcuts(self) -> None:
-        """Window-level keyboard shortcuts. Each is a QShortcut parented to
-        the window with the default Qt.WindowShortcut context, so it fires
-        whenever this window (or a descendant) has focus, regardless of
-        which specific widget that is - the per-widget guards below (the
-        text-entry check for Enter, the step check for Escape) are what
-        keep that broad reach from firing somewhere it shouldn't, rather
-        than narrowing the shortcut's context itself.
-
-        References are kept on self even though QShortcut's Qt-parent
-        already prevents garbage collection - documents what exists and
-        makes them inspectable from a debugger or a test.
+        """Window-level shortcuts (Enter, Escape). They fire anywhere in the
+        window; the guards in each handler keep them from firing where they
+        should not.
         """
         self._shortcut_browse = QShortcut(QKeySequence("Ctrl+O"), self)
         self._shortcut_browse.activated.connect(self._on_browse_shortcut)
@@ -251,21 +203,10 @@ class MainWindow(QMainWindow):
             self.file_step.browse_for_files()
 
     def _on_advance_shortcut(self) -> None:
-        """Enter/Return: equivalent to clicking Next, guarded against firing
-        while the user is mid-entry in a text field (see
-        _is_text_entry_widget: Enter there must confirm the value, not skip
-        the screen).
-
-        DropZone (gui/widgets.py) already wins this race on step 1 via its
-        own ShortcutOverride handling, so Enter there opens the browse
-        dialog instead of reaching this slot at all - see its docstring.
-
-        Gated on next_btn's own visible+enabled state rather than switching
-        on self.current_step: that state already encodes every reason
-        Enter should be a no-op right now (no file chosen yet, no model
-        chosen yet, a transcription in progress with Next hidden), so
-        re-deriving the same conditions here would just be a second place
-        for them to drift out of sync.
+        """Enter: click Next - unless a text field has focus (Enter confirms
+        the value there). Gated on Next being visible and enabled, which
+        already encodes every case where Enter should do nothing. On step 1
+        the drop zone takes Enter first to open the file dialog.
         """
         focused = QApplication.focusWidget()
         if _is_text_entry_widget(focused):
@@ -274,22 +215,9 @@ class MainWindow(QMainWindow):
             self.next_btn.click()
 
     def _on_escape_shortcut(self) -> None:
-        """Escape: go Back on step 2 (Choose Model); on step 3 (Transcribing),
-        drive the same two-press Cancel confirmation the button itself
-        uses (see _on_cancel_clicked).
-
-        Step 3 was deliberately left unbound here for a while - Cancel used
-        to stop a possibly long-running transcription with a single click
-        and no confirmation prompt, so binding Escape to it would have let
-        one stray keystroke throw away a run that might be 40 minutes in.
-        That reason is gone now that Cancel itself requires two presses:
-        routing Escape through _on_cancel_clicked gives a keyboard user the
-        exact same arm-then-confirm safety net a mouse user gets, rather
-        than leaving Escape as a second, inconsistent path.
-
-        Step 1 has nothing behind it to go back TO, so it's left unbound
-        there too rather than closing the window or doing nothing silently
-        surprising.
+        """Escape: Back on step 2; on step 3 the same two-press Cancel as the
+        button, so one stray key cannot throw away a long run. Nothing on
+        step 1, which has nothing behind it.
         """
         if self.current_step == Step.MODEL_SELECT:
             self._go_back()
@@ -309,13 +237,8 @@ class MainWindow(QMainWindow):
 
         i18n.language_manager.language_changed.connect(self._on_language_changed)
 
-        # Wizard step indicator - the only on-screen signal of where the
-        # user is in the flow beyond the page heading each step used to
-        # print itself (now removed - see gui/stepper.py's module
-        # docstring for why one indicator replaces two copies of the same
-        # name). Sits between the header and the stacked widget so it
-        # reads as chrome framing the current page, not as part of any one
-        # step's own content.
+        # The step indicator, between header and pages: chrome framing the
+        # current page (see gui/stepper.py).
         self.step_indicator = StepIndicator()
         main_layout.addWidget(self.step_indicator)
 
@@ -361,12 +284,8 @@ class MainWindow(QMainWindow):
         self.lang_btn.setFont(Fonts.CAPTION_BOLD)
         self.lang_btn.setStyleSheet(theme.button_secondary_qss(padding="2px 4px"))
         self.lang_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Icon-only in effect: its visible text is a language code ("EN" /
-        # "עב"), the TARGET language, which reads fine next to the app's
-        # current language but says nothing about what clicking it does to
-        # a screen reader with no visual context - see i18n's
-        # toggle_language_name/_tooltip for why these are static rather
-        # than re-derived per toggle direction.
+        # Its visible text is a language code, meaningless to a screen
+        # reader - hence the static accessible name and tooltip.
         self.lang_btn.setAccessibleName(t("toggle_language_name"))
         self.lang_btn.setToolTip(t("toggle_language_tooltip"))
         self.lang_btn.clicked.connect(self._toggle_language)
@@ -456,19 +375,10 @@ class MainWindow(QMainWindow):
         self.back_btn.hide()
         nav_layout.addWidget(self.back_btn)
 
-        # Cancel button - only shown during Step.TRANSCRIPTION, in the same
-        # slot as Back (which is hidden at that point). Stops the worker
-        # process and returns to Choose Model rather than closing the app.
-        #
-        # Two-press, not a modal confirmation - see _on_cancel_clicked for
-        # the full reasoning and ModelSelectStep.show_error's docstring for
-        # why this app avoids QMessageBox generally. Kept at the fixed
-        # nav_btn_size in both its resting and armed states: candidate
-        # armed labels ("Press again to cancel" etc.) were measured against
-        # this button and all came out too wide in at least one language,
-        # so the label stays "Cancel" throughout and cancel_confirm_label
-        # below carries the explanation instead - see button_danger_qss's
-        # docstring for the measurements.
+        # Cancel: shown only on step 3, in Back's slot; returns to Choose
+        # Model. Two-press (see _on_cancel_clicked). Its label stays "Cancel"
+        # when armed - every longer armed label overflowed the fixed size in
+        # some language - and cancel_confirm_label explains instead.
         self.cancel_btn = IconTextButton()
         self.cancel_btn.setFixedSize(*nav_btn_size)
         self.cancel_btn.setFont(Fonts.BODY_BOLD)
@@ -497,29 +407,15 @@ class MainWindow(QMainWindow):
         self.next_btn.setFont(Fonts.BODY_BOLD)
         self.next_btn.setStyleSheet(theme.button_primary_qss())
         self.next_btn.set_text_colors(COLORS["bg_primary"], disabled=COLORS["text_tertiary"])
-        # Connected once, to a slot that dispatches on next_btn's current
-        # role (see _on_next_clicked) - not reconnected per step the way
-        # earlier revisions did. That disconnect/reconnect dance needed a
-        # bare `except TypeError` in _return_to_model_select to survive
-        # being called when nothing was connected yet; a single connection
-        # that switches on self._next_btn_mode has no such edge case.
+        # One connection, dispatching on next_btn's current role.
         self.next_btn.clicked.connect(self._on_next_clicked)
         self.next_btn.setEnabled(False)
         nav_layout.addWidget(self.next_btn)
 
     def _wire_tab_order(self) -> None:
-        """Explicit Tab chain spanning the whole window, following visual
-        order top to bottom: header language toggle, then each step's own
-        internal chain (each step already wires its own controls in
-        __init__/showEvent - see FileSelectStep and ModelSelectStep), then
-        the nav bar.
-
-        Chaining across all three steps in one sequence is safe even
-        though only one is ever visible at a time: Qt's own Tab-key
-        handling skips any widget that isn't visible, so the inactive
-        steps' links in this chain are simply never used, and no per-step
-        branching is needed here to keep them from interfering with each
-        other.
+        """One Tab chain in visual order: language toggle, each step's own
+        chain, then the nav bar. Safe across all steps at once, since Qt's
+        Tab skips hidden widgets.
         """
         first_model = next(iter(config.MODELS))
         last_model = list(config.MODELS)[-1]
@@ -663,23 +559,10 @@ class MainWindow(QMainWindow):
         next_mode: str = "next",
         focus_widget: QWidget | None = None,
     ) -> None:
-        """Single funnel for every wizard-navigation transition. Owns exactly
-        the bookkeeping that was previously hand-written in five separate
-        places (_go_back, _go_next, _start_transcription,
-        _return_to_model_select, _reset - see this method's call sites
-        below): current_step, the stack index, Back/Cancel/Next visibility
-        and enablement, next_btn's mode, a seeded initial focus (only
-        needed by the one step - Transcription - that has no showEvent of
-        its own to seed it, see _start_transcription's call), and
-        repainting the step indicator.
-
-        Deliberately does NOT do any of the step-specific work that used
-        to sit alongside that bookkeeping in the old methods - starting or
-        tearing down the transcription thread, resetting file_step's
-        state, showing the "no model selected" warning, and so on. Callers
-        do that themselves, before or after calling this, exactly as they
-        did before; this only absorbs the navigation plumbing that was
-        identical in shape across all five.
+        """The one place every step change goes through: current_step, the
+        page, Back/Cancel/Next visibility and state, next_btn's role, seeded
+        focus, the step indicator. Step-specific work (starting a run,
+        resetting step 1) stays with the callers.
         """
         self.current_step = step
         previous = self.stacked_widget.currentIndex()
@@ -692,13 +575,7 @@ class MainWindow(QMainWindow):
             self.back_btn.setEnabled(True)
 
         self.cancel_btn.setVisible(cancel_visible)
-        # Every navigation away from (or back into) step 3 gets a fresh,
-        # unarmed Cancel - an armed state left over from a previous run, or
-        # from a stray press right before the run finished on its own,
-        # should never carry forward into whatever comes next. Unconditional
-        # rather than only when cancel_visible is False: it's a no-op when
-        # already disarmed, and calling it here once covers every one of
-        # _set_step's five call sites instead of needing each to remember.
+        # Every step change starts with an unarmed Cancel.
         self._disarm_cancel()
 
         self._set_next_button_mode(next_mode)
@@ -756,13 +633,7 @@ class MainWindow(QMainWindow):
         page.move(0, 0)
 
     def _on_next_clicked(self) -> None:
-        """next_btn's one and only clicked connection (see _init_ui) -
-        dispatches on the button's current role instead of the
-        disconnect/reconnect-a-different-slot dance this used to require.
-        "next" is the forward-navigation role _go_next always handles;
-        "new_file" is the post-completion reset role _on_transcription_complete
-        switches the button into (see _set_next_button_mode).
-        """
+        """next_btn's click: "next" advances, "new_file" (after a run) resets."""
         if self._next_btn_mode == "new_file":
             self._reset()
         else:
@@ -808,22 +679,9 @@ class MainWindow(QMainWindow):
     def _start_transcription(self) -> None:
         """Start transcription thread."""
         self.model_step.clear_error()
-        # Steps 1 and 2 seed a sensible Tab starting point in their own
-        # showEvent (the drop zone / the selected radio - see
-        # FileSelectStep.showEvent and ModelSelectStep.showEvent), because
-        # each of those steps owns a widget worth landing on. Step 3 has no
-        # such widget of its own while a run is in progress: the title,
-        # file info, progress bar and status/time labels are all plain,
-        # non-focusable QLabels/QProgressBar, and the result panel (the one
-        # place with a real control, open_button) stays hidden until
-        # show_result() runs, possibly tens of minutes from now. The only
-        # thing on screen a keyboard user can actually act on during that
-        # window is Cancel - which lives on MainWindow's own nav bar, not
-        # inside TranscriptionStep, so TranscriptionStep has no showEvent of
-        # its own that could seed it; this is the one place that already
-        # knows both "step 3 just became current" and "cancel_btn just
-        # became visible", so it's the one _set_step call that passes
-        # focus_widget.
+        # Steps 1 and 2 seed their own first Tab stop. During a run step 3 has
+        # no control of its own - Cancel, on the nav bar, is the only thing to
+        # act on - so focus is seeded here.
         self._set_step(
             Step.TRANSCRIPTION,
             back_visible=False,
@@ -832,14 +690,9 @@ class MainWindow(QMainWindow):
             focus_widget=self.cancel_btn,
         )
 
-        # Every decision this run needs, taken in one Qt-free place (see
-        # gui/presenters/transcription.py). What is left below is only
-        # widget and thread work. t is passed in rather than imported there
-        # because gui.i18n imports PyQt5.
-        # _go_next is the only caller and it returns early - with the "no
-        # model selected" warning - when selected_model is unset, so it is a
-        # str by the time execution reaches here. The attribute itself has to
-        # stay str | None for the window between _reset and step 2.
+        # The run's decisions come from the Qt-free presenter; only widget
+        # and thread work remains here. selected_model is set by now: _go_next
+        # returns early without one.
         model = cast(str, self.selected_model)
         request = build_transcription_request(
             files=self.selected_files,
@@ -907,14 +760,9 @@ class MainWindow(QMainWindow):
         self.step_indicator.set_complete()
 
     def _on_transcription_error(self, error_key: str, error_params: dict[str, object]) -> None:
-        """Handle a genuine transcription failure (not a user cancel - that's
-        handled separately by _cancel_transcription).
-
-        Receives an i18n key + params (rendered at display time, so the
-        banner survives a language toggle). Shows an inline banner on the
-        Choose Model step instead of a modal QMessageBox, and returns there
-        (rather than all the way back to file selection) so the user can
-        retry - e.g. with a smaller model - without having to re-pick the file.
+        """A real failure (not a cancel): show the inline banner on Choose
+        Model and return there, so the user can retry - say, with a smaller
+        model - without re-picking files.
         """
         logger.error(f"Transcription error: {error_key} {error_params}")
         self.transcription_step.stop()
@@ -922,20 +770,10 @@ class MainWindow(QMainWindow):
         self._return_to_model_select()
 
     def _on_cancel_clicked(self) -> None:
-        """Cancel's actual clicked/Escape handler - a two-press control rather
-        than the single click _cancel_transcription used to be wired
-        directly to.
-
-        Cancelling is destructive (a run can be 40+ minutes in) and this
-        app deliberately never uses a modal QMessageBox to ask "are you
-        sure" (see ModelSelectStep.show_error's docstring for why), so the
-        confirmation has to live in the control itself: the first press
-        arms it - _set_cancel_armed_visual gives the button a destructive
-        colour treatment and shows cancel_confirm_label's explanation next
-        to it, and _cancel_arm_timer starts a countdown - and only a second
-        press while still armed calls through to _cancel_transcription.
-        Arming times out on its own (see _disarm_cancel) so a single stray
-        press doesn't leave the button looking permanently dangerous.
+        """Cancel and Escape on step 3, as a two-press control: the first press
+        arms it (destructive colour, an explanation, a timeout), the second
+        cancels. A run can be 40+ minutes in, and this app asks for
+        confirmation in the control itself rather than a modal dialog.
         """
         if not self._cancel_armed:
             self._arm_cancel()
@@ -951,11 +789,8 @@ class MainWindow(QMainWindow):
         self._cancel_arm_timer.start()
 
     def _disarm_cancel(self) -> None:
-        """Revert Cancel to its resting state - called by the arm timer's own
-        timeout, and unconditionally by _set_step on every navigation (see
-        its comment) so an armed state never survives leaving step 3.
-        Safe to call when already disarmed: stopping a timer that isn't
-        running and hiding an already-hidden label are both no-ops.
+        """Reset Cancel to resting - from its timeout and on every step change.
+        Safe when already disarmed.
         """
         self._cancel_arm_timer.stop()
         self._cancel_armed = False
@@ -1014,25 +849,10 @@ class MainWindow(QMainWindow):
         logger.debug("Reset to file selection step")
 
     def _detach_calibration_thread(self) -> None:
-        """Unwire and stop the background calibration, on the way out.
+        """Disconnect and stop the background calibration on the way out.
 
-        The calibration thread outlives nothing gracefully on its own: it
-        is started in __init__ and, unlike the transcription thread, has no
-        user-facing cancel path, so a window closed while the benchmark is
-        still running leaves a live thread whose `calibrated` signal calls
-        _on_calibration_done - which writes straight into widgets
-        (model_step.update_audio_duration) that Qt is by then destroying.
-
-        Disconnecting matters as much as stopping, and comes first for the
-        same reason it does in _cancel_transcription: stop() cannot un-emit
-        a result that is already in flight, so the only way to be sure no
-        slot touches a widget after teardown starts is to take the slots
-        off the signals. gui/focus.py's _detach is the precedent for the
-        whole shape - and this is the same class of gap it closed, though
-        no crash has been observed from this one.
-
-        Idempotent, and safe on a window that never started a calibration
-        at all (a cached result, which is the common case).
+        Its result would otherwise land in widgets Qt is destroying. Disconnect
+        first: stopping cannot recall a result already in flight. Idempotent.
         """
         if self.calibration_thread is None:
             return
@@ -1048,12 +868,8 @@ class MainWindow(QMainWindow):
         self.calibration_thread.wait()
 
     def shutdown(self) -> None:
-        """Stop everything running in the background. Safe to call twice.
-
-        closeEvent does this for the ordinary path, but the event loop can end
-        without the window ever being closed - app.quit(), a session logout, or
-        a test that fakes exec_(). main() calls this after exec_() returns so
-        that path is covered too; both helpers below are idempotent.
+        """Stop all background work; idempotent. Also called after exec_()
+        returns, for exits that never close the window (app.quit, logout).
         """
         self._detach_calibration_thread()
         # Duration probing is short-lived but can still be in flight when the
@@ -1066,32 +882,12 @@ class MainWindow(QMainWindow):
             self.transcription_thread.wait()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
-        """Stop any running transcription before the window closes.
+        """Stop any running transcription and the calibration on close.
 
-        Deliberately NOT routed through the two-press arm/confirm flow
-        Cancel and Escape use on step 3 (see _on_cancel_clicked) - closing
-        the window is already an explicit, unambiguous act on the user's
-        part (unlike a single Cancel click or Escape press, which could be
-        a slip), so there is nothing left to confirm. The only mechanism
-        available to ask "are you sure" here would be a modal QMessageBox,
-        which this app deliberately avoids everywhere else (see
-        ModelSelectStep.show_error's docstring) - introducing the one
-        exception at the highest-stakes moment (the user is already
-        leaving) would be a stranger inconsistency than simply trusting
-        the close itself.
-
-        The background calibration is torn down here too, unconditionally -
-        see _detach_calibration_thread. closeEvent rather than
-        QApplication.aboutToQuit (which is where gui/focus.py hooks its own
-        detach) because the two modules are guarding different lifetimes:
-        KeyboardFocusTracker has no window of its own and its danger window
-        opens after exec_() returns, when Qt is destroying the widget tree,
-        so aboutToQuit is the only moment left where everything is still
-        alive. This thread's slots reach into THIS window's widgets, and
-        closeEvent is the earliest point at which those widgets are known
-        to be going away - unwiring here closes the gap before aboutToQuit
-        would even fire, and keeps the teardown next to the transcription
-        thread's, which is the other half of the same job.
+        No two-press confirmation: closing the window is already deliberate,
+        and the only way to ask would be a modal dialog this app avoids. The
+        calibration is detached here, not at aboutToQuit, because its slots
+        reach into this window's widgets, which start going away now.
         """
         if self.current_step == Step.TRANSCRIPTION and self.transcription_thread:
             self.transcription_thread.stop()
@@ -1105,62 +901,22 @@ class MainWindow(QMainWindow):
 
 
 def configure_application(app: QApplication) -> None:
-    """Apply the two pieces of process-wide setup every GUI entry point needs
-    on a freshly-constructed QApplication, before any window is built:
-    the app stylesheet and the persisted UI language.
+    """Process-wide setup for a fresh QApplication, before any window: the app
+    stylesheet, the painted checkbox style, the saved UI language, the focus
+    tracker and the title-bar colouring.
 
-    This used to live only in this module's own main() below, which is
-    reachable exclusively via `python -m gui.main_window` -
-    a path nothing in the shipped app actually uses. app.py
-    (the real entry point, behind run.ps1 and run.bat) built
-    its own QApplication and never applied the stylesheet at all, so the
-    entire themed look - peach checkbox tick, radio ring-and-dot, spin box
-    frame and arrows, dark scrollbars, styled QToolTip, the kbdFocus ring on
-    native controls - was silently absent from every real launch while
-    still looking correct in this module's own main() and in any ad hoc
-    script that happened to call app_stylesheet() itself. Centralizing the
-    setup here, called by both entry points (and by anything else that
-    stands up a QApplication for this GUI, e.g. screenshot/diagnostic
-    scripts), is what keeps them from drifting apart again - adding the one
-    missing line to app.py would have fixed today's symptom but left two
-    independent call sites free to diverge on the next change.
-
-    Must be called AFTER the QApplication is constructed (setStyleSheet and
-    setLayoutDirection are instance calls) but this has no bearing on the
-    high-DPI import-ordering constraint documented above
-    (TestHighDpiEntryPointOrdering): that constraint is about *importing*
-    this module before QApplication() runs, not about when this function is
-    called relative to it.
-
-    Also installs PaintedCheckboxStyle, wrapping whatever style the
-    QApplication resolved on its own (the platform default unless
-    overridden). This lives here rather than being folded into
-    app_stylesheet() because it is not QSS at all - see
-    checkbox_style.py's module docstring for why the checkbox tick moved
-    off the QSS `image:` mechanism entirely - and this is the one place
-    that already owns "everything a freshly-built QApplication needs before
-    any window exists".
+    Every entry point calls this one function - app.py once built its own
+    QApplication and shipped with no stylesheet at all. Call it after the
+    QApplication exists; the high-DPI flags are a separate, import-time matter.
     """
     app.setStyleSheet(theme.app_stylesheet())
     app.setStyle(PaintedCheckboxStyle(app.style()))
     i18n.apply_saved_language(app)
 
-    # One tracker per QApplication, not per window. It used to be installed
-    # by MainWindow.__init__, which worked only because this app happens to
-    # build exactly one window: anything else standing up a widget against
-    # this QApplication - a second window, a dialog, a diagnostic script -
-    # got no tracker and therefore no focus ring, with nothing reporting it.
-    # That is the same shape of drift that left the stylesheet unapplied in
-    # the shipped entry point for the whole redesign, so it belongs here
-    # with the rest of the process-wide setup rather than inside a widget's
-    # constructor. Guarded rather than assumed to run once, since calling
-    # this twice on one QApplication should be harmless.
+    # One focus tracker per QApplication, so dialogs get focus rings too.
+    # Guarded, so a second call is harmless.
     if getattr(app, "_kbd_focus_tracker", None) is None:
-        # Attribute name is a contract, not an implementation detail:
-        # ModelSelectStep._sync_card_focus_ring reads it back off the
-        # application to decide whether a model card should show its ring.
-        # QApplication has no such attribute in the stubs, by construction:
-        # this is the dynamic attribute the comment above describes.
+        # The attribute name is a contract: ModelSelectStep reads it back.
         app._kbd_focus_tracker = KeyboardFocusTracker(app)  # type: ignore[attr-defined]
     # Dark title bars for every window - see gui/window_chrome.py. Guarded
     # the same way, so a second call doesn't install a second filter.
