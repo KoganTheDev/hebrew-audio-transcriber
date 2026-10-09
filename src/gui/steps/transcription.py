@@ -5,21 +5,28 @@ import os
 import time
 from pathlib import Path
 
-from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
-from PyQt5.QtGui import QDesktopServices, QFontMetrics, QResizeEvent
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl, QVariantAnimation
+from PyQt5.QtGui import QDesktopServices, QFontMetrics, QHideEvent, QResizeEvent, QShowEvent
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from core import browser_open
 from core.formatting import format_mmss
 from core.progress_scale import (
     STATUS_ONLY_PERCENT,
+    WORK_PHASE_ASSIGN,
+    WORK_PHASE_CORRECT,
+    WORK_PHASE_DECODE,
     WORK_PHASE_DIARIZE_WAIT,
+    WORK_PHASE_RENDER,
+    WORK_PHASE_TRANSCRIBE,
 )
 from gui import theme
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
+from gui.motion import breath
 from gui.presenters.time_estimate import TimeEstimator
-from gui.theme import COLORS, Fonts, Spacing
+from gui.steps.run_progress import BarMode, RunProgressBar, Stage, StageChecklist
+from gui.theme import COLORS, Fonts, Motion, Spacing
 from gui.threads import PHASE_STARTED_SECONDS
 from gui.widgets import IconTextButton, make_label
 
@@ -56,6 +63,7 @@ class TranscriptionStep(QFrame):
 
         self._build_progress_bar(layout)
         self._build_status_and_times(layout)
+        self._build_stage_checklist(layout)
 
         layout.addSpacing(Spacing.LG)
 
@@ -181,15 +189,12 @@ class TranscriptionStep(QFrame):
 
     def _build_progress_bar(self, layout: QVBoxLayout) -> None:
         """The progress bar and the animation that smooths its value changes."""
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet(theme.progress_bar_qss())
-        self.progress_bar.setMinimumHeight(28)
-        # The percentage is not drawn inside the bar - see progress_bar_qss()
-        # for why no ink is legible over both the filled chunk and the empty
-        # groove. Progress is carried by the fill itself plus status_label and
-        # time_label below.
-        self.progress_bar.setTextVisible(False)
+        # Paints itself (see run_progress.RunProgressBar) so the fill can
+        # shimmer and turn green. No percentage is drawn inside it - see
+        # theme.progress_bar_qss() for why no ink is legible over both the
+        # filled chunk and the empty groove; status_label and time_label
+        # below carry the numbers.
+        self.progress_bar = RunProgressBar()
         layout.addWidget(self.progress_bar)
 
         # Animates value changes instead of snapping instantly - real
@@ -198,7 +203,7 @@ class TranscriptionStep(QFrame):
         # temperature-retry attempts), so a big jump reads as "catching up"
         # rather than a glitch when it's smoothed over ~500ms.
         self._progress_animation = QPropertyAnimation(self.progress_bar, b"value", self)
-        self._progress_animation.setDuration(500)
+        self._progress_animation.setDuration(Motion.PROGRESS_MS)
         self._progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
     def _build_status_and_times(self, layout: QVBoxLayout) -> None:
@@ -221,6 +226,18 @@ class TranscriptionStep(QFrame):
             align=Qt.AlignmentFlag.AlignCenter,
         )
         layout.addWidget(self.time_label)
+
+    def _build_stage_checklist(self, layout: QVBoxLayout) -> None:
+        """Which stage the run is in, and how long each one took.
+
+        Shown only while a run is going. The finished page belongs to the
+        result panel: with both on screen, step 3 would outgrow the window's
+        minimum height (see config's GUI_WINDOW_MIN_HEIGHT), and the panel
+        already says the run is done.
+        """
+        self.stage_list = StageChecklist()
+        layout.addWidget(self.stage_list, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.stage_list.hide()
 
     def _build_result_panel(self, layout: QVBoxLayout) -> None:
         """The completion panel: checkmark, success message, saved path, and
@@ -377,6 +394,21 @@ class TranscriptionStep(QFrame):
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick)
 
+        # Whether a run is going, and whether it reports a speaker stage.
+        self._running = False
+        self._identify_speakers = False
+        # Set once the run is over: the time label shows "Took" from it.
+        self._took_seconds: float | None = None
+        # One loop repaints the bar's shimmer/gleam and the checklist's
+        # breathing dot; its value is the breath phase. It runs only while
+        # this page is visible and Windows animation effects are on.
+        self._motion = QVariantAnimation(self)
+        self._motion.setStartValue(0.0)
+        self._motion.setEndValue(1.0)
+        self._motion.setDuration(Motion.BREATH_MS)
+        self._motion.setLoopCount(-1)
+        self._motion.valueChanged.connect(self._on_motion)
+
     def set_file_info(self, filename: str, model: str) -> None:
         """Set file and model info for display."""
         self._file_info_args = (filename, model)
@@ -519,9 +551,21 @@ class TranscriptionStep(QFrame):
 
         self._paint_batch_segments(current_index=self._current_file_index)
 
-    def start(self) -> None:
+    def start(self, identify_speakers: bool = False) -> None:
         """Reset the display for a fresh run and start the elapsed-time ticker."""
         self.start_time = time.time()
+        self._running = True
+        self._identify_speakers = identify_speakers
+        self._took_seconds = None
+        stages = [Stage.LOAD, Stage.TRANSCRIBE]
+        if identify_speakers:
+            stages.append(Stage.SPEAKERS)
+        stages.append(Stage.FINISH)
+        self.stage_list.reset(stages)
+        self.progress_bar.set_mode(BarMode.IDLE)
+        self._set_motion(True)
+        self._enter_stage(Stage.LOAD)
+        self.stage_list.show()
         self._estimator = TimeEstimator()
         # Clearing the set is not enough on its own: the segments keep the
         # colour and the name they were last given, so a file that failed in
@@ -544,6 +588,74 @@ class TranscriptionStep(QFrame):
     def stop(self) -> None:
         """Stop the elapsed-time ticker (run finished, failed, or was cancelled)."""
         self._timer.stop()
+        self._running = False
+        self._set_motion(False)
+
+    def _set_motion(self, on: bool) -> None:
+        on = on and theme.animations_enabled()
+        self.progress_bar.animating = on
+        self.stage_list.animating = on
+        if on and not self.is_animating():
+            self._motion.start()
+        elif not on:
+            self._motion.stop()
+            self.stage_list.breath_alpha = 1.0
+        self.progress_bar.update()
+        self.stage_list.update()
+
+    def is_animating(self) -> bool:
+        return self._motion.state() == QVariantAnimation.State.Running
+
+    def _on_motion(self, value: object) -> None:
+        phase = float(self._motion.currentValue())
+        self.stage_list.breath_alpha = Motion.PULSE_MIN_ALPHA + (
+            1 - Motion.PULSE_MIN_ALPHA
+        ) * breath(phase)
+        self.progress_bar.update()
+        self.stage_list.update()
+        # After the run, the loop only stays on to play the bar's finish.
+        if not self._running and self.progress_bar.finish_settled():
+            self._set_motion(False)
+
+    def showEvent(self, a0: QShowEvent | None) -> None:
+        super().showEvent(a0)
+        if self._running or not self.progress_bar.finish_settled():
+            self._set_motion(True)
+
+    def hideEvent(self, a0: QHideEvent | None) -> None:
+        # Also fires when the window is minimized.
+        super().hideEvent(a0)
+        self._motion.stop()
+
+    def _enter_stage(self, stage: Stage) -> None:
+        self.stage_list.enter(stage)
+        self.progress_bar.set_mode(BarMode.LOADING if stage is Stage.LOAD else BarMode.WORKING)
+
+    def _advance_stage(self, name: str, seconds: float) -> None:
+        """Move the checklist on from one of the worker's phase reports.
+
+        The phases arrive per file, in order: decode, VAD prepare, transcribe,
+        then - with speaker labels - the diarization wait and speaker
+        assignment, then Hebrew correction and the HTML render. Everything
+        before the first of them is the model loading. Several of these only
+        report when they END, so each one moves the list to the stage that
+        comes after it. A decode report once the list has moved past
+        transcription is the next file of a batch starting.
+        """
+        if not self._running:
+            return
+        active = self.stage_list.active
+        done = seconds != PHASE_STARTED_SECONDS
+        if active is Stage.LOAD or (
+            name == WORK_PHASE_DECODE and active in (Stage.SPEAKERS, Stage.FINISH)
+        ):
+            self._enter_stage(Stage.TRANSCRIBE)
+        if name == WORK_PHASE_TRANSCRIBE and done:
+            self._enter_stage(Stage.SPEAKERS if self._identify_speakers else Stage.FINISH)
+        elif name == WORK_PHASE_DIARIZE_WAIT:
+            self._enter_stage(Stage.SPEAKERS)
+        elif name in (WORK_PHASE_ASSIGN, WORK_PHASE_CORRECT, WORK_PHASE_RENDER) and done:
+            self._enter_stage(Stage.FINISH)
 
     def _tick(self) -> None:
         if self.start_time is None:
@@ -553,6 +665,8 @@ class TranscriptionStep(QFrame):
         # hasn't sent a new message this second.
         self._dot_phase = (self._dot_phase + 1) % 4
         self.status_label.setText(self._render_status().rstrip(".") + "." * self._dot_phase)
+        # Keeps the active stage's time counting when the animation is off.
+        self.stage_list.update()
         self._refresh_time_label(time.time() - self.start_time)
 
     def _render_status(self) -> str:
@@ -588,6 +702,7 @@ class TranscriptionStep(QFrame):
         # moment work on audio actually begins. Before that the run is loading
         # a model, and charging that to audio-seconds would wreck the rate.
         self._estimator.note_work_started(sent_at)
+        self._advance_stage(name, seconds)
 
         if name != WORK_PHASE_DIARIZE_WAIT:
             if self.start_time is not None:
@@ -643,6 +758,10 @@ class TranscriptionStep(QFrame):
                 self._paint_batch_segments(current_index=i)
 
         if percentage != STATUS_ONLY_PERCENT:
+            # Transcription's first percentage also ends the model load, for
+            # a run whose phase reports arrive late or not at all.
+            if percentage > 0 and self._running and self.stage_list.active is Stage.LOAD:
+                self._enter_stage(Stage.TRANSCRIBE)
             if percentage != self._last_percentage:
                 self._animate_progress_to(percentage)
             self._last_percentage = percentage
@@ -681,6 +800,9 @@ class TranscriptionStep(QFrame):
             being waited out: "calculating";
           - a real measurement: the number.
         """
+        if self._took_seconds is not None:
+            self.time_label.setText(t("took", elapsed=format_mmss(self._took_seconds)))
+            return
         remaining = self._estimator.remaining(time.monotonic())
 
         if remaining is not None:
@@ -732,6 +854,15 @@ class TranscriptionStep(QFrame):
         # trying to shrink it further, is what keeps the result panel the
         # one thing competing for that space again.
         self.batch_strip.hide()
+        if self.start_time is not None:
+            self._took_seconds = time.time() - self.start_time
+            self._refresh_time_label(self._took_seconds)
+        # The finish: the bar turns green while the result panel takes the
+        # checklist's place (see _build_stage_checklist).
+        self._set_motion(True)
+        self.progress_bar.set_mode(BarMode.DONE)
+        self.stage_list.finish()
+        self.stage_list.hide()
         self.result_widget.show()
         self._render_result_path()
 
@@ -832,6 +963,7 @@ class TranscriptionStep(QFrame):
         self.open_button.setText(t("open_transcript"))
         self.folder_button.setText(t("show_in_folder"))
         self.status_label.setText(self._render_status())
+        self.stage_list.retranslate()
         if self._file_info_args is not None:
             self.set_file_info(*self._file_info_args)
         self._render_result_path()

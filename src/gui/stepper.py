@@ -21,7 +21,6 @@ themselves has to mirror by hand: the marker's side, and which way the
 dashes drift.
 """
 
-import math
 from enum import Enum
 
 from PyQt5.QtCore import QElapsedTimer, QPointF, QRectF, QSize, Qt, QVariantAnimation
@@ -31,6 +30,7 @@ from PyQt5.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 from gui import theme
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
+from gui.motion import LONG_AGO, breath, ease_out_cubic, mix, pop_scale, progress, with_alpha
 from gui.steps import Step
 from gui.theme import COLORS, Fonts, Motion, Spacing
 
@@ -56,9 +56,6 @@ _PAD_TEXT_SIDE = 10
 _DONE_TINT_ALPHA = 0.14
 _LINE_WIDTH = 2
 _CONNECTOR_MIN_WIDTH = 16
-# A timestamp far enough in the past that any transition measured from it
-# has long finished - what "no animation" looks like to the paint code.
-_LONG_AGO = -1e9
 
 
 class _State(Enum):
@@ -74,35 +71,6 @@ _STATUS_KEYS = {
 }
 
 
-def _progress(now: float, since: float, duration: int) -> float:
-    return min(1.0, max(0.0, (now - since) / duration))
-
-
-def _ease_out_cubic(x: float) -> float:
-    return 1 - (1 - x) ** 3
-
-
-def _ease_out_back(x: float) -> float:
-    # Overshoots slightly past 1 before settling - the "pop".
-    c1 = 1.70158
-    return 1 + (c1 + 1) * (x - 1) ** 3 + c1 * (x - 1) ** 2
-
-
-def _mix(a: QColor, b: QColor, f: float) -> QColor:
-    return QColor.fromRgbF(
-        a.redF() + (b.redF() - a.redF()) * f,
-        a.greenF() + (b.greenF() - a.greenF()) * f,
-        a.blueF() + (b.blueF() - a.blueF()) * f,
-        a.alphaF() + (b.alphaF() - a.alphaF()) * f,
-    )
-
-
-def _with_alpha(color_key: str, alpha: float) -> QColor:
-    color = QColor(COLORS[color_key])
-    color.setAlphaF(alpha)
-    return color
-
-
 class _StepPill(QWidget):
     """One step: marker (number or check), then the step's name."""
 
@@ -112,7 +80,7 @@ class _StepPill(QWidget):
         self.text = ""
         self.state = _State.PENDING
         # Clock time this pill became DONE, for the pop and the cross-fade.
-        self.since = _LONG_AGO
+        self.since = LONG_AGO
         self._now = 0.0
         self._alpha = 1.0
         self._check_cache: dict[float, QPixmap] = {}
@@ -148,14 +116,14 @@ class _StepPill(QWidget):
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
         if self.state is _State.CURRENT:
-            body = _with_alpha("accent", self._alpha)
+            body = with_alpha("accent", self._alpha)
             ink = QColor(COLORS["accent_text"])
         elif self.state is _State.DONE:
             # Cross-fade from the current step's look into the done tint, so
             # the step visibly turns into "finished" instead of swapping.
-            f = _ease_out_cubic(_progress(self._now, self.since, Motion.CONNECTOR_FILL_MS))
-            body = _mix(QColor(COLORS["accent"]), _with_alpha("success", _DONE_TINT_ALPHA), f)
-            ink = _mix(QColor(COLORS["accent_text"]), QColor(COLORS["success"]), f)
+            f = ease_out_cubic(progress(self._now, self.since, Motion.CONNECTOR_FILL_MS))
+            body = mix(QColor(COLORS["accent"]), with_alpha("success", _DONE_TINT_ALPHA), f)
+            ink = mix(QColor(COLORS["accent_text"]), QColor(COLORS["success"]), f)
         else:
             body = QColor(COLORS["surface_hover"])
             ink = QColor(COLORS["text_tertiary"])
@@ -172,8 +140,7 @@ class _StepPill(QWidget):
         h = float(self.height())
         marker_x = self.width() - _PAD_MARKER_SIDE - _MARKER if rtl else _PAD_MARKER_SIDE
         if self.state is _State.DONE:
-            pop = _progress(self._now, self.since, Motion.POP_MS)
-            scale = 0.5 + 0.5 * _ease_out_back(pop) if pop < 1 else 1.0
+            scale = pop_scale(self._now, self.since)
             painter.save()
             painter.translate(marker_x + _MARKER / 2, h / 2)
             painter.scale(scale, scale)
@@ -203,7 +170,7 @@ class _Connector(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.state = _State.PENDING
-        self.since = _LONG_AGO
+        self.since = LONG_AGO
         self._now = 0.0
         self._alpha = 1.0
         self._offset_px = 0.0
@@ -245,10 +212,10 @@ class _Connector(QWidget):
             painter.drawLine(QPointF(a, y), QPointF(b, y))
 
         if self.state is _State.DONE:
-            f = _ease_out_cubic(_progress(self._now, self.since, Motion.CONNECTOR_FILL_MS))
+            f = ease_out_cubic(progress(self._now, self.since, Motion.CONNECTOR_FILL_MS))
             mid = start + (end - start) * f
             if f < 1:
-                segment(self._dashed(_with_alpha("accent", 0.5)), mid, end)
+                segment(self._dashed(with_alpha("accent", 0.5)), mid, end)
             if f > 0:
                 solid = QPen(QColor(COLORS["success"]), _LINE_WIDTH)
                 solid.setCapStyle(Qt.PenCapStyle.FlatCap)
@@ -258,7 +225,7 @@ class _Connector(QWidget):
             # line, toward the next step.
             period = sum(Motion.DASH_PATTERN)
             segment(
-                self._dashed(_with_alpha("accent", self._alpha), -self._offset_px % period),
+                self._dashed(with_alpha("accent", self._alpha), -self._offset_px % period),
                 start,
                 end,
             )
@@ -337,7 +304,7 @@ class StepIndicator(QFrame):
         def place(item: _StepPill | _Connector, i: int) -> None:
             state = _State.DONE if i < index else _State.CURRENT if i == index else _State.PENDING
             if state is _State.DONE and item.state is not _State.DONE:
-                item.since = now if animate else _LONG_AGO
+                item.since = now if animate else LONG_AGO
             item.state = state
 
         for i, pill in enumerate(self._pills):
@@ -351,8 +318,7 @@ class StepIndicator(QFrame):
         now = float(self._clock.elapsed())
         if self.is_animating():
             phase = float(self._breath.currentValue())
-            breath = 0.5 - 0.5 * math.cos(2 * math.pi * phase)
-            alpha = Motion.PULSE_MIN_ALPHA + (1 - Motion.PULSE_MIN_ALPHA) * breath
+            alpha = Motion.PULSE_MIN_ALPHA + (1 - Motion.PULSE_MIN_ALPHA) * breath(phase)
             offset = now / 1000 * Motion.DASH_SPEED_PX_S
         else:
             alpha, offset = 1.0, 0.0

@@ -1213,17 +1213,17 @@ class TestStepIndicator:
         assert not indicator.is_animating()
 
     def test_only_a_running_strip_animates_a_completed_step(self, indicator):
-        from gui.stepper import _LONG_AGO
+        from gui.motion import LONG_AGO
         from gui.steps import Step
 
         # Hidden: the step snaps to done, with nothing left to play out.
         indicator.set_current(Step.MODEL_SELECT)
-        assert indicator._pills[0].since == _LONG_AGO
+        assert indicator._pills[0].since == LONG_AGO
 
         indicator.set_current(Step.FILE_SELECT)
         indicator.show()
         indicator.set_current(Step.MODEL_SELECT)
-        assert indicator._pills[0].since != _LONG_AGO
+        assert indicator._pills[0].since != LONG_AGO
         # Going back never animates.
         indicator.set_current(Step.FILE_SELECT)
         assert indicator._pills[0].state.value == "current"
@@ -1430,6 +1430,30 @@ class TestMainWindowResizing:
         # more room still (628px), so the margin asserted here is a lower
         # bound on the real one, not a substitute for it.
         assert config.GUI_WINDOW_MIN_HEIGHT >= chrome + ts.minimumSizeHint().height()
+
+    def test_a_running_batch_with_the_stage_checklist_fits_at_minimum_height(
+        self, main_window, qapp
+    ):
+        """The running page's tallest state: a ten-file batch strip plus all
+        four stage rows. The checklist gives way to the result panel at the
+        end precisely so the two never have to fit together.
+        """
+        import config
+
+        main_window.resize(config.GUI_WINDOW_MIN_WIDTH, config.GUI_WINDOW_MIN_HEIGHT)
+        ts = main_window.transcription_step
+        ts.set_file_info("meeting.m4a", "ivrit-turbo")
+        ts.set_batch_files([f"file{i}.mp3" for i in range(10)])
+        ts.start(identify_speakers=True)
+        main_window.stacked_widget.setCurrentWidget(ts)
+        qapp.processEvents()
+
+        header = main_window.title_label.parentWidget()
+        nav_bar = main_window.next_btn.parentWidget()
+        chrome = header.height() + main_window.step_indicator.height() + nav_bar.height()
+        assert ts.stage_list.isVisibleTo(ts)
+        assert config.GUI_WINDOW_MIN_HEIGHT >= chrome + ts.minimumSizeHint().height()
+        ts.stop()
 
 
 class TestModelDownloadSize:
@@ -2594,3 +2618,157 @@ class TestFailedFileRelay:
 
         assert caught.args == [2]
         assert errors == []
+
+
+class TestTranscriptionStepStages:
+    """
+    Step 3's checklist follows the worker's phase reports. Most phases only
+    report when they end, so these pin which report moves the list where -
+    the same order core/worker.py sends them in.
+    """
+
+    @pytest.fixture
+    def step(self, qtbot, monkeypatch):
+        from gui import theme
+        from gui.steps.transcription import TranscriptionStep
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        s = TranscriptionStep()
+        qtbot.addWidget(s)
+        yield s
+        s.stop()
+
+    @staticmethod
+    def _states(step):
+        return [step.stage_list.state_of(s) for s in step.stage_list.stages]
+
+    def _phase(self, step, name, seconds=1.0):
+        step.update_phase(name, seconds, 0.0)
+
+    def test_a_speaker_run_walks_every_stage_in_order(self, step):
+        from core.progress_scale import (
+            WORK_PHASE_ASSIGN,
+            WORK_PHASE_DECODE,
+            WORK_PHASE_DIARIZE_WAIT,
+            WORK_PHASE_PREPARE,
+            WORK_PHASE_RENDER,
+            WORK_PHASE_TRANSCRIBE,
+        )
+        from gui.steps.run_progress import BarMode
+        from gui.threads import PHASE_STARTED_SECONDS
+
+        step.start(identify_speakers=True)
+        assert self._states(step) == ["current", "pending", "pending", "pending"]
+        assert step.progress_bar.mode is BarMode.LOADING
+
+        self._phase(step, WORK_PHASE_DECODE)
+        assert self._states(step) == ["done", "current", "pending", "pending"]
+        assert step.progress_bar.mode is BarMode.WORKING
+
+        self._phase(step, WORK_PHASE_PREPARE, PHASE_STARTED_SECONDS)
+        self._phase(step, WORK_PHASE_TRANSCRIBE)
+        assert self._states(step) == ["done", "done", "current", "pending"]
+
+        self._phase(step, WORK_PHASE_DIARIZE_WAIT, PHASE_STARTED_SECONDS)
+        self._phase(step, WORK_PHASE_DIARIZE_WAIT)
+        assert self._states(step) == ["done", "done", "current", "pending"]
+
+        self._phase(step, WORK_PHASE_ASSIGN)
+        self._phase(step, WORK_PHASE_RENDER)
+        assert self._states(step) == ["done", "done", "done", "current"]
+
+    def test_without_speaker_labels_there_is_no_speaker_stage(self, step):
+        from core.progress_scale import WORK_PHASE_DECODE, WORK_PHASE_TRANSCRIBE
+        from gui.steps.run_progress import Stage
+
+        step.start(identify_speakers=False)
+        assert Stage.SPEAKERS not in step.stage_list.stages
+
+        self._phase(step, WORK_PHASE_DECODE)
+        self._phase(step, WORK_PHASE_TRANSCRIBE)
+        assert step.stage_list.active is Stage.FINISH
+
+    def test_the_next_file_of_a_batch_goes_back_to_transcribing(self, step):
+        from core.progress_scale import WORK_PHASE_DECODE, WORK_PHASE_RENDER
+        from gui.steps.run_progress import Stage
+
+        step.start()
+        self._phase(step, WORK_PHASE_DECODE)
+        self._phase(step, WORK_PHASE_RENDER)
+        assert step.stage_list.active is Stage.FINISH
+
+        self._phase(step, WORK_PHASE_DECODE)
+        assert step.stage_list.active is Stage.TRANSCRIBE
+        assert self._states(step)[-1] == "pending"
+
+    def test_a_first_percentage_ends_the_model_load(self, step):
+        from gui.steps.run_progress import Stage
+
+        step.start()
+        step.update_progress("w_transcribing", {}, 5)
+        assert step.stage_list.active is Stage.TRANSCRIBE
+
+    def test_finishing_turns_the_bar_green_and_hands_over_to_the_result(self, step):
+        from gui.steps.run_progress import BarMode
+
+        step.start()
+        step.stop()
+        step.show_result(r"C:\out\meeting.html")
+
+        assert step.progress_bar.mode is BarMode.DONE
+        assert not step.stage_list.isVisibleTo(step)
+        assert step.result_widget.isVisibleTo(step)
+        assert step.time_label.text().startswith(t("took", elapsed="").strip())
+
+    def test_took_survives_a_language_toggle(self, step):
+        step.start()
+        step.stop()
+        step.show_result(r"C:\out\meeting.html")
+        step.retranslate()
+        assert step.time_label.text().startswith(t("took", elapsed="").strip())
+
+    def test_motion_runs_only_while_shown_and_stops_after_the_run(self, step):
+        step.start()
+        step.show()
+        assert step.is_animating()
+        step.hide()
+        assert not step.is_animating()
+        step.show()
+        assert step.is_animating()
+        step.stop()
+        assert not step.is_animating()
+
+    def test_no_motion_when_windows_animations_are_off(self, step, monkeypatch):
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        step.start()
+        step.show()
+        assert not step.is_animating()
+
+    def test_a_stage_the_run_spent_time_in_reports_it(self, step):
+        from core.progress_scale import WORK_PHASE_DECODE
+        from gui.steps.run_progress import Stage
+
+        now = [100.0]
+        step.stage_list.clock = lambda: now[0]
+        step.start()
+        now[0] = 103.0
+        self._phase(step, WORK_PHASE_DECODE)
+        assert step.stage_list.seconds_in(Stage.LOAD) == pytest.approx(3.0)
+
+    @pytest.mark.parametrize("direction", [Qt.LeftToRight, Qt.RightToLeft])
+    def test_paints_every_mode_in_both_directions(self, step, direction):
+        from core.progress_scale import WORK_PHASE_DECODE
+
+        step.setLayoutDirection(direction)
+        step.resize(600, 500)
+        step.start(identify_speakers=True)
+        step.show()
+        assert not step.grab().isNull()
+        self._phase(step, WORK_PHASE_DECODE)
+        step.update_progress("w_transcribing", {}, 40)
+        assert not step.grab().isNull()
+        step.stop()
+        step.show_result(r"C:\out\meeting.html")
+        assert not step.grab().isNull()

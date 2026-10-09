@@ -319,6 +319,14 @@ STRINGS = {
         "he": "זמן שחלף: {elapsed}  |  נותר (משוער): {remaining}",
     },
     "calculating": {"en": "calculating...", "he": "בחישוב..."},
+    # Shown in place of "Elapsed" once the run is over: the clock has stopped.
+    "took": {"en": "Took: {elapsed}", "he": "משך התמלול: {elapsed}"},
+    # Step 3's stage checklist (TranscriptionStep._StageChecklist).
+    "stage_loading_model": {"en": "Loading model", "he": "טעינת מודל"},
+    "stage_transcribing": {"en": "Transcribing", "he": "תמלול"},
+    "stage_speakers": {"en": "Speakers", "he": "זיהוי דוברים"},
+    "stage_finishing": {"en": "Finishing", "he": "סיום"},
+    "stages_name": {"en": "Transcription stages", "he": "שלבי התמלול"},
     "transcription_complete": {"en": "Transcription Complete!", "he": "התמלול הושלם!"},
     # Caption shown above the (now single-line, middle-elided) path label -
     # see TranscriptionStep._render_result_path for why the path is not part

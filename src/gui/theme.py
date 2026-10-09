@@ -288,6 +288,16 @@ class Motion:
     POP_MS = 220
     CONNECTOR_FILL_MS = 350
 
+    # Step 3's progress bar. Before any percentage exists (the model is
+    # loading) a soft band sweeps the empty groove once per SHIMMER_MS;
+    # while work runs, a gleam travels over the filled part so the bar never
+    # sits frozen between progress bursts or through stages with no
+    # percentage of their own. On completion the fill turns green over
+    # FINISH_MS.
+    SHIMMER_MS = 1400
+    GLEAM_SPEED_PX_S = 160
+    FINISH_MS = 450
+
 
 # SystemParametersInfoW action for Settings > Accessibility > Visual effects
 # > "Animation effects". Not exported by ctypes, so named here.

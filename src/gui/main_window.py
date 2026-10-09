@@ -799,7 +799,7 @@ class MainWindow(QMainWindow):
         # for why. self.selected_files is exactly the list FileSelectStep
         # produced on step 1, in run order.
         self.transcription_step.set_batch_files(self.selected_files)
-        self.transcription_step.start()
+        self.transcription_step.start(identify_speakers=self.model_step.identify_speakers)
 
         logger.info(
             f"Starting transcription: {request.file_summary} with {self.selected_model} model"
