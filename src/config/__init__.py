@@ -1,11 +1,6 @@
-"""Speech-to-Text Application - Configuration Module
-Centralized configuration for the application.
-
-A package split by job (app, models, paths, transcription, diarization),
-with this file re-exporting every name so `import config`
-plus `config.ANYTHING` resolves as a flat namespace. Every caller across core/
-and gui/ reads config that way, so the facade is the whole point of the split:
-the grouping is for whoever edits these constants, not for whoever reads them.
+"""Application configuration, split by job (application, models, paths,
+transcription, diarization) and re-exported flat: every caller reads
+`config.ANYTHING`, so the split only serves whoever edits the constants.
 """
 
 from config.application import (

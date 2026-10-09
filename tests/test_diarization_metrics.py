@@ -217,7 +217,7 @@ class TestSpeakerCountError:
     def test_under_clustering_two_people_collapsed_into_one_is_negative(self):
         """Two reference speakers, one hypothesis label - the "second speaker
         isn't recognised at all" failure mode reported at
-        src/config/diarization.py's AMI finding."""
+        docs/DIARIZATION_TUNING.md's AMI finding."""
         reference = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
         hypothesis = [(0.0, 10.0, "spk0")]
         result = speaker_count_error(reference, hypothesis)

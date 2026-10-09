@@ -375,7 +375,7 @@ class TestLogPath:
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 
-        directory = paths._log_directory()
+        directory = os.path.dirname(paths.resolve_log_path())
 
         assert str(tmp_path) in directory
         assert "speech-to-text" in directory

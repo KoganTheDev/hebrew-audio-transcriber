@@ -56,8 +56,8 @@ _SEGMENTATION_MODEL = os.path.join(
 
 
 # Which embedding model is in play is config.DIARIZATION_EMBEDDING_MODEL, not
-# a constant here - see that name's comment in config/diarization.py for the
-# measurement behind the default and the results table of the alternatives.
+# a constant here - see docs/DIARIZATION_TUNING.md for the measurement behind
+# the default and the alternatives.
 # Both functions read config at CALL time, not at import time, so that
 # tests/eval/compare_diarization.py's --embedding-model can monkeypatch
 # config.DIARIZATION_EMBEDDING_MODEL the same way it already does for

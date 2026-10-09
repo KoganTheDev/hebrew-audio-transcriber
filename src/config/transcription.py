@@ -8,26 +8,18 @@ FORMAT_OUTPUT = True
 SENTENCE_ENDINGS = r"[.!?]"
 
 
-# ctranslate2's get_supported_compute_types("cpu") on this development
-# machine (no NVIDIA GPU, Intel Iris Xe only) is {int8, int8_float32, int16,
-# float32} - float16 is not in that set on CPU, only on CUDA. A single global
-# compute type would load CUDA in int8 too: correct, but throwing away the
-# accuracy a GPU can afford at no speed cost, since float16 is CUDA's native
-# throughput type. This has not been measured on a GPU (this machine has none
-# - see Transcriber.load_model()'s docstring); "float16 on CUDA" here reflects
-# ctranslate2's own documented recommendation, not a benchmark run here.
+# float16 is CUDA-only in ctranslate2 (not offered on CPU), and CUDA's native
+# throughput type - ctranslate2's documented recommendation, not measured
+# here (no GPU on the development machine).
 def compute_type_for_device(device: str) -> str:
     """The right ctranslate2 compute_type for a given faster-whisper device."""
     return "float16" if device == "cuda" else COMPUTE_TYPE
 
 
-# Placeholder speed factors, used only until the real per-machine
-# calibration benchmark (core.calibration) finishes on first
-# run - see HardwareDetector.estimate_transcription_time. Not used once a
-# real measurement is available. Keyed by config.MODELS, so the two cards
-# differ before calibration lands; a missing key falls back to 1.0.
+# Placeholders until the first-run calibration benchmark (core.calibration)
+# lands; a missing key falls back to 1.0.
 SPEED_FACTORS = {
-    "ivrit-large": 0.35,  # large-v3 architecture, 0.35x real-time (very slow)
+    "ivrit-large": 0.35,  # x real-time
     # Same ~5.5x turbo speedup core.calibration.RELATIVE_COMPUTE_COST uses.
     "ivrit-turbo": 0.35 * 5.5,
 }

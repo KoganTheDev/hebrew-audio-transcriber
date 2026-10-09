@@ -1,99 +1,57 @@
-"""Where models are downloaded to and where transcripts are written.
+"""Absolute paths for the model caches, the log and the term list, and the
+name of a run's output file.
 
-The only real logic in the config package: resolving absolute paths (model
-caches, the log, the term list) and naming a transcription run's output file.
+Every path here is absolute on purpose. Each of them was once relative and
+resolved against the working directory, so launching from anywhere but the
+project folder re-downloaded gigabytes of models, scattered logs, or split
+the term list in two. Plain os.path only: core/ imports this, and core/ must
+never import PyQt5 (see core/__init__.py).
 """
 
 import os
 
 
 def _repo_root() -> str:
-    """The checkout this code runs from, however the process was started."""
-    # config/paths.py -> config/ -> src/ -> repo root, which is where an
-    # already-downloaded cache sits. Walking one level further would reach
-    # outside the repo and could match a stray directory beside it.
-    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.dirname(src_dir)
+    """The checkout this code runs from (config/ -> src/ -> repo root)."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-# WhisperModel's download_root controls both where faster-whisper looks for
-# an already-cached model AND where it writes a new download, so it must be
-# ABSOLUTE. A relative root resolves against the process's current working
-# directory, and the app can be started from anywhere (an IDE, a shortcut, or
-# `python src\app.py` from another folder) - so a launch from a different
-# directory would miss the existing cache and silently re-download from
-# scratch. There is no download-progress signal anywhere in this app (see
-# MODELS' "download_size" comment), so the only symptom is "Loading model..."
-# taking twenty unexplained minutes - and on this machine that re-download is
-# 5.9 GB.
-#
-# MODEL_DOWNLOAD_ROOT is also the single shared constant behind the model
-# card's pending-download warning in gui/steps/model_select.py: two copies of
-# this path could drift, and the card's note would then lie about what the
-# downloader will actually do.
-#
-# Resolved once, at import time, in this order:
-#
-#   1. SPEECH_TO_TEXT_MODEL_DIR, if set. An explicit escape hatch for anyone
-#      who wants models on a different drive (they run multiple GB each).
-#   2. An existing "whisper_models" directory already sitting at the repo
-#      root (one level up from src/, where these modules live).
-#      Checked before the per-user fallback below, on purpose: this is the
-#      branch that finds the 5.9 GB already on disk, and it has to win over
-#      inventing a new, empty location that would look - from
-#      gui/steps/model_select.py's _model_is_downloaded's point of view -
-#      exactly like nothing had ever been downloaded.
-#   3. Otherwise, a per-user data directory: %LOCALAPPDATA% on Windows, or
-#      $XDG_DATA_HOME / ~/.local/share elsewhere. A fresh install still needs
-#      somewhere sensible to put models rather than writing into whatever
-#      directory the process happened to start in.
-#
-# core/ must never import PyQt5 (see core/__init__.py's module docstring for
-# why - faster-whisper/ctranslate2 and PyQt5 bundle conflicting DLLs on
-# Windows), which rules out QStandardPaths for step 3 even though
-# gui/theme.py's glyph cache uses exactly that API for the same kind of
-# per-user-directory question. This has to stay plain os / os.path so
-# core/transcriber.py can import it too.
-def _cache_root(dir_name: str) -> str:
-    """An existing model cache of that name beside the package, or a per-user path.
-
-    Shared by both caches. They are separate downloads with separate
-    environment overrides, but "where does a model cache live" has one answer
-    and it should not be written twice - the diarization cache spent a long
-    time as a bare relative "./diarization_models" precisely because this
-    reasoning lived only in the Whisper half.
-    """
-    beside = os.path.join(_repo_root(), dir_name)
-    if os.path.isdir(beside):
-        return beside
-    return os.path.join(_user_data_dir(), dir_name)
+def _in_checkout() -> bool:
+    """A full checkout, as opposed to a src/ tree copied somewhere on its own."""
+    return os.path.isfile(os.path.join(_repo_root(), "pyproject.toml"))
 
 
-def _user_data_dir() -> str:
-    """The per-user data directory, for anything without a checkout to live in."""
+def _user_dir(kind: str) -> str:
+    """Per-user "data" (worth keeping) or "state" (reproducible) directory."""
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
+    elif kind == "state":
+        base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     else:
         base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     return os.path.join(base, "speech-to-text")
 
 
-def _default_model_download_root() -> str:
-    """Where to put Whisper models when SPEECH_TO_TEXT_MODEL_DIR isn't set."""
-    return _cache_root("whisper_models")
+def _cache_root(dir_name: str) -> str:
+    """An existing cache of that name at the repo root, else a per-user one.
+
+    The existing cache wins: it is where gigabytes of models already sit, and
+    a fresh empty location would look exactly like nothing was downloaded.
+    """
+    beside = os.path.join(_repo_root(), dir_name)
+    if os.path.isdir(beside):
+        return beside
+    return os.path.join(_user_dir("data"), dir_name)
 
 
 def resolve_model_download_root() -> str:
-    """Compute MODEL_DOWNLOAD_ROOT's value. A function, not just a module-level
-    expression, so tests can re-run the resolution under monkeypatched
-    environment variables / cwd without reimporting the module.
+    """Where faster-whisper looks for, and downloads, models.
+
+    SPEECH_TO_TEXT_MODEL_DIR overrides (models run to several GB each). A
+    function so tests can re-resolve under patched environment variables.
     """
     override = os.environ.get("SPEECH_TO_TEXT_MODEL_DIR")
-    root = override if override else _default_model_download_root()
-    # abspath, not just relying on the pieces above already being absolute:
-    # a user-supplied SPEECH_TO_TEXT_MODEL_DIR could itself be relative, and
-    # this is the one place that guarantee has to hold no matter the input.
-    root = os.path.abspath(root)
+    root = os.path.abspath(override or _cache_root("whisper_models"))
     os.makedirs(root, exist_ok=True)
     return root
 
@@ -102,27 +60,13 @@ MODEL_DOWNLOAD_ROOT = resolve_model_download_root()
 
 
 def resolve_diarization_models_root() -> str:
-    """Absolute path for the sherpa-onnx speaker models.
+    """Where the sherpa-onnx speaker models live.
 
-    This was a bare relative "./diarization_models" in core/diarization.py, so
-    it resolved against the process working directory. The launchers cd to the
-    project first, which hid it - but nothing forces a launch to start there,
-    so running the app from anywhere else re-downloaded 36 MB into whatever
-    directory the user happened to be in, or failed outright on a read-only
-    one. Exactly the bug the Whisper cache had,
-    and the reasoning for that fix is directly above.
-
-    No makedirs here, unlike the Whisper root: diarization is optional, and
-    ensure_models() creates the directory when it actually fetches something.
-    Creating an empty folder on import for every user who never turns speaker
-    identification on would be litter.
+    Not created here: diarization is optional, and ensure_models() makes the
+    directory when it first downloads.
     """
     override = os.environ.get("SPEECH_TO_TEXT_DIARIZATION_DIR")
-    root = override if override else _cache_root("diarization_models")
-    # abspath for the same reason MODEL_DOWNLOAD_ROOT does it: a user-supplied
-    # override could itself be relative, and this is the one place that
-    # guarantee has to hold whatever the input.
-    return os.path.abspath(root)
+    return os.path.abspath(override or _cache_root("diarization_models"))
 
 
 DIARIZATION_MODELS_ROOT = resolve_diarization_models_root()
@@ -130,120 +74,60 @@ DIARIZATION_MODELS_ROOT = resolve_diarization_models_root()
 
 LOG_FILENAME = "speech_to_text.log"
 
-# How large the log may grow before it is rotated, and how many old ones are
-# kept. Unbounded before this: the file had reached 2 MB of DEBUG on a
-# development machine and nothing would ever have trimmed it. Generous
-# because the DEBUG lines are what make a slow run diagnosable at all - the
-# per-phase timings in core/worker.py are DEBUG, and lowering the level to
-# bound the size would have thrown away the measurements this app's tuning
-# rests on. Bound the bytes, not the detail.
+# Generous, because the per-phase timings that make a slow run diagnosable are
+# DEBUG lines: bound the bytes, not the detail.
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_BACKUP_COUNT = 3
 
 
-def _log_directory() -> str:
-    """The directory the log belongs in, whole checkout or a stray copy.
-
-    A checkout is identified by pyproject.toml sitting one level above src/ -
-    which is exactly where the log has always appeared for anyone launching
-    through run.bat or run.ps1, since both cd to the project first. Keeping
-    it there means this does not quietly move a file people already know how
-    to find.
-
-    A src/ tree copied somewhere on its own has no pyproject.toml above it,
-    so it gets the per-user state directory instead: %LOCALAPPDATA% on
-    Windows, $XDG_STATE_HOME elsewhere. State rather than data (which is
-    where the model caches go) because a log is reproducible noise, not
-    something whose loss costs the user a download.
-    """
-    repo_root = _repo_root()
-    if os.path.isfile(os.path.join(repo_root, "pyproject.toml")):
-        return repo_root
-
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
-    else:
-        base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    return os.path.join(base, "speech-to-text", "logs")
-
-
 def resolve_log_path() -> str:
-    """Absolute path of the application log.
-
-    It was a bare "speech_to_text.log" handed to FileHandler, so it resolved
-    against the working directory - the fourth instance of exactly the bug
-    MODEL_DOWNLOAD_ROOT, DIARIZATION_MODELS_ROOT and the calibration cache
-    were each fixed for. Started from somewhere else, every run scattered
-    another log wherever the user happened to be, and none of them was the one
-    they were told to look at.
+    """The log: at the repo root in a checkout (where people already find it),
+    else the per-user state directory. SPEECH_TO_TEXT_LOG_DIR overrides.
     """
     override = os.environ.get("SPEECH_TO_TEXT_LOG_DIR")
-    directory = os.path.abspath(override) if override else _log_directory()
+    if override:
+        directory = os.path.abspath(override)
+    elif _in_checkout():
+        directory = _repo_root()
+    else:
+        directory = os.path.join(_user_dir("state"), "logs")
     os.makedirs(directory, exist_ok=True)
     return os.path.join(directory, LOG_FILENAME)
 
 
 SUPPORTED_FORMATS = ("*.mp3", "*.wav", "*.m4a", "*.flac", "*.ogg", "*.mp4", "*.mkv")
 
-# HTML, not .txt: only a declared, not guessed, paragraph direction gets Hebrew
-# to align correctly (see core/formatting's module docstring). One input file is
-# named after itself; a batch is named after the folder it came from, since
-# there is no single source filename to hang the output name on. See
-# output_path_for().
+# HTML, not .txt: only a declared paragraph direction aligns Hebrew correctly
+# (see core/formatting).
 OUTPUT_FILENAME_TEMPLATE = "{stem}_transcription.html"
 
 
 def output_path_for(audio_files: list[str]) -> str:
-    """Decide the output path for a transcription run.
-
-    One file -> named after it (so two different recordings never collide).
-    Several files -> named after their shared folder. Always written beside
-    the first input file, so the output lands next to the audio regardless
-    of which directory the app itself runs from.
-
-    This only overwrites a previous run over the *same* input(s) - re-running
-    a batch from the same folder replaces its own output.
+    """Beside the first input: named after the file, or for a batch after its
+    folder. Re-running the same input(s) replaces that run's own output.
     """
     first_dir = os.path.dirname(audio_files[0])
     if len(audio_files) == 1:
-        # splitext splits on the LAST dot, so "a.b.wav" -> stem "a.b" - a
-        # filename with a dot in it doesn't lose part of its name.
         stem, _ext = os.path.splitext(os.path.basename(audio_files[0]))
     else:
         stem = os.path.basename(os.path.normpath(first_dir)) or "batch"
-
-    filename = OUTPUT_FILENAME_TEMPLATE.format(stem=stem)
-    return os.path.join(first_dir, filename)
+    return os.path.join(first_dir, OUTPUT_FILENAME_TEMPLATE.format(stem=stem))
 
 
-# User-maintained list of domain terms (names, places, jargon) that a general
-# model reliably mishears. One term per line, UTF-8, "#" for comments. Absent
-# means the correction pass does nothing, which is the intended default - see
-# core/hebrew_corrections.py.
+# Domain terms (names, places, jargon) a general model mishears: one per line,
+# UTF-8, "#" comments. Absent means the correction pass does nothing.
 TERMS_FILENAME = "hebrew_terms.txt"
 CHECKPOINT_FILENAME = "transcription_checkpoint.txt"
 
 
 def resolve_terms_path() -> str:
-    """Absolute path of the term list - the one file both the GUI's terms
-    dialog writes and the worker's correction pass reads.
-
-    It was the bare TERMS_FILENAME, resolved against the working directory:
-    the bug resolve_log_path() and the two model roots above were each fixed
-    for. It only ever worked because the launchers cd to the repo root first,
-    so a checkout keeps it at the repo root - an existing list is found where
-    it already is. Now that the app writes this file, a second copy in a
-    stray working directory would be worse than a missed read: the dialog and
-    the worker would silently be editing and reading different lists.
-
-    A src/ tree with no pyproject.toml above it gets the per-user data
-    directory instead, by _log_directory()'s rule. Data, not state: this is
-    the user's own work, not reproducible noise like a log.
+    """The term list both the terms dialog writes and the worker reads - one
+    path, so they can never edit and read different copies. At the repo root
+    in a checkout, else per-user data. SPEECH_TO_TEXT_TERMS_FILE overrides.
     """
     override = os.environ.get("SPEECH_TO_TEXT_TERMS_FILE")
     if override:
         return os.path.abspath(override)
-    repo_root = _repo_root()
-    if os.path.isfile(os.path.join(repo_root, "pyproject.toml")):
-        return os.path.join(repo_root, TERMS_FILENAME)
-    return os.path.join(_user_data_dir(), TERMS_FILENAME)
+    if _in_checkout():
+        return os.path.join(_repo_root(), TERMS_FILENAME)
+    return os.path.join(_user_dir("data"), TERMS_FILENAME)

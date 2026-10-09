@@ -4,7 +4,8 @@ hand-corrected transcript can become a diarization fixture that
 tests.eval.compare_diarization / diarization_metrics.read_rttm can score
 against.
 
-Why this exists: core/config/diarization.py's DIARIZATION_ENGINE docstring
+Why this exists: config/diarization.py's DIARIZATION_ENGINE note (now in
+docs/DIARIZATION_TUNING.md)
 names the blocker for tuning diarization at all - "powerset is opt-in until
 someone measures it against Hebrew audio with real speaker labels - which
 does not exist yet". An exported transcript, hand-corrected by a human in the
