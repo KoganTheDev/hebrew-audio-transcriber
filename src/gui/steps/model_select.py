@@ -4,9 +4,21 @@ import logging
 import os
 from typing import cast
 
-from PyQt5.QtCore import QEvent, QObject, QSize, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QResizeEvent, QShowEvent
+from PyQt5.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QObject,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    pyqtSignal,
+)
+from PyQt5.QtGui import QColor, QFont, QIcon, QMouseEvent, QResizeEvent, QShowEvent
 from PyQt5.QtWidgets import (
+    QWIDGETSIZE_MAX,
     QApplication,
     QButtonGroup,
     QFrame,
@@ -27,7 +39,7 @@ from gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from gui.i18n import format_duration, is_rtl, model_text, t
 from gui.icons import ICONS, svg_to_pixmap
 from gui.terms_dialog import TermsDialog, read_term_list
-from gui.theme import COLORS, Fonts, Spacing
+from gui.theme import COLORS, Fonts, Motion, Spacing
 from gui.widgets import make_label
 from hardware_detection import HardwareDetector
 
@@ -296,9 +308,7 @@ class ModelSelectStep(QFrame):
 
         error_icon = QLabel()
         error_icon.setPixmap(
-            svg_to_pixmap(
-                ICONS["alert_triangle"], 16, COLORS["error"], dpr=self.devicePixelRatioF()
-            )
+            svg_to_pixmap(ICONS["alert_circle"], 16, COLORS["error"], dpr=self.devicePixelRatioF())
         )
         error_icon.setStyleSheet("background: transparent;")
         error_layout.addWidget(error_icon)
@@ -317,6 +327,7 @@ class ModelSelectStep(QFrame):
         error_layout.addWidget(self.copy_error_btn)
 
         layout.addWidget(self.error_banner)
+        self._banner_reveal: QParallelAnimationGroup | None = None
 
     def _build_calibration_note(self, layout: QVBoxLayout) -> None:
         """The "these estimates are guesses so far" line under the banner."""
@@ -606,12 +617,71 @@ class ModelSelectStep(QFrame):
         self._error_key = key
         self._error_params = dict(params)
         self.error_label.setText(t("transcription_failed", message=t(key, **params)))
+        already_shown = not self.error_banner.isHidden()
         self.error_banner.show()
+        if not already_shown:
+            self._reveal_banner()
 
     def clear_error(self) -> None:
         self._error_key = None
         self._error_params = {}
+        self._end_banner_reveal()
         self.error_banner.hide()
+
+    def _reveal_banner(self) -> None:
+        """Open the banner downward instead of popping it in: its height grows
+        from nothing, pushing the cards down smoothly, while the message fades
+        in. The fade is the label's ink alpha rather than an opacity effect,
+        because the banner already holds its drop shadow and a widget can
+        carry only one QGraphicsEffect.
+        """
+        self._end_banner_reveal()
+        if not theme.animations_enabled():
+            return
+        # The height the banner will really get: its message wraps, so it is
+        # a function of the width the page gives it. sizeHint() alone is the
+        # unwrapped height, which the layout then caps - the grow would hit
+        # that cap halfway and stop instead of easing in.
+        margins = self.layout().contentsMargins()
+        width = self.width() - margins.left() - margins.right()
+        height = (
+            self.error_banner.heightForWidth(width) if self.error_banner.hasHeightForWidth() else -1
+        )
+        if height <= 0:
+            height = self.error_banner.sizeHint().height()
+        group = QParallelAnimationGroup(self)
+        grow = QPropertyAnimation(self.error_banner, b"maximumHeight", group)
+        grow.setStartValue(0)
+        grow.setEndValue(height)
+        grow.setDuration(Motion.BANNER_MS)
+        grow.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade = QVariantAnimation(group)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setDuration(int(Motion.BANNER_MS * 1.4))
+        fade.valueChanged.connect(self._set_banner_ink)
+        group.addAnimation(grow)
+        group.addAnimation(fade)
+        group.finished.connect(self._end_banner_reveal)
+        self._banner_reveal = group
+        self._set_banner_ink(0.0)
+        group.start()
+
+    def _set_banner_ink(self, alpha: object) -> None:
+        color = QColor(COLORS["error"])
+        color.setAlphaF(float(cast(float, alpha)))
+        self.error_label.setStyleSheet(
+            f"color: {color.name(QColor.NameFormat.HexArgb)}; background: transparent;"
+        )
+
+    def _end_banner_reveal(self) -> None:
+        """Stop any reveal and leave the banner at its natural size and ink."""
+        if self._banner_reveal is not None:
+            self._banner_reveal.stop()
+            self._banner_reveal.deleteLater()
+            self._banner_reveal = None
+        self.error_banner.setMaximumHeight(QWIDGETSIZE_MAX)
+        self.error_label.setStyleSheet(theme.text_qss("error"))
 
     def _on_copy_error_details(self) -> None:
         """Copy the real error text/traceback/log path, not just the friendly banner text."""

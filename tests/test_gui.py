@@ -2841,9 +2841,7 @@ class TestDropZoneHalo:
         step.show()
         mime = QMimeData()
         mime.setUrls([QUrl.fromLocalFile(r"C:\a.wav")])
-        event = QDragEnterEvent(
-            QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
-        )
+        event = QDragEnterEvent(QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         step.drop_zone.dragEnterEvent(event)
 
         assert not step.is_halo_breathing()
@@ -2880,3 +2878,69 @@ class TestDropZoneHalo:
         step.resize(600, 500)
         step.show()
         assert not step.grab().isNull()
+
+
+class TestErrorBannerReveal:
+    """
+    The banner opens downward and its message fades in. Whatever happens
+    to the animation, the banner has to end at its natural size and ink -
+    a banner stuck at a clipped height, or text stuck half-transparent,
+    would hide the one message that says why the run failed.
+    """
+
+    @pytest.fixture
+    def step(self, qtbot, model_hardware_stub, monkeypatch):
+        from gui import theme
+        from gui.steps.model_select import ModelSelectStep
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        s = ModelSelectStep(model_hardware_stub)
+        qtbot.addWidget(s)
+        s.resize(600, 600)
+        s.show()
+        return s
+
+    def test_opens_then_settles_at_full_size_and_ink(self, step, qtbot):
+        from PyQt5.QtWidgets import QWIDGETSIZE_MAX
+
+        from gui import theme
+
+        step.show_error("w_error", {"detail": "boom"})
+        assert step.error_banner.maximumHeight() < QWIDGETSIZE_MAX
+
+        qtbot.waitUntil(lambda: step._banner_reveal is None, timeout=2000)
+        assert step.error_banner.maximumHeight() == QWIDGETSIZE_MAX
+        assert step.error_label.styleSheet() == theme.text_qss("error")
+        assert step.error_banner.isVisible()
+
+    def test_clearing_mid_reveal_leaves_nothing_behind(self, step):
+        from PyQt5.QtWidgets import QWIDGETSIZE_MAX
+
+        step.show_error("w_error", {"detail": "boom"})
+        step.clear_error()
+        assert step._banner_reveal is None
+        assert step.error_banner.isHidden()
+        assert step.error_banner.maximumHeight() == QWIDGETSIZE_MAX
+
+    def test_a_second_error_while_shown_just_updates_the_text(self, step, qtbot):
+        step.show_error("w_error", {"detail": "first"})
+        qtbot.waitUntil(lambda: step._banner_reveal is None, timeout=2000)
+        step.show_error("w_error", {"detail": "second"})
+        assert step._banner_reveal is None
+        assert "second" in step.error_label.text()
+
+    def test_appears_at_once_when_windows_animations_are_off(self, step, monkeypatch):
+        from PyQt5.QtWidgets import QWIDGETSIZE_MAX
+
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        step.show_error("w_error", {"detail": "boom"})
+        assert step._banner_reveal is None
+        assert step.error_banner.maximumHeight() == QWIDGETSIZE_MAX
+
+    def test_uses_the_exclamation_circle_icon(self):
+        from gui.icons import ICONS
+
+        assert "alert_circle" in ICONS
+        assert "alert_triangle" not in ICONS

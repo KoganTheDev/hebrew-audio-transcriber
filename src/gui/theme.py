@@ -309,6 +309,10 @@ class Motion:
     HALO_BLUR_PX = 20
     HALO_MAX_ALPHA = 0.65
 
+    # Step 2's error banner opening: its height grows from nothing while the
+    # message fades in over a little longer.
+    BANNER_MS = 220
+
 
 # SystemParametersInfoW action for Settings > Accessibility > Visual effects
 # > "Animation effects". Not exported by ctypes, so named here.
