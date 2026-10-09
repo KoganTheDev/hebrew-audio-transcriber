@@ -298,6 +298,11 @@ class Motion:
     GLEAM_SPEED_PX_S = 160
     FINISH_MS = 450
 
+    # Moving between wizard steps: the incoming page fades in while drifting
+    # this far from the side it came from.
+    PAGE_MS = 200
+    PAGE_SLIDE_PX = 14
+
 
 # SystemParametersInfoW action for Settings > Accessibility > Visual effects
 # > "Animation effects". Not exported by ctypes, so named here.

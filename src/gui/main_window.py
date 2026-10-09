@@ -6,7 +6,14 @@ import logging
 import sys
 from typing import cast
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import (
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+)
 from PyQt5.QtGui import QCloseEvent, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QAbstractSpinBox,
@@ -14,6 +21,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDesktopWidget,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -38,7 +46,7 @@ from gui.i18n import t
 from gui.presenters import build_transcription_request
 from gui.stepper import StepIndicator
 from gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
-from gui.theme import COLORS, Fonts
+from gui.theme import COLORS, Fonts, Motion
 from gui.threads import CalibrationThread, TranscriptionThread
 from gui.widgets import IconTextButton, make_label
 from hardware_detection import HardwareDetector
@@ -123,6 +131,8 @@ class MainWindow(QMainWindow):
 
         self.hardware = HardwareDetector()
         self.current_step = Step.FILE_SELECT
+        # The running page slide and its page, if any - see _slide_page_in.
+        self._page_slide: tuple[QParallelAnimationGroup, QWidget] | None = None
         self.transcription_thread: TranscriptionThread | None = None
         self.selected_files: list[str] = []
         self.selected_model: str | None = None
@@ -671,7 +681,10 @@ class MainWindow(QMainWindow):
         identical in shape across all five.
         """
         self.current_step = step
+        previous = self.stacked_widget.currentIndex()
         self.stacked_widget.setCurrentWidget(self.stacked_widget.widget(step.value))
+        if step.value != previous:
+            self._slide_page_in(step.value > previous)
 
         self.back_btn.setVisible(back_visible)
         if back_visible:
@@ -696,6 +709,53 @@ class MainWindow(QMainWindow):
 
         self.step_indicator.set_current(step)
         logger.debug(f"Navigated to: {step}")
+
+    def _slide_page_in(self, forward: bool) -> None:
+        """Fade the page just made current in, drifting from the side it came
+        from: the next-step side going forward, which is the left in Hebrew.
+
+        Purely visual - the page is already current, focused and laid out,
+        so nothing waits on this. The opacity effect is removed when the
+        animation ends: a page can hold only one QGraphicsEffect, and leaving
+        one on would keep every repaint of the page going through an
+        offscreen pixmap for nothing.
+        """
+        self._end_page_slide()
+        if not theme.animations_enabled() or not self.isVisible():
+            return
+        page = self.stacked_widget.currentWidget()
+        if page is None:
+            return
+        rtl = self.layoutDirection() == Qt.LayoutDirection.RightToLeft
+        dx = Motion.PAGE_SLIDE_PX * (1 if forward else -1) * (-1 if rtl else 1)
+
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        group = QParallelAnimationGroup(self)
+        fade = QPropertyAnimation(effect, b"opacity", group)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        slide = QPropertyAnimation(page, b"pos", group)
+        slide.setStartValue(QPoint(dx, 0))
+        slide.setEndValue(QPoint(0, 0))
+        for animation in (fade, slide):
+            animation.setDuration(Motion.PAGE_MS)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            group.addAnimation(animation)
+        group.finished.connect(self._end_page_slide)
+        self._page_slide = (group, page)
+        group.start()
+
+    def _end_page_slide(self) -> None:
+        """Stop any page slide and leave its page exactly where it belongs."""
+        if self._page_slide is None:
+            return
+        group, page = self._page_slide
+        self._page_slide = None
+        group.stop()
+        group.deleteLater()
+        page.setGraphicsEffect(None)
+        page.move(0, 0)
 
     def _on_next_clicked(self) -> None:
         """next_btn's one and only clicked connection (see _init_ui) -

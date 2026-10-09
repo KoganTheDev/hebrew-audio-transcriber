@@ -1129,6 +1129,44 @@ class TestMainWindowStepNavigation:
         assert not main_window.back_btn.isVisible()
         assert not main_window.next_btn.isEnabled()
 
+    def test_a_new_step_slides_in_and_leaves_no_effect_behind(
+        self, main_window, qtbot, monkeypatch
+    ):
+        from PyQt5.QtCore import QPoint
+
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        main_window.file_step.selected_files = ["a.wav"]
+        main_window.next_btn.setEnabled(True)
+        main_window._go_next()
+
+        page = main_window.model_step
+        # Navigation itself is immediate; only the look is animated.
+        assert main_window.stacked_widget.currentWidget() is page
+        assert page.graphicsEffect() is not None
+        qtbot.waitUntil(lambda: page.graphicsEffect() is None, timeout=2000)
+        assert page.pos() == QPoint(0, 0)
+
+    def test_no_slide_when_windows_animations_are_off(self, main_window, monkeypatch):
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        main_window.file_step.selected_files = ["a.wav"]
+        main_window.next_btn.setEnabled(True)
+        main_window._go_next()
+        assert main_window.model_step.graphicsEffect() is None
+
+    def test_staying_on_the_same_step_does_not_slide(self, main_window, monkeypatch):
+        from gui import theme
+        from gui.steps import Step
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        main_window._set_step(
+            Step.FILE_SELECT, back_visible=False, cancel_visible=False, next_visible=True
+        )
+        assert main_window.file_step.graphicsEffect() is None
+
     def test_a_finished_run_shows_every_step_done(self, main_window):
         from gui.steps import Step
 
