@@ -303,6 +303,12 @@ class Motion:
     PAGE_MS = 200
     PAGE_SLIDE_PX = 14
 
+    # Step 1's drop zone breathes a soft accent glow while it is empty, to
+    # draw the eye there. How far the glow reaches, and its strength at the
+    # top of the breath.
+    HALO_BLUR_PX = 20
+    HALO_MAX_ALPHA = 0.65
+
 
 # SystemParametersInfoW action for Settings > Accessibility > Visual effects
 # > "Animation effects". Not exported by ctypes, so named here.

@@ -2810,3 +2810,73 @@ class TestTranscriptionStepStages:
         step.stop()
         step.show_result(r"C:\out\meeting.html")
         assert not step.grab().isNull()
+
+
+class TestDropZoneHalo:
+    """
+    The empty drop zone breathes a glow to draw the eye. These pin when it
+    does: only while visible and empty, steady under a drag, gone once
+    files are chosen, and still (but present) with animation effects off.
+    """
+
+    @pytest.fixture
+    def step(self, file_select_step, monkeypatch):
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        return file_select_step
+
+    def test_breathes_only_while_shown_and_empty(self, step):
+        assert not step.is_halo_breathing()
+        step.show()
+        assert step.is_halo_breathing()
+        assert step.halo_strength()[1] == "accent"
+        step.hide()
+        assert not step.is_halo_breathing()
+
+    def test_a_drag_holds_a_steady_brighter_glow(self, step):
+        from PyQt5.QtCore import QMimeData, QPoint, QUrl
+        from PyQt5.QtGui import QDragEnterEvent
+
+        step.show()
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(r"C:\a.wav")])
+        event = QDragEnterEvent(
+            QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+        )
+        step.drop_zone.dragEnterEvent(event)
+
+        assert not step.is_halo_breathing()
+        assert step.halo_strength() == (pytest.approx(0.65), "accent_hover")
+
+        step.drop_zone.dragLeaveEvent(None)
+        assert step.is_halo_breathing()
+
+    def test_choosing_files_removes_the_glow(self, step, tmp_path, monkeypatch):
+        from gui import threads as threads_module
+
+        monkeypatch.setattr(threads_module, "get_audio_duration", lambda path: (30, True))
+        f = tmp_path / "one.wav"
+        f.write_bytes(b"")
+        step.show()
+        step._add_files([str(f)])
+        settle(step)
+
+        assert step.halo_strength() is None
+        assert not step.is_halo_breathing()
+
+        step.reset()
+        assert step.is_halo_breathing()
+
+    def test_still_but_present_when_windows_animations_are_off(self, step, monkeypatch):
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        step.show()
+        assert not step.is_halo_breathing()
+        assert step.halo_strength() is not None
+
+    def test_paints_with_and_without_the_glow(self, step):
+        step.resize(600, 500)
+        step.show()
+        assert not step.grab().isNull()
