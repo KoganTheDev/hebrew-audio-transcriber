@@ -1,16 +1,8 @@
 """Measure how much of the codebase is prose rather than code.
 
-The refactor that introduced this found the package was 51% prose - 5,808
-lines of docstrings and comments against 5,631 of code, 1.03 lines of
-commentary per line of code - with the extremes in tiny modules behind large
-preambles (progress_scale.py was 5 lines of code and 80 of prose).
-
-The point is not to minimise prose. This codebase explains why things are the
-way they are, and that reasoning is why the awkward parts survive contact with
-a later reader. The point is that restatement and history crowd it out, and a
-reader cannot tell which is which. So this reports a ratio to argue with, not
-a threshold to enforce - there is no exit code, and no linter can make this
-judgement.
+Not to minimise prose - the "why" is what keeps the awkward parts alive for a
+later reader - but restatement and history crowd it out. A ratio to argue
+with, not a threshold: there is no exit code, and no linter can judge this.
 
     python tools/doc_density.py [path ...] [--baseline FILE] [--save FILE]
 """

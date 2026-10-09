@@ -940,9 +940,8 @@ class TestMainWindowKeyboardGuards:
     """
     MainWindow._on_advance_shortcut: Enter is wired at the window level to
     act like clicking Next (see MainWindow._init_shortcuts), which would be
-    actively harmful on step 2 if it fired while the user is mid-entry in
-    the speaker-count QSpinBox - typing "10" and pressing Enter must
-    confirm the number, not silently skip to Transcribing.
+    actively harmful while the user is typing in a text field - Enter must
+    confirm the input, not silently skip to the next step.
 
     Builds a real MainWindow rather than testing the guard in isolation:
     HardwareDetector is stubbed (its real implementation spawns a

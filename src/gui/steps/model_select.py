@@ -659,6 +659,16 @@ class ModelSelectStep(QFrame):
                 theme.text_qss("accent" if selected else "text_primary")
             )
 
+    def _describe_radio(self, name: str, radio: QRadioButton) -> None:
+        """Name the radio and give it the spoken form of the facts row (RAM,
+        pending download), which a screen reader would otherwise read as eight
+        unrelated labels.
+        """
+        radio.setAccessibleName(model_text(name, "name"))
+        radio.setAccessibleDescription(
+            model_text(name, "description") + ". " + self._info_note(name)
+        )
+
     def _info_note(self, name: str) -> str:
         """RAM, plus the download sentence for an uncached model - shared by
         the tooltip and the accessible description so they cannot drift.
@@ -784,13 +794,7 @@ class ModelSelectStep(QFrame):
         radio = QRadioButton()
         radio.setChecked(is_recommended)
         radio.toggled.connect(lambda checked: self._on_radio_toggled(name, checked))
-        radio.setAccessibleName(model_text(name, "name"))
-        # RAM and, when relevant, the pending download: the spoken form of
-        # the facts row, which a screen reader would otherwise read as eight
-        # unrelated labels.
-        radio.setAccessibleDescription(
-            model_text(name, "description") + ". " + self._info_note(name)
-        )
+        self._describe_radio(name, radio)
         self.model_group.addButton(radio, idx)
         self.model_radios[name] = radio
         # The card frame, not the radio, has to show the keyboard-focus ring
@@ -1017,10 +1021,7 @@ class ModelSelectStep(QFrame):
         for badge in self._badges.values():
             badge.setText(t("recommended_badge"))
         for name, radio in self.model_radios.items():
-            radio.setAccessibleName(model_text(name, "name"))
-            radio.setAccessibleDescription(
-                model_text(name, "description") + ". " + self._info_note(name)
-            )
+            self._describe_radio(name, radio)
         for name, card in self._cards.items():
             card.setToolTip(self._info_note(name))
 

@@ -141,7 +141,7 @@ class Radius:
 
     # Small interactive controls: buttons, the progress bar (track and
     # chunk), the error banner, and every native control app_stylesheet()
-    # draws (checkbox/radio/spin box). The document's --control-radius.
+    # draws (checkbox/radio). The document's --control-radius.
     CONTROL = 14
     # Larger static surfaces that hold other widgets: model choice cards,
     # the hardware summary card, the result panel, the error banner's own
@@ -507,8 +507,8 @@ def error_banner_qss(object_name: str) -> str:
 
 
 def line_edit_qss() -> str:
-    """A single-line text field, matching the control outline of the spin box
-    and secondary buttons. :focus rather than the kbdFocus property: a text
+    """A single-line text field, with the secondary buttons' control outline.
+    :focus rather than the kbdFocus property: a text
     field shows its caret whichever way focus arrived, so the ring should too.
     """
     return f"""
@@ -589,32 +589,20 @@ def _tooltip_qss() -> str:
 
 
 def _focus_ring_qss() -> str:
+    # QSS has no outline box outside the layout, so the ring recolours an
+    # existing border - listed per bordered control (buttons have their own),
+    # since a bare QWidget rule would only add dead CSS to borderless ones.
     return f"""
-
-    /* Generic keyboard-focus ring. Qt stylesheets have no CSS 'outline'
-       box that sits outside a widget without affecting its layout, so this
-       reuses border-color on widgets that already carry a border. Listed
-       per control (plus QPushButton, handled in
-       button_primary_qss/button_secondary_qss) rather than as a bare
-       'QWidget[kbdFocus="true"]': a bare rule would also set a
-       border-color on borderless widgets like labels and frames, which
-       paints nothing and just adds dead CSS. */
-    QRadioButton[kbdFocus="true"], QCheckBox[kbdFocus="true"], QSpinBox[kbdFocus="true"] {{
+    QRadioButton[kbdFocus="true"], QCheckBox[kbdFocus="true"] {{
         border-color: {COLORS["focus"]};
     }}"""
 
 
 def _radio_button_qss() -> str:
+    # Any ::indicator property turns off the native indicator, so every state
+    # is written out (a missed one renders blank). The checked dot is a
+    # radial gradient with a hard stop: a flat fill would be a solid disc.
     return f"""
-
-    /* QRadioButton. Setting any property on ::indicator makes Qt stop
-       drawing its native indicator altogether, so every state has to be
-       written explicitly - unchecked, checked, hover, disabled - or a
-       missed one renders as a blank box. The checked dot can't be done
-       with background-color alone: a flat fill produces a solid disc, not
-       a ring with a dot inside it. qradialgradient with a hard stop at 0.45
-       and a transparent stop at 0.5 fakes a "dot inside a ring" using pure
-       QSS - the ring itself is just the indicator's border-color. */
     QRadioButton {{
         color: {COLORS["text_primary"]};
         background: transparent;
@@ -655,25 +643,10 @@ def _radio_button_qss() -> str:
 
 
 def _checkbox_qss() -> str:
+    # No ::indicator rule at all: even one property makes QStyleSheetStyle
+    # claim the indicator and pre-empt PaintedCheckboxStyle
+    # (gui/checkbox_style.py), which paints it at the real device pixel ratio.
     return f"""
-
-    /* QCheckBox. Deliberately NO ::indicator rule of any kind here -
-       unlike QRadioButton/QSpinBox, whose indicators/arrows are still
-       drawn by plain QSS. The checkbox indicator is painted by
-       PaintedCheckboxStyle (gui/checkbox_style.py), a QProxyStyle
-       installed on the QApplication in main_window.configure_application,
-       because Qt's stylesheet 'image:' mechanism has no devicePixelRatio
-       concept - see that module's docstring.
-
-       This is not merely "no rule needed": setting even ONE
-       QCheckBox::indicator{...} property here (border, background,
-       anything) makes Qt's internal QStyleSheetStyle claim the whole
-       indicator subcontrol and paint it from the CSS box model, which
-       pre-empts PaintedCheckboxStyle.drawPrimitive() before it ever runs.
-       The two are mutually exclusive for this control, so the QSS side has
-       to stay silent on ::indicator - hover/disabled/kbdFocus included.
-       The bare QCheckBox{...} rule below still applies: it styles the
-       label text, a selector Qt's CSS capture doesn't extend to. */
     QCheckBox {{
         color: {COLORS["text_primary"]};
         background: transparent;
@@ -681,61 +654,11 @@ def _checkbox_qss() -> str:
     }}"""
 
 
-def _spin_box_qss() -> str:
-    return f"""
-
-    /* QSpinBox. ::up-button/::down-button are styled here even though the
-       app's one QSpinBox (speaker count, model_select.py) currently ships
-       with setButtonSymbols(NoButtons) and never shows them - see that
-       widget's own comment for why the buttons were dropped and why this
-       block was deliberately kept rather than deleted alongside them, so a
-       future spin box that DOES want buttons finds them already themed.
-       ::up-arrow/::down-arrow are NOT styled, and styling
-       ::up-button/::down-button without also supplying them leaves two
-       blank dark rectangles rather than the native arrow. So a future
-       widget that re-enables the buttons has to draw the arrows itself,
-       with a painted QProxyStyle primitive following checkbox_style.py's
-       pattern - not the rasterize-to-QSS-'image:' path, which
-       checkbox_style.py's docstring explains was retired wholesale. */
-    QSpinBox {{
-        background-color: {COLORS["bg_tertiary"]};
-        color: {COLORS["text_primary"]};
-        border: {Border.CONTROL}px solid {COLORS["control_border"]};
-        border-radius: {Radius.CONTROL}px;
-        padding: 4px 6px;
-        min-width: 32px;
-    }}
-    QSpinBox:hover {{
-        border-color: {COLORS["accent_hover"]};
-    }}
-    QSpinBox:disabled {{
-        color: {COLORS["text_disabled"]};
-        border-color: {COLORS["border"]};
-    }}
-    QSpinBox[kbdFocus="true"] {{
-        border-color: {COLORS["focus"]};
-    }}
-    QSpinBox::up-button, QSpinBox::down-button {{
-        background-color: {COLORS["surface_hover"]};
-        border: none;
-        width: 16px;
-    }}
-    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
-        background-color: {COLORS["control_border"]};
-    }}"""
-
-
 def _scroll_bar_qss() -> str:
+    # Slim and flat. The step buttons collapse to zero size (QSS has no
+    # display: none); the page areas stay transparent, or they paint a second,
+    # wider bar behind the handle.
     return f"""
-
-    /* QScrollBar. Slim and flat, no arrow buttons - the model list on the
-       model-select step is the one place this is visible today. Both
-       add-line/sub-line subcontrols are collapsed to zero size rather than
-       hidden, because 'display: none' isn't a QSS property; zero size is
-       the documented way to remove a scrollbar's step buttons. The
-       page-step area (::add-page/::sub-page) is left transparent so only
-       the groove and handle read as the bar - a background there would
-       paint a second, wider bar behind the actual handle. */
     QScrollBar:vertical {{
         background: transparent;
         width: 10px;
@@ -780,14 +703,14 @@ def _scroll_bar_qss() -> str:
 def app_stylesheet() -> str:
     """App-wide QSS defaults, kept small (per-widget sheets override it).
 
-    Themes the natively drawn radio, checkbox, spin box and scrollbar, which
+    Themes the natively drawn radio, checkbox and scrollbar, which
     are light-blue Windows controls otherwise, and the focus ring - scoped to
     [kbdFocus="true"], not :focus, which rings mouse and default focus too
     (gui/focus.py).
     """
     return (
         f"{_main_window_qss()}{_tooltip_qss()}{_focus_ring_qss()}"
-        f"{_radio_button_qss()}{_checkbox_qss()}{_spin_box_qss()}"
+        f"{_radio_button_qss()}{_checkbox_qss()}"
         f"{_scroll_bar_qss()}\n    "
     )
 

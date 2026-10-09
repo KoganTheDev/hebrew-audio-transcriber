@@ -70,7 +70,7 @@ for _bg in ("accent", "accent_hover", "accent_dark"):
     PAIRS.append(("accent_text", _bg, TEXT_MIN))
 
 # control_border is the resting outline of every bordered control (model
-# cards, secondary buttons, checkboxes/radios/spin boxes - see its own
+# cards, secondary buttons, checkboxes/radios - see its own
 # comment in theme.py) - WCAG 1.4.11's 3:1 floor for a boundary a control is
 # identified by, not the 4.5:1 body-text floor, because it never carries
 # text of its own.

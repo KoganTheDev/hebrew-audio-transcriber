@@ -166,6 +166,10 @@ class TermsDialog(QDialog):
             self._show_message(t("terms_save_failed", error=e))
             return []
 
+    def _save_failed(self, error: OSError) -> None:
+        logger.warning(f"Could not save term list {self.path}: {error}")
+        self._show_message(t("terms_save_failed", error=error))
+
     def add_current(self) -> None:
         """Add what the field holds, keeping it on any failure so nothing typed is lost."""
         text = self.field.text()
@@ -177,8 +181,7 @@ class TermsDialog(QDialog):
             self._show_message(t("terms_comment"))
             return
         except OSError as e:
-            logger.warning(f"Could not save term list {self.path}: {e}")
-            self._show_message(t("terms_save_failed", error=e))
+            self._save_failed(e)
             return
 
         if not added:
@@ -196,8 +199,7 @@ class TermsDialog(QDialog):
         try:
             term_store.remove_term(self.path, term)
         except OSError as e:
-            logger.warning(f"Could not save term list {self.path}: {e}")
-            self._show_message(t("terms_save_failed", error=e))
+            self._save_failed(e)
             return
         self.message.setVisible(False)
         self._rebuild()

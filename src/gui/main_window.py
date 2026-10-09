@@ -265,13 +265,11 @@ class MainWindow(QMainWindow):
 
         # Title - centered, gradient-filled text (the one deliberate use of a
         # gradient in this theme, as a brand accent rather than a UI backdrop).
-        # Rendered as a pixmap, so retranslate() re-renders it on language switch.
+        # A pixmap, re-rendered on language switch. Rendering it here too, not
+        # only in _retranslate_chrome, is load-bearing: without it the title
+        # and other bold text rasterize differently (pixel-diffed).
         self.title_label = QLabel()
-        self.title_label.setPixmap(
-            theme.gradient_text_pixmap(
-                t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF()
-            )
-        )
+        self._render_title()
         self.title_label.setStyleSheet("background: transparent;")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -433,14 +431,17 @@ class MainWindow(QMainWindow):
         self.setTabOrder(self.transcription_step.folder_button, self.next_btn)
         self.setTabOrder(self.next_btn, self.lang_btn)
 
-    def _retranslate_chrome(self) -> None:
-        """(Re-)apply window title, header, and nav button text/icons/directions."""
-        self.setWindowTitle(t("app_title"))
+    def _render_title(self) -> None:
         self.title_label.setPixmap(
             theme.gradient_text_pixmap(
                 t("app_title"), Fonts.SUBTITLE_BOLD, dpr=self.devicePixelRatioF()
             )
         )
+
+    def _retranslate_chrome(self) -> None:
+        """(Re-)apply window title, header, and nav button text/icons/directions."""
+        self.setWindowTitle(t("app_title"))
+        self._render_title()
         # Toggle shows the language it switches TO.
         self.lang_btn.setText("עב" if i18n.get_language() == "en" else "EN")
         self.lang_btn.setAccessibleName(t("toggle_language_name"))

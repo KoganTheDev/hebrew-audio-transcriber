@@ -232,7 +232,7 @@ def _cluster(sherpa_onnx: Any, embeddings: list[np.ndarray], num_speakers: int) 
     """Group (window, speaker) embeddings into speakers.
 
     num_speakers <= 0 means "infer", handing the decision to the threshold.
-    The GUI's spin box is 2-10, so in practice this is an exact count.
+    The GUI's speaker stepper is 2-10, so in practice this is an exact count.
     """
     matrix = np.ascontiguousarray(np.vstack(embeddings).astype(np.float32))
     clustering = sherpa_onnx.FastClustering(
