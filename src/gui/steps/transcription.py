@@ -184,11 +184,8 @@ class TranscriptionStep(QFrame):
 
     def _build_progress_bar(self, layout: QVBoxLayout) -> None:
         """The progress bar and the animation that smooths its value changes."""
-        # Paints itself (see run_progress.RunProgressBar) so the fill can
-        # shimmer and turn green. No percentage is drawn inside it - see
-        # theme.progress_bar_qss() for why no ink is legible over both the
-        # filled chunk and the empty groove; status_label and time_label
-        # below carry the numbers.
+        # Paints itself so the fill can shimmer and turn green; the numbers
+        # live in status_label and time_label (see RunProgressBar).
         self.progress_bar = RunProgressBar()
         layout.addWidget(self.progress_bar)
 
@@ -580,13 +577,12 @@ class TranscriptionStep(QFrame):
 
     def _set_motion(self, on: bool) -> None:
         on = on and motion.animations_enabled()
-        self.progress_bar.animating = on
-        self.stage_list.animating = on
+        self.progress_bar.set_motion(on)
+        self.stage_list.set_motion(on)
         if on and not self.is_animating():
             self._motion.start()
         elif not on:
             self._motion.stop()
-            self.stage_list.breath_alpha = 1.0
         self.progress_bar.update()
         self.stage_list.update()
 
@@ -594,7 +590,7 @@ class TranscriptionStep(QFrame):
         return motion.is_running(self._motion)
 
     def _on_motion(self, value: object) -> None:
-        self.stage_list.breath_alpha = motion.pulse_alpha(float(self._motion.currentValue()))
+        self.stage_list.set_breath(motion.pulse_alpha(float(self._motion.currentValue())))
         self.progress_bar.update()
         self.stage_list.update()
         # After the run, the loop only stays on to play the bar's finish.

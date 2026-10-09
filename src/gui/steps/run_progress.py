@@ -36,8 +36,12 @@ class RunProgressBar(QProgressBar):
     accessibility all work as before.
     """
 
+    # No percentage is drawn inside: no ink is legible on both the peach fill
+    # (light text 1.22:1) and the groove (dark text 1.14:1).
     _SHIMMER_BAND = 0.4  # of the groove's width
+    _SHIMMER_PEAK = 0.24
     _GLEAM_BAND_PX = 90
+    _GLEAM_PEAK = 0.38
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -46,13 +50,18 @@ class RunProgressBar(QProgressBar):
         self.mode = BarMode.IDLE
         # False when the step's animation is off: draw no moving parts, and
         # land on the finished colour at once.
-        self.animating = False
+        self._animating = False
         self.done_since = LONG_AGO
 
     def set_mode(self, mode: BarMode) -> None:
         if mode is BarMode.DONE and self.mode is not BarMode.DONE:
-            self.done_since = now_ms() if self.animating else LONG_AGO
+            self.done_since = now_ms() if self._animating else LONG_AGO
         self.mode = mode
+        self.update()
+
+    def set_motion(self, on: bool) -> None:
+        """Draw the moving parts or not; off lands the finish colour at once."""
+        self._animating = on
         self.update()
 
     def finish_settled(self) -> bool:
@@ -90,22 +99,26 @@ class RunProgressBar(QProgressBar):
             r = min(radius, fill_w / 2)
             painter.drawRoundedRect(fill, r, r)
 
-        if self.animating and self.mode is BarMode.LOADING:
+        if self._animating and self.mode is BarMode.LOADING:
             band = width * self._SHIMMER_BAND
             phase = (now % Motion.SHIMMER_MS) / Motion.SHIMMER_MS
-            self._band(painter, leading_rect(-band + phase * (width + band), band), "accent", 0.24)
-        elif self.animating and self.mode is BarMode.WORKING and fill_w > 0:
+            self._band(
+                painter,
+                leading_rect(-band + phase * (width + band), band),
+                QColor(COLORS["accent"]),
+                self._SHIMMER_PEAK,
+            )
+        elif self._animating and self.mode is BarMode.WORKING and fill_w > 0:
             band = self._GLEAM_BAND_PX
             travel = fill_w + band
             x = (now / 1000 * Motion.GLEAM_SPEED_PX_S) % travel - band
             painter.setClipRect(fill, Qt.ClipOperation.IntersectClip)
-            self._band(painter, leading_rect(x, band), "#ffffff", 0.38)
+            self._band(painter, leading_rect(x, band), QColor("white"), self._GLEAM_PEAK)
         painter.end()
 
     @staticmethod
-    def _band(painter: QPainter, rect: QRectF, color: str, peak: float) -> None:
+    def _band(painter: QPainter, rect: QRectF, base: QColor, peak: float) -> None:
         """A soft vertical band: transparent at both edges, `peak` alpha mid-way."""
-        base = QColor(COLORS.get(color, color))
         gradient = QLinearGradient(rect.left(), 0, rect.right(), 0)
         for stop, alpha in ((0.0, 0.0), (0.5, peak), (1.0, 0.0)):
             c = QColor(base)
@@ -148,10 +161,21 @@ class StageChecklist(QWidget):
         self._spent: dict[Stage, float] = {}
         self._active_since = 0.0
         self._done_since: dict[Stage, float] = {}
-        self.animating = False
-        self.breath_alpha = 1.0
+        self._animating = False
+        self._breath_alpha = 1.0
         # Seconds, for the stage times; swappable so tests can drive it.
         self.clock = time.monotonic
+
+    def set_motion(self, on: bool) -> None:
+        """Pop checks and breathe the active dot, or hold everything still."""
+        self._animating = on
+        if not on:
+            self._breath_alpha = 1.0
+        self.update()
+
+    def set_breath(self, alpha: float) -> None:
+        self._breath_alpha = alpha
+        self.update()
 
     def reset(self, stages: list[Stage]) -> None:
         self.stages = list(stages)
@@ -173,7 +197,7 @@ class StageChecklist(QWidget):
         self._active_since = now
         # Stages left behind tick over to done - pop their checks.
         for s in self.stages[: self.stages.index(stage)]:
-            self._done_since.setdefault(s, now_ms() if self.animating else LONG_AGO)
+            self._done_since.setdefault(s, now_ms() if self._animating else LONG_AGO)
         # Re-entering an earlier stage (the next file of a batch) makes the
         # stages after it pending again until the run reaches them.
         for s in self.stages[self.stages.index(stage) :]:
@@ -263,7 +287,7 @@ class StageChecklist(QWidget):
                 painter.restore()
             else:
                 dot = (
-                    with_alpha("accent", self.breath_alpha)
+                    with_alpha("accent", self._breath_alpha)
                     if state is StepState.CURRENT
                     else QColor(COLORS["surface_hover"])
                 )

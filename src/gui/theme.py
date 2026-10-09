@@ -526,31 +526,6 @@ def term_chip_qss() -> str:
     """
 
 
-def progress_bar_qss() -> str:
-    """No text-align/color rule here, and the bar itself runs with
-    setTextVisible(False) - see TranscriptionStep. QProgressBar centres its
-    percentage label over whichever of the two surfaces happens to be under
-    it, so the ink has to be legible on the filled chunk AND on the empty
-    groove, and with an accent-filled chunk no single color is: light ink
-    reads 1.22:1 on the peach and dark ink reads 1.14:1 on the groove. The
-    bar's own fill already shows progress, and the status and
-    elapsed/remaining lines directly beneath it carry the detail, so the
-    unreadable number is removed rather than recolored.
-    """
-    return f"""
-    QProgressBar {{
-        background-color: {COLORS["bg_tertiary"]};
-        border-radius: {Radius.CONTROL}px;
-        border: none;
-        height: 24px;
-    }}
-    QProgressBar::chunk {{
-        background-color: {COLORS["accent"]};
-        border-radius: {Radius.CONTROL}px;
-    }}
-    """
-
-
 def drop_zone_qss(object_name: str, active: bool = False) -> str:
     bg = COLORS["bg_secondary"] if active else COLORS["bg_tertiary"]
     border_color = COLORS["accent_hover"] if active else COLORS["accent"]

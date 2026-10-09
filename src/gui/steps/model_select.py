@@ -38,6 +38,7 @@ from gui import motion, theme
 from gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from gui.i18n import format_duration, is_rtl, model_text, t
 from gui.icons import ICONS, svg_to_pixmap
+from gui.motion import with_alpha
 from gui.terms_dialog import TermsDialog, read_term_list
 from gui.theme import COLORS, Fonts, Motion, Spacing
 from gui.widgets import make_label
@@ -667,9 +668,8 @@ class ModelSelectStep(QFrame):
         self._set_banner_ink(0.0)
         group.start()
 
-    def _set_banner_ink(self, alpha: object) -> None:
-        color = QColor(COLORS["error"])
-        color.setAlphaF(float(cast(float, alpha)))
+    def _set_banner_ink(self, alpha: float) -> None:
+        color = with_alpha("error", alpha)
         self.error_label.setStyleSheet(
             f"color: {color.name(QColor.NameFormat.HexArgb)}; background: transparent;"
         )
@@ -696,7 +696,9 @@ class ModelSelectStep(QFrame):
         if tb:
             parts.append(str(tb))
         parts.append(f"Log file: {config.resolve_log_path()}")
-        QApplication.clipboard().setText("\n\n".join(parts))
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText("\n\n".join(parts))
 
         original_text = self.copy_error_btn.text()
         self.copy_error_btn.setText(t("error_details_copied"))
