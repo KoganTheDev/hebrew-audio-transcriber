@@ -387,6 +387,48 @@ class TestReexecIntoProjectVenv:
 
         assert calls == []
 
+    @staticmethod
+    def _venv(tmp_path, monkeypatch):
+        scripts = tmp_path / ".venv" / "Scripts"
+        scripts.mkdir(parents=True)
+        for name in ("python.exe", "pythonw.exe"):
+            (scripts / name).write_text(name, encoding="utf-8")
+        monkeypatch.delenv(app_module._REEXEC_MARKER, raising=False)
+        monkeypatch.setattr(app_module, "__file__", str(tmp_path / "src" / "app.py"))
+        return scripts
+
+    def test_already_on_the_venv_pythonw_means_no_spawn(self, monkeypatch, tmp_path):
+        """
+        The launchers start pythonw.exe. Treating it as foreign re-ran the app
+        on python.exe, which is exactly the console window pythonw avoids.
+        """
+        scripts = self._venv(tmp_path, monkeypatch)
+        monkeypatch.setattr(app_module.sys, "executable", str(scripts / "pythonw.exe"))
+        calls = self._spy(monkeypatch)
+
+        app_module._reexec_into_project_venv()
+
+        assert calls == []
+
+    def test_a_windowed_start_elsewhere_hops_to_the_venv_pythonw(self, monkeypatch, tmp_path):
+        """A console-less start on a foreign interpreter must stay console-less."""
+        scripts = self._venv(tmp_path, monkeypatch)
+        foreign = tmp_path / "other" / "pythonw.exe"
+        foreign.parent.mkdir()
+        foreign.write_text("", encoding="utf-8")
+        monkeypatch.setattr(app_module.sys, "executable", str(foreign))
+        calls = []
+        monkeypatch.setattr(
+            app_module.subprocess,
+            "run",
+            lambda *a, **k: calls.append(a) or type("R", (), {"returncode": 0})(),
+        )
+
+        with pytest.raises(SystemExit):
+            app_module._reexec_into_project_venv()
+
+        assert calls[0][0][0] == str(scripts / "pythonw.exe")
+
 
 class TestStartupFailuresAreVisible:
     """

@@ -91,26 +91,40 @@ def _reexec_into_project_venv() -> None:
         return
 
     src_dir = os.path.dirname(os.path.abspath(__file__))
-    venv_python = os.path.join(os.path.dirname(src_dir), ".venv", "Scripts", "python.exe")
+    scripts = os.path.join(os.path.dirname(src_dir), ".venv", "Scripts")
+    venv_python = os.path.join(scripts, "python.exe")
+    venv_pythonw = os.path.join(scripts, "pythonw.exe")
     if not os.path.isfile(venv_python):
         return
 
+    # Either of the venv's two interpreters IS the venv. pythonw.exe is the
+    # same Python without a console, and it is what the launchers start.
+    # Checking python.exe alone treated every launcher start as "the wrong
+    # interpreter" and re-ran the app on python.exe - which opened the very
+    # console window pythonw exists to avoid, for the app's whole lifetime.
+    #
     # samefile, not string comparison: the same interpreter reaches us spelled
     # differently via symlinks, 8.3 short names and case.
     try:
-        if os.path.samefile(venv_python, sys.executable):
-            return
+        for candidate in (venv_python, venv_pythonw):
+            if os.path.isfile(candidate) and os.path.samefile(candidate, sys.executable):
+                return
     except OSError:
         return
 
+    # Keep a console-less start console-less: a windowed interpreter hops to
+    # the venv's windowed one.
+    windowed = os.path.basename(sys.executable).lower() == "pythonw.exe"
+    target = venv_pythonw if windowed and os.path.isfile(venv_pythonw) else venv_python
+
     os.environ[_REEXEC_MARKER] = "1"
-    _say(f"Switching to the project's Python: {venv_python}")
+    _say(f"Switching to the project's Python: {target}")
     try:
         # subprocess and exit, not os.execv: Windows has no real exec, so
         # execv returns control to the console immediately, detaching the app
         # and handing the launcher an exit code from the wrong process.
         completed = subprocess.run(
-            [venv_python, os.path.abspath(__file__), *sys.argv[1:]],
+            [target, os.path.abspath(__file__), *sys.argv[1:]],
             check=False,
         )
     except OSError as exc:
