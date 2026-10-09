@@ -115,7 +115,7 @@ class DiagnosticApplication(QApplication):
     everything (event-loop exceptions and anything else) funnels through.
     """
 
-    def notify(self, receiver: QObject, event: QEvent) -> bool:
+    def notify(self, receiver: QObject | None, event: QEvent | None) -> bool:
         try:
             return super().notify(receiver, event)
         except Exception:

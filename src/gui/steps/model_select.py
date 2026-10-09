@@ -7,6 +7,7 @@ from typing import cast
 from PyQt5.QtCore import (
     QEasingCurve,
     QEvent,
+    QMargins,
     QObject,
     QParallelAnimationGroup,
     QPropertyAnimation,
@@ -640,7 +641,8 @@ class ModelSelectStep(QFrame):
             return
         # The wrapped height at the page's width; sizeHint() is unwrapped and
         # taller, so the grow would stall at the layout's cap.
-        margins = self.layout().contentsMargins()
+        layout = self.layout()
+        margins = layout.contentsMargins() if layout is not None else QMargins()
         width = self.width() - margins.left() - margins.right()
         height = (
             self.error_banner.heightForWidth(width) if self.error_banner.hasHeightForWidth() else -1

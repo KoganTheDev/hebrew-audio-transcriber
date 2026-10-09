@@ -52,7 +52,7 @@ class CrashDialog(QDialog):
 
         message_label = QLabel(message or "(no message)")
         message_label.setWordWrap(True)
-        message_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(message_label)
 
         log_row = QHBoxLayout()
@@ -98,8 +98,13 @@ class CrashDialog(QDialog):
         self._details_toggle.setText("Hide details" if checked else "Show details")
 
     def _on_copy_details(self) -> None:
-        text = f"{self._message}\n\n{self._traceback_text}\n\nLog file: {self._log_path}"
-        QApplication.clipboard().setText(text)
+        _copy(f"{self._message}\n\n{self._traceback_text}\n\nLog file: {self._log_path}")
 
     def _on_copy_log_path(self) -> None:
-        QApplication.clipboard().setText(self._log_path)
+        _copy(self._log_path)
+
+
+def _copy(text: str) -> None:
+    clipboard = QApplication.clipboard()
+    if clipboard is not None:
+        clipboard.setText(text)
