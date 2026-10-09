@@ -1,12 +1,6 @@
-"""Page chrome: the icon sprite, toolbar, mini-player, toast and help panel.
-
-The frame around the transcript - the parts that are the same no matter which
-file or turn is being read. The transcript itself is document.py's job.
-
-The small generic-widget helpers (_t, _button, _icon, _palette_index,
-_speaker_fallback, SPEAKER_PALETTE_SIZE) live here too rather than in a fourth
-near-empty module: _icon has to be here anyway, and _button is built on it.
-document.py imports from here and never the other way round, so no cycle.
+"""Page chrome: the icon sprite, toolbar, mini-player, toast and help panel -
+the frame that is the same whichever file is read. Also home to the small
+widget helpers (_t, _button, _icon, ...) that document.py imports.
 """
 
 import html
@@ -20,22 +14,11 @@ _HEBREW_LETTER = re.compile(r"[֐-׿]")
 
 
 def _input_dir(text: str) -> str:
-    """Return "ltr" or "rtl", guessed from whether `text` itself contains a Hebrew
-    letter.
+    """The text direction ("ltr" or "rtl") from whether `text` holds Hebrew.
 
-    The document is always dir="rtl" (the transcript is Hebrew speech
-    whatever the chrome's language), so an English placeholder in a field
-    that inherits that dir anchors right and overflows left: when the field
-    is too narrow (a deliberate possibility - see #search's "release valve"
-    comment in core/assets/css/16-toolbar.css) the clipped half is the START
-    of the string. Giving the field the dir of the language actually inside
-    it moves the clip to the end, so "Search transc..." still reads.
-
-    Sniffing the string rather than being told the language: core cannot
-    import gui.i18n (see the package docstring), and ui_strings arrives as
-    plain translated data with no language tag - threading one through
-    render_html(), _build_payload() and _render_toolbar_html() for this one
-    call site is more plumbing than the string answers for free.
+    In the dir="rtl" document an English placeholder clips its start when the
+    field is narrow; its own direction moves the clip to the end. Sniffed,
+    because core/ gets the strings without a language tag.
     """
     return "rtl" if _HEBREW_LETTER.search(text) else "ltr"
 
@@ -82,17 +65,9 @@ def _button(
     extra: str = "",
     wrap_label: bool = True,
 ) -> str:
-    """One <button>: an id, a class, an optional icon glyph, a label and an
-    aria-label.
-
-    `extra` is a free-form attribute string (aria-pressed, aria-expanded,
-    data-label-*, ...) rather than a parameter per attribute: the call sites
-    disagree on which they need, so a parameter each would grow this
-    signature for every attribute even one site wants once.
-
-    wrap_label=False renders the label as bare text instead of inside a
-    <span> - needed by #tour-start alone, whose markup has no <span> around
-    its label.
+    """One <button> with an id, class, optional icon, label and aria-label.
+    `extra` is a raw attribute string, since call sites need different ones;
+    wrap_label=False (for #tour-start) leaves the label bare.
     """
     attrs = []
     if id_attr:
@@ -257,15 +232,8 @@ def _render_toolbar_html(strings: dict[str, str]) -> str:
                     f'data-label-light="{s("theme_light", "Light mode")}"'
                 ),
             ),
-            # Server-rendered assuming no File System Access API (the safe,
-            # universal default - a plain download always works); the page
-            # script's syncSaveLabel() (core/assets/js/72-chrome.js) corrects
-            # the label once, on init, from data-label-save /
-            # data-label-save-copy if the browser can write files directly.
-            # Same idiom as #toggle-theme above, except this label never
-            # changes again after that first correction - the capability it
-            # names doesn't change over the page's lifetime the way the
-            # theme does.
+            # Rendered for a plain download; the page script relabels it once
+            # if the browser can write files directly.
             _button(
                 s("save_copy", "Save a copy"),
                 id_attr="export",
@@ -287,20 +255,10 @@ def _render_toolbar_html(strings: dict[str, str]) -> str:
                 icon="help",
                 extra='aria-expanded="false" aria-controls="help-panel"',
             ),
-            # Last in the group, so in this dir="rtl" document it lands at the
-            # physical LEFT end of the row rather than between two buttons.
-            #
-            # All four state labels are rendered up front and the stylesheet
-            # shows exactly one, keyed off data-kind; the page script only ever
-            # flips that attribute and never writes text here. Stacked in one
-            # grid cell, the box measures the WIDEST of the four and stops
-            # resizing as the state changes. Measured before this: the span
-            # went 33px -> 78px across the four states and dragged .tb-actions
-            # from 424px to 469px, so every button slid sideways on every
-            # debounced save (see .status in the stylesheet for why a tuned
-            # min-inline-size was not the fix). data-kind seeds to "saved", the
-            # state of a freshly written file; bindChrome()'s init corrects it
-            # if this browser holds local edits.
+            # Last in the group: the physical left end in RTL. All four state
+            # labels are stacked in one grid cell and CSS shows one, so the
+            # box keeps the widest width - otherwise every button slid sideways
+            # on each save (33 px -> 78 px measured). Seeds to "saved".
             f'<span id="status" class="status" role="status" aria-live="polite"'
             f' data-kind="saved"><span class="status-labels">'
             f'<span data-for="saved">{s("status_saved", "Saved")}</span>'
@@ -513,26 +471,13 @@ def _render_help_html(strings: dict[str, str]) -> str:
 
 
 def _swatch_trigger_html(strings: dict[str, str]) -> str:
-    """The one always-visible colour control per speaker row.
-
-    Showing only the current colour and opening the other seven on demand
-    keeps the resting strip about a row tall however many speakers a file
-    has; all eight inline meant sixteen 44px circles for two speakers, taller
-    than the content the strip introduces. The menu is built by the page
-    script's buildSwatchMenu(), the same on-demand-popover shape as the
-    turn's buildSpeakerMenu(). The dot's colour comes from the shared --spk
-    custom property the stylesheet sets per data-palette index and inherits
-    from .speaker-row, so this button carries no colour of its own to fall
-    out of sync.
+    """The one visible colour control per speaker row; the other seven open on
+    demand (eight inline made the strip taller than its content). Its colour
+    comes from the row's --spk, so it holds none of its own.
     """
     label = _t(strings, "speaker_colour", "Speaker colour")
-    # .swatch-rest, a distinct class from the popover's own dots (.swatch),
-    # not just a distinct selector: the popover opens as a sibling still
-    # inside .speaker-row, so an unscoped `.speaker-row[data-palette] .swatch`
-    # reaches into it and ties on specificity with the popover's own per-dot
-    # rule, leaving source order to decide which paints. Two classes that
-    # cannot collide removes the possibility instead of out-specificity-ing
-    # it, which the next selector added here would only re-break.
+    # Its own class, not a scoped selector: the popover opens inside the same
+    # row, and a shared .swatch selector would tie on specificity with it.
     return (
         f'<button type="button" class="swatch-trigger" aria-haspopup="true"'
         f' aria-expanded="false" aria-label="{label}">'

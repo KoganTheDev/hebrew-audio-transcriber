@@ -101,17 +101,8 @@ def _build_payload(
     title: str | None,
     ui_strings: dict[str, str] | None,
 ) -> tuple:
-    """The page's data island, before any document has rendered.
-
-    Returns (payload, strings) rather than just payload: `strings` (the
-    already-translated UI labels, defaulted to {}) is threaded through every
-    other rendering step, so callers get it back alongside the dict it also
-    lives inside of.
-
-    payload["low"] and payload["words"] start empty and are filled in as a
-    side effect of rendering each document's turns (_render_document_html
-    appends to them): a turn's flagged words and its per-sentence word timings
-    aren't known until its own Turn object is walked.
+    """The page's data island, and the translated UI strings threaded through
+    every rendering step. "low" and "words" fill in as each document renders.
     """
     strings = dict(ui_strings or {})
     payload = {
@@ -119,22 +110,10 @@ def _build_payload(
         "filename": title or "transcript",
         "strings": strings,
         "low": {},
-        # Per-sentence word timings, keyed by the same data-line id the bubble
-        # carries: {"0-1-2": [[start, end, "word"], ...]}.
-        #
-        # Splitting a card in two needs a timestamp for the second half, and
-        # the document otherwise carries nothing finer than the sentence's own
-        # data-start/data-end - so a split could only interpolate, which is a
-        # guess dressed up as a timestamp. With these the new card starts at a
-        # real word boundary.
-        #
-        # Measured cost before adding it: 31 KB for 1060 words (a 9-minute
-        # recording) against a ~1.2 MB document, most of which is the base64
-        # backdrop. Roughly 2.5%, and it buys the difference between an
-        # accurate feature and an approximate one.
-        #
-        # Positional arrays rather than {"start":..,"end":..,"text":..}: the
-        # key names would outweigh the values at this count.
+        # Per-sentence word timings ({"0-1-2": [[start, end, "word"], ...]}),
+        # so splitting a card starts the new one at a real word boundary
+        # instead of an interpolated guess. ~2.5% of the document; positional
+        # arrays, since key names would outweigh the values.
         "words": {},
         # A speaker added client-side (no diarization run invents one for it)
         # still needs a translated "Speaker N" fallback, and the page has no
@@ -165,46 +144,22 @@ def _render_head_html(doc_id: str, title: str | None) -> list[str]:
 
 
 def _render_script_html() -> str:
-    """The page script's inline <script>.
-
-    The concatenated fragments under core/assets/js/ (see _asset_dir()'s own
-    docstring) are bare statement bodies, not standalone scripts: every one
-    assumes it runs inside this single IIFE scope (a bare `return` in the
-    first fragment returns from the IIFE; later fragments' functions and vars
-    are only reachable because they all hoist into the same scope). This is
-    the one place the wrapper is written, so no fragment file may carry a copy
-    of its own.
+    """The page script: the core/assets/js/ fragments inside one IIFE, written
+    only here - the fragments are bare statements sharing its scope.
     """
     return "<script>(function () {\n  'use strict';\n\n" + _asset_dir("js") + "\n})();</script>"
 
 
 def _render_backdrop_html(vista: str | None) -> list[str]:
-    """The photographic backdrop for this render: a per-document <style> block
-    plus the <div> it paints onto.
-
-    Returns [] - not a blank string, so the caller can extend() it straight
-    into the parts list without an "if" at the call site - when there is no
-    backdrop to embed at all (see _vista_data_uris()'s docstring for when
-    that happens).
-    """
+    """The backdrop's <style> and <div>, or [] when there is no photo."""
     vista_uris = _vista_data_uris(vista)
     if not vista_uris:
         return []
 
     landscape_uri, portrait_uri = vista_uris
-    # A <style> element, not a style="background-image:url(...)" attribute:
-    # an inline style attribute can only ever set ONE rule, but picking the
-    # right crop per viewport needs a media query (see PORTRAIT_W's comment
-    # in tools/build_vistas.py for why one crop cannot serve both desktop
-    # and phone), and a media query can only live inside a <style> block.
-    # The rule stays per-document rather than joining the shared stylesheet
-    # (core/assets/css/): it changes with which photo this render picked.
-    #
-    # "<" is escaped in both URIs (the data: payload is base64, which
-    # cannot itself contain "<", but escaping unconditionally rather than
-    # asserting it can't costs nothing and matches _json_payload's same
-    # defensive reasoning) so nothing in the embedded bytes could ever be
-    # read as closing this </style> early.
+    # A <style> block, since choosing the crop per viewport needs a media
+    # query; per-document because the photo varies. "<" is escaped so the
+    # payload can never close the </style> early.
     style_rules = [f".backdrop{{background-image:url({html.escape(landscape_uri)})}}"]
     if portrait_uri:
         # 3/4, not "orientation: portrait": orientation flips at aspect
@@ -220,13 +175,8 @@ def _render_backdrop_html(vista: str | None) -> list[str]:
         )
     return [
         f"<style>{''.join(style_rules)}</style>",
-        # Right after the sprite, which paints nothing itself (zero size,
-        # position:absolute), so the backdrop is still effectively the first
-        # thing on the page to paint. See the .backdrop / isolation:isolate
-        # comments in the stylesheet (core/assets/css/) for why paint order
-        # here matters. aria-hidden and no alt text: it is decoration, and a
-        # screen reader announcing "image" before every transcript would be
-        # pure noise.
+        # First to paint (the sprite before it draws nothing). Decoration, so
+        # aria-hidden with no alt text.
         '<div class="backdrop" aria-hidden="true"></div>',
     ]
 
@@ -241,39 +191,24 @@ def render_html(
     doc_id: str | None = None,
     vista: str | None = None,
 ) -> str:
-    """Render one or more transcripts into a single, self-contained RTL HTML
-    document that can be read, corrected and exported.
+    """Render one or more transcripts into one self-contained RTL HTML page
+    that can be read, corrected and exported.
 
     Args:
-        documents: one TranscriptDocument per source file, in the order they
-            should appear. Every document renders through the same
-            <section class="source"> shape, whether there is one or many - so
-            there's no "single file" special case to get subtly wrong.
-        speaker_label: format string for a speaker name, e.g. "דובר {n}".
-            Rendered here and also handed to the page as each speaker's
-            fallback, because the browser has no way to rebuild it once the
-            user clears a custom name.
-        timestamps: whether each turn carries its start time.
-        failed_label: pre-translated text shown for a document whose `failed`
-            flag is set. None is only safe if no document is marked failed.
-        title: the document <title>, and the stem of the exported filename.
-        ui_strings: already-translated labels for the page's own chrome
-            (search, save, plain text, …). This module runs in the worker
-            process, which has no access to gui.i18n and does not know the UI
-            language, so the strings arrive as data - the same reason
-            speaker_label does. Missing keys fall back to English inside the
-            page.
-        doc_id: identity used to key the browser's saved edits. Generated when
-            not supplied; pass one to keep a re-render addressing the same
-            saved edits.
-        vista: filename of the LANDSCAPE backdrop photo under
-            core/assets/vistas/ to pin, e.g. "vista-07.webp" - always the
-            bare landscape name, never a "-portrait" one; that variant is
-            looked up from this same name (see _vista_portrait_name()) so
-            callers never have to know it exists. None (the default) picks one
-            at random, a fresh choice on every render. Pin it when the caller
-            needs a reproducible document - worker.py does this once per batch
-            so the photo does not change on every per-file checkpoint rewrite.
+        documents: one TranscriptDocument per source file, in order.
+        speaker_label: format string such as "דובר {n}"; also the page's
+            fallback name once the user clears a custom one.
+        timestamps: whether each turn shows its start time.
+        failed_label: translated text for a failed document; None only when
+            none failed.
+        title: the <title>, and the exported filename's stem.
+        ui_strings: translated labels for the page chrome - passed as data,
+            since this runs in the worker, which has no gui.i18n. Missing keys
+            fall back to English in the page.
+        doc_id: keys the browser's saved edits; pass one so a re-render keeps
+            them. Generated when omitted.
+        vista: the landscape backdrop to pin ("vista-07.webp"); its portrait
+            crop is found from the name. None picks one at random.
 
     """
     doc_id = doc_id or uuid.uuid4().hex
@@ -317,13 +252,8 @@ def render_html(
     parts.extend(
         [
             _render_toolbar_html(strings),
-            # .layout is the grid that puts <aside> on the visual left of the
-            # RTL document by pure source order (grid-template-columns's first
-            # track maps to the inline-start edge, which is the right in RTL) -
-            # see the .layout comment in the stylesheet (core/assets/css/).
-            # <main> stays first so a screen reader or a JS-disabled reader
-            # hits the transcript before the navigation aside, whichever side
-            # each lands on visually.
+            # The grid puts <aside> on the visual left by source order; <main>
+            # comes first so screen readers reach the transcript first.
             '<div class="layout">',
             "<main>",
         ]

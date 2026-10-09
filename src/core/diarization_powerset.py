@@ -20,28 +20,9 @@ The pipeline, and why it is this shape:
        cluster precisely when they sound like the same person.
     5. Reconstruct one global track per cluster and cut it into spans.
 
-Overlapping spans are a normal output, not an error - the same as sherpa
-returns, and what SpeakerSpan and the DER metric both already handle.
-
-MEASURED, including one result that went the wrong way. On 300s of AMI at
-num_speakers=4, against sherpa's DER 0.4646 (missed 16.29, false alarm 9.40,
-confusion 46.51):
-
-    embeddings from clean frames only   DER 0.4085  miss 14.36  FA 13.43  conf 35.68
-    embeddings from all active frames   DER 0.4011  miss 14.83  FA 13.21  conf 34.29
-
-Confusion - the error that dominates here, and what a user sees as "one
-speaker got all the sentences" - falls by about a quarter. But masking overlap
-out of the embeddings, the stated reason to expect that fall, is very slightly
-WORSE than not masking: the gain comes from owning the decode and its
-threshold, so mask_overlap defaults to False. Recorded rather than deleted so
-nobody re-derives the idea from first principles and re-adds it.
-
-Both runs returned 3 speakers for a requested 4, which is not a merge bug: the
-first 300s of ES2004a has only THREE speakers (MEE014 does not talk until
-later), so those runs were forcing a fourth cluster onto audio with no fourth
-speaker. Worth stating because _reconstruct DOES have a rule that can erase a
-real speaker, and it would be easy to misread one as evidence of the other.
+Overlapping spans are a normal output, as from sherpa. Measurements
+(including why mask_overlap defaults to False) are in
+docs/DIARIZATION_TUNING.md.
 """
 
 import logging

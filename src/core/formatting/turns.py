@@ -70,21 +70,11 @@ class Turn:
         return " ".join(part for part in self._parts if part)
 
     def low_confidence(self, threshold: float) -> list[list]:
-        """Words the model was unsure about, as
-        [text, probability, occurrence, suggestions, original].
+        """Words the model doubted, as [text, probability, occurrence,
+        suggestions, original] (the page reads the first three by position).
 
-        suggestions are terms for the page's click-to-fix menu and original
-        is what the model wrote before an auto-correction (None if the word
-        was not replaced) - see core.hebrew_corrections.annotate_suggestions.
-        Appended after the first three, which the page has always read by
-        position.
-
-        The occurrence index counts how many times that exact token has
-        already appeared in this turn, so a word that shows up twice with
-        different confidences only gets flagged where it was actually
-        uncertain. Counted over the word list rather than the rendered text;
-        a rare disagreement costs at most a neighbouring duplicate being
-        highlighted instead.
+        occurrence counts earlier copies of the same token in this turn, so a
+        repeated word is flagged only where it was uncertain.
         """
         seen: dict = {}
         flagged: list[list] = []
@@ -109,23 +99,12 @@ class Turn:
         return flagged
 
     def sentences(self) -> list[Sentence]:
-        """Split this turn's text into Sentence objects, each with its own span.
+        """Split the turn into sentences, each with its own span.
 
-        split_sentences() already produces the text of each sentence; this
-        walks self.words in order, consuming words until the collapsed
-        (whitespace-stripped) length consumed matches the collapsed sentence
-        text's. word.text carries leading spaces from faster-whisper, so
-        matching on exact concatenation would require every space to line up,
-        which the words list gives no guarantee of; comparing collapsed
-        lengths is what makes this robust to that.
-
-        REQUIRED FALLBACK, matching split_sentences' own degrade-on-failure
-        shape: no words at all (word timestamps absent, or a segment from the
-        per-channel stereo path that never carried them) gives every sentence
-        the turn's own start/end rather than raising. The same fallback is
-        used, per sentence, if the word list runs out before a sentence's
-        text is fully matched - a text/word mismatch is a data quirk, not a
-        reason to crash a render.
+        Words are consumed until their whitespace-collapsed length matches the
+        sentence's - faster-whisper's leading spaces make exact matching
+        unreliable. With no words, or if they run out, a sentence takes the
+        turn's own span instead of failing the render.
         """
         try:
             texts = split_sentences(self.text)

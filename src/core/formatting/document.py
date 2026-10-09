@@ -136,38 +136,16 @@ def _render_speakers_html(
     strings: dict[str, str],
     active: bool = False,
 ) -> str:
-    """Editable names and colours for this recording's speakers.
+    """Editable names and colours for this recording's speakers, in the sidebar.
 
-    Lives in the outline sidebar (see _render_outline_html()), one panel per
-    file with only the in-view file's shown. The .speaker-row shape and its
-    data-file attribute are the contract applyNames(fileIndex),
-    recolourSpeaker, addSpeaker and bakeFormState() in the page script
-    (core/assets/js/) select against.
-
-    Per file rather than global: speaker 1 in one recording is rarely the same
-    person as speaker 1 in another, so names stay local and an explicit action
-    copies them across when it really is the same meeting.
-
-    active=True marks the panel the page script should show by default before
-    its own IntersectionObserver has decided which file is in view (the first
-    file, same as which file's turns are on screen at load) - see
-    .outline.js-ready .speakers:not(.active) in the stylesheet
-    (core/assets/css/). Without JavaScript every panel stays visible (nothing
-    hides a non-.active one unless .js-ready is present), so speaker names are
-    readable for every file on a script-disabled open.
-
-    Not a <label> wrapping the whole row: once a row holds a text input *and*
-    a colour trigger that opens its own menu, "label wraps one control" stops
-    being true of it, so the input carries its own aria-label instead.
+    Per file: speaker 1 in one recording is rarely speaker 1 in another. The
+    .speaker-row shape and data-file are what the page script selects on.
+    active=True marks the panel shown before the script decides which file is
+    in view; without JavaScript every panel stays visible. Not a <label>: the
+    row holds two controls, so the input carries its own aria-label.
     """
-    # The remove control is rendered on every row but hidden by CSS while the
-    # file has only two speakers - deleting down to one leaves a roster that
-    # cannot express a conversation, and a one-speaker file renders no panel
-    # at all (see _render_outline_html()). Rendered-then-hidden rather than
-    # conditionally emitted because addSpeaker() in the page script
-    # (core/assets/js/) can take a two-speaker file to three without a
-    # re-render, and a button that only exists in some server renders would
-    # have to be built twice, in two languages, in two places.
+    # Remove is rendered on every row and hidden by CSS at two speakers: the
+    # page script can add a third without a re-render.
     remove_label = _t(strings, "remove_speaker", "Remove speaker")
     rows = []
     for speaker in speakers:
@@ -269,27 +247,12 @@ def _render_outline_html(
 
 
 def _display_end_second(sentence: Sentence) -> int:
-    """The end second to SHOW for one sentence's range - on its own card and in
-    the plain-text panel.
+    """The end second to show for a sentence's range.
 
-    format_range() truncates both ends via int(), so a sentence under a
-    second long - routine, since sentences sit closer together than that -
-    renders its end equal to its start: "0:00 - 0:00", which reads as broken
-    rather than as a real, very short sentence.
-
-    Rounding the end up unconditionally fixes that and buys a worse problem.
-    The NEXT sentence's start is still truncated, so consecutive ranges
-    overlap: "1. [0:00 - 0:02]" followed by "2. [0:01 - 0:04]", and two
-    sentences both claiming to begin at 0:20. Overlapping ranges read as a
-    bug, and they undermine the one thing these ranges exist for - finding
-    and playing one specific sentence.
-
-    So truncate normally and only impose a floor of one second. A sentence
-    long enough to cross a whole-second boundary keeps its true truncated
-    end and stays flush with its neighbour; only a sub-second sentence is
-    widened, and only to the smallest non-degenerate value. format_range()
-    itself is left alone - the true data-end used for playback is the
-    sentence's own untouched end, not this display-only value.
+    format_range() truncates, so a sub-second sentence reads "0:00 - 0:00".
+    Rounding every end up instead makes neighbours overlap ("0:00 - 0:02",
+    "0:01 - 0:04"). So truncate, with a floor of one second. Display only -
+    playback uses the true end.
     """
     return max(int(sentence.end), int(sentence.start) + 1)
 
@@ -305,57 +268,19 @@ def _render_bubble_html(
 ) -> str:
     """One <div class="bubble">: a full-width card for one sentence.
 
-    data-turn rides along on the bubble itself, in addition to the wrapping
-    .turn already carrying it, so the "apply to this whole block"
-    reassignment (js/24-speakers-menus.js) can select every sibling card in
-    the block without walking back up to .turn first.
+    The bubble carries data-turn (so "apply to this block" finds its siblings)
+    and data-start/data-end always, whatever the timestamps toggle, for
+    playback. The play button shows the range (_display_end_second) but reads
+    its times from the bubble, so there is one true end.
 
-    data-start/data-end live on the bubble unconditionally, whatever the
-    timestamps toggle says: that is what lets per-bubble playback work
-    independent of whether a visible timestamp span was rendered.
+    The time is an LTR isolate (see timecode.py) and contenteditable="false",
+    since the bubble sits in an editable .body and the time would otherwise be
+    typed over and persisted.
 
-    The play control shows the sentence's RANGE, its end taken from
-    _display_end_second() so a sub-second sentence does not read as
-    "0:00 - 0:00". The button's own data-start/data-end are deliberately NOT
-    set - bindAudio() (js/64-audio.js) reads the range off the wrapping
-    .bubble via btn.closest('.bubble'), so a second copy could drift from the
-    true (un-rounded) end playback actually uses.
-
-    The time is an LTR run inside RTL text, so it takes the same LRI/PDI
-    isolate plus dir="ltr" the file position and the plain-panel lead-in use -
-    see timecode.py's module docstring.
-
-    It also carries contenteditable="false", because a bubble sits inside
-    .body, which is contenteditable="true" so the sentence text can be
-    corrected in place. Without the opt-out the timestamp is editable too: an
-    ordinary text node in an editable subtree, so a user can type over it or
-    backspace it away at the start of a line, and readParagraphs() would then
-    persist the damage.
-
-    The .bubble-spk-anchor/.bubble-spk pair is the speaker chip AND the
-    reassignment affordance in one control. It is always rendered filled -
-    never blank, since a blank chip is not a valid resting state - in either
-    the turn's own speaker colour and name, or, when speaker is None
-    (speaker_attribution.py found no diarization span to attribute this turn
-    to, and refused to guess across a gap - see that module's docstring),
-    a dedicated unattributed variant: same chip shape, its own neutral
-    --spk-unattributed fill (00-tokens.css) instead of a palette slot, no
-    data-speaker/data-palette, marked with data-unattributed so
-    paintBubbleOverride() can tell "no identity yet" apart from "identity 0".
-    Rendering the trigger either way is what makes an unattributed card
-    reassignable at all: the menu (js/24-speakers-menus.js) only opens from a
-    real .bubble-spk element, so a card with none could never be fixed by
-    hand.
-    reassignLine()/paintBubbleOverride() (js/24-speakers-menus.js) repaint it
-    when an override is set or cleared, restoring the block's own identity
-    (attributed or not) on a clear. Absent entirely only when there is no
-    speaker at all anywhere in the document (no diarization ran) - the
-    per-turn None case above is a document that HAS diarization but couldn't
-    place this particular turn, which is a different, common, expected
-    thing.
-
-    The copy button copies just this one sentence - see bubblePlainText() in
-    js/32-plain-text.js.
+    The speaker chip is always rendered - it is also the reassignment menu's
+    trigger. With speaker None (attribution found no span) it is a neutral
+    data-unattributed chip, so the card can still be fixed by hand. No chip at
+    all only when no diarization ran.
     """
     reassign_label = html.escape(strings.get("reassign_line", "Reassign this sentence"))
     chip_html = ""
@@ -374,15 +299,8 @@ def _render_bubble_html(
                 f"</span>"
             )
         else:
-            # No diarization span overlapped this turn (or _fill_unmatched()
-            # refused to bridge the gap - see speaker_attribution.py). Still a
-            # real .bubble-spk, still carrying the SAME data-fallback pattern
-            # applyNames() (js/24-speakers-menus.js) already reads for every
-            # other chip - just no data-speaker/data-palette, so it never
-            # reads as speaker 0, and data-unattributed so CSS
-            # ([data-unattributed] in 00-tokens.css) and JS can tell this
-            # resting state apart from an override that happens to clear back
-            # to it.
+            # Unattributed: no data-speaker (it must never read as speaker 0),
+            # but data-unattributed so CSS and JS can recognise the state.
             unattributed_label = html.escape(strings.get("unattributed_speaker", "Unknown speaker"))
             speaker_attr = ' data-unattributed="true"'
             chip_html = (
@@ -435,26 +353,13 @@ def _render_turn_html(
     timestamps: bool,
     strings: dict[str, str],
 ) -> str:
-    """One <article class="turn">: a transparent grouping wrapper, then one card per sentence.
-
-    The wrapper paints nothing, but it stays in the DOM as an invisible key:
-    saved edits, localStorage, low-confidence flags, plain-row sync, the
-    outline and search all key off its data-turn, and it is the unit an
-    "apply to this whole block" reassignment (js/24-speakers-menus.js) acts
-    on. data-start and data-speaker ride on it for the same reason.
-
-    sentences comes from the caller (_render_document_html) rather than being
-    computed here, to avoid calling turn.sentences() twice for one turn - the
-    caller's low-confidence check needs it too.
+    """One <article class="turn">: an invisible wrapper around one card per
+    sentence. Paints nothing, but saved edits, flags, search and block
+    reassignment all key off its data-turn. `sentences` comes from the caller,
+    which needs them too.
     """
-    # Unchanged for turn.speaker is None: the wrapper carries no fallback
-    # data-unattributed of its own, and does not need one. hasSpeaker in
-    # rebuildPlain() (js/32-plain-text.js) already treats "no data-speaker on
-    # the turn" as "this block has no identity", which is exactly true here,
-    # and every bubble inside now renders its own [data-unattributed] chip
-    # (_render_bubble_html() above) that resolves --spk off ITS OWN
-    # attribute rather than inheriting one from this wrapper - so the
-    # wrapper needs nothing extra to make that render correctly.
+    # Speaker None needs nothing here: each bubble carries its own
+    # data-unattributed chip.
     speaker_attr = (
         f' data-speaker="{turn.speaker}" data-palette="{_palette_index(turn.speaker)}"'
         if turn.speaker is not None
@@ -486,42 +391,16 @@ def _render_plain_line_html(
     timestamps: bool,
     strings: dict[str, str],
 ) -> str:
-    """One sentence's own line in the copy-out panel.
+    """One sentence's line in the copy-out panel.
 
-    Rendered server-side, not built from nothing by the page script
-    (core/assets/js/), so the panel is readable - and editable via native
-    contenteditable - with JavaScript disabled, the way a bubble's own <p>
-    already is. rebuildPlain() (js/32-plain-text.js) finds this element by its
-    data-line id, the SAME id the matching .bubble carries (see
-    _render_bubble_html()), and only updates its text or moves it rather than
-    recreating it. That 1:1 line-to-bubble keying is what lets a heading land
-    mid-turn; the caller decides whether one precedes this line, see
-    _render_plain_html().
+    Server-rendered, so the panel works without JavaScript; rebuildPlain()
+    finds it by the same data-line id as its bubble and only updates it.
 
-    Each line leads with "{LRI}{number}{PDI}. " - or, with timestamps on,
-    "{LRI}{number}{PDI}. {LRI}[{range}]{PDI} " - the number and the range
-    each sit in their OWN isolate, with the dot and the space between them
-    OUTSIDE both. A single isolate around the whole lead-in puts the dot
-    inside an LTR run: in an RTL paragraph the digit sits at the run's right
-    edge and the text flows leftward from there, so a dot that trails the
-    digit *inside* the isolate renders to the digit's right - wrong, since a
-    Hebrew reader's eye moves right to left and the dot has to separate the
-    number from what comes next, on its LEFT. Splitting the lead-in into two
-    isolates makes the dot and the space between them ordinary neutral
-    characters in the surrounding RTL paragraph, which is what puts them on
-    the correct side. Verified by measuring painted glyph x-positions in a
-    real browser, not reasoned about - see the review plan's "the RTL dot"
-    section for the numbers.
-
-    No dir="ltr" element wraps any of this - unlike the file-position span,
-    this text has to stay a single contenteditable text node (one
-    <span class="plain-body">, matching the card's single <p> contenteditable
-    contract) so a wrapping element isn't available here.
-
-    js/32-plain-text.js's input handler strips this lead-in
-    (stripLineNumber()) before the edited text ever reaches the matching
-    bubble's <p> - otherwise a future edit through this panel would bake a
-    stale number and a stale timestamp into the transcript text itself.
+    The lead-in is "{LRI}n{PDI}. " (plus "{LRI}[range]{PDI} " with timestamps):
+    the number and range get separate isolates with the dot outside both, or
+    in RTL the dot lands on the wrong side of the number - measured in a real
+    browser. No dir="ltr" wrapper: the line must stay one contenteditable text
+    node. The page script strips the lead-in before an edit reaches the card.
     """
     lead = f"{LRI}{number}{PDI}. "
     if timestamps:
@@ -552,41 +431,15 @@ def _render_plain_html(
     timestamps: bool,
     strings: dict[str, str],
 ) -> str:
-    """The copy-out panel.
+    """The copy-out panel - always visible, since pasting the whole recording
+    elsewhere is the document's most common use.
 
-    Always visible, not collapsed inside a <details>: pasting the whole
-    recording elsewhere is what this document gets used for most, and burying
-    the most-used feature one click below a summary line was the wrong trade.
-
-    One <div class="plain-line" data-line="..."> per sentence (see
-    _render_plain_line_html()), each keyed to its matching .bubble by the SAME
-    data-line id, with a standalone <div class="plain-heading"> wherever the
-    speaker changes from the sentence before. The panel groups by each
-    sentence's EFFECTIVE speaker, not by which turn it sits in, so a
-    client-side per-sentence reassignment (state.assignLine,
-    js/24-speakers-menus.js) can break a sentence out into its own heading
-    section mid-turn. This server render has no override to apply (overrides
-    live only in client-side localStorage), so it groups purely by each turn's
-    own speaker - correct for a fresh page - and rebuildPlain()
-    (js/32-plain-text.js) recomputes the same run boundary client-side,
-    walking bubbles instead of turns, once an override exists.
-
-    Keeps its own per-document sentence counter, starting at 1, rather than
-    receiving one from _render_document_html's turn loop: both loops walk the
-    same turns in the same order and re-derive the same sentence texts, so two
-    independent counts land on identical numbers - which they must - without
-    sharing mutable state.
-
-    previous_speaker tracks the last TURN's speaker, not a per-sentence value,
-    since a heading can only start at a turn boundary in a server render.
-
-    previous_speaker starts as a private sentinel, not None: an unattributed
-    turn's own speaker IS None (see _render_bubble_html()'s docstring), so
-    seeding this with None would make the very first turn in a document look
-    like a continuation of a run that was never actually there whenever that
-    first turn happens to be unattributed - dropping its heading entirely.
-    The sentinel can never equal a real Turn.speaker (int | None), so the
-    first turn always starts a run, whatever its own speaker is.
+    One line per sentence, keyed to its bubble by data-line, with a heading
+    wherever the speaker changes. The server groups by each turn's speaker;
+    the page script regroups by each sentence's effective speaker once the
+    user reassigns one. The sentence counter re-derives the same numbers as
+    the card loop. previous_speaker starts at a sentinel, not None, since None
+    is a real (unattributed) speaker and would swallow the first heading.
     """
     _no_previous_turn = object()
     s = partial(_t, strings)  # see _render_toolbar_html's s
@@ -598,20 +451,9 @@ def _render_plain_html(
         starts_run = turn.speaker != previous_speaker
         for idx, sentence in enumerate(turn.sentences()):
             if idx == 0 and starts_run and speaker_label is not None:
-                # Trailing colon, matching rebuildPlain()'s heading in
-                # js/32-plain-text.js - the two MUST produce identical text
-                # or the panel visibly rewrites itself the first time a
-                # checkbox is toggled. It reads as a label rather than as a
-                # stray one-word line, which matters most where this panel
-                # is actually used: pasted into an app that keeps none of
-                # the bold styling the heading has on screen.
-                #
-                # turn.speaker is None gets the same unattributed_speaker
-                # label the card's own chip uses (_render_bubble_html()
-                # above) rather than being skipped: the panel used to drop
-                # the heading entirely here, which silently merged an
-                # unattributed run into whichever named run happened to sit
-                # above it in the copied-out text.
+                # Trailing colon, identical to rebuildPlain()'s, or the panel
+                # rewrites itself on the first toggle. Unattributed turns get
+                # the same label as their chip rather than no heading.
                 name = (
                     html.escape(_speaker_fallback(speaker_label, turn.speaker))
                     if turn.speaker is not None
@@ -634,14 +476,9 @@ def _render_plain_html(
         previous_speaker = turn.speaker
     rows = "".join(line_parts)
 
-    # Each checkbox starts in the state the server actually rendered, never
-    # hardcoded `checked`: a bubble carries data-start/data-end
-    # unconditionally (playback needs them even when no range is displayed)
-    # and 99-init.js calls rebuildPlain() on load, so a checked opt-ts on a
-    # timestamps=False document would make the page fabricate bracketed ranges
-    # the renderer deliberately left out - the reader sees timestamps they
-    # switched off appearing by themselves. Same for opt-spk with no
-    # speaker_label.
+    # Checkboxes start as the server rendered: the page rebuilds the panel on
+    # load, so a checked timestamp box on a timestamps=False document would
+    # fabricate ranges the user switched off.
     ts_checked = " checked" if timestamps else ""
     spk_checked = " checked" if speaker_label is not None else ""
 

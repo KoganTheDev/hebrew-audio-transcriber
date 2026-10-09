@@ -61,6 +61,21 @@ AMI ES2004a, first 300 s, 3 speakers:
 | sherpa | 118 s | 46 | 2.06 s | 46.9 s | 66/34 |
 | powerset | 151 s | 28 | 5.08 s | 34.2 s | 65/35 |
 
+Inside the powerset engine, on 300 s of AMI at num_speakers=4 (sherpa: DER
+0.4646, miss 16.29, false alarm 9.40, confusion 46.51):
+
+| embeddings from | DER | miss | false alarm | confusion |
+|---|---|---|---|---|
+| clean (non-overlapped) frames only | 0.4085 | 14.36 | 13.43 | 35.68 |
+| all active frames | 0.4011 | 14.83 | 13.21 | 34.29 |
+
+Confusion falls by about a quarter, but masking overlap out of the embeddings -
+the reason to expect that - is slightly worse than not masking: the gain is
+from owning the decode, so `mask_overlap` defaults to False. Both runs found 3
+speakers for a requested 4 because the first 300 s of ES2004a only has three
+(MEE014 speaks later) - not a merge bug, though `_reconstruct`'s majority rule
+can genuinely erase a rarely-resolved speaker.
+
 Fewer, longer spans is the wrong direction for a conversation full of short
 interjections. Against the hand-corrected Hebrew reference
 (`tests/eval/fixtures/diarization/hebrew_2spk.rttm`), powerset lost outright:
