@@ -1,16 +1,9 @@
-"""Structured transcript data.
+"""Structured transcript data, carried from transcription to the renderer.
 
-faster-whisper hands back start/end times, per-word timings and per-word
-confidence alongside the text. Timestamps, speaker attribution and
-confidence-driven correction each need that structure, so the pipeline
-carries Segment objects from transcription all the way to the renderer and
-only flattens to text in core.formatting, as the last step.
-
-Deliberately stdlib-only: it is imported by the worker process (which must
-never pull in PyQt5) and by the GUI process (which must never pull in
-faster-whisper), because PyQt5 and ctranslate2 bundle conflicting copies of
-MSVCP140.dll on Windows and loading both crashes intermittently. A shared
-vocabulary type cannot belong to either side.
+Timestamps, speaker attribution and confidence-driven correction all need the
+per-word timings and confidence faster-whisper returns, so text is flattened
+only at the very end, in core.formatting. Stdlib only: both the worker and the
+GUI process import it (see core/__init__.py for why they must stay apart).
 """
 
 from dataclasses import dataclass, field
@@ -18,12 +11,8 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Word:
-    """A single word with its timing and the model's confidence in it.
-
-    `probability` is what makes targeted correction possible: the Hebrew pass
-    looks only at words Whisper itself was unsure about instead of
-    second-guessing the whole transcript (see core/hebrew_corrections.py for why
-    that distinction matters so much in Hebrew).
+    """A word, its timing, and the model's confidence - which lets the Hebrew
+    pass look only at words Whisper doubted (core/hebrew_corrections.py).
     """
 
     start: float
@@ -40,12 +29,8 @@ class Word:
 
 @dataclass
 class Segment:
-    """One chunk of transcript as emitted by the ASR model.
-
-    A segment is a decoder-sized unit, not a human-sized one - typically a
-    few seconds. Rendering one line per segment produces an unreadably choppy
-    transcript, so core.formatting merges runs of segments into speaker
-    "turns" before writing them out.
+    """A decoder-sized chunk (a few seconds); core.formatting merges them into
+    speaker turns, since one line per segment reads as choppy.
     """
 
     start: float
@@ -75,12 +60,8 @@ class TranscriptDocument:
 
 
 def plain_text(segments: list[Segment]) -> str:
-    """Flatten segments back into one unpunctuated-by-us blob.
-
-    No production caller: it is the regression baseline that tests/eval's
-    model sweep and the integration test both compare transcripts against,
-    and it has to produce the exact string the pipeline did before segments
-    carried structure, so it belongs beside the type it flattens.
+    """Flatten segments to one blob - the regression baseline tests/eval and
+    the integration test compare transcripts against (no production caller).
     """
     text = ""
     for segment in segments:

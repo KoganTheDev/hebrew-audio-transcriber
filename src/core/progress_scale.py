@@ -1,32 +1,14 @@
-"""Named boundaries for the transcription progress bar, and the work stream
-the time estimate is computed from.
+"""How far along a run is, in the two units the UI needs: percentages for
+the progress bar, and the work stream (audio-seconds, measured seconds) for
+the time estimate - a bar position is the wrong thing to project time from.
 
-Two different things live here because they answer the same question - "how
-far along is this run?" - in the two different units the UI needs. The
-percentage is for the BAR. The work stream, at the bottom of this file, is
-for the CLOCK: it carries audio-seconds and measured wall-clock seconds
-rather than a position on a 0-100 scale, because a percentage is the wrong
-thing to project time from (see WORK_ constants below).
+A percentage crosses three scales, and every boundary lives here once:
 
-One percentage crosses three coordinate systems on its way from a
-faster-whisper callback to the number Qt paints, and 15 and 90 alone appeared
-four times apiece across transcriber.py and worker.py. This is the one place
-they live, so a boundary cannot drift between copies.
-
-1. Transcriber's absolute scale (core/transcriber.py). What load_model() and
-   transcribe() emit directly, and what reaches the GUI verbatim during model
-   loading - worker.py's model-load phase passes it straight through.
-2. File-local scale (core/worker.py's _transcribe_one). One file's own 0-100,
-   independent of the batch: decoding, then transcription remapped from (1),
-   then speaker identification and Hebrew term correction.
-3. Batch-wide scale (core/worker.py's run_transcription_process). What the
-   GUI's bar shows after model loading: each file's file-local 0-100 rescaled
-   into its duration-weighted slice of the transcribe band, then the final
-   render and write.
-
-The *_SPAN constants let the remapping formulas compute their multiplier from
-the boundaries rather than retyping 75/85/86 as bare numbers that happen to
-equal the same subtraction.
+1. Transcriber scale (core/transcriber.py): model loading and transcription,
+   passed to the GUI verbatim while the model loads.
+2. File-local scale (worker._transcribe_one): one file's own 0-100.
+3. Batch scale (worker.run_transcription_process): each file's 0-100 rescaled
+   into its duration-weighted slice of the transcribe band.
 """
 
 TRANSCRIBER_LOAD_START_PERCENT = 5
@@ -43,82 +25,50 @@ FILE_LOCAL_MAX = 100  # 90-100: speaker id + Hebrew correction
 
 FILE_LOCAL_TRANSCRIBE_SPAN = FILE_LOCAL_TRANSCRIBE_END - FILE_LOCAL_TRANSCRIBE_START  # 85
 
-# Interior checkpoints on the file-local scale: fixed points a status message
-# reports at, not band boundaries another formula derives a span from. Named
-# anyway so every number meaning "this file's own progress" lives here.
+# Fixed checkpoints on the file-local scale.
 FILE_LOCAL_ANALYZING_PERCENT = 2  # decoding has started
 FILE_LOCAL_SPEAKER_ID_END = 97  # diarization's own sub-band ends here
 FILE_LOCAL_CORRECTING_PERCENT = 98  # Hebrew term correction has started
 
 BATCH_INIT_PERCENT = 2
-# Exactly where model loading ends, not below it. Model loading reports on
-# the transcriber's own scale and reaches the GUI unchanged, so a batch band
-# starting lower (it was 12) made the bar step back from 15% the moment the
-# first file began.
+# Exactly where model loading ends: any lower and the bar steps backwards when
+# the first file starts.
 BATCH_TRANSCRIBE_START = TRANSCRIBER_MODEL_LOADED_PERCENT
 BATCH_TRANSCRIBE_END = 98
-# Numerically == BATCH_TRANSCRIBE_END: rendering begins exactly where per-file
-# transcription left off. Not a coincidence worth a second constant.
+# Rendering starts where per-file transcription ends.
 BATCH_FORMATTING_PERCENT = 98
 BATCH_SAVING_PERCENT = 99
 BATCH_COMPLETE_PERCENT = 100
 
 BATCH_TRANSCRIBE_SPAN = BATCH_TRANSCRIBE_END - BATCH_TRANSCRIBE_START  # 86
 
-# Sent in place of a percentage for messages describing background activity
-# with no known percentage yet; gui/steps/transcription.py reads it as "update
-# the text, don't move the bar". Any value outside 0..100 would do.
+# "Update the text, don't move the bar" - for activity with no percentage.
 STATUS_ONLY_PERCENT = -1
 
 
-# --- the work stream -------------------------------------------------------
+# --- the work stream ---------------------------------------------------
 #
-# Everything above is a POSITION ON A BAR. None of it is a quantity of work,
-# and the difference is what made "Est. remaining" wrong: the old estimate
-# was elapsed * (100 - percent) / percent, which assumes every percent costs
-# the same wall clock. Measured on this machine, it does not come close -
-# the model-load band can be twenty minutes on a first run or two seconds on
-# a warm one, and faster-whisper's VAD pass sits at a fixed 5% for as long as
-# it takes - 67s on one 15-minute recording, before a single segment exists.
+# Measurements, not a bar position: every percent does not cost the same time
+# (the VAD pass sits at a fixed 5% for over a minute on a long file), so the
+# GUI divides measured wall clock by real work. Sent beside the progress tuples
+# (core/worker.py):
 #
-# So the worker reports work in units that mean something on their own, and
-# the GUI divides measured wall clock by them. Two message kinds, both plain
-# numbers, both crossing the process boundary alongside the existing
-# ("progress", ...) and ("status", ...) tuples (see core/worker.py):
-#
-#   ("work", audio_done, audio_total, monotonic)
-#       Audio-seconds decoded so far, BATCH-WIDE, and the batch total. This
-#       is the honest denominator: it is what faster-whisper actually
-#       charges for, it is already known exactly (segment.end against a
-#       PyAV container probe - see gui/audio_utils.py), and unlike a
-#       percentage it does not need a scale to be interpreted.
-#
-#   ("phase", name, seconds, monotonic)
-#       One named phase of the pipeline, with the wall clock it really took.
-#       seconds is None when the phase has only just STARTED - which is what
-#       lets the GUI count up through a phase that reports no progress of
-#       its own (diarization, which deliberately has no percentage callback)
-#       instead of showing a frozen bar.
-#
-# Both are measurements, not estimates. Nothing here predicts anything; the
-# prediction is one division, and it happens in the GUI where the clock is.
+#   ("work", audio_done, audio_total, monotonic) - audio-seconds decoded so
+#       far, batch-wide, and the batch total.
+#   ("phase", name, seconds, monotonic) - one pipeline phase and the wall clock
+#       it took; seconds is None when it has only just started, so the GUI can
+#       count up through phases with no progress of their own (diarization).
 
 WORK_PHASE_DECODE = "decode"  # PyAV decode + the true-stereo check
 WORK_PHASE_PREPARE = "prepare"  # faster-whisper's VAD pass, before segment 1
 WORK_PHASE_TRANSCRIBE = "transcribe"  # one file's ASR, start to last segment
 WORK_PHASE_DIARIZE = "diarize"  # the speaker pass, overlapped with the above
-# What is left of diarization once transcription has finished, i.e. the part
-# the user actually waits through. Distinct from WORK_PHASE_DIARIZE, which is
-# diarization's own total cost: most of that is hidden underneath
-# transcription and costs nobody anything. Only the overhang belongs in a
-# time estimate, and only the overhang is a phase with a visible start.
+# The part of diarization left once transcription ends - the only part anyone
+# waits for, since the rest runs underneath transcription.
 WORK_PHASE_DIARIZE_WAIT = "diarize_wait"
 WORK_PHASE_ASSIGN = "assign_speakers"
 WORK_PHASE_CORRECT = "hebrew_correction"
 WORK_PHASE_RENDER = "render"  # HTML render + atomic write
 
-# Sent in place of a duration to mean "this phase has begun, and how long it
-# will take is not known yet". None rather than a numeric sentinel: every
-# other value on this channel is a real measured duration, and there is no
-# number that could not also be one.
+# "This phase has begun." None, since any number could be a real duration.
 WORK_PHASE_STARTED = None

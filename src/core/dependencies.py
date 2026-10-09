@@ -1,21 +1,10 @@
-"""Checking that the runtime dependencies are actually importable.
+"""Checking that the runtime dependencies are importable - reporting only;
+installing is the launcher's job (installing from here hit whatever Python
+happened to run, often not the project's venv).
 
-This used to pip install whatever was missing, into sys.executable, with the
-output captured. That was actively harmful rather than merely unhelpful: the
-launcher can pick a system interpreter, so the install landed in the user's
-GLOBAL Python rather than the project's virtual environment, took minutes with
-no visible sign it was doing anything, and still ended in a crash because the
-package list it worked from did not include faster-whisper.
-
-Installing is the installer's job. This reports.
-
-It checks with importlib.util.find_spec rather than by importing. That is not a
-detail: app.py imports faster_whisper BEFORE PyQt5 on purpose, because the two
-ship conflicting copies of MSVCP140.dll on Windows and whichever loads first
-wins. A check that imported its way down a dict would decide that order by
-dict insertion order instead, and silently reintroduce the access violation
-that comment exists to prevent. find_spec locates a module without executing
-it, so no DLL is loaded here at all.
+find_spec, not import: app.py must import faster_whisper before PyQt5 (their
+MSVCP140.dll copies conflict), and importing here would decide that order by
+dict order instead. find_spec loads no DLL at all.
 """
 
 import importlib.util
@@ -26,16 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_dependencies(packages: dict[str, str]) -> bool:
-    """Report whether every runtime dependency can be imported.
-
-    Args:
-        packages: {import name: pip name}
-
-    Returns:
-        True when all are importable. False after logging what is missing and
-        how to fix it - the caller exits, rather than this function trying to
-        repair the environment behind the user's back.
-
+    """Whether every {import name: pip name} is importable; when not, logs
+    what is missing and how to fix it, and the caller exits.
     """
     missing: list[tuple[str, str]] = []
     for import_name, pip_name in packages.items():
@@ -50,18 +31,21 @@ def ensure_dependencies(packages: dict[str, str]) -> bool:
         logger.info(f"All {len(packages)} required packages are available")
         return True
 
-    logger.error("Missing required packages: %s", ", ".join(n for n, _ in missing))
-    logger.error("Python being used: %s", sys.executable)
-    logger.error("")
-    logger.error("This usually means the app is running on the wrong Python -")
-    logger.error("one without the project's dependencies installed.")
-    logger.error("")
-    logger.error("To fix it, double-click run.bat in the project folder - it")
-    logger.error("will offer to set everything up.")
-    logger.error("")
-    logger.error("Or do it by hand:")
-    logger.error("    python -m venv .venv")
-    logger.error(r"    .venv\Scripts\activate")
-    logger.error("    python -m pip install --upgrade pip")
-    logger.error("    pip install -e .")
+    logger.error(_MISSING_HELP, ", ".join(name for name, _ in missing), sys.executable)
     return False
+
+
+_MISSING_HELP = """Missing required packages: %s
+Python being used: %s
+
+This usually means the app is running on the wrong Python -
+one without the project's dependencies installed.
+
+To fix it, double-click run.bat in the project folder - it
+will offer to set everything up.
+
+Or do it by hand:
+    python -m venv .venv
+    .venv\\Scripts\\activate
+    python -m pip install --upgrade pip
+    pip install -e ."""
