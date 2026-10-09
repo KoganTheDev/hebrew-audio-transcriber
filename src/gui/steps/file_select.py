@@ -179,7 +179,13 @@ class FileSelectStep(QFrame):
 
         self._build_drop_zone_contents()
 
+        # Room for the halo (see _init_halo) on the two sides where the zone
+        # has neighbours, so the glow fades out before the heading above and
+        # the summary line below instead of washing over them. Together with
+        # the layout's own XS gap, the gap is exactly _HALO_CLEARANCE.
+        layout.addSpacing(self._HALO_CLEARANCE - Spacing.XS)
         layout.addWidget(self.drop_zone, 1)
+        layout.addSpacing(self._HALO_CLEARANCE - Spacing.XS)
 
     def _build_drop_zone_contents(self) -> None:
         """The icon and the three lines of prompt text inside the drop zone."""
@@ -352,6 +358,9 @@ class FileSelectStep(QFrame):
     # about. Only the ring band repaints, never the zone or its text.
 
     _HALO_RINGS = 20
+    # Gap between the zone and its neighbours above and below: the glow's
+    # full reach, since the rings stop there (see paintEvent).
+    _HALO_CLEARANCE = Motion.HALO_BLUR_PX
 
     def _init_halo(self) -> None:
         self._drag_over = False
@@ -401,6 +410,17 @@ class FileSelectStep(QFrame):
         zone = self.drop_zone.geometry()
         reach = Motion.HALO_BLUR_PX + 2
         band = QRegion(zone.adjusted(-reach, -reach, reach, reach)) - QRegion(zone)
+        # The zone's rounded corners are see-through, so the glow shows
+        # through them too. Leaving them out of the repaint left each corner
+        # holding a stale frame of the breath - dark squares at the corners.
+        r = Radius.DROP_ZONE
+        for x, y in (
+            (zone.left(), zone.top()),
+            (zone.right() - r + 1, zone.top()),
+            (zone.left(), zone.bottom() - r + 1),
+            (zone.right() - r + 1, zone.bottom() - r + 1),
+        ):
+            band = band.united(QRegion(x, y, r, r))
         self.update(band)
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
@@ -413,6 +433,12 @@ class FileSelectStep(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Hard stop at the glow's reach, which is the gap kept clear around the
+        # zone - the outermost ring's anti-aliasing would otherwise spill a
+        # pixel onto the neighbours.
+        # (QRectF's right/bottom sit one pixel past QRect's, hence the - 1.)
+        reach = Motion.HALO_BLUR_PX - 1
+        painter.setClipRect(zone.adjusted(-reach, -reach, reach, reach))
         # A CSS-style glow: with blur b the falloff is a Gaussian of sigma
         # b/2, and at distance d past the edge the strength is half the
         # Gaussian's tail - 0.5 * erfc(d / (sigma * sqrt 2)).
