@@ -3,20 +3,15 @@
 import fnmatch
 import glob
 import logging
-import math
 import os
 
-from PyQt5.QtCore import QRectF, Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import (
-    QColor,
     QDragEnterEvent,
     QDropEvent,
     QHideEvent,
     QIcon,
-    QPainter,
     QPaintEvent,
-    QPen,
-    QRegion,
     QShowEvent,
 )
 from PyQt5.QtWidgets import (
@@ -33,11 +28,12 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from gui import motion, theme
+from gui import theme
+from gui.halo import CLEARANCE as HALO_CLEARANCE
+from gui.halo import DropZoneHalo
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
-from gui.motion import breath
-from gui.theme import COLORS, Fonts, Motion, Radius, Spacing
+from gui.theme import COLORS, Fonts, Spacing
 from gui.threads import DurationProbeThread
 from gui.widgets import DropZone, make_label
 from hardware_detection import HardwareDetector
@@ -83,7 +79,8 @@ class FileSelectStep(QFrame):
         self._build_drop_zone(layout)
         self._build_selected_files_list(layout)
         self._init_selection_state()
-        self._init_halo()
+        self.halo = DropZoneHalo(self, self.drop_zone)
+        self.files_selected.connect(lambda *_: self.halo.set_empty(not self.selected_files))
 
     def _build_page_layout(self) -> QVBoxLayout:
         """The step's own vertical layout, tuned for a page that overflows.
@@ -184,13 +181,13 @@ class FileSelectStep(QFrame):
 
         self._build_drop_zone_contents()
 
-        # Room for the halo (see _init_halo) on the two sides where the zone
+        # Room for the halo (see gui/halo.py) on the two sides where the zone
         # has neighbours, so the glow fades out before the heading above and
         # the summary line below instead of washing over them. Together with
-        # the layout's own XS gap, the gap is exactly _HALO_CLEARANCE.
-        layout.addSpacing(self._HALO_CLEARANCE - Spacing.XS)
+        # the layout's own XS gap, the gap is exactly halo.CLEARANCE.
+        layout.addSpacing(HALO_CLEARANCE - Spacing.XS)
         layout.addWidget(self.drop_zone, 1)
-        layout.addSpacing(self._HALO_CLEARANCE - Spacing.XS)
+        layout.addSpacing(HALO_CLEARANCE - Spacing.XS)
 
     def _build_drop_zone_contents(self) -> None:
         """The icon and the three lines of prompt text inside the drop zone."""
@@ -357,110 +354,11 @@ class FileSelectStep(QFrame):
     def _reset_drop_zone(self) -> None:
         """Reset drop zone to its normal (non-drag) styling."""
         self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=False))
-        self._drag_over = False
-        self._sync_halo()
-
-    # --- The halo -----------------------------------------------------------
-    #
-    # While nothing is selected, the drop zone breathes a soft accent glow so
-    # the eye lands on it. Painted by this page, behind the zone, as thin
-    # rounded rings fading outward - not a QGraphicsDropShadowEffect, which
-    # would re-blur the whole zone on every frame of a breath that never
-    # stops, and which theme.elevation_shadow's docstring already warns
-    # about. Only the ring band repaints, never the zone or its text.
-
-    _HALO_RINGS = 20
-    # Gap between the zone and its neighbours above and below: the glow's
-    # full reach, since the rings stop there (see paintEvent).
-    _HALO_CLEARANCE = Motion.HALO_BLUR_PX
-
-    def _init_halo(self) -> None:
-        self._drag_over = False
-        self._halo = motion.breath_loop(self)
-        self._halo.valueChanged.connect(self._repaint_halo)
-        # Adding or clearing files changes whether there is a halo at all.
-        self.files_selected.connect(lambda *_: self._sync_halo())
-
-    def halo_strength(self) -> tuple[float, str] | None:
-        """Peak alpha and colour key of the glow right now, or None for none.
-
-        A file being dragged over gets a steady, brighter glow: the zone is
-        already where the eye is. Once files are chosen the job is done and
-        the glow goes. With animation effects off it holds still, at a level
-        that still reads as "here".
-        """
-        if self.selected_files:
-            return None
-        if self._drag_over:
-            return Motion.HALO_MAX_ALPHA, "accent_hover"
-        if self.is_halo_breathing():
-            phase = float(self._halo.currentValue())
-            return Motion.HALO_MAX_ALPHA * (0.4 + 0.6 * breath(phase)), "accent"
-        return Motion.HALO_MAX_ALPHA * 0.7, "accent"
-
-    def is_halo_breathing(self) -> bool:
-        return motion.is_running(self._halo)
-
-    def _sync_halo(self) -> None:
-        breathe = (
-            self.isVisible()
-            and not self.selected_files
-            and not self._drag_over
-            and motion.animations_enabled()
-        )
-        if breathe and not self.is_halo_breathing():
-            self._halo.start()
-        elif not breathe:
-            self._halo.stop()
-        self._repaint_halo()
-
-    def _repaint_halo(self, value: object = None) -> None:
-        zone = self.drop_zone.geometry()
-        reach = Motion.HALO_BLUR_PX + 2
-        band = QRegion(zone.adjusted(-reach, -reach, reach, reach)) - QRegion(zone)
-        # The zone's rounded corners are see-through, so the glow shows
-        # through them too. Leaving them out of the repaint left each corner
-        # holding a stale frame of the breath - dark squares at the corners.
-        r = Radius.DROP_ZONE
-        for x, y in (
-            (zone.left(), zone.top()),
-            (zone.right() - r + 1, zone.top()),
-            (zone.left(), zone.bottom() - r + 1),
-            (zone.right() - r + 1, zone.bottom() - r + 1),
-        ):
-            band = band.united(QRegion(x, y, r, r))
-        self.update(band)
+        self.halo.set_drag_over(False)
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
         super().paintEvent(a0)
-        strength = self.halo_strength()
-        if strength is None or not self.drop_zone.isVisible():
-            return
-        peak, color_key = strength
-        zone = QRectF(self.drop_zone.geometry())
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        # Hard stop at the glow's reach, which is the gap kept clear around the
-        # zone - the outermost ring's anti-aliasing would otherwise spill a
-        # pixel onto the neighbours.
-        # (QRectF's right/bottom sit one pixel past QRect's, hence the - 1.)
-        reach = Motion.HALO_BLUR_PX - 1
-        painter.setClipRect(zone.adjusted(-reach, -reach, reach, reach))
-        # A CSS-style glow: with blur b the falloff is a Gaussian of sigma
-        # b/2, and at distance d past the edge the strength is half the
-        # Gaussian's tail - 0.5 * erfc(d / (sigma * sqrt 2)).
-        sigma = Motion.HALO_BLUR_PX / 2
-        step = Motion.HALO_BLUR_PX / self._HALO_RINGS
-        for i in range(self._HALO_RINGS):
-            d = (i + 0.5) * step
-            alpha = peak * 0.5 * math.erfc(d / (sigma * math.sqrt(2)))
-            color = QColor(COLORS[color_key])
-            color.setAlphaF(min(1.0, alpha))
-            painter.setPen(QPen(color, step))
-            radius = Radius.DROP_ZONE + d
-            painter.drawRoundedRect(zone.adjusted(-d, -d, d, d), radius, radius)
-        painter.end()
+        self.halo.paint()
 
     def _drag_enter(self, event: QDragEnterEvent | None) -> None:
         """Handle drag enter event over the drop zone.
@@ -476,8 +374,7 @@ class FileSelectStep(QFrame):
         if mime is not None and mime.hasUrls():
             event.acceptProposedAction()
             self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=True))
-            self._drag_over = True
-            self._sync_halo()
+            self.halo.set_drag_over(True)
 
     def _drop(self, event: QDropEvent | None) -> None:
         self._reset_drop_zone()
@@ -831,7 +728,7 @@ class FileSelectStep(QFrame):
         # _add_row) has to restart from the drop zone too, or the next
         # file added would try to chain onto a widget mid-deleteLater().
         self._last_tab_widget = self.drop_zone
-        self._sync_halo()
+        self.halo.set_empty(True)
 
     def showEvent(self, event: QShowEvent | None) -> None:
         """Seed a sensible Tab starting point whenever this step becomes
@@ -848,12 +745,12 @@ class FileSelectStep(QFrame):
         """
         super().showEvent(event)
         self.drop_zone.setFocus(Qt.FocusReason.OtherFocusReason)
-        self._sync_halo()
+        self.halo.sync()
 
     def hideEvent(self, event: QHideEvent | None) -> None:
         # Also fires when the window is minimized.
         super().hideEvent(event)
-        self._sync_halo()
+        self.halo.sync()
 
     def retranslate(self) -> None:
         """Re-render all text in the current UI language (live toggle)."""

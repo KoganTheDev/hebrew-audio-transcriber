@@ -2833,12 +2833,12 @@ class TestDropZoneHalo:
         return file_select_step
 
     def test_breathes_only_while_shown_and_empty(self, step):
-        assert not step.is_halo_breathing()
+        assert not step.halo.is_breathing()
         step.show()
-        assert step.is_halo_breathing()
-        assert step.halo_strength()[1] == "accent"
+        assert step.halo.is_breathing()
+        assert step.halo.strength()[1] == "accent"
         step.hide()
-        assert not step.is_halo_breathing()
+        assert not step.halo.is_breathing()
 
     def test_a_drag_holds_a_steady_brighter_glow(self, step):
         from PyQt5.QtCore import QMimeData, QPoint, QUrl
@@ -2850,11 +2850,11 @@ class TestDropZoneHalo:
         event = QDragEnterEvent(QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
         step.drop_zone.dragEnterEvent(event)
 
-        assert not step.is_halo_breathing()
-        assert step.halo_strength() == (pytest.approx(0.65), "accent_hover")
+        assert not step.halo.is_breathing()
+        assert step.halo.strength() == (pytest.approx(0.65), "accent_hover")
 
         step.drop_zone.dragLeaveEvent(None)
-        assert step.is_halo_breathing()
+        assert step.halo.is_breathing()
 
     def test_choosing_files_removes_the_glow(self, step, tmp_path, monkeypatch):
         from gui import threads as threads_module
@@ -2866,19 +2866,19 @@ class TestDropZoneHalo:
         step._add_files([str(f)])
         settle(step)
 
-        assert step.halo_strength() is None
-        assert not step.is_halo_breathing()
+        assert step.halo.strength() is None
+        assert not step.halo.is_breathing()
 
         step.reset()
-        assert step.is_halo_breathing()
+        assert step.halo.is_breathing()
 
     def test_still_but_present_when_windows_animations_are_off(self, step, monkeypatch):
         from gui import motion
 
         monkeypatch.setattr(motion, "animations_enabled", lambda: False)
         step.show()
-        assert not step.is_halo_breathing()
-        assert step.halo_strength() is not None
+        assert not step.halo.is_breathing()
+        assert step.halo.strength() is not None
 
     def test_paints_with_and_without_the_glow(self, step):
         step.resize(600, 500)
