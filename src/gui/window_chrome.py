@@ -81,7 +81,16 @@ class TitleBarColorizer(QObject):
 
     def __init__(self, app: QApplication) -> None:
         super().__init__(app)
+        self._app = app
         app.installEventFilter(self)
+        app.aboutToQuit.connect(self.uninstall)
+
+    def uninstall(self) -> None:
+        """Stop filtering. Done at aboutToQuit: a Python filter still installed
+        while Qt destroys the app gets called after Python has begun shutting
+        down - an intermittent access violation at exit.
+        """
+        self._app.removeEventFilter(self)
 
     def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
         if (

@@ -101,3 +101,18 @@ def test_every_window_is_coloured_once_and_children_never(qapp, qtbot, monkeypat
     finally:
         qapp.removeEventFilter(colorizer)
         colorizer.deleteLater()
+
+
+def test_the_filter_comes_off_before_the_app_quits(qapp, qtbot, monkeypatch):
+    """Left installed through teardown, it crashed the app at exit."""
+    coloured: list[QWidget] = []
+    monkeypatch.setattr(window_chrome, "apply_title_bar_colors", coloured.append)
+    colorizer = window_chrome.TitleBarColorizer(qapp)
+    try:
+        colorizer.uninstall()  # what aboutToQuit triggers
+        dialog = QDialog()
+        qtbot.addWidget(dialog)
+        dialog.show()
+        assert coloured == []
+    finally:
+        colorizer.deleteLater()
