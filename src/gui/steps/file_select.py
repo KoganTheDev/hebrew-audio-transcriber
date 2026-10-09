@@ -42,12 +42,8 @@ logger = logging.getLogger(__name__)
 
 
 def _size_mb(path: str) -> float:
-    """A file's size in MB, or 0.0 if it has gone.
-
-    Guarded because this runs while rendering a row, and a file can be deleted
-    or unmounted between being dropped and being drawn. An OSError escaping
-    here would take out the whole drop handler, losing the other files in the
-    same drop along with it.
+    """A file's size in MB, or 0.0 if it has gone - a file deleted after the
+    drop must not raise out of the drop handler.
     """
     try:
         return os.path.getsize(path) / (1024 * 1024)
@@ -83,25 +79,10 @@ class FileSelectStep(QFrame):
         self.files_selected.connect(lambda *_: self.halo.set_empty(not self.selected_files))
 
     def _build_page_layout(self) -> QVBoxLayout:
-        """The step's own vertical layout, tuned for a page that overflows.
-
-        Its spacing and margins are the single biggest lever on whether this
-        step fits, so they are set here in one place rather than tweaked
-        alongside the widgets.
-        """
+        """The step's layout: its spacing decides whether the page fits."""
         layout = QVBoxLayout(self)
-        # Blanket spacing cut LG -> XS. This step turned out NOT to have the
-        # slack the original room analysis assumed (it counted the empty
-        # band at the bottom without accounting for the trailing stretch and
-        # the drop zone's old fixed height - see the setMinimumHeight note
-        # in _build_drop_zone), and layout.setSpacing() multiplies across
-        # every one of this layout's seven gaps: at LG that was 112px before
-        # a single widget was drawn, which is what pushed the step from
-        # marginally tight to actually overflowing (measured with probe.py:
-        # 84px over the 471px this step gets). Kept tight; the explicit
-        # addSpacing() call in _build_hardware_section puts deliberate air
-        # back only at the section boundary that reads as a break, the same
-        # technique used to fix step 3's equivalent overflow.
+        # Tight blanket spacing (it multiplies across every gap - at LG this
+        # page overflowed by 84 px); deliberate breaks are explicit addSpacing.
         layout.setSpacing(Spacing.XS)
         # Horizontal margins stay generous at XXL - side padding is free
         # here (it doesn't compete with any other widget for vertical room)
@@ -111,15 +92,8 @@ class FileSelectStep(QFrame):
         return layout
 
     def _build_hardware_section(self, layout: QVBoxLayout) -> None:
-        """The specs table that opens the page, plus the break below it.
-
-        No page title here any more - "Specs" is now carried by the
-        wizard step indicator above the stacked widget (see
-        gui/stepper.py and MainWindow._init_ui), which already prints
-        this step's name once. A second DISPLAY heading here would say
-        the same thing again in the same place on screen; see the
-        stepper's module docstring for the full reasoning. The hardware
-        table is now the first thing on the page.
+        """The hardware specs table that opens the page (the step's name is in
+        the step indicator), plus the break below it.
         """
         # System info table - shown here (above the drop zone) since it's
         # relevant context before the user even picks a file or model.
@@ -138,13 +112,9 @@ class FileSelectStep(QFrame):
         )
         layout.addWidget(self.file_heading)
 
-        # Drop zone - large and spacious. Also acts as the browse button: the
-        # whole area is clickable to open a file dialog, in addition to drag-and-drop.
-        # DropZone (gui/widgets.py) is what makes it a real keyboard control -
-        # StrongFocus plus a Space/Enter key handler - while every line below
-        # keeps assigning the drag/drop/click handlers onto the instance
-        # exactly as before, since tests/test_gui.py::TestDropZoneEventPath
-        # sends real Qt events through this exact wiring.
+        # The drop zone is also the browse button. DropZone adds keyboard
+        # support; drag, drop and click are assigned onto the instance, the
+        # path TestDropZoneEventPath drives.
         self.drop_zone = DropZone()
         self.drop_zone.setObjectName("dropZone")
         self.drop_zone.setStyleSheet(theme.drop_zone_qss("dropZone", active=False))
@@ -153,30 +123,15 @@ class FileSelectStep(QFrame):
         self.drop_zone.setAccessibleName(t("drop_zone_name"))
         self.drop_zone.setAccessibleDescription(t("drop_zone_desc"))
         self.drop_zone.setToolTip(t("drop_zone_desc"))
-        # Swapping handlers onto the instance is the whole point here (see
-        # the comment above and DropZone's docstring), so the ignores below
-        # are the deliberate idiom rather than an oversight. mypy reports
-        # "assignment" alongside "method-assign" for the two named handlers
-        # because it compares a bound method against the stub's unbound
-        # "def dragEnterEvent(self, a0: ...)" - the same complaint twice,
-        # not a second, real mismatch.
+        # Assigning handlers is deliberate; mypy flags it twice per handler.
         self.drop_zone.dragEnterEvent = self._drag_enter  # type: ignore[method-assign,assignment]
         self.drop_zone.dragLeaveEvent = lambda a0: self._reset_drop_zone()  # type: ignore[method-assign]
         self.drop_zone.dropEvent = self._drop  # type: ignore[method-assign,assignment]
         self.drop_zone.mousePressEvent = lambda a0: self._browse()  # type: ignore[method-assign]
         self.drop_zone.activated.connect(self._browse)
-        # A minimum plus a layout stretch factor, not a fixed height, and the
-        # minimum has to sit AT the content floor rather than above it. A
-        # fixed height clamps min==max so the zone can never yield; but a
-        # minimum above the content floor is just as rigid downward - Qt
-        # treats an explicit minimumHeight as a hard limit it will not
-        # compress past, so a 210px minimum still overflowed the step the
-        # moment the file list appeared and claimed its own 54px. The floor
-        # is now the zone's real content minimum (icon + three lines), and
-        # the generosity comes from the stretch factor on addWidget below:
-        # the zone expands into whatever slack the step has, which is most
-        # of the window while no file is selected, and gives that space
-        # back as the list grows.
+        # A minimum at the content floor plus a stretch factor, not a fixed
+        # height: Qt never compresses below an explicit minimum, so the zone
+        # grows into free space and gives it back as the file list fills.
         self.drop_zone.setMinimumHeight(config.GUI_DROP_ZONE_HEIGHT)
 
         self._build_drop_zone_contents()
@@ -212,15 +167,8 @@ class FileSelectStep(QFrame):
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         drop_layout.addWidget(icon_label)
 
-        # Main text. No setMaximumHeight - see the note above
-        # GUI_DROP_ZONE_HEIGHT in config.py: these caps (20/16/16px) were
-        # sized against a font database that under-reported its own text
-        # height, so they clip the real, correctly-resolved label the
-        # instant a QApplication exists for real - removed rather than
-        # bumped, since a label's natural sizeHint is already the right
-        # answer once the font resolves correctly, and a stale cap would
-        # just reintroduce the same clipping the next time a font metric
-        # shifts.
+        # No maximum heights: caps sized to a misreported font clipped the
+        # real text; the natural sizeHint is right.
         self.main_text = make_label(
             t("drop_main"),
             font=Fonts.BODY_BOLD,
@@ -277,12 +225,8 @@ class FileSelectStep(QFrame):
         # while the drop target gives space back, instead of the drop zone
         # holding everything and pinning the list at its bare minimum.
         layout.addWidget(self._rows_scroll, 1)
-        # Hidden until the first file is added (see _update_summary): a
-        # hidden widget's QLayoutItem is treated as empty by QBoxLayout, so
-        # it claims none of its 54px minimum while the list has nothing to
-        # show - the single largest remaining piece of slack on this step
-        # once the drop zone stopped being fixed-height and the blanket
-        # spacing was cut.
+        # Hidden until a file is added, so its 54 px minimum costs nothing
+        # while empty.
         self._rows_scroll.hide()
 
         # No trailing addStretch() here: the drop zone above carries the
@@ -311,12 +255,8 @@ class FileSelectStep(QFrame):
         self._pending: set[str] = set()
         self._probes: list[DurationProbeThread] = []
         self._rows: dict[str, QFrame] = {}
-        # Basenames skipped by the most recent drop (see _drop) - rendered
-        # into the summary line by _update_summary until the next drop
-        # replaces it or reset() clears it. Not cleared by browse_for_files
-        # or _remove_file: those aren't drops, and a skip note from one
-        # drop staying visible while the user removes an unrelated file
-        # from the list is still an accurate statement about what happened.
+        # Names skipped by the latest drop, shown in the summary until the next
+        # drop or reset().
         self._skipped_last_drop: list[str] = []
         # Tab-order chain anchor - see _add_row. Starts at the drop zone,
         # the first (and while the list is empty, only) focusable thing on
@@ -329,12 +269,8 @@ class FileSelectStep(QFrame):
 
     @property
     def durations(self) -> list[int]:
-        """Per-file durations, in the same order as selected_files.
-
-        .get(), not indexing: a file is listed the moment it is dropped and
-        gains its duration a little later, so a caller reading this mid-probe
-        must get a placeholder rather than a KeyError. is_probing is how a
-        caller knows to wait instead.
+        """Per-file durations in selected_files order; 0 for a file still being
+        probed (see is_probing).
         """
         return [self._durations.get(path, 0) for path in self.selected_files]
 
@@ -353,12 +289,8 @@ class FileSelectStep(QFrame):
         self.halo.paint()
 
     def _drag_enter(self, event: QDragEnterEvent | None) -> None:
-        """Handle drag enter event over the drop zone.
-
-        Both the event and its mime data are Optional as far as Qt is
-        concerned, and a drag carrying no mime data is a real (if rare)
-        thing on some platforms - dereferencing either unconditionally is
-        an AttributeError waiting for the wrong drag source.
+        """Accept a drag that carries URLs. Event and mime data are both
+        Optional, and a drag with no mime data does happen.
         """
         if event is None:
             return
@@ -404,12 +336,8 @@ class FileSelectStep(QFrame):
 
     @staticmethod
     def _is_supported_file(path: str) -> bool:
-        """Whether `path` matches one of config.SUPPORTED_FORMATS' glob
-        patterns ("*.mp3", not a bare ".mp3" - see that constant's
-        docstring), by filename rather than by opening the file. Used to
-        filter a file dropped directly onto the zone; _expand_directory
-        already filters a dropped folder's contents the same way via
-        glob.glob itself, so this only needs to cover the direct-drop case.
+        """Whether a directly dropped file's name matches SUPPORTED_FORMATS
+        (a dropped folder is already filtered by glob).
         """
         name = os.path.basename(path).lower()
         return any(fnmatch.fnmatch(name, pattern.lower()) for pattern in config.SUPPORTED_FORMATS)
@@ -437,13 +365,8 @@ class FileSelectStep(QFrame):
         self._browse()
 
     def _add_files(self, paths: list[str]) -> None:
-        """Append new files, skipping any already listed - a second drop never duplicates.
-
-        The rows appear immediately and their lengths arrive afterwards.
-        Probing used to happen right here, in the handler, which meant a
-        dropped folder of thirty recordings did thirty blocking container
-        opens with the event loop stopped - and on OneDrive placeholders each
-        one can wait on a download. See DurationProbeThread.
+        """Append new files, skipping duplicates. Rows appear at once; lengths
+        arrive later from a background probe (DurationProbeThread).
         """
         added = []
         for path in paths:
@@ -464,12 +387,7 @@ class FileSelectStep(QFrame):
             self.files_selected.emit(list(self.selected_files), self.total_duration)
 
     def _start_probe(self, paths: list[str]) -> None:
-        """Read the lengths of `paths` in the background.
-
-        One thread per batch of added files rather than one long-lived worker:
-        a drop is a discrete piece of work with a known list, and letting each
-        finish and retire keeps the teardown story simple - see stop_probing.
-        """
+        """Probe `paths`' lengths on a thread of their own, retired when done."""
         probe = DurationProbeThread(paths)
         probe.probed.connect(self._on_probed)
         probe.finished.connect(lambda: self._retire_probe(probe))
@@ -482,12 +400,7 @@ class FileSelectStep(QFrame):
         probe.deleteLater()
 
     def _on_probed(self, path: str, duration: int, probed: bool) -> None:
-        """One file's length has arrived.
-
-        Ignored outright if the file is no longer listed: a probe queued
-        before the user removed a file, or before reset(), would otherwise
-        resurrect its duration into the totals.
-        """
+        """A length arrived - ignored if the file has since been removed."""
         if path not in self.selected_files:
             return
 
@@ -505,12 +418,8 @@ class FileSelectStep(QFrame):
         self.files_selected.emit(list(self.selected_files), self.total_duration)
 
     def stop_probing(self) -> None:
-        """Abandon any in-flight probes and wait for their threads.
-
-        Called on teardown and on reset(). A QThread still running when its
-        signals reach a half-destroyed widget is the failure this repo has
-        already been bitten by once - see gui/focus.py and
-        MainWindow._detach_calibration_thread.
+        """Abandon in-flight probes and wait for their threads, so no signal
+        reaches a half-destroyed widget.
         """
         for probe in list(self._probes):
             probe.probed.disconnect()
@@ -543,13 +452,8 @@ class FileSelectStep(QFrame):
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row_layout.addWidget(label, 1)
 
-        # A bare 20px "x" glyph with no label of any kind before this step -
-        # the icon alone tells a sighted mouse user "remove", but says
-        # nothing to a screen reader and nothing to anyone hovering without
-        # already knowing the convention. {filename} (set in
-        # _render_row_label, since it's the one place both _add_row and
-        # retranslate() already funnel through) disambiguates which row's
-        # button this is once more than one file is queued.
+        # Named per file (in _render_row_label), so a screen reader knows
+        # which row each remove button belongs to.
         remove_btn = QPushButton()
         remove_btn.setIcon(
             QIcon(
@@ -573,12 +477,8 @@ class FileSelectStep(QFrame):
         # keep appearing at the top of the list rather than after the spacer.
         self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
         self._rows[path] = row
-        # Chains each new row's remove button onto the previous focusable
-        # widget's tab order (starting from the drop zone itself), so
-        # Tab visits the list top-to-bottom in the same order the rows are
-        # drawn. Rows removed later just drop out of the chain on their own
-        # (a destroyed widget is skipped by Qt's own tab-order walk) rather
-        # than needing to be unlinked here.
+        # Chain each remove button into the tab order after the previous one,
+        # top to bottom; removed rows drop out on their own.
         self.setTabOrder(self._last_tab_widget, remove_btn)
         self._last_tab_widget = remove_btn
         self._render_row_label(path)
@@ -645,20 +545,11 @@ class FileSelectStep(QFrame):
         self.files_selected.emit(list(self.selected_files), self.total_duration)
 
     def _sync_rows_height(self) -> None:
-        """Give the scrolled container an explicit minimum height matching the
-        rows it holds.
+        """Pin the scrolled container's minimum height to its rows.
 
-        A setMinimumHeight on each row is not enough on its own.
-        setWidgetResizable(True) makes QScrollArea call resize() on the
-        container to match the viewport, and QWidget.resize() clamps to
-        minimumSize(), which defaults to zero - it never consults the
-        layout's own minimum. So the container really does get resized to the
-        viewport height, and its QVBoxLayout then compresses the rows past
-        their own minimums to fit, which is why the list rendered as stacked
-        half-height slices of text rather than scrolling. Setting the
-        container's minimumSize is what makes that resize refuse to shrink
-        below the rows' combined height, which is in turn the condition that
-        makes the scroll area show a scrollbar at all.
+        QScrollArea resizes the container to the viewport, and resize() honours
+        minimumSize, not the layout's - so without this the rows were squeezed
+        into half-height slices instead of scrolling.
         """
         rows = len(self._rows)
         if not rows:
@@ -690,12 +581,8 @@ class FileSelectStep(QFrame):
                 seconds=total % 60,
             )
         if self._skipped_last_drop:
-            # Appended rather than swapped in: the user still needs to see
-            # what IS selected, not just what wasn't. Count only, no
-            # filenames - this line has little width to spare (see
-            # FileSelectStep's module-level layout comments), and "3
-            # skipped" already answers the question a vanished file would
-            # otherwise raise silently.
+            # Appended: the selection still shows. A count, since the line has
+            # no room for names.
             skipped = len(self._skipped_last_drop)
             text = (
                 text
@@ -723,17 +610,8 @@ class FileSelectStep(QFrame):
         self.halo.set_empty(True)
 
     def showEvent(self, event: QShowEvent | None) -> None:
-        """Seed a sensible Tab starting point whenever this step becomes
-        visible: the drop zone, since it's both the first thing on the page
-        and, on a fresh run, the only way to make any progress at all (see
-        DropZone's docstring in gui/widgets.py).
-
-        This does NOT paint a focus ring by itself - gui/focus.py's
-        KeyboardFocusTracker only stamps the ring while keyboard modality
-        is active, and setFocus() here runs regardless of how the step
-        became visible (including the very first launch, before the user
-        has touched a key at all), so the ring stays invisible until an
-        actual Tab press earns it.
+        """Focus the drop zone, the first Tab stop. No ring until a key is
+        actually pressed (gui/focus.py).
         """
         super().showEvent(event)
         self.drop_zone.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -836,14 +714,8 @@ class FileSelectStep(QFrame):
 
         return cell
 
-    # Both dividers read COLORS['border'], the decorative hairline, not
-    # COLORS['control_border']. They separate cells inside a static table;
-    # they are not the edge of anything interactive, so they sit below the
-    # 3:1 floor on purpose and should stay quiet. This used to read a
-    # 'border_light' key that the Catppuccin repaint folded into
-    # control_border, which made these table rules noticeably brighter than
-    # they had ever been - a side effect of a compatibility alias, not a
-    # decision anyone made.
+    # The quiet decorative hairline, not control_border: these separate cells
+    # in a static table, not the edge of a control.
     @staticmethod
     def _hline() -> QFrame:
         line = QFrame()
