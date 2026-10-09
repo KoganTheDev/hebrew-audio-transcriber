@@ -733,3 +733,72 @@ class TestItWaitsForEnoughWorkToBeRepresentative:
         estimator = self._decoded(36000.0, 310.0, clock)
 
         assert estimator.remaining(clock.now) is not None
+
+
+class TestRunStages:
+    """Step 3's checklist, decided Qt-free from the worker's phase order."""
+
+    def _walk(self, phases, identify_speakers=True):
+        from gui.presenters.run_stages import Stage, next_stage
+
+        active = Stage.LOAD
+        seen = []
+        for phase, started in phases:
+            stage = next_stage(active, phase, started, identify_speakers)
+            if stage is not None:
+                active = stage
+            seen.append(active)
+        return seen
+
+    def test_a_speaker_run_walks_every_stage(self):
+        from core.progress_scale import (
+            WORK_PHASE_ASSIGN,
+            WORK_PHASE_DECODE,
+            WORK_PHASE_DIARIZE_WAIT,
+            WORK_PHASE_PREPARE,
+            WORK_PHASE_RENDER,
+            WORK_PHASE_TRANSCRIBE,
+        )
+        from gui.presenters.run_stages import Stage
+
+        seen = self._walk(
+            [
+                (WORK_PHASE_DECODE, False),
+                (WORK_PHASE_PREPARE, True),
+                (WORK_PHASE_TRANSCRIBE, False),
+                (WORK_PHASE_DIARIZE_WAIT, True),
+                (WORK_PHASE_ASSIGN, False),
+                (WORK_PHASE_RENDER, False),
+            ]
+        )
+        assert seen == [
+            Stage.TRANSCRIBE,
+            Stage.TRANSCRIBE,
+            Stage.SPEAKERS,
+            Stage.SPEAKERS,
+            Stage.FINISH,
+            Stage.FINISH,
+        ]
+
+    def test_without_speakers_transcription_goes_straight_to_finishing(self):
+        from core.progress_scale import WORK_PHASE_PREPARE, WORK_PHASE_TRANSCRIBE
+        from gui.presenters.run_stages import Stage, stages_for
+
+        seen = self._walk(
+            [(WORK_PHASE_PREPARE, True), (WORK_PHASE_TRANSCRIBE, False)], identify_speakers=False
+        )
+        assert seen[-1] is Stage.FINISH
+        assert Stage.SPEAKERS not in stages_for(False)
+
+    def test_the_next_file_returns_to_transcribing(self):
+        from core.progress_scale import WORK_PHASE_DECODE, WORK_PHASE_RENDER
+        from gui.presenters.run_stages import Stage
+
+        seen = self._walk(
+            [
+                (WORK_PHASE_DECODE, False),
+                (WORK_PHASE_RENDER, False),
+                (WORK_PHASE_DECODE, False),
+            ]
+        )
+        assert seen == [Stage.TRANSCRIBE, Stage.FINISH, Stage.TRANSCRIBE]

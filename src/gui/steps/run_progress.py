@@ -15,6 +15,7 @@ from core.formatting import format_mmss
 from gui.i18n import t
 from gui.icons import cached_pixmap
 from gui.motion import LONG_AGO, ease_out_cubic, mix, now_ms, pop_scale, progress, with_alpha
+from gui.presenters.run_stages import Stage
 from gui.step_state import STATUS_KEYS, StepState
 from gui.theme import COLORS, Fonts, Motion
 
@@ -111,13 +112,6 @@ class RunProgressBar(QProgressBar):
             c.setAlphaF(alpha)
             gradient.setColorAt(stop, c)
         painter.fillRect(rect, gradient)
-
-
-class Stage(Enum):
-    LOAD = "stage_loading_model"
-    TRANSCRIBE = "stage_transcribing"
-    SPEAKERS = "stage_speakers"
-    FINISH = "stage_finishing"
 
 
 _INK = {

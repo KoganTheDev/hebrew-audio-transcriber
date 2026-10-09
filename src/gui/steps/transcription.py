@@ -13,18 +13,14 @@ from core import browser_open
 from core.formatting import format_mmss
 from core.progress_scale import (
     STATUS_ONLY_PERCENT,
-    WORK_PHASE_ASSIGN,
-    WORK_PHASE_CORRECT,
-    WORK_PHASE_DECODE,
     WORK_PHASE_DIARIZE_WAIT,
-    WORK_PHASE_RENDER,
-    WORK_PHASE_TRANSCRIBE,
 )
 from gui import motion, theme
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
+from gui.presenters.run_stages import Stage, next_stage, stages_for
 from gui.presenters.time_estimate import TimeEstimator
-from gui.steps.run_progress import BarMode, RunProgressBar, Stage, StageChecklist
+from gui.steps.run_progress import BarMode, RunProgressBar, StageChecklist
 from gui.theme import COLORS, Fonts, Motion, Spacing
 from gui.threads import PHASE_STARTED_SECONDS
 from gui.widgets import IconTextButton, make_label
@@ -552,11 +548,7 @@ class TranscriptionStep(QFrame):
         self._running = True
         self._identify_speakers = identify_speakers
         self._took_seconds = None
-        stages = [Stage.LOAD, Stage.TRANSCRIBE]
-        if identify_speakers:
-            stages.append(Stage.SPEAKERS)
-        stages.append(Stage.FINISH)
-        self.stage_list.reset(stages)
+        self.stage_list.reset(stages_for(identify_speakers))
         self.progress_bar.set_mode(BarMode.IDLE)
         self._set_motion(True)
         self._enter_stage(Stage.LOAD)
@@ -624,30 +616,17 @@ class TranscriptionStep(QFrame):
         self.progress_bar.set_mode(BarMode.LOADING if stage is Stage.LOAD else BarMode.WORKING)
 
     def _advance_stage(self, name: str, seconds: float) -> None:
-        """Move the checklist on from one of the worker's phase reports.
-
-        The phases arrive per file, in order: decode, VAD prepare, transcribe,
-        then - with speaker labels - the diarization wait and speaker
-        assignment, then Hebrew correction and the HTML render. Everything
-        before the first of them is the model loading. Several of these only
-        report when they END, so each one moves the list to the stage that
-        comes after it. A decode report once the list has moved past
-        transcription is the next file of a batch starting.
-        """
+        """Move the checklist on from a phase report - see presenters/run_stages."""
         if not self._running:
             return
-        active = self.stage_list.active
-        done = seconds != PHASE_STARTED_SECONDS
-        if active is Stage.LOAD or (
-            name == WORK_PHASE_DECODE and active in (Stage.SPEAKERS, Stage.FINISH)
-        ):
-            self._enter_stage(Stage.TRANSCRIBE)
-        if name == WORK_PHASE_TRANSCRIBE and done:
-            self._enter_stage(Stage.SPEAKERS if self._identify_speakers else Stage.FINISH)
-        elif name == WORK_PHASE_DIARIZE_WAIT:
-            self._enter_stage(Stage.SPEAKERS)
-        elif name in (WORK_PHASE_ASSIGN, WORK_PHASE_CORRECT, WORK_PHASE_RENDER) and done:
-            self._enter_stage(Stage.FINISH)
+        stage = next_stage(
+            self.stage_list.active,
+            name,
+            started=seconds == PHASE_STARTED_SECONDS,
+            identify_speakers=self._identify_speakers,
+        )
+        if stage is not None:
+            self._enter_stage(stage)
 
     def _tick(self) -> None:
         if self.start_time is None:

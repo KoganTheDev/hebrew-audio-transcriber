@@ -2717,7 +2717,7 @@ class TestTranscriptionStepStages:
 
     def test_without_speaker_labels_there_is_no_speaker_stage(self, step):
         from core.progress_scale import WORK_PHASE_DECODE, WORK_PHASE_TRANSCRIBE
-        from gui.steps.run_progress import Stage
+        from gui.presenters.run_stages import Stage
 
         step.start(identify_speakers=False)
         assert Stage.SPEAKERS not in step.stage_list.stages
@@ -2728,7 +2728,7 @@ class TestTranscriptionStepStages:
 
     def test_the_next_file_of_a_batch_goes_back_to_transcribing(self, step):
         from core.progress_scale import WORK_PHASE_DECODE, WORK_PHASE_RENDER
-        from gui.steps.run_progress import Stage
+        from gui.presenters.run_stages import Stage
 
         step.start()
         self._phase(step, WORK_PHASE_DECODE)
@@ -2745,7 +2745,7 @@ class TestTranscriptionStepStages:
         means work on the audio has begun.
         """
         from core.progress_scale import BATCH_INIT_PERCENT, TRANSCRIBER_LOAD_START_PERCENT
-        from gui.steps.run_progress import Stage
+        from gui.presenters.run_stages import Stage
 
         step.start()
         step.update_progress("w_initializing", {}, BATCH_INIT_PERCENT)
@@ -2792,7 +2792,7 @@ class TestTranscriptionStepStages:
 
     def test_a_stage_the_run_spent_time_in_reports_it(self, step):
         from core.progress_scale import WORK_PHASE_DECODE
-        from gui.steps.run_progress import Stage
+        from gui.presenters.run_stages import Stage
 
         now = [100.0]
         step.stage_list.clock = lambda: now[0]
