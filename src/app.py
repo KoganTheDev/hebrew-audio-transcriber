@@ -21,13 +21,7 @@ _REEXEC_MARKER = "SPEECH_TO_TEXT_REEXEC"
 
 
 def _say(message: str) -> None:
-    """Print, but survive a console-less launch.
-
-    Under pythonw.exe there is no console and sys.stdout is None, so a bare
-    print() raises AttributeError and takes down a path whose whole job was
-    to report something. The log file is the durable record either way; this
-    is only for the case where someone IS watching a console.
-    """
+    """Print, but survive pythonw.exe, where sys.stdout is None."""
     if sys.stdout is None:
         return
     try:
@@ -39,20 +33,9 @@ def _say(message: str) -> None:
 def fatal(message: str, detail: str = "") -> None:
     """Log a startup failure, show it, and exit non-zero.
 
-    The launcher now starts the app with pythonw.exe so no console window is
-    ever shown (see run.bat) - which means every pre-GUI failure below used
-    to be COMPLETELY invisible: logged to a file nobody knew to open, then a
-    bare sys.exit(1) and a window that never appeared. "It just doesn't
-    start" is the least actionable bug report there is.
-
-    A native MessageBox rather than a Qt dialog on purpose: every one of
-    these failures can happen BEFORE PyQt5 is importable - a missing
-    dependency, a broken venv, the PyQt5 import itself failing - so the
-    reporting path cannot be allowed to depend on the thing that failed.
-    ctypes reaches user32 with no imports of our own at all.
-
-    Falls back to stderr off Windows, or if the MessageBox call itself
-    fails; the log line above it has already been written either way.
+    The app starts console-less, so a pre-GUI failure would otherwise be
+    invisible. A native MessageBox via ctypes, not Qt: these failures include
+    PyQt5 itself not importing. Falls back to stderr off Windows.
     """
     logger.critical(message + (f"\n\n{detail}" if detail else ""))
     body = message if not detail else f"{message}\n\n{detail}"
@@ -77,15 +60,9 @@ def fatal(message: str, detail: str = "") -> None:
 
 
 def _reexec_into_project_venv() -> None:
-    """Restart on the project's .venv if started on some other interpreter.
-
-    The launchers refuse to run on anything else, but they are not the only
-    way in: a direct `python src/app.py`, a double-click and an IDE run button
-    all bypass them, and the sys.path line above means every one of those
-    starts successfully on an interpreter that may have no dependencies.
-
-    Silent when there is no .venv to move to - ensure_dependencies reports
-    that case and can say more about it than this can.
+    """Restart on the project's .venv if started on another interpreter - a
+    direct `python src/app.py` or an IDE run button bypasses the launchers.
+    Silent without a .venv; ensure_dependencies reports that.
     """
     if os.environ.get(_REEXEC_MARKER):
         return
@@ -135,28 +112,17 @@ def _reexec_into_project_venv() -> None:
 # is about to hand over.
 _reexec_into_project_venv()
 
-# Setup logging: fixed-width, column-aligned format with millisecond precision
-# and source location (file:line) - easy to scan and to grep by level/module.
-# %(process)d is not decoration. Transcription runs in a separate process
-# (see core/worker.py) which re-imports this module and configures the same
-# handlers, so GUI lines and worker lines land interleaved in one file.
-# Without the pid there was no way to tell which process wrote a line, and
-# the worker's are the interesting ones - the per-phase timings come from it.
+# Column-aligned, with milliseconds and file:line. The pid tells GUI lines
+# from worker lines - the worker re-imports this module and logs to the same
+# file, and its per-phase timings are the interesting part.
 LOG_FORMAT = (
     "%(asctime)s.%(msecs)03d %(process)-6d %(levelname)-8s %(name)-32s "
     "%(filename)s:%(lineno)d - %(message)s"
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# Redirected stdout ("run.bat > out.txt") gets its encoding from the
-# system's ANSI code page, not the console's, and strict-errors on any
-# Hebrew character it can't represent. logging's StreamHandler.emit()
-# catches that and calls handleError() instead of crashing, but the cost is
-# a silently dropped log line. errors="backslashreplace" turns that into a
-# visible, lossy fallback instead of losing the line. With bidi isolates
-# now stripped from the console stream by core/log_bidi before this point,
-# this is the only remaining reason for it - a real console's WriteConsoleW
-# path doesn't need it at all.
+# Redirected stdout uses the ANSI code page, which cannot encode Hebrew; with
+# backslashreplace the line is mangled but kept rather than silently dropped.
 try:
     # typeshed types sys.stdout as TextIO, which has no reconfigure(); only
     # the concrete TextIOWrapper does. The except clause below already covers
@@ -169,30 +135,16 @@ except (AttributeError, ValueError):
     # is best-effort robustness for an edge case - not worth failing over.
     pass
 
-# Two different formatters, not one shared via basicConfig(format=...): the
-# console gets visual order (core/log_bidi.VisualOrderFormatter, see its
-# module comment and core/hebrew_text.to_visual_order for why), the log
-# file keeps logical order so a real bidi-aware reader still renders it
-# correctly. Setting each handler's formatter before basicConfig() matters -
-# basicConfig only assigns its own formatter to handlers that don't already
-# have one, so leaving format=/datefmt= out of the call keeps that explicit
-# rather than relying on the fallback behaviour.
+# Two formatters: visual order for the console (core/log_bidi), logical order
+# for the file, which bidi-aware viewers render. Set before basicConfig, which
+# only formats handlers that have no formatter.
 stdout_handler = logging.StreamHandler(sys.stdout)
 stdout_handler.setFormatter(VisualOrderFormatter(LOG_FORMAT, DATE_FORMAT))
 
-# Rotating, and at an absolute path resolved once - see
-# config.resolve_log_path for why a relative one was a bug and
-# config.LOG_MAX_BYTES for why the level stays at DEBUG.
-#
-# Both processes open this same file, which a RotatingFileHandler does not
-# coordinate. The failure that buys is bounded and known: on Windows the
-# rename a rotation performs cannot touch a file another process still holds
-# open, so the rotation raises, logging swallows it through handleError, and
-# one process keeps appending to an oversized file until the other lets go.
-# A dropped rotation, not a corrupted log. The alternatives - a file per pid,
-# or forwarding the child's records over the progress queue - each cost more
-# than that is worth, and the pid in LOG_FORMAT is what actually makes the
-# shared file readable.
+# Rotating, at an absolute path (config.resolve_log_path). Both processes
+# write it; on Windows a rotation fails while the other holds the file, so it
+# grows past the limit until released - a dropped rotation, never corruption,
+# and cheaper than per-process files.
 file_handler = logging.handlers.RotatingFileHandler(
     config.resolve_log_path(),
     maxBytes=config.LOG_MAX_BYTES,
@@ -287,14 +239,7 @@ def main() -> None:
         # construction is caught too, not just crashes during app.exec_().
         install_global_exception_hook(app)
 
-        # Apply the app stylesheet and the persisted UI language (English on
-        # first-ever launch) before MainWindow is built, so every widget
-        # renders themed and in the right language/layout direction from the
-        # start. See configure_application's own docstring for why this is
-        # a shared call rather than inlined here: this was previously two
-        # lines that only set the language, with the stylesheet call missing
-        # entirely - the app ran fully unstyled through this, the only entry
-        # point actually shipped, while looking correct everywhere else.
+        # Stylesheet, language and the rest before any widget exists.
         configure_application(app)
 
         logger.debug("Creating MainWindow...")
@@ -308,23 +253,13 @@ def main() -> None:
         exit_code = app.exec_()
         logger.info(f"Application event loop exited with code: {exit_code}")
 
-        # Stop background work before returning, NOT only in closeEvent.
-        # closeEvent covers the ordinary path where the user closes the window,
-        # but the loop can also end without it - app.quit(), a session logout,
-        # or the faked exec_() the tests use. On that path main() used to fall
-        # straight through to sys.exit with the calibration QThread still
-        # running and its multiprocessing child still spawning, and the
-        # process died in interpreter teardown with an access violation and no
-        # traceback. Idempotent, so the usual close-then-quit order is fine.
+        # Stop background work here too, not only in closeEvent: the loop can
+        # end without a close (app.quit, logout), and a live calibration
+        # thread then crashed interpreter teardown. Idempotent.
         window.shutdown()
 
-        # Tear the widget tree down while the QApplication is still alive.
-        # Both are locals here, so without this Python drops them at
-        # interpreter shutdown in refcount order, and Qt objects outliving
-        # their QApplication is the classic PyQt exit crash - an access
-        # violation with no traceback. close() + deleteLater() queues the
-        # deletion, processEvents() runs it, and only then does the
-        # application go.
+        # Destroy the widgets while the QApplication still exists: Qt objects
+        # outliving it is the classic PyQt exit crash.
         window.close()
         window.deleteLater()
         app.processEvents()

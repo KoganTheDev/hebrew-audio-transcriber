@@ -34,21 +34,10 @@ SUPPORTED_LANGUAGES = ("en", "he")
 # so they still lay out right-to-left as a whole in the Hebrew UI.
 _RLM = "‏"
 
-# LRI/PDI (U+2066/U+2069) fence a Latin quantity - "145 MB", "1 GB" - that
-# sits inside a Hebrew sentence.
-#
-# Without them the pair comes out backwards, reading "MB 145". The Unicode
-# bidi algorithm has European numbers influence neighbouring neutrals as if
-# they were right-to-left (rule N1), so the ordinary space between "145" and
-# "MB" is flanked by an R-acting number on one side and a real L letter on
-# the other, matches neither, and falls back to the paragraph direction -
-# RTL. That single RTL space splits what should be one left-to-right run in
-# two and swaps them. A non-breaking space does not help: it is the same
-# bidi class as a normal one. An isolate is what fixes it, and it has to be
-# an isolate rather than the older LRE/PDF embedding, which leaks: an
-# embedding pulls whatever Latin text happens to sit next to it into the
-# same run, so a neighbouring "|" or unit word drifts to the wrong side.
-# Both were rendered side by side before choosing.
+# LRI/PDI (U+2066/U+2069) fence a Latin quantity ("145 MB") in Hebrew text.
+# Without them it renders "MB 145": numbers make the space between act RTL
+# (bidi rule N1). An isolate, not the older LRE/PDF embedding, which pulls
+# neighbouring Latin text into the run - both were rendered and compared.
 _LRI = "⁦"
 _PDI = "⁩"
 # FSI (U+2068) for a value whose script is not known in advance - a user's
@@ -77,14 +66,8 @@ STRINGS = {
     "nav_new_file": {"en": "New File", "he": "קובץ חדש"},
     "no_model_title": {"en": "No Model", "he": "לא נבחר מודל"},
     "no_model_body": {"en": "Please select a model", "he": "אנא בחרו מודל"},
-    # Header language toggle - accessible name/tooltip. The button's own
-    # visible text already shows the TARGET language ("EN"/"עב" - see
-    # MainWindow._retranslate_chrome), which reads fine visually next to
-    # the app's current language, but says nothing about what the control
-    # DOES to a screen reader with no visual context, so this names the
-    # action instead. Static across both languages' target rather than
-    # re-derived per toggle - "switches the interface language" is true
-    # regardless of which direction it's about to switch.
+    # Header language toggle: its visible text is the target language code,
+    # meaningless to a screen reader, so these name the action.
     "toggle_language_name": {"en": "Toggle interface language", "he": "החלפת שפת הממשק"},
     "toggle_language_tooltip": {
         "en": "Switch interface language (Ctrl+Shift+L)",
@@ -123,17 +106,14 @@ STRINGS = {
         "en": "Press Enter or Space to browse for a file, or drag and drop a file or folder here.",
         "he": "לחצו Enter או Space כדי לבחור קובץ, או גררו לכאן קובץ או תיקייה.",
     },
-    # Per-file remove button in the selected-files list (file_select.py) -
-    # a bare 20px "x" with no visible label of its own. {filename}
-    # disambiguates which row's button this is once more than one file is
-    # queued; a generic "Remove" would be indistinguishable across rows to
-    # a screen reader jumping between controls rather than reading linearly.
     # Shown on a file whose container PyAV could not open. Deliberately
     # hedged - a probe failure is not proof faster-whisper will fail too.
     "file_unreadable_tip": {
         "en": "This file could not be read, so its length is a guess. It may fail to transcribe.",
         "he": "לא ניתן לקרוא את הקובץ, ולכן אורכו הוא הערכה בלבד. ייתכן שהתמלול שלו ייכשל.",
     },
+    # A file row's remove button, named per file so a screen reader can tell
+    # the rows' buttons apart.
     "remove_file": {"en": "Remove {filename}", "he": "הסרת {filename}"},
     "file_info": {
         "en": "{filename} | {minutes}m {seconds}s | {size} MB",
@@ -161,13 +141,8 @@ STRINGS = {
         "en": "{count} files selected | Total: {minutes}m {seconds}s",
         "he": "נבחרו {count} קבצים | סה\"כ: {minutes} דק' {seconds} שנ'",
     },
-    # Singular counterparts. Worth the extra keys rather than a bare "{count}
-    # files": a single dropped file is an ordinary case, not an edge one, and
-    # "1 files selected" is the kind of detail that makes an interface feel
-    # unfinished. Hebrew is not simply the same string with a different
-    # number either - the verb and the noun both change (נבחרו/נבחר,
-    # קבצים/קובץ), so a count-agnostic template could not have been right in
-    # both languages anyway.
+    # Singular forms: one file is common, and Hebrew changes both verb and
+    # noun (נבחרו/נבחר, קבצים/קובץ).
     "files_summary_one": {
         "en": "1 file selected | Total: {minutes}m {seconds}s",
         "he": "נבחר קובץ אחד | סה\"כ: {minutes} דק' {seconds} שנ'",
@@ -370,17 +345,9 @@ STRINGS = {
     # core/formatting and the page script (core/assets/js/) look up.
     "doc_toolbar": {"en": "Transcript tools", "he": "כלי תמלול"},
     "doc_search": {"en": "Search transcript", "he": "חיפוש בתמלול"},
-    # The #search input's visible placeholder - shorter than doc_search on
-    # purpose. #search is the toolbar's deliberate "release valve" (see
-    # #search's own comment in core/assets/css/16-toolbar.css): it is allowed
-    # to shrink below its placeholder's natural width so the row holds one
-    # line down to the stacking breakpoint, and a shorter placeholder means
-    # that shrinking has to go a lot further before anything clips at all.
-    # doc_search itself stays the full phrase for the input's aria-label and
-    # the toolbar's own accessible name (chrome.py:239's markup sets both
-    # from the same translated string on purpose, but they don't have to be
-    # the same string) - a screen reader has no width constraint to economise
-    # against, so there is nothing to gain by shortening what it announces.
+    # Shorter than doc_search: #search is allowed to shrink (16-toolbar.css),
+    # and a short placeholder clips later. The aria-label keeps the full
+    # doc_search phrase.
     "doc_search_placeholder": {"en": "Search", "he": "חיפוש"},
     "doc_search_prev": {"en": "Previous match", "he": "התאמה קודמת"},
     "doc_search_next": {"en": "Next match", "he": "התאמה הבאה"},
@@ -578,14 +545,9 @@ STRINGS = {
         "לחותמות זמן ולשמות דוברים - אפשר לערוך אותה שם ישירות, או "
         "להעתיק אותה בלחיצה אחת.",
     },
-    # --- Guided tour ------------------------------------------------------
-    # Bound entirely in the page script (bindTour()) - #tour-start above is the
-    # only server-rendered hook; every spotlight step, its caption card, and
-    # this copy are built by script. Steps are worded as direct address
-    # ("this sidebar", "click a timestamp") rather than the help panel's
-    # third-person reference style ("Lists every file..."), since a tour step
-    # is spoken while the reader is looking straight at the control, not
-    # reading a list of them afterward.
+    # --- Guided tour ---------------------------------------------------------
+    # Built by the page script (bindTour); worded as direct address ("click a
+    # timestamp"), since each step is read while looking at the control.
     "doc_tour_next": {"en": "Next", "he": "הבא"},
     "doc_tour_back": {"en": "Back", "he": "הקודם"},
     "doc_tour_skip": {"en": "Skip", "he": "דילוג"},
@@ -882,26 +844,16 @@ _DOC_PREFIX = "doc_"
 
 
 def document_strings() -> dict[str, str]:
-    """Every string the generated transcript page needs, in the current language.
-
-    Returned with the "doc_" prefix stripped, because the keys the renderer
-    and the page script (core/assets/js/) look up are the bare names - the prefix only exists to
-    keep this group identifiable in STRINGS.
-
-    Placeholders are left unsubstituted on purpose: "Play from {t}" is filled
-    in per turn by the renderer, which knows the timestamp.
+    """Every string the transcript page needs, in the current language, with
+    the "doc_" prefix stripped. Placeholders such as {t} are left for the
+    renderer to fill.
     """
     return {key[len(_DOC_PREFIX) :]: t(key) for key in STRINGS if key.startswith(_DOC_PREFIX)}
 
 
 def format_duration(seconds: int, elide_zero: bool = True) -> str:
     """A duration in the current language: "1m 46s" / "1 דק' 46 שנ'".
-
-    The same <60s / <1h / else ladder as hardware_detection._format_duration,
-    which builds the English log line. elide_zero drops a trailing zero
-    component ("5m", not "5m 0s") when the string is going in front of a
-    user. This is the display half, and it lives here because the unit words
-    are string-table data like any other.
+    elide_zero drops a trailing zero component ("5m", not "5m 0s").
     """
     if seconds < 60:
         return t("dur_s", seconds=seconds)
