@@ -31,15 +31,9 @@ logger = logging.getLogger(__name__)
 class TranscriptionStep(QFrame):
     """Step 3: Transcription progress and results."""
 
-    # A stalled bar used to be the ONLY way this screen could tell that its
-    # own estimate had gone stale, because the estimate was a projection over
-    # bar position and nothing else. It no longer is: the estimate now comes
-    # from measured work (see gui/presenters/time_estimate.py), which knows on
-    # its own when it has nothing to report and says so. Kept for the one case
-    # the work stream cannot cover - a file whose duration could not be probed
-    # at all, which produces no work reports ever (see gui/audio_utils.py) -
-    # so that run still says "calculating" rather than "Elapsed" alone for its
-    # entire length.
+    # After this long with no movement the time label says "calculating" - for
+    # a file whose duration could not be probed, which never sends work
+    # reports for the estimator to use.
     STALL_SECONDS = 5
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -69,56 +63,22 @@ class TranscriptionStep(QFrame):
         self._init_run_state()
 
     def _build_page_layout(self) -> QVBoxLayout:
-        """The page's own QVBoxLayout, spaced and stretched before any child
-        goes into it.
-
-        Split out on its own because the two decisions encoded here - a
-        deliberately tight blanket spacing, and a stretch at BOTH ends - are
-        the ones that every widget added later silently depends on, and both
-        were arrived at by measurement rather than taste.
+        """The page layout: tight blanket spacing and a stretch at both ends,
+        both measured choices every later widget depends on.
         """
         layout = QVBoxLayout(self)
-        # Step 3 has a large empty middle at 650x600 (see the room analysis
-        # in theme.Spacing's docstring) - the most slack of any of the
-        # three steps - so the outer margin moves up a full notch (XL ->
-        # XXL). The blanket inter-widget spacing is deliberately kept
-        # tight (SM), NOT bumped the same way: this layout has nine items
-        # (title, file info, two explicit addSpacing gaps, progress bar,
-        # status, time, the result panel, a trailing stretch), and
-        # layout.setSpacing() multiplies across every one of those eight
-        # gaps. Measured empirically: at a generous blanket spacing,
-        # combined with the taller DISPLAY heading and the result panel's
-        # own widened padding, the nine items' minimum height exceeds the
-        # 471px this step actually gets (650x600 minus the header and nav
-        # bar), and because the layout carries an explicit AlignCenter, Qt
-        # doesn't just clip the overflow - it compresses every item below
-        # its sizeHint, and any width-dependent label caught in that
-        # squeeze (the result panel's path label used to be a wrapped
-        # two-line QLabel and is exactly this case - see the comment above
-        # its construction for why it no longer wraps) renders as visibly
-        # corrupted double-struck glyphs once squeezed below the height its
-        # content needs - worse than merely looking cramped. Kept at SM;
-        # the two explicit
-        # addSpacing() calls below carry the "generous gap before a major
-        # section" emphasis instead, since spending space there only costs
-        # one gap, not eight.
+        # THE LAYOUT TRAP. Under AlignCenter, Qt answers too little height by
+        # squeezing every item below its sizeHint, and a label whose height
+        # depends on its width then draws corrupted, double-struck glyphs
+        # rather than clipping. So: blanket spacing stays tight (SM - it
+        # multiplies across every gap), generous gaps are explicit
+        # addSpacing() calls, and nothing here may wrap (see result_path).
         layout.setSpacing(Spacing.SM)
         layout.setContentsMargins(Spacing.XXL, Spacing.XXL, Spacing.XXL, Spacing.XXL)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Leading stretch, paired with the trailing one added after
-        # result_widget below. With only a trailing stretch, every pixel of
-        # slack a resized window hands this step collects at the bottom -
-        # the content (and the completion panel especially) stays pinned to
-        # the top of the page while an ever-growing dead band opens up
-        # underneath it, which is exactly what a "floating in space" bug
-        # looks like the moment the window is enlarged rather than left at
-        # its default size. Two zero-stretch spacers split whatever slack
-        # exists evenly between them instead, so the whole block - file
-        # info through the result panel - stays vertically centered as the
-        # window grows, which is what layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # above was already declaring as the intent; a lone trailing
-        # stretch is what had been overriding it in practice.
+        # Stretches at both ends keep the block centred as the window grows;
+        # a trailing one alone pinned it to the top.
         layout.addStretch()
 
         return layout
@@ -135,25 +95,9 @@ class TranscriptionStep(QFrame):
 
     def _build_batch_strip(self, layout: QVBoxLayout) -> None:
         """The batch progress strip, plus the state the strip is rebuilt from."""
-        # Batch strip: "3 / 10" plus one small segment per file, shown only
-        # for a batch (n > 1 - see set_batch_files). A single ten-file run
-        # used to have no on-screen answer to "which file is running" beyond
-        # whatever text update_progress happened to be showing at that
-        # instant; this makes that state a first-class, always-visible part
-        # of the page instead of something you had to catch mid-scroll of
-        # the status line.
-        #
-        # Hidden (not just empty) for a single-file run - see
-        # set_batch_files - because a one-segment "strip" would just be
-        # visual noise repeating what file_info already says. Placed here,
-        # joined to file_info and to the progress bar by the layout's
-        # ordinary SM inter-item spacing rather than its own explicit
-        # addSpacing(): the two existing addSpacing(LG) calls in this
-        # layout are reserved for "generous gap before a major section" (see
-        # the layout-spacing comment in _build_page_layout) - inserting a
-        # third would widen the file_info-to-progress-bar gap for every run,
-        # batch or not, not just add room for this one new, usually-hidden
-        # widget.
+        # Batch strip: "3 / 10" and one segment per file, so "which file is
+        # running" is always visible. Hidden for a single file (it would only
+        # repeat file_info); joined by the plain SM spacing, not its own gap.
         self.batch_strip = QFrame()
         self.batch_strip.setStyleSheet("background: transparent;")
         batch_layout = QVBoxLayout(self.batch_strip)
@@ -264,31 +208,10 @@ class TranscriptionStep(QFrame):
         )
         result_layout.addWidget(self.success_msg)
 
-        # File path - caption and path are two separate labels now, not one
-        # wrapped two-line string. They used to be a single QLabel with an
-        # explicit "\n" and setWordWrap(True), which made the label's height
-        # a function of its width (Qt's heightForWidth). That interacted
-        # badly with this layout's Qt.AlignmentFlag.AlignCenter (see _build_page_layout's
-        # comment and show_result()'s note on the batch-strip removal,
-        # the same failure mode caught twice): minimumSizeHint() reported
-        # 50px for "Saved to:\n<long path>" at its real width, but the
-        # allocated height was 37px - 13px short, with hundreds of spare
-        # pixels elsewhere in the panel, so this was never the window being
-        # too small. AlignCenter's compression only measures against a
-        # child's sizeHint at ITS current width, and a width-dependent
-        # sizeHint under a center-aligned layout is exactly the trap that
-        # corrupts glyphs; it does not reliably clip cleanly instead.
-        #
-        # The caption is now a plain, unwrapped, single-line label - fixed
-        # text, fixed height, no heightForWidth involved. The path is a
-        # second plain label, also single-line and unwrapped, with its text
-        # middle-elided in code (_render_result_path) to fit the panel's
-        # actual width rather than wrapped to it - so its height depends
-        # only on the font's line height, never on its width, and the
-        # AlignCenter trap has nothing left to grab onto. The full,
-        # unelided path still reaches the user via tooltip and accessible
-        # description (set in _render_result_path), and via "Show in
-        # folder" / "Open transcript" right below it.
+        # Caption and path are separate single-line labels, the path elided in
+        # code (_render_result_path) - a wrapped label falls into the layout
+        # trap in _build_page_layout. The full path is in the tooltip and the
+        # accessible description.
         self.result_saved_caption = make_label(
             t("saved_to_caption"),
             font=Fonts.BODY,
@@ -331,12 +254,7 @@ class TranscriptionStep(QFrame):
         self.open_button.clicked.connect(self._open_result)
         open_row.addWidget(self.open_button)
 
-        # Secondary to "Open transcript" - the transcript is the thing you
-        # came here for, so it stays the primary/filled action; revealing
-        # the folder is the thing people reach for right after (attach the
-        # file elsewhere, copy it, check it actually landed where expected)
-        # so it gets button_secondary_qss rather than a second filled
-        # button competing for the same attention.
+        # Secondary styling: opening the transcript is the main action.
         self.folder_button = IconTextButton()
         self.folder_button.setText(t("show_in_folder"))
         self.folder_button.set_icon_spec("folder", "left")
@@ -374,12 +292,8 @@ class TranscriptionStep(QFrame):
         # decision, not a widget, and it is testable against a fake clock
         # there rather than only through a live window.
         self._estimator = TimeEstimator()
-        # Ticks once a second so the elapsed/remaining time and a "still
-        # working" heartbeat keep moving even during real backend gaps with
-        # no new progress message (e.g. while the model is still loading, or
-        # a long segment is still being decoded) - otherwise the UI looks
-        # frozen even though work is genuinely happening in the background
-        # process.
+        # A 1 s tick keeps the clock and a heartbeat moving through gaps with
+        # no backend message (model loading, a long segment).
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick)
@@ -401,23 +315,9 @@ class TranscriptionStep(QFrame):
         self.file_info.setText(t("file_model_info", filename=filename, model=model.title()))
 
     def set_batch_files(self, filenames: list[str]) -> None:
-        """(Re)build the batch strip's segments from the GUI's own selected-
-        file list - called once, when a run starts (see
-        MainWindow._start_transcription), NOT derived from the worker's
-        w_file_progress messages.
-
-        This matters because w_file_progress only ever names the file
-        CURRENTLY running ({"i", "n", "name"} - see core/worker.py); if
-        segment tooltips were populated one at a time as each file's
-        message arrived, every segment except the current one would show
-        no filename at all until its own turn came up. MainWindow already
-        holds the full list in self.selected_files from step 1, so passing
-        it in here up front means every segment - done, current, and still-
-        pending - has its real filename from the very first paint.
-
-        Hidden for n <= 1 (see the layout comment above self.batch_strip):
-        for a single file, file_info's own text already names it, so a
-        one-segment strip would only repeat that.
+        """(Re)build the batch strip from the GUI's own file list, at run start -
+        the worker only ever names the current file, so every segment gets its
+        filename up front. Hidden for a single file.
         """
         self._batch_filenames = list(filenames)
 
@@ -446,13 +346,7 @@ class TranscriptionStep(QFrame):
 
         for name in self._batch_filenames:
             segment = QFrame()
-            # A fixed literal, not one of the named Spacing/Radius tokens -
-            # these segments are a new, much smaller kind of element (a
-            # progress tick, not a control or a panel) that none of the
-            # existing scales were sized for. 6px is tall enough to read as
-            # a distinct filled/empty mark at the strip's compact width,
-            # short enough that ten of them plus the readout label stay
-            # well inside step 3's spare vertical budget.
+            # 6 px: a progress tick, smaller than any Spacing token.
             segment.setFixedHeight(6)
             segment.setToolTip(name)
             segment.setAccessibleName(name)
@@ -469,21 +363,9 @@ class TranscriptionStep(QFrame):
         self.batch_strip.show()
 
     def _paint_batch_segments(self, current_index: int) -> None:
-        """Repaint every segment for `current_index` (1-based) being the file
-        now running. Segments before it are done, the one at it is current,
-        everything after is still pending - and any the worker has told us
-        about is failed.
-
-        The failed state is checked FIRST, because a failed file is also a
-        file the run has moved past, and "done" would otherwise win and paint
-        it the same green as one that worked. That was the old behaviour, for
-        want of a signal: the worker had no channel back to the GUI for "this
-        particular file failed", so the only way to find out was to open the
-        output document afterwards and read file_failed_notice. The channel
-        added for the time estimate made one cheap, so the strip now knows.
-
-        Still not guessed at: this paints what the worker actually reported
-        and nothing else.
+        """Paint segments for `current_index` (1-based) running: before it done,
+        at it current, after it pending. Failed is checked first, or a failed
+        file the run moved past would paint as done.
         """
         for index, segment in enumerate(self._batch_segment_frames, start=1):
             if index in self._failed_files:
@@ -513,13 +395,8 @@ class TranscriptionStep(QFrame):
         self._paint_batch_segments(current_index=self._current_file_index)
 
     def mark_file_failed(self, index: int) -> None:
-        """Record that file `index` (1-based) could not be transcribed.
-
-        The run is still going: one bad file does not cost the other nine
-        (see core/worker.py), so this changes what the strip shows and
-        nothing else. The colour alone would be a weak signal on a 6px mark,
-        so the name it announces says so too - that is the part a screen
-        reader reads, and the part a tooltip shows on hover.
+        """Mark file `index` (1-based) failed; the run continues. The name says
+        so too (tooltip and screen reader), since colour alone is weak on 6 px.
         """
         if not 1 <= index <= len(self._batch_segment_frames):
             return
@@ -549,12 +426,7 @@ class TranscriptionStep(QFrame):
         self._enter_stage(Stage.LOAD)
         self.stage_list.show()
         self._estimator = TimeEstimator()
-        # Clearing the set is not enough on its own: the segments keep the
-        # colour and the name they were last given, so a file that failed in
-        # the previous run would stay red - and keep announcing itself as
-        # failed - until the new run happened to repaint it. In practice
-        # set_batch_files rebuilds the strip first, but start() is public and
-        # has to leave the widget consistent by itself.
+        # Repaint too, or segments keep last run's failed colour and name.
         self._reset_batch_segments()
         self._last_percentage = 0
         self._last_percent_change_time = self.start_time
@@ -638,29 +510,17 @@ class TranscriptionStep(QFrame):
         return t(self._status_key, **self._status_params)
 
     def update_work(self, audio_done: float, audio_total: float, sent_at: float) -> None:
-        """Record how much audio the worker has actually decoded.
-
-        sent_at is the WORKER's time.monotonic(), used rather than reading the
-        clock here: it is the same system-wide monotonic clock in both
-        processes (GetTickCount64 on Windows, CLOCK_MONOTONIC elsewhere), and
-        taking the worker's reading keeps queue latency and any Qt event-loop
-        stall out of a rate that is measured over minutes.
+        """Record audio decoded so far. sent_at is the worker's monotonic clock
+        (shared system-wide), keeping queue latency out of the rate.
         """
         self._estimator.note_work(audio_done, audio_total, sent_at)
         if self.start_time is not None:
             self._refresh_time_label(time.time() - self.start_time)
 
     def update_phase(self, name: str, seconds: float, sent_at: float) -> None:
-        """Record one measured phase of the pipeline.
-
-        Only the diarization wait is acted on. The rest - decode, render,
-        Hebrew correction - are already inside the measured rate, because the
-        rate is wall clock over audio and they happen between two audio
-        positions. The wait is the exception: it falls after its file's audio
-        has been fully counted, so nothing would otherwise account for it. On
-        this hardware it costs nothing, because diarization finishes well
-        inside transcription; it is a fast device or a very small model that
-        would leave an overhang here.
+        """Record a measured phase. Only the diarization wait matters to the
+        estimate: other phases fall between audio positions and are already in
+        the rate; the wait comes after its file's audio is counted.
         """
         # Any phase at all anchors the rate's clock: the first one to arrive is
         # this batch's first file being decoded or VAD-scanned, which is the
@@ -681,18 +541,8 @@ class TranscriptionStep(QFrame):
             self._refresh_time_label(time.time() - self.start_time)
 
     def update_progress(self, status_key: str, params: dict[str, object], percentage: int) -> None:
-        """Update status text and, for real percentage updates, the progress
-        bar and elapsed/estimated-remaining time.
-
-        status_key/params identify an i18n message (rendered here, in the
-        current UI language - the worker only ever sends keys).
-
-        percentage == STATUS_ONLY_PERCENT is a status-only sentinel (see
-        TranscriptionThread._relay_progress_message): faster-whisper is
-        doing real work - decoding a segment, retrying it at a different
-        temperature - but we don't have a new, trustworthy percentage yet,
-        so only the descriptive text is updated; the bar and ETA are left
-        exactly where they were.
+        """Show a status message (an i18n key, rendered here) and, unless the
+        percentage is STATUS_ONLY_PERCENT, move the bar and the clock.
         """
         self._status_key = status_key
         self._status_params = dict(params)
@@ -708,13 +558,8 @@ class TranscriptionStep(QFrame):
             if isinstance(file_index, int):
                 self._estimator.note_file_started(file_index)
 
-        # w_file_progress is the one worker message that names which file
-        # in the batch is running (see core/worker.py) - route it to the
-        # batch strip in addition to the status line above. Guarded on the
-        # strip actually being visible: set_batch_files() already hid it
-        # for n <= 1, and a stray message with an out-of-range "i" (there
-        # shouldn't be one, but this is a public method fed by an external
-        # process) would otherwise index past _batch_segment_frames.
+        # w_file_progress names the running file - route it to the strip, if
+        # shown, ignoring an out-of-range index from the external process.
         if status_key == "w_file_progress" and not self.batch_strip.isHidden():
             i, n = params.get("i"), params.get("n")
             if isinstance(i, int) and isinstance(n, int) and n == len(self._batch_segment_frames):
@@ -738,28 +583,11 @@ class TranscriptionStep(QFrame):
         self._progress_animation.start()
 
     def _refresh_time_label(self, elapsed: float) -> None:
-        """Show elapsed, and what the run has measured about what is left.
+        """Show elapsed time and the estimate, on every update and every tick.
 
-        Called on every real update and on every 1-second tick, so the readout
-        keeps counting down between backend messages instead of only moving
-        when one arrives.
-
-        What changed here is where the number comes from. It used to be
-        elapsed * (100 - percent) / percent - a projection over the progress
-        bar, which is only valid if every percent costs the same wall clock.
-        It does not: measured on a 15-minute recording, 67s went by at a fixed
-        5% before a single segment existed. Now it is measured work per measured
-        second (see gui/presenters/time_estimate.py), and the estimator
-        returns None whenever it genuinely does not know yet rather than
-        projecting from a pace that is not happening.
-
-        Three readouts, in order of how much is known:
-          - nothing decoded yet, and the bar has not moved either: elapsed
-            alone, with no claim about the future at all;
-          - something is happening but no rate exists yet - the model is
-            loading, the VAD pass is running, or a first diarization tail is
-            being waited out: "calculating";
-          - a real measurement: the number.
+        Elapsed alone before anything has happened; "calculating" once work is
+        under way but no rate exists yet; then the measured estimate (see
+        gui/presenters/time_estimate.py).
         """
         if self._took_seconds is not None:
             self.time_label.setText(t("took", elapsed=format_mmss(self._took_seconds)))
@@ -801,19 +629,8 @@ class TranscriptionStep(QFrame):
     def show_result(self, file_path: str) -> None:
         """Show completion result."""
         self._result_path_value = os.path.abspath(file_path)
-        # "Which file is running" stops being a meaningful question once
-        # the whole batch is done - and, measured empirically, leaving the
-        # batch strip up here is not just redundant but actively harmful:
-        # with a ten-file batch's strip AND the result panel both
-        # competing for step 3's fixed 471px, the layout's own minimum
-        # height overflowed the allocation by 66px, and AlignCenter
-        # responded by squeezing result_path below the height its wrapped
-        # "Saved to:\n<path>" text needs - the exact corrupted-label
-        # failure mode the layout-spacing comment on this class's __init__
-        # already warns about, just triggered by a second widget instead
-        # of over-generous spacing. Hiding the strip here, rather than
-        # trying to shrink it further, is what keeps the result panel the
-        # one thing competing for that space again.
+        # The strip goes once the batch is done: beside the result panel it
+        # overflowed by 66 px and fell into the layout trap.
         self.batch_strip.hide()
         if self.start_time is not None:
             self._took_seconds = time.time() - self.start_time
@@ -827,29 +644,14 @@ class TranscriptionStep(QFrame):
         self._render_result_path()
 
     def _render_result_path(self) -> None:
-        """Render self._result_path_value into result_path as one middle-elided
-        line, and put the full path where truncation costs nothing: the
-        tooltip and the accessible description. See the comment above
-        result_path's construction for why this replaced a wrapped two-line
-        label.
-
-        Called from three places - show_result, retranslate (the path's
-        Hebrew rendering differs from English, see the RLM anchor on the
-        "saved_to" i18n key used for the tooltip/accessible text below), and
-        resizeEvent (the elision has to be recomputed whenever the panel's
-        available width changes, which a window resize or maximize does) -
-        so it always reflects both the current language and the current
-        width rather than whatever was true when show_result last ran.
+        """The result path as one middle-elided line, the full path in the
+        tooltip and accessible description. Re-run on language change and
+        resize, since both change the elision.
         """
         if self._result_path_value is None:
             return
         path = self._result_path_value
-        # result_path.width() is 0 before its first real layout pass (e.g.
-        # a test that builds the step but never shows it) - fall back to
-        # the panel's own width in that case rather than eliding against
-        # zero, which would render as just an ellipsis. Either way this
-        # self-corrects on the next real resizeEvent once the widget has an
-        # actual width.
+        # Width is 0 before the first layout; use the panel's until then.
         available = self.result_path.width() or self.result_widget.width()
         metrics = QFontMetrics(self.result_path.font())
         self.result_path.setText(
@@ -864,28 +666,13 @@ class TranscriptionStep(QFrame):
         self.result_path.setAccessibleDescription(full_text)
 
     def resizeEvent(self, event: QResizeEvent | None) -> None:
-        """Keep the elided path in sync with the panel's actual width - see
-        _render_result_path's docstring. A no-op whenever there is no
-        result yet (the guard inside _render_result_path), so this costs
-        nothing on every other resize this step sees before a run has
-        completed.
-        """
+        """Re-elide the path to the new width (a no-op before a result)."""
         super().resizeEvent(event)
         self._render_result_path()
 
     def _open_result(self) -> None:
-        """Open the finished transcript in a preferred browser.
-
-        Chrome, then Firefox, then Edge, then whatever the OS associates
-        with .html - in that order, because the .html file association is
-        often Edge even on a machine where Chrome is the browser someone
-        actually uses, and this page is an interactive app (search, audio
-        sync, speaker editing), not a document where the renderer is
-        cosmetic. See core/browser_open for how each candidate is found.
-
-        A failure here is not worth an error dialog - the path is on screen
-        either way, so it is logged and the user can still open it
-        themselves.
+        """Open the transcript in a preferred browser (core/browser_open). A
+        failure is only logged - the path is on screen anyway.
         """
         if not self._result_path_value:
             return
@@ -896,17 +683,8 @@ class TranscriptionStep(QFrame):
             logger.warning(f"Could not open transcript in a browser: {e}", exc_info=True)
 
     def _open_folder(self) -> None:
-        """Reveal the transcript's containing folder in the OS file manager.
-
-        QDesktopServices.openUrl rather than webbrowser: a directory has no
-        browser association to hand off to (webbrowser.open on a folder
-        path is undefined/unreliable across platforms), whereas
-        QDesktopServices asks the OS shell directly to show the path -
-        Explorer on Windows, Finder on macOS, whatever the desktop
-        environment provides on Linux. Same swallow-and-log handling as
-        _open_result and for the same reason: the path is already sitting
-        on screen in result_path either way, so a failure here isn't worth
-        interrupting the user over.
+        """Show the transcript's folder in the OS file manager (QDesktopServices;
+        webbrowser on a folder is unreliable). Failures are only logged.
         """
         if not self._result_path_value:
             return
