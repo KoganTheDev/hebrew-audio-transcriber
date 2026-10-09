@@ -12,7 +12,7 @@ QSS has no transitions and the current step "breathes". The connectors say
 what is next: solid behind you, dashes drifting toward the step you are
 about to reach, static dashes beyond that. One looping animation drives
 every moving part, and it runs only while the strip is visible and Windows
-animation effects are on (see theme.animations_enabled). With it stopped,
+animation effects are on (see motion.animations_enabled). With it stopped,
 every state still reads from color and shape alone.
 
 QHBoxLayout mirrors under RightToLeft, so step 1 lands on the right in
@@ -23,14 +23,14 @@ dashes drift.
 
 from enum import Enum
 
-from PyQt5.QtCore import QElapsedTimer, QPointF, QRectF, QSize, Qt, QVariantAnimation
+from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
 from PyQt5.QtGui import QColor, QHideEvent, QPainter, QPaintEvent, QPen, QPixmap, QShowEvent
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 
-from gui import theme
+from gui import motion, theme
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
-from gui.motion import LONG_AGO, breath, ease_out_cubic, mix, pop_scale, progress, with_alpha
+from gui.motion import LONG_AGO, ease_out_cubic, mix, now_ms, pop_scale, progress, with_alpha
 from gui.steps import Step
 from gui.theme import COLORS, Fonts, Motion, Spacing
 
@@ -81,7 +81,6 @@ class _StepPill(QWidget):
         self.state = _State.PENDING
         # Clock time this pill became DONE, for the pop and the cross-fade.
         self.since = LONG_AGO
-        self._now = 0.0
         self._alpha = 1.0
         self._check_cache: dict[float, QPixmap] = {}
         self.setFont(Fonts.CAPTION_BOLD)
@@ -92,8 +91,7 @@ class _StepPill(QWidget):
         self.updateGeometry()
         self.update()
 
-    def set_frame(self, now: float, alpha: float) -> None:
-        self._now = now
+    def set_alpha(self, alpha: float) -> None:
         self._alpha = alpha
         self.update()
 
@@ -115,13 +113,14 @@ class _StepPill(QWidget):
         return pixmap
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
+        now = now_ms()
         if self.state is _State.CURRENT:
             body = with_alpha("accent", self._alpha)
             ink = QColor(COLORS["accent_text"])
         elif self.state is _State.DONE:
             # Cross-fade from the current step's look into the done tint, so
             # the step visibly turns into "finished" instead of swapping.
-            f = ease_out_cubic(progress(self._now, self.since, Motion.CONNECTOR_FILL_MS))
+            f = ease_out_cubic(progress(now, self.since, Motion.CONNECTOR_FILL_MS))
             body = mix(QColor(COLORS["accent"]), with_alpha("success", _DONE_TINT_ALPHA), f)
             ink = mix(QColor(COLORS["accent_text"]), QColor(COLORS["success"]), f)
         else:
@@ -140,7 +139,7 @@ class _StepPill(QWidget):
         h = float(self.height())
         marker_x = self.width() - _PAD_MARKER_SIDE - _MARKER if rtl else _PAD_MARKER_SIDE
         if self.state is _State.DONE:
-            scale = pop_scale(self._now, self.since)
+            scale = pop_scale(now, self.since)
             painter.save()
             painter.translate(marker_x + _MARKER / 2, h / 2)
             painter.scale(scale, scale)
@@ -171,13 +170,11 @@ class _Connector(QWidget):
         super().__init__(parent)
         self.state = _State.PENDING
         self.since = LONG_AGO
-        self._now = 0.0
         self._alpha = 1.0
         self._offset_px = 0.0
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-    def set_frame(self, now: float, alpha: float, offset_px: float) -> None:
-        self._now = now
+    def set_frame(self, alpha: float, offset_px: float) -> None:
         self._alpha = alpha
         self._offset_px = offset_px
         self.update()
@@ -212,7 +209,7 @@ class _Connector(QWidget):
             painter.drawLine(QPointF(a, y), QPointF(b, y))
 
         if self.state is _State.DONE:
-            f = ease_out_cubic(progress(self._now, self.since, Motion.CONNECTOR_FILL_MS))
+            f = ease_out_cubic(progress(now_ms(), self.since, Motion.CONNECTOR_FILL_MS))
             mid = start + (end - start) * f
             if f < 1:
                 segment(self._dashed(with_alpha("accent", 0.5)), mid, end)
@@ -262,15 +259,7 @@ class StepIndicator(QFrame):
                 layout.addWidget(connector, 1)
                 self._connectors.append(connector)
 
-        # Wall clock for the one-shot transitions and the dash drift; the
-        # loop below only decides when to repaint and how deep the breath is.
-        self._clock = QElapsedTimer()
-        self._clock.start()
-        self._breath = QVariantAnimation(self)
-        self._breath.setStartValue(0.0)
-        self._breath.setEndValue(1.0)
-        self._breath.setDuration(Motion.BREATH_MS)
-        self._breath.setLoopCount(-1)
+        self._breath = motion.breath_loop(self)
         self._breath.valueChanged.connect(self._paint_frame)
 
         self.set_current(Step.FILE_SELECT)
@@ -293,13 +282,13 @@ class StepIndicator(QFrame):
         self._paint_frame()
 
     def is_animating(self) -> bool:
-        return self._breath.state() == QVariantAnimation.State.Running
+        return motion.is_running(self._breath)
 
     def _show_index(self, index: int) -> None:
         # Moving forward animates the steps it completes; moving back, or
         # anything while the loop is off, just snaps.
         animate = self._index is not None and index > self._index and self.is_animating()
-        now = float(self._clock.elapsed())
+        now = now_ms()
 
         def place(item: _StepPill | _Connector, i: int) -> None:
             state = _State.DONE if i < index else _State.CURRENT if i == index else _State.PENDING
@@ -315,21 +304,19 @@ class StepIndicator(QFrame):
         self.retranslate()
 
     def _paint_frame(self, value: object = None) -> None:
-        now = float(self._clock.elapsed())
         if self.is_animating():
-            phase = float(self._breath.currentValue())
-            alpha = Motion.PULSE_MIN_ALPHA + (1 - Motion.PULSE_MIN_ALPHA) * breath(phase)
-            offset = now / 1000 * Motion.DASH_SPEED_PX_S
+            alpha = motion.pulse_alpha(float(self._breath.currentValue()))
+            offset = now_ms() / 1000 * Motion.DASH_SPEED_PX_S
         else:
             alpha, offset = 1.0, 0.0
         for pill in self._pills:
-            pill.set_frame(now, alpha)
+            pill.set_alpha(alpha)
         for connector in self._connectors:
-            connector.set_frame(now, alpha, offset)
+            connector.set_frame(alpha, offset)
 
     def showEvent(self, a0: QShowEvent | None) -> None:
         super().showEvent(a0)
-        if theme.animations_enabled() and not self.is_animating():
+        if motion.animations_enabled() and not self.is_animating():
             self._breath.start()
 
     def hideEvent(self, a0: QHideEvent | None) -> None:

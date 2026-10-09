@@ -6,7 +6,7 @@ import logging
 import math
 import os
 
-from PyQt5.QtCore import QRectF, Qt, QVariantAnimation, pyqtSignal
+from PyQt5.QtCore import QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import (
     QColor,
     QDragEnterEvent,
@@ -33,7 +33,7 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from gui import theme
+from gui import motion, theme
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
 from gui.motion import breath
@@ -376,11 +376,7 @@ class FileSelectStep(QFrame):
 
     def _init_halo(self) -> None:
         self._drag_over = False
-        self._halo = QVariantAnimation(self)
-        self._halo.setStartValue(0.0)
-        self._halo.setEndValue(1.0)
-        self._halo.setDuration(Motion.BREATH_MS)
-        self._halo.setLoopCount(-1)
+        self._halo = motion.breath_loop(self)
         self._halo.valueChanged.connect(self._repaint_halo)
         # Adding or clearing files changes whether there is a halo at all.
         self.files_selected.connect(lambda *_: self._sync_halo())
@@ -403,14 +399,14 @@ class FileSelectStep(QFrame):
         return Motion.HALO_MAX_ALPHA * 0.7, "accent"
 
     def is_halo_breathing(self) -> bool:
-        return self._halo.state() == QVariantAnimation.State.Running
+        return motion.is_running(self._halo)
 
     def _sync_halo(self) -> None:
         breathe = (
             self.isVisible()
             and not self.selected_files
             and not self._drag_over
-            and theme.animations_enabled()
+            and motion.animations_enabled()
         )
         if breathe and not self.is_halo_breathing():
             self._halo.start()

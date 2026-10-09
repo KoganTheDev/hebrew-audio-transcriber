@@ -14,12 +14,8 @@ from PyQt5.QtWidgets import QProgressBar, QSizePolicy, QWidget
 from core.formatting import format_mmss
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
-from gui.motion import LONG_AGO, ease_out_cubic, mix, pop_scale, progress, with_alpha
+from gui.motion import LONG_AGO, ease_out_cubic, mix, now_ms, pop_scale, progress, with_alpha
 from gui.theme import COLORS, Fonts, Motion
-
-
-def _now_ms() -> float:
-    return time.monotonic() * 1000
 
 
 class BarMode(Enum):
@@ -53,15 +49,15 @@ class RunProgressBar(QProgressBar):
 
     def set_mode(self, mode: BarMode) -> None:
         if mode is BarMode.DONE and self.mode is not BarMode.DONE:
-            self.done_since = _now_ms() if self.animating else LONG_AGO
+            self.done_since = now_ms() if self.animating else LONG_AGO
         self.mode = mode
         self.update()
 
     def finish_settled(self) -> bool:
-        return progress(_now_ms(), self.done_since, Motion.FINISH_MS) >= 1
+        return progress(now_ms(), self.done_since, Motion.FINISH_MS) >= 1
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
-        now = _now_ms()
+        now = now_ms()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         groove = QRectF(self.rect())
@@ -176,7 +172,7 @@ class StageChecklist(QWidget):
         self._active_since = now
         # Stages left behind tick over to done - pop their checks.
         for s in self.stages[: self.stages.index(stage)]:
-            self._done_since.setdefault(s, _now_ms() if self.animating else LONG_AGO)
+            self._done_since.setdefault(s, now_ms() if self.animating else LONG_AGO)
         # Re-entering an earlier stage (the next file of a batch) makes the
         # stages after it pending again until the run reaches them.
         for s in self.stages[self.stages.index(stage) :]:
@@ -246,7 +242,7 @@ class StageChecklist(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rtl = self.layoutDirection() == Qt.LayoutDirection.RightToLeft
         w = float(self.width())
-        now = _now_ms()
+        now = now_ms()
         caption = Fonts.CAPTION
 
         for i, stage in enumerate(self.stages):

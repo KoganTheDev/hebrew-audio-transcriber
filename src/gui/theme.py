@@ -25,9 +25,7 @@ widget instance (button variants, selected-card borders, etc.) stays a
 per-widget call - app_stylesheet() is not the place to fight it.
 """
 
-import ctypes
 import math
-import sys
 
 from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPixmap
@@ -312,33 +310,6 @@ class Motion:
     # Step 2's error banner opening: its height grows from nothing while the
     # message fades in over a little longer.
     BANNER_MS = 220
-
-
-# SystemParametersInfoW action for Settings > Accessibility > Visual effects
-# > "Animation effects". Not exported by ctypes, so named here.
-_SPI_GETCLIENTAREAANIMATION = 0x1042
-
-
-def animations_enabled() -> bool:
-    """Whether to run decorative animations at all.
-
-    Honors the Windows "Animation effects" switch, which is where people who
-    get motion sick from UI movement turn it off - looping motion (the
-    stepper's breath and flowing dashes) is exactly what that setting exists
-    to stop. Read on each call rather than cached, so flipping the setting
-    takes effect the next time a widget starts its animation. Anywhere the
-    setting cannot be read (not Windows, or the call fails) counts as on.
-    """
-    if sys.platform != "win32":
-        return True
-    try:
-        enabled = ctypes.c_bool(True)
-        ok = ctypes.windll.user32.SystemParametersInfoW(
-            _SPI_GETCLIENTAREAANIMATION, 0, ctypes.byref(enabled), 0
-        )
-        return bool(enabled.value) if ok else True
-    except (AttributeError, OSError):
-        return True
 
 
 def button_primary_qss() -> str:

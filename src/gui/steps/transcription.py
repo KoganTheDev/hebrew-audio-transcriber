@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 
-from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl, QVariantAnimation
+from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QFontMetrics, QHideEvent, QResizeEvent, QShowEvent
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
@@ -20,10 +20,9 @@ from core.progress_scale import (
     WORK_PHASE_RENDER,
     WORK_PHASE_TRANSCRIBE,
 )
-from gui import theme
+from gui import motion, theme
 from gui.i18n import t
 from gui.icons import ICONS, svg_to_pixmap
-from gui.motion import breath
 from gui.presenters.time_estimate import TimeEstimator
 from gui.steps.run_progress import BarMode, RunProgressBar, Stage, StageChecklist
 from gui.theme import COLORS, Fonts, Motion, Spacing
@@ -402,11 +401,7 @@ class TranscriptionStep(QFrame):
         # One loop repaints the bar's shimmer/gleam and the checklist's
         # breathing dot; its value is the breath phase. It runs only while
         # this page is visible and Windows animation effects are on.
-        self._motion = QVariantAnimation(self)
-        self._motion.setStartValue(0.0)
-        self._motion.setEndValue(1.0)
-        self._motion.setDuration(Motion.BREATH_MS)
-        self._motion.setLoopCount(-1)
+        self._motion = motion.breath_loop(self)
         self._motion.valueChanged.connect(self._on_motion)
 
     def set_file_info(self, filename: str, model: str) -> None:
@@ -592,7 +587,7 @@ class TranscriptionStep(QFrame):
         self._set_motion(False)
 
     def _set_motion(self, on: bool) -> None:
-        on = on and theme.animations_enabled()
+        on = on and motion.animations_enabled()
         self.progress_bar.animating = on
         self.stage_list.animating = on
         if on and not self.is_animating():
@@ -604,13 +599,10 @@ class TranscriptionStep(QFrame):
         self.stage_list.update()
 
     def is_animating(self) -> bool:
-        return self._motion.state() == QVariantAnimation.State.Running
+        return motion.is_running(self._motion)
 
     def _on_motion(self, value: object) -> None:
-        phase = float(self._motion.currentValue())
-        self.stage_list.breath_alpha = Motion.PULSE_MIN_ALPHA + (
-            1 - Motion.PULSE_MIN_ALPHA
-        ) * breath(phase)
+        self.stage_list.breath_alpha = motion.pulse_alpha(float(self._motion.currentValue()))
         self.progress_bar.update()
         self.stage_list.update()
         # After the run, the loop only stays on to play the bar's finish.

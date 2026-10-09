@@ -34,7 +34,7 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from gui import theme
+from gui import motion, theme
 from gui.focus import PROPERTY as KBD_FOCUS_PROPERTY
 from gui.i18n import format_duration, is_rtl, model_text, t
 from gui.icons import ICONS, svg_to_pixmap
@@ -636,7 +636,7 @@ class ModelSelectStep(QFrame):
         carry only one QGraphicsEffect.
         """
         self._end_banner_reveal()
-        if not theme.animations_enabled():
+        if not motion.animations_enabled():
             return
         # The height the banner will really get: its message wraps, so it is
         # a function of the width the page gives it. sizeHint() alone is the

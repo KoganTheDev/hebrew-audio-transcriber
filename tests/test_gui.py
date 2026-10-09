@@ -1134,9 +1134,9 @@ class TestMainWindowStepNavigation:
     ):
         from PyQt5.QtCore import QPoint
 
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: True)
         main_window.file_step.selected_files = ["a.wav"]
         main_window.next_btn.setEnabled(True)
         main_window._go_next()
@@ -1149,19 +1149,19 @@ class TestMainWindowStepNavigation:
         assert page.pos() == QPoint(0, 0)
 
     def test_no_slide_when_windows_animations_are_off(self, main_window, monkeypatch):
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: False)
         main_window.file_step.selected_files = ["a.wav"]
         main_window.next_btn.setEnabled(True)
         main_window._go_next()
         assert main_window.model_step.graphicsEffect() is None
 
     def test_staying_on_the_same_step_does_not_slide(self, main_window, monkeypatch):
-        from gui import theme
+        from gui import motion
         from gui.steps import Step
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: True)
         main_window._set_step(
             Step.FILE_SELECT, back_visible=False, cancel_visible=False, next_visible=True
         )
@@ -1191,10 +1191,10 @@ class TestStepIndicator:
 
     @pytest.fixture
     def indicator(self, qtbot, monkeypatch):
-        from gui import theme
+        from gui import motion
         from gui.stepper import StepIndicator
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: True)
         widget = StepIndicator()
         qtbot.addWidget(widget)
         return widget
@@ -1244,9 +1244,9 @@ class TestStepIndicator:
         assert not indicator.is_animating()
 
     def test_no_motion_when_windows_animations_are_off(self, indicator, monkeypatch):
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: False)
         indicator.show()
         assert not indicator.is_animating()
 
@@ -2667,10 +2667,10 @@ class TestTranscriptionStepStages:
 
     @pytest.fixture
     def step(self, qtbot, monkeypatch):
-        from gui import theme
+        from gui import motion
         from gui.steps.transcription import TranscriptionStep
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: True)
         s = TranscriptionStep()
         qtbot.addWidget(s)
         yield s
@@ -2783,9 +2783,9 @@ class TestTranscriptionStepStages:
         assert not step.is_animating()
 
     def test_no_motion_when_windows_animations_are_off(self, step, monkeypatch):
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: False)
         step.start()
         step.show()
         assert not step.is_animating()
@@ -2827,9 +2827,9 @@ class TestDropZoneHalo:
 
     @pytest.fixture
     def step(self, file_select_step, monkeypatch):
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: True)
         return file_select_step
 
     def test_breathes_only_while_shown_and_empty(self, step):
@@ -2873,9 +2873,9 @@ class TestDropZoneHalo:
         assert step.is_halo_breathing()
 
     def test_still_but_present_when_windows_animations_are_off(self, step, monkeypatch):
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: False)
         step.show()
         assert not step.is_halo_breathing()
         assert step.halo_strength() is not None
@@ -2896,10 +2896,10 @@ class TestErrorBannerReveal:
 
     @pytest.fixture
     def step(self, qtbot, model_hardware_stub, monkeypatch):
-        from gui import theme
+        from gui import motion
         from gui.steps.model_select import ModelSelectStep
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: True)
         s = ModelSelectStep(model_hardware_stub)
         qtbot.addWidget(s)
         s.resize(600, 600)
@@ -2938,9 +2938,9 @@ class TestErrorBannerReveal:
     def test_appears_at_once_when_windows_animations_are_off(self, step, monkeypatch):
         from PyQt5.QtWidgets import QWIDGETSIZE_MAX
 
-        from gui import theme
+        from gui import motion
 
-        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        monkeypatch.setattr(motion, "animations_enabled", lambda: False)
         step.show_error("w_error", {"detail": "boom"})
         assert step._banner_reveal is None
         assert step.error_banner.maximumHeight() == QWIDGETSIZE_MAX

@@ -37,7 +37,7 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from gui import i18n, theme
+from gui import i18n, motion, theme
 from gui.checkbox_style import PaintedCheckboxStyle
 from gui.crash_dialog import CrashDialog
 from gui.crash_handler import get_crash_bridge
@@ -722,7 +722,7 @@ class MainWindow(QMainWindow):
         offscreen pixmap for nothing.
         """
         self._end_page_slide()
-        if not theme.animations_enabled() or not self.isVisible():
+        if not motion.animations_enabled() or not self.isVisible():
             return
         page = self.stacked_widget.currentWidget()
         if page is None:
