@@ -1,18 +1,10 @@
 """Speaker diarization: working out who spoke when, for single-microphone
 recordings where both parties share one channel.
 
-Engine choice. The obvious candidate is pyannote.audio, which is the accuracy
-leader, but it pulls torch and torchaudio (~2.5 GB) and requires a HuggingFace
-account plus accepting gated model terms before it will download weights at
-runtime. That is a poor fit for an app whose entire premise is that it runs
-locally with no account and no network after setup. sherpa-onnx runs the same
-family of models through onnxruntime instead: ~36 MB of weights, no login, no
-torch, and it exposes the one knob that matters most here - clustering into a
-known number of speakers.
-
-Fixing the speaker count is the single largest lever available: threshold-based
-clustering has to infer how many people are present, and gets it wrong often
-enough to fragment one speaker into several.
+sherpa-onnx rather than pyannote.audio: the same model family through
+onnxruntime, ~36 MB with no torch (~2.5 GB) and no HuggingFace account - this
+app runs offline with no login. It also clusters into a known speaker count,
+the biggest accuracy lever: inferring the count fragments speakers.
 
 Word-to-speaker attribution lives in core/speaker_attribution.py.
 """
@@ -55,14 +47,8 @@ _SEGMENTATION_MODEL = os.path.join(
 )
 
 
-# Which embedding model is in play is config.DIARIZATION_EMBEDDING_MODEL, not
-# a constant here - see docs/DIARIZATION_TUNING.md for the measurement behind
-# the default and the alternatives.
-# Both functions read config at CALL time, not at import time, so that
-# tests/eval/compare_diarization.py's --embedding-model can monkeypatch
-# config.DIARIZATION_EMBEDDING_MODEL the same way it already does for
-# DIARIZATION_ENGINE and DIARIZATION_CLUSTER_THRESHOLD and have it actually
-# take effect.
+# The embedding model is config.DIARIZATION_EMBEDDING_MODEL (chosen in
+# docs/DIARIZATION_TUNING.md), read at call time so tests/eval can patch it.
 def _embedding_model_url() -> str:
     return (
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/"

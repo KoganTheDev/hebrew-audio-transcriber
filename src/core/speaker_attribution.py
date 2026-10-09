@@ -1,13 +1,6 @@
-"""Turning speaker-labelled time spans into speaker-labelled transcript segments.
-
-The diarizer (core/diarization.py) says who spoke when; the transcriber says
-what was said when. Neither knows about the other, and their boundaries do
-not line up, so joining them is its own problem with its own failure modes -
-which is why it lives here rather than inside the engine module.
-
-Nothing here imports an engine, a model or onnxruntime: it is arithmetic over
-spans and word timings, so every decision below is unit-testable without a
-model file.
+"""Joining who-spoke-when spans (core/diarization.py) to what-was-said
+segments, whose boundaries do not line up. Pure arithmetic over spans and word
+timings - no engine or model - so every decision is unit-testable.
 """
 
 from collections.abc import Sequence
@@ -38,20 +31,11 @@ def assign_speakers(
     """Attach a speaker to each transcript segment, splitting where the speaker
     changes mid-segment.
 
-    Works at word level, not segment level. Whisper's segment boundaries are
-    decided by its decoder and have no relationship to who is talking, so a
-    speaker change lands mid-segment routinely. Attributing whole segments by
-    their overall time span would smear every such change across an entire
-    turn, and even majority-voting the whole segment to one label throws the
-    minority words' speaker away. Instead each word is matched to the span it
-    overlaps most, and consecutive words that agree become one sub-segment -
-    so a straddling segment is cut into two (or more) at the word boundary
-    where the speaker actually changed, rather than losing that boundary.
-
-    Segments with no word timings (or no overlapping span at all) fall back to
-    matching on the segment's own span, and stay None if even that fails.
-    Leaving a segment unattributed is better than guessing: the renderer simply
-    omits the label.
+    Word level, because Whisper's segment boundaries ignore who is talking:
+    each word takes the span it overlaps most, and agreeing neighbours become
+    one sub-segment, so a straddling segment is cut where the speaker changed.
+    Without word timings the segment's own span decides; failing that it stays
+    None, which renders unlabelled rather than guessed.
 
     Mutation contract: the returned list is always new, and a split segment's
     pieces are new Segment objects, but an UNSPLIT segment has its `.speaker`

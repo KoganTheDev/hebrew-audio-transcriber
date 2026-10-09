@@ -1,15 +1,10 @@
-"""Decoding audio into arrays, and deciding whether a file already separates its
-speakers by channel.
+"""Decoding audio into arrays, and deciding whether a file already separates
+its speakers by channel.
 
-Handing faster-whisper a path is enough until you want to know who is
-speaking: it downmixes to mono internally, so per-channel information is gone
-before anything can look at it. Some of the recordings this app handles (phone
-and VoIP call recorders) put each party on their own channel, which is the one
-case where speaker attribution can be exact rather than inferred.
-
-PyAV is used for decoding. It is already present as a faster-whisper
-dependency, and gui/audio_utils.py already uses it to probe duration, so this
-adds no new requirement.
+faster-whisper downmixes to mono internally, losing the channels. Phone and
+VoIP recorders often put each party on its own channel - the one case where
+speaker attribution can be exact. Decoded with PyAV, already a faster-whisper
+dependency.
 """
 
 import logging
@@ -50,14 +45,8 @@ SILENCE_FLOOR_RATIO = 0.1
 
 
 def decode_channels(path: str) -> tuple[list[np.ndarray], int]:
-    """Decode an audio file to a list of float32 channel arrays at 16 kHz.
-
-    Returns ([channel0, channel1, ...], sample_rate). Mono files yield a
-    single-element list.
-
-    Raises whatever PyAV raises - callers decide whether a decode failure is
-    fatal or just means falling back to letting faster-whisper open the file
-    itself.
+    """([channel0, ...], sample_rate) as float32 at 16 kHz; mono gives one
+    channel. PyAV errors propagate - the caller decides whether to fall back.
     """
     import av
 
@@ -95,16 +84,9 @@ def decode_channels(path: str) -> tuple[list[np.ndarray], int]:
     if not buffers:
         raise ValueError(f"Decoded no audio from {path}")
 
-    # Popped, not iterated, so each channel's chunks become garbage the moment
-    # they have been joined instead of all of them staying alive until every
-    # channel is done. Measured on a 900s stereo file, this pair of changes
-    # takes decoding's peak from +676 MB to well under half that; the audio
-    # itself is only 110 MB, and the rest was copies.
-    #
-    # astype(copy=False), not astype(): the resampler is configured for "fltp"
-    # so the planes are already float32 and the old call was duplicating the
-    # whole file to change nothing. The call stays for the case where a future
-    # format change makes it real.
+    # Popped so each channel's chunks are freed once joined, and copy=False
+    # because the "fltp" planes are already float32: on a 900 s stereo file
+    # this cut decoding's peak from +676 MB to under half (audio is 110 MB).
     channels = []
     while buffers:
         chunks = buffers.pop(0)
@@ -115,13 +97,8 @@ def decode_channels(path: str) -> tuple[list[np.ndarray], int]:
 
 
 def to_mono(channels: list[np.ndarray]) -> np.ndarray:
-    """Average channels into one array, as Whisper would do internally.
-
-    Accumulated in place rather than np.mean over a list of channels. That
-    list is stacked into one (channels, samples) array before the mean can
-    start, so averaging a stereo file allocated two full copies of it and then
-    a third for the astype - four times the result's own size, to produce the
-    result. Adding into one buffer costs exactly the buffer.
+    """Average channels into one array, as Whisper would. In place: np.mean
+    stacks the channels first, costing four times the result's size.
     """
     if len(channels) == 1:
         return channels[0]
@@ -140,18 +117,11 @@ _CORRELATION_BLOCK = 1 << 20
 
 
 def _correlation(left: np.ndarray, right: np.ndarray) -> float:
-    """Pearson correlation, computed a block at a time.
+    """Pearson correlation, a block at a time - np.corrcoef copies both inputs
+    (gigabytes on a 3-hour file) for one number.
 
-    np.corrcoef stacks its two inputs into one array and then subtracts the
-    means from a copy of that, so asking it about two channels of a long
-    recording costs several times the size of the recording - for a single
-    number. On a 3-hour stereo file that is gigabytes of transient allocation
-    to answer a yes/no question.
-
-    The block sums are accumulated in float64 because a float32 sum of
-    squares over a hundred million samples loses real precision, and dot()
-    rather than (a * a).sum() because dot produces the scalar without
-    building the intermediate array this function exists to avoid.
+    float64 sums, since float32 loses precision over 10^8 samples; dot()
+    rather than (a * a).sum() to avoid the intermediate array.
     """
     n = len(left)
     if n == 0:
@@ -180,12 +150,8 @@ def _correlation(left: np.ndarray, right: np.ndarray) -> float:
 
 
 def _frame_energies(channel: np.ndarray, frame_length: int) -> np.ndarray:
-    """Mean square energy per fixed-length frame.
-
-    einsum, not np.mean(np.square(frames)): squaring first materialises a
-    second copy of the whole channel, which for a long recording is hundreds
-    of megabytes held only to be immediately reduced away. einsum multiplies
-    and sums each row in one pass, allocating just the per-frame output.
+    """Mean square energy per frame. einsum, because squaring first copies the
+    whole channel (hundreds of MB) only to reduce it away.
     """
     usable = len(channel) - (len(channel) % frame_length)
     if usable <= 0:
@@ -269,12 +235,9 @@ def is_true_stereo(channels: list[np.ndarray], sample_rate: int = SAMPLE_RATE) -
 
 
 def load(path: str) -> tuple[list[np.ndarray] | None, bool]:
-    """Decode a file and classify it, tolerating failure.
-
-    Returns (channels, is_two_party). channels is None if decoding failed, in
-    which case the caller should hand the path to faster-whisper directly and
-    skip channel-based speaker separation - a decode problem here should cost
-    speaker labels at worst, never the transcript itself.
+    """(channels, is_two_party). channels is None when decoding failed: the
+    caller then hands faster-whisper the path - a decode problem may cost
+    speaker labels, never the transcript.
     """
     try:
         channels, sample_rate = decode_channels(path)

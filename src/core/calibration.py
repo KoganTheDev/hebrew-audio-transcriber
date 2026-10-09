@@ -1,17 +1,8 @@
 """Hardware-specific transcription-speed calibration.
 
-Replaces guessed "speed factor" constants with a number grounded in an
-actual measurement: this module runs a short real transcription with the
-tiny model, times how long it actually takes on this machine, and derives
-seconds-of-processing-per-second-of-audio from that. Other model sizes are
-then estimated by scaling that single measurement by each model's relative
-parameter count - real math instead of made-up multipliers, without having
-to benchmark every model size separately.
-
-Must run in a separate OS process (see core.worker for why:
-faster-whisper/ctranslate2 and PyQt5 each bundle a conflicting copy of
-MSVCP140.dll on Windows, and loading both in one process causes an
-intermittent native crash).
+Times a short real transcription with the tiny model on this machine, and
+scales that one measurement by each model's relative cost, instead of guessed
+speed factors. Runs in its own process (see core/__init__.py).
 """
 
 import json
@@ -34,59 +25,29 @@ logger = logging.getLogger(__name__)
 # without a long one-time wait.
 CALIBRATION_AUDIO_SECONDS = 60
 CALIBRATION_SAMPLE_RATE = 16000
-# Inside the resolved Whisper model root, not a bare "whisper_models/" -
-# which resolved against the process working directory. The app can be
-# launched from anywhere, so a relative path meant this cache was missed on
-# every launch that did not start in the project folder: the full benchmark re-ran each time, and save_calibration
-# scattered a stray whisper_models/ wherever the user happened to be.
-# run.bat and run.ps1 cd to the project first, which is why it stayed hidden.
-# MODEL_DOWNLOAD_ROOT is the same directory this always meant, only resolved
-# once at import and already created - see config/paths.py for the full
-# reasoning, which the Whisper and diarization roots were fixed under and
-# this third cache was missed by.
+# In the absolute model root, so it is found from any working directory
+# (see config/paths.py).
 CALIBRATION_CACHE_PATH = os.path.join(config.MODEL_DOWNLOAD_ROOT, ".calibration.json")
 
-# Relative inference cost of each model vs. "tiny", derived from parameter
-# count (tiny=39M, large-v3=1550M params). Whisper's encoder/decoder compute
-# scales with model width, so parameter-count ratios are a reasonable
-# real-world proxy for relative runtime - this is what lets one measured
-# benchmark (tiny) predict the real models' time on the same hardware.
-#
-# "tiny" stays here although it has no GUI card: it is the benchmark itself.
+# Inference cost relative to "tiny" (the benchmark), from parameter counts
+# (tiny 39M, large-v3 1550M): Whisper's compute scales with model width.
 _TINY_PARAMS = 39
 RELATIVE_COMPUTE_COST = {
     "tiny": 39 / _TINY_PARAMS,
-    # The ivrit.ai models are fine-tunes, so they cost the same as the Whisper
-    # architecture they were tuned from - a fine-tune changes weights, not
-    # shape. ivrit-large is large-v3, hence the full large-v3 cost.
-    #
-    # Turbo is the one place the parameter-count proxy breaks down badly enough
-    # to need overriding. It keeps large-v3's encoder but cuts the decoder from
-    # 32 layers to 4. Decoding is autoregressive - one sequential pass per
-    # token - so it dominates wall-clock time in a way its share of the
-    # parameter count (809M of 1550M) does not reflect. Costed by parameters
-    # alone, its estimates come out several times too long, and the
-    # recommender would wrongly rule it out on long files.
-    #
-    # _TURBO_SPEEDUP is empirical rather than derived: the calibration
-    # benchmark only ever measures "tiny", so every other entry here is a
-    # prediction, and for turbo the honest prediction comes from published
-    # large-v3-vs-turbo throughput comparisons (~5-6x) rather than from
-    # parameter counts.
+    # Fine-tunes cost what their base architecture costs: ivrit-large is
+    # large-v3. Turbo overrides the parameter proxy: it cuts large-v3's
+    # decoder from 32 layers to 4, and the sequential decoder dominates
+    # runtime far beyond its share of parameters. _TURBO_SPEEDUP comes from
+    # published large-v3-vs-turbo throughput (~5-6x), not from parameters.
     "ivrit-turbo": (1550 / _TINY_PARAMS) / 5.5,
     "ivrit-large": 1550 / _TINY_PARAMS,
 }
 
 
 def load_cached_tiny_rtf(cpu_cores: int, device: str) -> float | None:
-    """Return the cached seconds-per-audio-second factor, if valid for this
-    CPU core count and device.
-
-    device is part of the cache key (not just cpu_cores) because a GPU and a
-    CPU run of the same tiny model are not remotely comparable speeds - a
-    stale GPU-measured number silently reused for a CPU estimate (e.g. after
-    the GPU is removed, or the cache directory is copied to another machine)
-    would make the UI's ETA wildly wrong instead of just uncalibrated.
+    """The cached seconds-per-audio-second factor, if measured on this core
+    count and device - a GPU number reused on a CPU would make the ETA wildly
+    wrong.
     """
     if not os.path.exists(CALIBRATION_CACHE_PATH):
         return None
@@ -121,13 +82,11 @@ def save_calibration(cpu_cores: int, device: str, tiny_seconds_per_audio_second:
 
 
 def _generate_silence_wav(path: str, seconds: int, sample_rate: int) -> None:
-    """Write a short silent mono WAV using only the stdlib.
+    """Write a short silent mono WAV with the stdlib.
 
-    Calibration explicitly disables VAD (see _run_calibration), so silence
-    is not skipped - the encoder still runs its full fixed-size window
-    regardless of content. Silence keeps the benchmark deterministic;
-    random noise was tried and measured no more realistically, just less
-    reproducibly (decoder token count for noise is unpredictable).
+    With VAD off the encoder runs its full window over silence too, and silence
+    is deterministic; noise measured no more realistically, only less
+    reproducibly.
     """
     n_frames = seconds * sample_rate
     silence_frame = struct.pack("<h", 0)
@@ -180,11 +139,8 @@ def _run_calibration(cpu_cores: int, device: str) -> float:
 def run_calibration_process(
     cpu_cores: int, device: str, result_queue: "multiprocessing.Queue"
 ) -> None:
-    """Entry point for the calibration subprocess.
-
-    Puts ("ok", seconds_per_audio_second) or ("error", message) on
-    result_queue before exiting. Import-light at module level (no PyQt5) -
-    see module docstring.
+    """Calibration subprocess entry point: puts ("ok", seconds_per_audio_second)
+    or ("error", message) on result_queue.
     """
     try:
         result_queue.put(("ok", _run_calibration(cpu_cores, device)))

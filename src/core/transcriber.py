@@ -37,26 +37,14 @@ _cuda_runtime_preloaded = False
 
 
 def _preload_cuda_runtime_libraries() -> None:
-    """Make the pip-installed cuBLAS/cuDNN runtime (the project's `gpu`
-    extra) discoverable to ctranslate2's CUDA backend before it's needed.
+    """Preload the pip-installed cuBLAS/cuDNN (the `gpu` extra) by absolute
+    path, before any CUDA work.
 
-    ctranslate2 doesn't touch libcublas/libcudnn when a CUDA WhisperModel
-    is constructed - only on the first GPU encode, deep inside
-    model.transcribe(). By then a LD_LIBRARY_PATH/PATH change is too
-    late: both glibc and Windows resolve the library search path once,
-    at process start, so mutating os.environ from within the running
-    process has no effect on it. Loading the actual .so/.dll files by
-    absolute path with global visibility, before any CUDA work happens,
-    is what makes them resolvable regardless of how the app was
-    launched (GUI double-click, run.bat, etc., none of which give a
-    chance to export an env var first).
-
-    Safe no-op if the `gpu` extra was never installed: find_spec() on a
-    dotted name imports the parent package first, so with no `nvidia`
-    package at all it raises ModuleNotFoundError rather than returning
-    None - caught below so this is a no-op exactly as the rest of this
-    docstring claims, and load_model()'s existing cuda-to-cpu fallback
-    takes over.
+    ctranslate2 first needs them on the first GPU encode, and by then changing
+    PATH/LD_LIBRARY_PATH is useless - the search path is fixed at process
+    start. A no-op without the extra (find_spec raises ModuleNotFoundError on
+    the missing `nvidia` parent, which is caught); load_model then falls back
+    to CPU.
     """
     global _cuda_runtime_preloaded
     if _cuda_runtime_preloaded:
@@ -88,19 +76,11 @@ def _preload_cuda_runtime_libraries() -> None:
                     logger.debug(f"Could not preload {shared_object}", exc_info=True)
 
 
-# Exception class names that mean "the machine could not reach the model",
-# as opposed to "the model is wrong". Matched by NAME, walking the class
-# hierarchy, rather than by isinstance: these types come from requests and
-# huggingface_hub, which are transitive dependencies of faster-whisper. This
-# module already guards its faster_whisper import (see below) because it has
-# to import cleanly without it, so importing their error classes at module
-# level to run isinstance against would undo that.
-#
-# LocalEntryNotFoundError is the important one: it is what the hub raises
-# when it cannot reach the network AND has nothing cached, which is exactly
-# the first-run-without-internet case. Deliberately absent is
-# HfHubHTTPError - a 404 for a repo that does not exist reaches the network
-# perfectly well and is not this.
+# Exceptions meaning "could not reach the model", not "the model is wrong".
+# Matched by class name, since importing requests/huggingface_hub here would
+# undo the guarded faster_whisper import. LocalEntryNotFoundError is the key
+# one: no network AND nothing cached - a first run offline. HfHubHTTPError is
+# deliberately absent: a 404 did reach the network.
 _NETWORK_FAILURE_NAMES = frozenset(
     {
         "ConnectionError",
@@ -154,38 +134,22 @@ class Transcriber:
         self.device = device
         self.language = language
         self.progress_callback = progress_callback or self._default_callback
-        # The time estimate's two inputs, kept separate from progress_callback
-        # because they are measurements rather than a position on a bar (see
-        # core/progress_scale.py's work-stream section). Both default to a
-        # no-op, so every existing caller - the eval harness included - is
-        # unchanged by their existence.
-        #
-        # work_callback(audio_done, audio_total) is FILE-LOCAL: this module
-        # transcribes one thing and knows nothing about batches. core/worker.py
-        # rescales it to batch-wide, which is the same division of labour
-        # progress_callback already has.
+        # The time estimate's inputs - measurements, not a bar position (see
+        # core/progress_scale.py). File-local; core/worker.py makes them
+        # batch-wide. No-ops by default.
         self.work_callback = work_callback or self._default_work_callback
         self.phase_callback = phase_callback or self._default_phase_callback
         # Any, not Optional[WhisperModel]: WhisperModel is itself None when
         # faster-whisper is not installed (see the import guard above), so
         # there is no static type here to be Optional of.
         self.model: Any = None
-        # All four default to None so production behaviour (worker.py's call
-        # site, which never passes them) is unchanged from before these
-        # existed: compute_type resolves from config.compute_type_for_device
-        # at load time (device-conditional - see that function's docstring),
-        # beam_size from config.BEAM_SIZE, and cpu_threads/num_workers stay
-        # unset (ctranslate2 picks its own thread count). Explicit values
-        # exist so tests/eval/compare_models.py can sweep them without a
-        # parallel construction path.
-        # Set by load_model when it fails, so the caller can say WHY rather
-        # than showing one "failed to load" for a missing network and a
-        # broken model alike. None until a load has actually failed.
+        # Set when a load fails, so the caller can tell offline from broken.
         self.load_failed_on_network = False
-        # Set by transcribe() when it fails, so a caller that only sees
-        # None back (see transcribe()'s docstring) can still report why.
-        # None until a transcription has actually failed.
+        # Why the last transcribe() returned None.
         self.last_transcribe_error: str | None = None
+        # None means the production default (config.compute_type_for_device,
+        # config.BEAM_SIZE, ctranslate2's own thread count); explicit values
+        # let tests/eval/compare_models.py sweep them.
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.cpu_threads = cpu_threads
@@ -196,13 +160,8 @@ class Transcriber:
 
     @property
     def model_repo(self) -> str:
-        """The identifier faster-whisper actually loads.
-
-        config.MODELS keys are this app's own stable names; "repo" is the
-        upstream address (a bare Whisper size, or a HuggingFace repo holding
-        CTranslate2 weights). An unknown key falls through to itself so callers
-        can still pass a raw Whisper size or repo id directly - useful for the
-        evaluation harness, which benchmarks models that have no GUI card.
+        """What faster-whisper loads: config.MODELS' "repo", or the name itself
+        for a raw Whisper size or repo id (the eval harness uses those).
         """
         entry = config.MODELS.get(self.model_size)
         # cast, not str(): config.MODELS holds heterogeneous per-model values,
@@ -225,21 +184,12 @@ class Transcriber:
         pass
 
     def load_model(self) -> bool:
-        """Load the Whisper model.
+        """Load the Whisper model, retrying once on CPU if CUDA fails.
 
-        device="cuda" is reachable once gui/main_window.py wires up
-        get_device_recommendation() (see hardware_detection.py) - but a CUDA
-        recommendation is a guess from nvidia-smi output, not proof the
-        ctranslate2/CUDA runtime actually initialises: a driver/CUDA-version
-        mismatch, a half-installed driver, or too little free VRAM all
-        surface only here, as an exception from WhisperModel() itself. NONE
-        of that path has been exercised on real hardware - this development
-        machine has no NVIDIA GPU at all (Intel Iris Xe only), so the retry
-        below is reasoned about, not measured. If cuda load throws, retry
-        once on cpu with a cpu-appropriate compute_type rather than
-        surfacing a failure the user can do nothing useful with; a machine
-        that would work fine on CPU should not fail just because its GPU
-        path had a problem.
+        A CUDA recommendation is a guess from nvidia-smi; driver mismatches or
+        too little VRAM only surface here, and a machine that works on CPU
+        should not fail on its GPU path. Unmeasured: no NVIDIA GPU on the
+        development machine.
         """
         try:
             if not WhisperModel:
@@ -297,43 +247,15 @@ class Transcriber:
             return False
 
     def _fetch_weights(self) -> str | None:
-        """Download the model, reporting progress, and return its local path.
+        """Download the model with progress and return its local path, or None
+        to let WhisperModel download silently as usual.
 
-        Returns None to mean "carry on as before": WhisperModel does its own
-        download, silently, exactly as it did before this existed.
-
-        Why this exists. WhisperModel's constructor pulls 1.6 GB for
-        ivrit-turbo or 3.1 GB for ivrit-large through huggingface_hub, which
-        gives the caller no progress callback at all. The bar therefore sat at
-        TRANSCRIBER_LOAD_START_PERCENT for anywhere from ten minutes to the
-        better part of an hour on a first run, under a status line that only
-        ever said "loading". A user watching that screen concludes the app has
-        hung, and kills it.
-
-        Why the progress is a FILE COUNT and not a percentage of bytes, which
-        is what anyone would rather show. Two better-looking approaches were
-        measured and both fail for structural reasons:
-
-        - snapshot_download takes a tqdm_class, which looks like the hook for
-          byte counts. It only ever receives the outer "Fetching N files" bar,
-          unit "it". The per-file byte bars come from huggingface_hub's own
-          internal hf_tqdm and are not overridable by a caller. Probed
-          directly against 0.36: the only bar handed to tqdm_class reports 6
-          units total for faster-whisper-tiny.
-        - Summing bytes on disk under the cache directory reads a flat 3 MB of
-          76 for the whole of a cold tiny download. huggingface_hub stages the
-          large blobs outside the cache through its xet backend and moves them
-          into place at the end, so there is no growing file in the cache to
-          watch.
-
-        So the file count is what is actually available. It is coarse - a
-        model is mostly one big weights file - but it moves, and it is paired
-        with the total download size from config.MODELS so the message says
-        how much is coming. That is the difference between a screen that looks
-        frozen and one that does not, which is the whole point.
-
-        Everything is wrapped: any failure falls back to the plain path rather
-        than taking transcription down with it.
+        WhisperModel gives no progress for a 1.6-3.1 GB first download, so the
+        app looked hung for up to an hour. The progress is a FILE count with
+        the total size, because bytes are not observable: snapshot_download's
+        tqdm_class only sees the outer per-file bar (huggingface_hub 0.36), and
+        the xet backend stages blobs outside the cache until the end. Any
+        failure falls back to the plain path.
         """
         try:
             from huggingface_hub import snapshot_download
@@ -383,18 +305,9 @@ class Transcriber:
             return None
 
     def _load_on(self, device: str) -> None:
-        """Construct WhisperModel for the given device, resolving every knob
-        that is None to its production default. Split out of load_model() so
-        the CUDA-fails-fall-back-to-CPU retry (see load_model's docstring)
-        can call it a second time with device swapped, without duplicating
-        the argument-resolution logic.
-
-        cpu_threads/num_workers are left unset unless explicitly given -
-        ctranslate2 picks its own thread count in that case. Phase B's
-        measurement (see tests/eval/compare_models.py and the Stage 2
-        report) found no repeatable win from pinning either on this 4-core
-        machine, so production leaves them alone; the knobs exist so the
-        eval harness can still sweep them.
+        """WhisperModel for `device`, with unset knobs at production defaults
+        (shared by load_model's CPU retry). Thread counts stay ctranslate2's
+        own: pinning them measured no repeatable win on a 4-core machine.
         """
         if device == "cuda":
             _preload_cuda_runtime_libraries()
@@ -424,16 +337,10 @@ class Transcriber:
         """Transcribe audio to structured segments.
 
         Args:
-            audio_file: Path to an audio/video file, or a float32 mono 16 kHz
-                numpy array. faster-whisper accepts either; the array form is
-                what lets the stereo channel-split path transcribe one
-                speaker's channel at a time without writing temp files
-                (see core.audio_source).
-            total_duration_seconds: Real audio length (from probing the file
-                before transcription starts, see gui.audio_utils), used to
-                turn each segment's timestamp into an accurate percentage of
-                real work done. Without it, progress falls back to a rough
-                per-segment estimate.
+            audio_file: A path, or a float32 mono 16 kHz array (lets the
+                stereo path transcribe one channel without temp files).
+            total_duration_seconds: The probed audio length, which makes the
+                percentage accurate; without it progress is a rough estimate.
 
         Returns:
             List of Segment (with per-word timings and confidences), or None
@@ -450,15 +357,8 @@ class Transcriber:
             return self._transcribe_once(audio_file, total_duration_seconds)
         except Exception as e:
             if self.device == "cuda":
-                # Unlike a driver/VRAM problem (which surfaces in
-                # load_model(), since WhisperModel() touches the GPU
-                # immediately), a missing CUDA runtime library (see
-                # _preload_cuda_runtime_libraries) only fails here, on the
-                # first real encode - load_model() reported success because
-                # ctranslate2 doesn't touch libcublas/libcudnn until now.
-                # Same reasoning as load_model()'s cuda-to-cpu retry: a
-                # machine that would work fine on CPU should not lose an
-                # entire file because its GPU path had a problem.
+                # A missing CUDA library only fails on the first encode, after
+                # load_model succeeded - fall back to CPU, as load_model does.
                 logger.warning(
                     f"CUDA transcription failed ({e}); reloading model on "
                     "CPU and retrying this file once.",
@@ -518,18 +418,9 @@ class Transcriber:
 
         logger.debug(f"Transcription info: {info}")
 
-        # info carries duration_after_vad - how much audio actually has to
-        # be decoded once silence is dropped. Logged rather than used as the
-        # work denominator: the GUI measures its rate against wall clock, so
-        # skipped silence already shows up as the position simply jumping,
-        # and swapping denominators mid-file would make the rate wobble for
-        # no gain. It is here because it is the one number that explains why
-        # a file ran faster than its length suggested.
-        # _as_float, not the raw attribute: faster-whisper's info type has
-        # changed shape across releases and the test suite feeds in
-        # MagicMocks, neither of which should be able to abort a
-        # transcription that is otherwise about to succeed - the same
-        # defensiveness _to_segment applies for the same reason.
+        # duration_after_vad is logged, not used as the work denominator:
+        # skipped silence already shows as the position jumping. Read with
+        # _as_float, defensively, as in _to_segment.
         speech_seconds = _as_float(
             getattr(info, "duration_after_vad", None), total_duration_seconds
         )
@@ -589,13 +480,8 @@ class Transcriber:
             )
             self.progress_callback(message, progress)
 
-            # The same fact the percentage above was derived from, sent on
-            # unrounded and in its own units. The bar needs a 0-100; the
-            # clock needs audio-seconds, and turning one back into the other
-            # is exactly the lossy step that made the old estimate wrong.
-            # Only when the duration is real - without it there is nothing
-            # to measure a rate against, and a made-up denominator would
-            # produce a confidently wrong ETA rather than none.
+            # The same fact in audio-seconds, for the clock - only with a real
+            # duration, since a made-up one gives a confidently wrong ETA.
             if total_duration_seconds > 0 and isinstance(segment_end, (int, float)):
                 self.work_callback(
                     min(float(segment_end), total_duration_seconds),
@@ -615,16 +501,10 @@ class Transcriber:
 
 
 def _to_segment(raw: Any) -> Segment:
-    """Convert one faster-whisper Segment into our own Segment.
-
-    Every attribute is read defensively. faster-whisper's segment type has
-    changed shape across releases, `words` is None whenever word_timestamps
-    is off, and the test suite feeds in MagicMocks whose attributes are mocks
-    rather than numbers - none of which should be able to abort a
-    transcription that has otherwise succeeded. Missing timings degrade to
-    0.0, missing confidence degrades to 1.0 (i.e. "assume the model was sure",
-    so the correction pass leaves the word alone rather than mangling it on
-    the strength of absent data).
+    """Convert a faster-whisper Segment into ours, reading every attribute
+    defensively: the type changes across releases and `words` can be None.
+    Missing timings become 0.0, missing confidence 1.0 - so the correction
+    pass leaves the word alone rather than acting on absent data.
     """
     words = []
     for raw_word in getattr(raw, "words", None) or []:

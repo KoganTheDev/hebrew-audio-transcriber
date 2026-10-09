@@ -1,27 +1,11 @@
-"""Pick a specific browser to open the transcript in, rather than whatever
-Windows currently associates with .html.
+"""Open the transcript in a preferred browser, not whatever owns .html.
 
-The symptom this exists to fix: on a machine with Chrome installed and set
-as the actual daily browser, double-clicking or app-launching an .html file
-often still opens Edge, because the file association and "default browser"
-setting are two different things and installers do not always win both. The
-generated transcript is a self-contained interactive page (search, audio
-sync, speaker editing - see core/formatting), so which engine renders it is
-not cosmetic.
-
-Windows itself maintains the authoritative list of browsers it knows about
-under the registry's StartMenuInternet key - that is what Settings > Default
-apps reads from - so this reads the same source rather than hardcoding
-install paths. Paths are still needed as a backstop: a portable or
-per-user install (common for Chrome and Firefox, which both install under
-%LOCALAPPDATA% without admin rights) does not always register itself there,
-so a short list of well-known locations catches those. Per-user paths are
-checked as often as the two Program Files directories because a per-user
-install is the common case for exactly the browsers this module prefers.
-
-Everything here degrades to the OS default (webbrowser.open) rather than
-raising: failing to pick a preferred browser must never stop the transcript
-from opening at all.
+The .html association often still points at Edge on a machine whose real
+browser is Chrome, and the transcript is an interactive page, so the engine
+matters. Installed browsers come from the registry's StartMenuInternet key
+(what Settings > Default apps reads), with well-known paths as a backstop for
+per-user installs that skip it. Everything degrades to the OS default: the
+transcript must always open.
 """
 
 import logging
@@ -42,11 +26,8 @@ PREFERENCE_ORDER = ("chrome", "firefox", "edge")
 # one of these substrings, so chrome and firefox are matched before edge.
 _SUBSTRING_KEYS = ("chrome", "firefox", "edge")
 
-# Backstop absolute paths for installs that do not register themselves under
-# StartMenuInternet or App Paths (seen with some portable/per-user builds).
-# Per-user (%LOCALAPPDATA%) is listed first because it is the common case for
-# a no-admin-rights Chrome/Firefox install, not because Program Files installs
-# are rare - both are checked.
+# Backstop paths for installs that skip the registry. Per-user first: the
+# common no-admin Chrome/Firefox install.
 _WELL_KNOWN_PATHS = {
     "chrome": [
         r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
@@ -211,12 +192,8 @@ def _detect_browsers_other() -> dict[str, str]:
 
 
 def detect_browsers() -> dict[str, str]:
-    """Map each key in PREFERENCE_ORDER to an executable path, for whichever
-    of those browsers is actually installed on this machine.
-
-    Never raises: a registry or filesystem error just means that browser is
-    reported as not found, since the caller falls back to the OS default
-    either way.
+    """Executable path for each installed browser in PREFERENCE_ORDER. Never
+    raises: an error just means "not found".
     """
     try:
         if sys.platform.startswith("win"):
@@ -230,14 +207,9 @@ def detect_browsers() -> dict[str, str]:
 def open_html(path: str, order: tuple[str, ...] = PREFERENCE_ORDER) -> str:
     """Open an HTML file in the first available browser from `order`.
 
-    Returns the key of the browser actually used, or "default" when nothing
-    in `order` was found or every launch attempt failed - that return value
-    is what lets a caller log which browser got it, which is the only way
-    to diagnose this from a user's log file after the fact.
-
-    Path is converted with as_uri(): a bare Windows path is not a URL, and
-    passing one to webbrowser (or to a browser's argv) mangles the drive
-    letter.
+    Returns the browser used, or "default" - logged, since the log is the only
+    way to diagnose this afterwards. as_uri(), because a bare Windows path
+    passed as a URL mangles the drive letter.
     """
     uri = Path(path).resolve().as_uri()
     browsers = detect_browsers()
