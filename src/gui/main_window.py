@@ -845,6 +845,8 @@ class MainWindow(QMainWindow):
             next_enabled=True,
             next_mode="new_file",
         )
+        # After _set_step, which repaints the strip with step 3 as current.
+        self.step_indicator.set_complete()
 
     def _on_transcription_error(self, error_key: str, error_params: dict[str, object]) -> None:
         """Handle a genuine transcription failure (not a user cancel - that's

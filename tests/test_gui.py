@@ -1129,6 +1129,118 @@ class TestMainWindowStepNavigation:
         assert not main_window.back_btn.isVisible()
         assert not main_window.next_btn.isEnabled()
 
+    def test_a_finished_run_shows_every_step_done(self, main_window):
+        from gui.steps import Step
+
+        with (
+            patch.object(main_window.transcription_step, "stop"),
+            patch.object(main_window.transcription_step, "update_progress"),
+            patch.object(main_window.transcription_step, "show_result"),
+        ):
+            main_window._on_transcription_complete("out.html")
+
+        indicator = main_window.step_indicator
+        assert indicator._current_step == Step.TRANSCRIPTION
+        assert [p.state.value for p in indicator._pills] == ["done", "done", "done"]
+
+
+class TestStepIndicator:
+    """
+    The strip's states are what a user reads to know where they are, so
+    they are pinned per pill and per connector. The animation itself is
+    only checked for when it runs, since a breath's look can't be asserted.
+    """
+
+    @pytest.fixture
+    def indicator(self, qtbot, monkeypatch):
+        from gui import theme
+        from gui.stepper import StepIndicator
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: True)
+        widget = StepIndicator()
+        qtbot.addWidget(widget)
+        return widget
+
+    @staticmethod
+    def _states(items):
+        return [item.state.value for item in items]
+
+    def test_each_step_shows_where_the_user_is(self, indicator):
+        from gui.steps import Step
+
+        assert self._states(indicator._pills) == ["current", "pending", "pending"]
+        assert self._states(indicator._connectors) == ["current", "pending"]
+
+        indicator.set_current(Step.MODEL_SELECT)
+        assert self._states(indicator._pills) == ["done", "current", "pending"]
+        assert self._states(indicator._connectors) == ["done", "current"]
+
+        indicator.set_current(Step.TRANSCRIPTION)
+        assert self._states(indicator._pills) == ["done", "done", "current"]
+        assert self._states(indicator._connectors) == ["done", "done"]
+
+    def test_complete_marks_every_step_done(self, indicator):
+        from gui.steps import Step
+
+        indicator.set_current(Step.TRANSCRIPTION)
+        indicator.set_complete()
+
+        assert self._states(indicator._pills) == ["done", "done", "done"]
+        assert indicator._current_step == Step.TRANSCRIPTION
+
+    def test_accessible_names_say_each_steps_state(self, indicator):
+        from gui.steps import Step
+
+        indicator.set_current(Step.MODEL_SELECT)
+
+        names = [p.accessibleName() for p in indicator._pills]
+        assert names[0] == f"{t('specs_title')} - {t('step_status_done')}"
+        assert names[1] == f"{t('choose_model')} - {t('step_status_current')}"
+        assert names[2] == f"{t('transcribing_title')} - {t('step_status_pending')}"
+
+    def test_breath_runs_only_while_shown(self, indicator):
+        assert not indicator.is_animating()
+        indicator.show()
+        assert indicator.is_animating()
+        indicator.hide()
+        assert not indicator.is_animating()
+
+    def test_no_motion_when_windows_animations_are_off(self, indicator, monkeypatch):
+        from gui import theme
+
+        monkeypatch.setattr(theme, "animations_enabled", lambda: False)
+        indicator.show()
+        assert not indicator.is_animating()
+
+    def test_only_a_running_strip_animates_a_completed_step(self, indicator):
+        from gui.stepper import _LONG_AGO
+        from gui.steps import Step
+
+        # Hidden: the step snaps to done, with nothing left to play out.
+        indicator.set_current(Step.MODEL_SELECT)
+        assert indicator._pills[0].since == _LONG_AGO
+
+        indicator.set_current(Step.FILE_SELECT)
+        indicator.show()
+        indicator.set_current(Step.MODEL_SELECT)
+        assert indicator._pills[0].since != _LONG_AGO
+        # Going back never animates.
+        indicator.set_current(Step.FILE_SELECT)
+        assert indicator._pills[0].state.value == "current"
+
+    @pytest.mark.parametrize("direction", [Qt.LeftToRight, Qt.RightToLeft])
+    def test_paints_every_state_in_both_directions(self, indicator, direction):
+        from gui.steps import Step
+
+        indicator.setLayoutDirection(direction)
+        indicator.resize(600, 40)
+        indicator.show()
+        for step in (Step.FILE_SELECT, Step.MODEL_SELECT, Step.TRANSCRIPTION):
+            indicator.set_current(step)
+            assert not indicator.grab().isNull()
+        indicator.set_complete()
+        assert not indicator.grab().isNull()
+
 
 class TestMainWindowCancelConfirm:
     """

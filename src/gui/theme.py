@@ -25,7 +25,9 @@ widget instance (button variants, selected-card borders, etc.) stays a
 per-widget call - app_stylesheet() is not the place to fight it.
 """
 
+import ctypes
 import math
+import sys
 
 from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPixmap
@@ -259,18 +261,59 @@ class Border:
 
 
 class Motion:
-    """Named animation durations (ms). There is exactly one animation in the
-    app today (the transcription step's progress bar, animated with
-    QEasingCurve.OutCubic in transcription.py) - PROGRESS_MS names that
-    duration here so a later step can retune it in one place, but wiring
-    it into transcription.py is out of scope for this token layer.
+    """Named animation timings. Values were tuned by eye in the animation
+    mockup (.mockups/animations/) rather than picked in code, so retune them
+    there first and copy the numbers back.
     """
 
+    # The transcription step's progress bar value animation (OutCubic).
     PROGRESS_MS = 500
-    # Budget for the micro-interactions (hover/press transitions etc.) a
-    # later step adds. Shorter than PROGRESS_MS because those are small,
-    # frequent state changes that should feel instant, not showcased.
+    # Budget for small, frequent state changes that should feel instant.
     FAST_MS = 160
+
+    # The "you are here" breath shared by the current step pill and the
+    # dashed connector after it: one full in-and-out cycle, and how far the
+    # fill's opacity dips at the bottom of it. Not lower than 0.75 - the
+    # pill's ink stays opaque, but the fill it sits on must still read as
+    # the accent, not as a faded-out step.
+    BREATH_MS = 2200
+    PULSE_MIN_ALPHA = 0.75
+    # The connector toward the next step: dashes drift toward it at this
+    # speed. (dash, gap) in px; QPen wants them in pen-width units.
+    DASH_SPEED_PX_S = 20
+    DASH_PATTERN = (10, 6)
+    # A step completing: the check pops in (OutBack) while the pill body
+    # cross-fades from accent to the done tint and the connector after it
+    # sweeps from dashed to solid.
+    POP_MS = 220
+    CONNECTOR_FILL_MS = 350
+
+
+# SystemParametersInfoW action for Settings > Accessibility > Visual effects
+# > "Animation effects". Not exported by ctypes, so named here.
+_SPI_GETCLIENTAREAANIMATION = 0x1042
+
+
+def animations_enabled() -> bool:
+    """Whether to run decorative animations at all.
+
+    Honors the Windows "Animation effects" switch, which is where people who
+    get motion sick from UI movement turn it off - looping motion (the
+    stepper's breath and flowing dashes) is exactly what that setting exists
+    to stop. Read on each call rather than cached, so flipping the setting
+    takes effect the next time a widget starts its animation. Anywhere the
+    setting cannot be read (not Windows, or the call fails) counts as on.
+    """
+    if sys.platform != "win32":
+        return True
+    try:
+        enabled = ctypes.c_bool(True)
+        ok = ctypes.windll.user32.SystemParametersInfoW(
+            _SPI_GETCLIENTAREAANIMATION, 0, ctypes.byref(enabled), 0
+        )
+        return bool(enabled.value) if ok else True
+    except (AttributeError, OSError):
+        return True
 
 
 def button_primary_qss() -> str:

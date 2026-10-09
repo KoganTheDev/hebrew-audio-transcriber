@@ -27,11 +27,12 @@ REQUIRED_PACKAGES = {
     "tqdm": "tqdm",
 }
 
-# Measured with minsize.py, after stepper.py's badge strip gained Spacing.SM
-# (8px) of top/bottom padding: the chrome (header 50 + step indicator 36 + nav
-# bar 79) is 165px, and the worst step - transcription, once show_result() has
-# populated the completion panel - needs 448px on its own. 165 + 448 = 613px.
-# Step 1 fares better (418 + 165 = 583px). Both numbers were measured with the
+# Measured with minsize.py: the chrome (header 50 + step indicator 40 + nav bar
+# 79) is 169px, and the worst step - transcription, once show_result() has
+# populated the completion panel - needs 448px on its own. 169 + 448 = 617px.
+# Step 1 fares better (418 + 169 = 587px). The step indicator is its 24px pills
+# plus Spacing.SM (8px) above and below; the 40 is that arithmetic, not a
+# re-run of minsize.py. Both numbers were measured with the
 # app stylesheet and high-DPI scaling actually applied (see gui/main_window.py's
 # configure_application and its module-level AA_EnableHighDpiScaling /
 # AA_UseHighDpiPixmaps calls) - a bare, unstyled QApplication resolves
@@ -41,12 +42,12 @@ REQUIRED_PACKAGES = {
 # setup (configure_application), not a hand-rolled QApplication.
 #
 # GUI_WINDOW_MIN_HEIGHT is the floor this drives: it has to sit at or above
-# 613px or the same clipping comes back the moment the window is resized
-# down to it. 656 gives 43px of deliberate margin above that measured
-# minimum rather than pinning the floor exactly on it, so the completion
-# panel doesn't start touching the window edge the instant someone drags to
-# the smallest allowed size. Any change to the badge strip's padding invalidates
-# the 613px it is computed from, so re-measure rather than keeping this number.
+# 617px or the same clipping comes back the moment the window is resized
+# down to it. 656 gives 39px of deliberate margin above that minimum rather
+# than pinning the floor exactly on it, so the completion panel doesn't start
+# touching the window edge the instant someone drags to the smallest allowed
+# size. Any change to the step strip's height invalidates the 617px it is
+# computed from, so re-measure rather than keeping this number.
 #
 # GUI_WINDOW_HEIGHT (the default, initial size) stays clearly above the
 # minimum rather than sitting on it, for the same reason step 3's own
