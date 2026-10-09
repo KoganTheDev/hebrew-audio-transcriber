@@ -1,12 +1,8 @@
-"""Standalone transcription worker, run in a separate OS process.
+"""The transcription worker, run in its own OS process.
 
-faster-whisper (ctranslate2) and PyQt5 each bundle their own copy of
-MSVCP140.dll on Windows. Loading both into the same process causes an
-intermittent native access-violation crash (0xc0000005) that Python cannot
-catch, observed specifically when the model loads on a background QThread
-while the Qt event loop is active. Running the actual transcription in a
-separate process (never importing PyQt5) sidesteps the conflict entirely,
-regardless of timing.
+A separate process because faster-whisper and PyQt5 bundle conflicting copies
+of MSVCP140.dll: loaded together, a model load on a QThread crashed with an
+uncatchable access violation (0xc0000005).
 """
 
 import logging
@@ -67,22 +63,9 @@ _Emitter = Callable[[_Message, int], None]
 
 
 def _log_phase(progress_queue: "multiprocessing.Queue", phase: str, start: float) -> None:
-    """Report one phase's wall-clock cost - to the log, and to the GUI.
-
-    Without this, decode, transcribe, diarize, assign_speakers, Hebrew
-    correction and HTML render are indistinguishable in the log, and "what's
-    actually slow" is guesswork rather than measurement. perf_counter
-    (monotonic, sub-millisecond) rather than time.time, which can jump
-    backwards on an NTP correction - deliberately not the choice
-    tests/eval/compare_models.py and core/calibration.py make for their own
-    reasons.
-
-    The same measurement now also goes on progress_queue, because the GUI's
-    time estimate needs exactly these numbers and they were already being
-    taken: the cost of diarization on file 1 is what predicts the tail on
-    file 2 (see core/progress_scale.py's work-stream section). Sending it
-    rather than re-deriving it in the GUI keeps one measurement, not two
-    numbers that can disagree.
+    """Report one phase's wall-clock cost to the log and to the GUI's time
+    estimate (one measurement, not two that can disagree). perf_counter, which
+    cannot jump backwards on an NTP correction.
     """
     elapsed = time.perf_counter() - start
     logger.debug(f"phase timing: {phase} took {elapsed:.3f}s")
@@ -104,13 +87,8 @@ def _report_phase(
 def _work_emitter(
     progress_queue: "multiprocessing.Queue", done_before: float, total_duration: float
 ) -> Callable[[float, float], None]:
-    """Lift one file's audio position onto the batch's.
-
-    Transcriber reports file-local audio-seconds (it transcribes one thing and
-    knows nothing about batches - see its work_callback). The batch total is
-    the sum of every file's probed duration, so a file's contribution is just
-    its own position offset by everything already finished. No scale, no
-    remapping: unlike the percentage bands above, audio-seconds add up.
+    """Lift one file's audio position onto the batch's: offset by the audio
+    already finished - audio-seconds add up, no rescaling needed.
     """
 
     def emit_work(audio_done: float, audio_total: float) -> None:
@@ -120,15 +98,9 @@ def _work_emitter(
     return emit_work
 
 
-# faster-whisper decodes each ~30s audio window internally, retrying at
-# progressively higher "temperatures" whenever the result looks repetitive
-# (compression_ratio_threshold) or low-confidence (log_prob_threshold) -
-# entirely inside one synchronous call, before it ever yields a Segment. That
-# retry loop is exactly the stretch users see as a frozen progress bar: no
-# Segment means no percentage update, even though real work is happening.
-# faster-whisper already logs each of these events (at DEBUG, on its own
-# "faster_whisper" logger) - _RETRY_LOG_PATTERNS turns them into live,
-# human-readable status messages instead of leaving the UI silent.
+# faster-whisper retries a 30 s window at higher temperatures inside one call,
+# yielding no Segment meanwhile - a frozen bar. It logs each retry at DEBUG;
+# these patterns turn those log lines into live status messages.
 _RETRY_LOG_PATTERNS = [
     (
         re.compile(r"^Processing segment at (.+)$"),
@@ -183,22 +155,12 @@ _TEMP_STALE_SECONDS = 3600.0
 
 
 def _sweep_stale_temp_files(output_file: str, now: float | None = None) -> int:
-    """Delete abandoned .transcript-*.tmp files beside the output. Returns how many.
+    """Delete abandoned .transcript-*.tmp files beside the output; returns how
+    many.
 
-    _atomic_write_html writes through a temp file in the target's own
-    directory and removes it on failure - but a cancelled run never gets to
-    run that cleanup. TranscriptionThread.stop() calls Process.terminate(),
-    which on Windows is TerminateProcess: no exception, no finally, no
-    finalizer. A run cancelled mid-write therefore leaves a multi-megabyte
-    hidden file in the user's own audio folder, and nothing ever removed it.
-
-    Swept at the start of a run rather than at the end of one, because the run
-    that creates the orphan is by definition the one that does not get to
-    clean up after itself.
-
-    Never fatal: this is tidying, and failing to tidy must not cost a
-    transcription. A directory that cannot be listed or a file that cannot be
-    removed is logged and stepped over.
+    Cancelling terminates the process (TerminateProcess - no finally runs), so
+    a run cancelled mid-write leaves its temp file; the next run sweeps it.
+    Never fatal: failures are logged and stepped over.
     """
     directory = os.path.dirname(output_file) or "."
     cutoff = (now if now is not None else time.time()) - _TEMP_STALE_SECONDS
@@ -227,21 +189,9 @@ def _sweep_stale_temp_files(output_file: str, now: float | None = None) -> int:
 
 
 def _atomic_write_html(path: str, content: str) -> None:
-    """Write content to `path` without ever leaving a half-written file behind.
-
-    A plain `open(path, "w")` truncates the target immediately, so a crash
-    partway through the write destroys whatever good output was already
-    there - exactly the failure this whole checkpointing scheme exists to
-    prevent. Instead: write to a fresh temp file in the SAME directory as
-    the target (same filesystem, which is what makes the final step atomic
-    rather than a copy), flush and fsync so the bytes are actually on disk
-    and not just sitting in an OS buffer, then os.replace() the temp file
-    onto the target. os.replace() is an atomic rename on both POSIX and
-    Windows: any reader (or another crash) sees either the old complete file
-    or the new complete file, never something in between.
-
-    If the write itself fails partway, the temp file is removed rather than
-    left behind for the batch's output directory to accumulate junk in.
+    """Write `path` atomically: temp file in the same directory, fsync, then
+    os.replace - a crash leaves the old file or the new one, never half of
+    either. A failed write removes its temp file.
     """
     directory = os.path.dirname(path) or "."
     fd, tmp_path = tempfile.mkstemp(prefix=_TEMP_PREFIX, suffix=_TEMP_SUFFIX, dir=directory)
@@ -261,13 +211,8 @@ def _atomic_write_html(path: str, content: str) -> None:
 
 @dataclass
 class _BatchRender:
-    """Everything the checkpoint render and the final render both need.
-
-    documents/doc_id/vista are the three things that vary between the two
-    render sites; none of the eight OTHER render_html arguments do - both
-    calls render the same batch under the same options, just at different
-    points in the run. Holding that fixed set in one object means a ninth
-    render option is one edit, not two kept in sync by hand.
+    """The render_html arguments shared by checkpoint and final renders, held
+    once so a new render option is one edit, not two.
     """
 
     output_file: str
@@ -292,21 +237,11 @@ class _BatchRender:
 
 
 def _new_batch(options: "TranscriptionOptions", output_file: str) -> _BatchRender:
-    """Pin this run's render identity, before the first checkpoint write.
+    """Pin this run's render identity before the first checkpoint write.
 
-    doc_id: render_html() mints a fresh uuid4 on every call, which is right
-    for a one-shot render but wrong for a document rewritten repeatedly
-    during one run - a changing doc_id would change the browser's
-    localStorage autosave key on every checkpoint, orphaning any edits the
-    user made against the previous doc_id. It must stay exactly what it was
-    on the first write through to the last.
-
-    vista: same reasoning. Without a pin the backdrop photo would change on
-    every per-file checkpoint rewrite and flicker to a different image
-    mid-batch - a document is one document, not a slide show. _vista_names()
-    can be empty (no vistas/ directory, e.g. an installed copy that lost its
-    package data); None then, and render_html() already treats vista=None as
-    "no backdrop" the same way it treats an empty vistas/ directory.
+    doc_id keys the page's localStorage autosave, so a new one per checkpoint
+    would orphan the user's edits; vista keeps the backdrop from changing
+    between rewrites (None when no photos exist).
     """
     from core import formatting
 
@@ -335,12 +270,8 @@ def _batch_scale_emitter(
     file_duration: float,
     total_duration: float,
 ) -> _Emitter:
-    """Rescale one file's own 0-100 progress into its slice of the batch band.
-
-    The slice is sized by this file's share of total audio duration rather
-    than its share of the file count, so a 2-hour recording among ten
-    1-minute ones doesn't make the bar sit at "90% of files done" while most
-    of the actual work remains.
+    """Rescale one file's 0-100 into its slice of the batch band, sized by its
+    share of audio duration, not of the file count.
     """
 
     def emit_local(message: _Message, local_percent: int) -> None:
@@ -374,12 +305,8 @@ def _transcribe_to_document(
     progress_queue: "multiprocessing.Queue",
     work_callback: Callable[[float, float], None],
 ) -> "TranscriptDocument":
-    """Transcribe one file into a document, turning any failure into a marked one.
-
-    One file failing does not fail the batch: it is logged, marked on that
-    file's TranscriptDocument, and the caller carries on. This mirrors the
-    decision already made for diarization and Hebrew correction: an optional
-    or partial failure costs only itself.
+    """Transcribe one file into a document. A failure is logged and marked on
+    that document, and the batch carries on.
     """
     from core.segments import TranscriptDocument
 
@@ -408,26 +335,12 @@ def _transcribe_to_document(
 def _write_checkpoint(
     batch: _BatchRender, audio_file: str, progress_queue: "multiprocessing.Queue"
 ) -> None:
-    """Render and atomically rewrite the output after one file.
+    """Render and atomically rewrite the output after one file, so a crash at
+    file 9 of 10 keeps the first nine. O(n^2) rendering, negligible next to
+    transcription.
 
-    Transcription is by far the most expensive step in this pipeline, so the
-    combined HTML is re-rendered and rewritten after EVERY file, not only
-    once at the very end. A crash, a forced reboot or a kill at file 9 of 10
-    must not cost the nine files that already finished. Re-rendering the
-    whole document per file is O(n^2) in render cost, but render+write is
-    negligible next to decoding and transcribing audio, so this trade is not
-    close.
-
-    A checkpoint is a safety net, not the main event: if rendering or writing
-    it raises, that must not take down a batch that is otherwise succeeding.
-    Log it and keep transcribing - the next checkpoint, or the final write,
-    gets another chance.
-
-    Silent to the caller by design: it touches neither progress_queue
-    (w_formatting/w_saving stay attached to the one final write only) nor
-    result_queue (still exactly one "finished"/"error" at the end) - the
-    GUI's completion path does not need to know intermediate writes happened
-    at all.
+    A safety net: a failure here is logged and the batch continues. Silent -
+    no progress or result messages; the GUI only hears about the final write.
     """
     try:
         render_start = time.perf_counter()
@@ -506,13 +419,8 @@ def _transcribe_all(
             else:
                 succeeded += 1
 
-            # Gated on succeeded > 0 rather than firing unconditionally: if
-            # every file so far has failed there is nothing worth writing yet
-            # (only failure-notice placeholders), and if the whole batch goes
-            # on to fail, the caller's "every file failed" path must behave
-            # exactly as it always has - error reported, no output file left
-            # on disk. Once at least one file has succeeded, every subsequent
-            # checkpoint (successful or not) rewrites the full picture so far.
+            # Nothing to write until a file succeeds: an all-failed batch must
+            # end with an error and no output file.
             if succeeded > 0:
                 _write_checkpoint(batch, audio_file, progress_queue)
 
@@ -526,15 +434,9 @@ def _transcribe_all(
 def _write_final_document(
     batch: _BatchRender, emit_progress: _Emitter, progress_queue: "multiprocessing.Queue"
 ) -> None:
-    """Render the combined document once more and write it for the last time.
-
-    Unlike the per-file checkpoints, this write is not allowed to fail
-    silently: it's the last chance to persist the batch, so a failure here
-    must surface as the "error" result the way it always has (the caller's
-    except still catches it). Still routed through the same atomic helper as
-    the checkpoints - there is no reason the final write should be less safe
-    than the ones before it; a crash during this write must not be able to
-    destroy the last good checkpoint on disk.
+    """The final render and write. Unlike checkpoints, a failure here
+    propagates as the run's error. Atomic too, so it cannot destroy the last
+    good checkpoint.
     """
     emit_progress(("w_formatting", {}), BATCH_FORMATTING_PERCENT)
     render_start = time.perf_counter()
@@ -556,40 +458,19 @@ def run_transcription_process(
 ) -> None:
     """Entry point for the child process. Must stay import-light (no PyQt5).
 
-    All human-readable text crosses the process boundary as (i18n key,
-    params) pairs, never rendered strings - this process doesn't know the
-    UI language, and the GUI renders keys at display time (which also lets
-    a mid-run language toggle re-render the live status).
+    Text crosses the process boundary as (i18n key, params), never rendered
+    strings: this process does not know the UI language. progress_queue gets
+    ("progress", key, params, percent) and text-only ("status", key, params);
+    result_queue gets one ("finished", path) or ("error", key, params).
 
-    Puts ("progress", key, params, percent) tuples on progress_queue for
-    real percentage updates, and ("status", key, params) tuples for
-    text-only updates (see _RetryStatusLogHandler) that describe background
-    activity without claiming a percentage that isn't actually known yet.
-    Puts a single final ("finished", output_file) or ("error", key, params)
-    on result_queue before exiting.
+    The bar, batch-wide (constants in core/progress_scale.py):
+      0 .. BATCH_INIT_PERCENT                  starting up
+      .. TRANSCRIBER_MODEL_LOADED_PERCENT      loading the model, once per
+                                               batch - why the loop lives here
+      BATCH_TRANSCRIBE_START .. _END           every file, weighted by duration
+      .. BATCH_COMPLETE_PERCENT                rendering and writing
 
-    Overall progress bar phase breakdown, batch-wide (all emitted
-    percentages are on this single 0-100 scale, so they only ever move
-    forward). The boundaries below are named constants in
-    core/progress_scale.py, not numbers retyped here - a bare integer in a
-    docstring cannot be checked against the code it describes.
-      0 .. BATCH_INIT_PERCENT
-          initializing this process
-      BATCH_INIT_PERCENT .. TRANSCRIBER_MODEL_LOADED_PERCENT
-          loading the Whisper model - once for the whole batch, which is the
-          entire reason this loop lives here rather than in the GUI looping
-          over one-file-at-a-time runs (a 1.6 GB default model load is a
-          real cost, not worth paying N times)
-      BATCH_TRANSCRIBE_START .. BATCH_TRANSCRIBE_END
-          transcribing every file in turn - decode, transcribe, identify
-          speakers, correct Hebrew terms - each file's share of this band
-          weighted by its share of total audio duration (see _transcribe_all)
-      BATCH_TRANSCRIBE_END .. BATCH_COMPLETE_PERCENT
-          rendering the one combined HTML document and writing it once
-
-    Only every file failing is treated as an overall error - losing a
-    batch's worth of finished transcripts to one bad file would be
-    indefensible given how long transcription takes.
+    Only every file failing is an error: one bad file must not cost the rest.
     """
     # Held for the whole batch, not per file: the gap between two files is
     # still this process working, and letting the machine stand by in that
@@ -657,16 +538,9 @@ def run_transcription_process(
 
 
 def _file_local_emitter(emit_progress: _Emitter) -> _Emitter:
-    """Remap Transcriber's own absolute scale onto this file's local 0-100.
-
-    Transcriber emits TRANSCRIBER_MODEL_LOADED_PERCENT at the start of
-    transcribe() and climbs to TRANSCRIBER_TRANSCRIBE_END_PERCENT as segments
-    complete, on a scale that knows nothing about batches. Remapping that
-    fixed range onto FILE_LOCAL_TRANSCRIBE_START..FILE_LOCAL_TRANSCRIBE_END
-    (leaving 0..FILE_LOCAL_TRANSCRIBE_START for decoding and
-    FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_MAX for speakers and correction) is
-    what lets one already-loaded Transcriber serve every file in a batch
-    instead of paying the model-load cost again per file.
+    """Remap Transcriber's scale (MODEL_LOADED..TRANSCRIBE_END) onto this
+    file's FILE_LOCAL_TRANSCRIBE band, so one loaded Transcriber serves the
+    whole batch.
     """
 
     def from_transcriber_scale(message: _Message, percent: int) -> None:
@@ -703,36 +577,15 @@ def _start_overlapped_diarization(
     diarize - a two-party file attributes speakers by channel instead, and a
     file that would not decode has no samples to work from.
 
-    Diarization is a full second pass over the SAME audio, and - unlike every
-    other step in this pipeline - does not depend on the transcript at all:
-    diarize() takes only the raw samples, and only assign_speakers (after
-    both are done) needs segments. Run sequentially, it costs a whole extra
-    pass; started here, before transcribe(), it costs only whatever of it
-    doesn't finish before transcribe() does. Both faster-whisper
-    (ctranslate2) and sherpa-onnx (onnxruntime) release the GIL during their
-    native compute, so a plain Python thread gets real wall-clock overlap,
-    not just interleaving - though with 4 physical cores and beam_size=5
-    already asking for several of them, how much overlap actually pays off is
-    a measurement question (see tests/eval/compare_models.py and the Stage 2
-    report), not something guaranteed by the threading alone.
+    Diarization needs only the samples, not the transcript, so it runs on a
+    thread beside transcribe() instead of as a second pass afterwards; both
+    native libraries release the GIL, so the overlap is real (measured in
+    docs/DIARIZATION_TUNING.md).
 
-    Progress during the overlap window is deliberately routed as
-    ("status", key, params) - text only, no percentage (see
-    _RetryStatusLogHandler for the existing precedent, and gui/threads.py's
-    _relay_progress_message for how the GUI treats it) - rather than through
-    the file-local percent scale. Diarization's own band
-    (FILE_LOCAL_TRANSCRIBE_END..FILE_LOCAL_SPEAKER_ID_END) was carved out on
-    the assumption transcription had already reached
-    FILE_LOCAL_TRANSCRIBE_END by the time diarization started; once the two
-    run concurrently that assumption no longer holds - diarization can
-    legitimately finish before transcription does on a long file - so a
-    diarization percentage arriving mid-overlap would either lie (claim more
-    done than the file-local scale means) or fight transcribe's own climbing
-    percentage for the same numbers. Text status has no such ordering
-    constraint. The real percentage bump for this phase still happens, in
-    _finish_identify_speakers, but only after both threads have actually
-    finished - at that point there is only one writer again and the normal
-    sequential guarantee holds.
+    During the overlap, diarization reports text-only ("status", ...)
+    messages, never a percentage: its band assumes transcription has already
+    finished, so a percentage mid-overlap would fight transcribe's own. The
+    percentage bump comes in _finish_identify_speakers, once both are done.
     """
     if channels is None or two_party:
         return None, None
@@ -753,16 +606,9 @@ def _decode_transcript(
     diarization_thread: Optional["threading.Thread"],
     progress_queue: "multiprocessing.Queue",
 ) -> list["Segment"] | None:
-    """Produce this file's segments, joining the diarization thread either way.
-
-    try/finally, not a bare call followed by a join: transcriber.transcribe()
-    can raise (a bad file, a decode failure faster-whisper only discovers
-    partway through), and letting that propagate straight out - skipping the
-    join - would leave the diarization thread orphaned. daemon=True (see
-    _start_diarization) only guarantees it won't block process exit; while
-    THIS process is still alive (more files left in the batch, or about to
-    render and write the final HTML) an unjoined thread keeps burning CPU
-    concurrently with that work for a result nothing will ever read.
+    """Transcribe the file, joining the diarization thread even if
+    transcription raises - an unjoined thread would keep burning CPU through
+    the rest of the batch for a result nobody reads.
     """
     try:
         if two_party:
@@ -778,16 +624,9 @@ def _decode_transcript(
         return segments
     finally:
         if diarization_thread is not None:
-            # Timed, and announced before it blocks. Usually this join
-            # returns immediately: measured on this machine with ivrit-turbo,
-            # diarization costs 26.6s against transcription's 130.3s on the
-            # same 180s of audio, so it has long since finished. It is the
-            # other case this exists for - transcription much faster than
-            # diarization, which is what a CUDA device or a very small model
-            # would produce - where the join becomes a stretch with nothing
-            # moving at all. Diarization reports no progress of its own by
-            # design (see _start_diarization), so saying "this phase has
-            # started" is the only honest thing available until it returns.
+            # Usually instant (diarization 26.6 s vs transcription 130.3 s on
+            # 180 s of audio), but a fast GPU or small model leaves a wait with
+            # nothing moving, so the wait is announced and timed.
             join_start = time.perf_counter()
             _report_phase(progress_queue, WORK_PHASE_DIARIZE_WAIT, WORK_PHASE_STARTED)
             diarization_thread.join()
@@ -803,22 +642,11 @@ def _transcribe_one(
     progress_queue: "multiprocessing.Queue",
     work_callback: Callable[[float, float], None],
 ) -> list["Segment"] | None:
-    """Run one file's decode -> transcribe -> speaker id -> Hebrew correction.
+    """One file's decode -> transcribe -> speaker id -> Hebrew correction.
 
-    emit_progress here is already file-local (0-100 covering just this file's
-    own work) - the caller does the duration-weighted rescale into the
-    batch's overall percentage. progress_queue is the raw queue underneath
-    it, needed separately because the overlapped diarization thread reports
-    its own progress as text-only "status" messages rather than through
-    emit_progress's percent scale (see _start_overlapped_diarization).
-
-    Reassigns transcriber.progress_callback for the duration of this call, so
-    one already-loaded Transcriber serves the whole batch (see
-    _file_local_emitter).
-
-    Returns None (rather than raising) if this file's transcription itself
-    failed, so one bad file can be caught and skipped by the caller without
-    losing the rest of the batch.
+    emit_progress is file-local; progress_queue is passed too, for the
+    diarization thread's status messages. Returns None if transcription
+    failed, so the caller can skip the file.
     """
     transcriber.progress_callback = _file_local_emitter(emit_progress)
     # Same reassign-per-file arrangement as progress_callback above, for the
@@ -839,13 +667,8 @@ def _transcribe_one(
         channels, two_party, options, progress_queue, diarization_result
     )
 
-    # Nothing reads the per-channel arrays again once they have been mixed
-    # down: only the two-party path below takes `channels`, and that path is
-    # the one where `mono` was never built. Holding them anyway kept a stereo
-    # file's audio in memory THREE times over - both channels plus the mix -
-    # for the entire length of a transcription, which is the longest and most
-    # memory-hungry stretch of the run. to_mono returns channels[0] itself for
-    # a mono file, so dropping the list there frees the list and nothing else.
+    # Once mixed down the channels are never read again; holding them kept a
+    # stereo file in memory three times over for the whole transcription.
     if mono is not None:
         channels = None
 
@@ -902,21 +725,12 @@ def _prepare_audio(
 def _transcribe_per_channel(
     transcriber: "Transcriber", channels: Any, file_duration: float
 ) -> list["Segment"]:
-    """Transcribe each channel separately - the exact path.
-
-    When a recording genuinely has one speaker per channel, attribution needs
-    no model and carries no error: whoever is on channel 0 is speaker 0. The
-    cost is that transcription runs once per channel, roughly doubling the
-    wall-clock time, which the GUI's estimate accounts for.
+    """Transcribe each channel separately: with one speaker per channel,
+    attribution is exact. Costs roughly double the time.
     """
     collected: list[Segment] = []
-    # Two passes over one file's worth of audio, so each pass is half of this
-    # file's contribution to the batch. Without folding them the reported
-    # position would climb to the file's full duration, drop back to zero for
-    # channel 2 and climb again - and audio_done running backwards would make
-    # the time estimate jump rather than converge. The audio TOTAL is untouched:
-    # the batch denominator is the sum of real file durations, and this file is
-    # still one file long however many times it is decoded.
+    # Each pass counts as half the file, so audio_done never runs backwards
+    # between channels; the file's total stays its real duration.
     per_channel = list(channels[:2])
     channel_count = max(len(per_channel), 1)
     file_work_callback = transcriber.work_callback
@@ -965,30 +779,12 @@ def _start_diarization(
     progress_queue: "multiprocessing.Queue",
     result: dict,
 ) -> Optional["threading.Thread"]:
-    """Kick off diarization on a background thread, overlapping it with
-    transcription (see the comment above this function's call site in
-    _transcribe_one). Runs everything that does NOT need the transcript -
-    downloading models on first use, then diarize() itself - and leaves the
-    outcome (spans, or a caught exception) in `result` for the main thread to
-    read after transcribe() returns and both are actually done (see
-    _finish_identify_speakers).
+    """Start diarization (model download, then diarize()) on a thread, leaving
+    spans or the caught exception in `result`.
 
-    Progress here goes straight to progress_queue as ("status", key, params)
-    - text only, no percentage - not through the file-local emit_progress
-    used everywhere else in this module. See the call site's comment for why:
-    in short, this phase's percentage band was carved out on the assumption
-    transcription had already finished by the time it started, which the
-    whole point of overlapping breaks.
-
-    Returns None without starting a thread when diarization isn't wanted or
-    there's no audio to diarize - callers only need to check the return value
-    for whether there's something to join later, not for whether it "worked":
-    that's the non-fatal contract _finish_identify_speakers owns.
-
-    Catches every exception here rather than letting one escape into a
-    background thread where nothing would ever see it - diarization staying
-    a non-fatal enhancement has to hold in a thread too, not just on the main
-    one.
+    Progress is text-only status - see _start_overlapped_diarization. Returns
+    None when there is nothing to diarize. Every exception is caught: an
+    exception in a thread would vanish, and diarization must stay non-fatal.
     """
     if not options.identify_speakers or mono is None:
         return None
@@ -1031,14 +827,8 @@ def _finish_identify_speakers(
     emit_progress: _Emitter,
     progress_queue: "multiprocessing.Queue",
 ) -> None:
-    """Attach speakers once both transcription and the overlapped diarization
-    thread (see _start_diarization) have finished. assign_speakers is the one
-    piece of speaker identification that genuinely needs the transcript, so
-    it can never start any earlier than this, overlap or not.
-
-    Non-fatal throughout: a missing model, an absent dependency, or any other
-    failure costs speaker labels and nothing else - the transcript this
-    function receives is already complete.
+    """Attach speakers once transcription and diarization are both done.
+    Non-fatal: any failure costs the speaker labels and nothing else.
     """
     if "error" in result:
         logger.warning(
@@ -1050,15 +840,8 @@ def _finish_identify_speakers(
     if not segments:
         return
 
-    # spans can legitimately be an empty list - diarize() finding no
-    # distinguishable speakers is not an error - and that must NOT take the
-    # same early-return path as "spans" being absent because the thread
-    # never ran (options.identify_speakers off, or no mono audio at all,
-    # see _start_diarization). assign_speakers already treats an empty
-    # spans list as a safe no-op (returns segments unchanged - see its own
-    # `if not spans` guard in core/diarization.py), so it is called
-    # unconditionally below rather than special-cased here - which also keeps
-    # the progress report a bare `if not spans: return` would have skipped.
+    # Empty spans (no distinguishable speakers) is not "never ran": it still
+    # goes through assign_speakers, a no-op for it, and its progress report.
     spans = result.get("spans", [])
 
     try:
@@ -1074,16 +857,7 @@ def _finish_identify_speakers(
         segments[:] = diarization.assign_speakers(segments, spans)
         _log_phase(progress_queue, WORK_PHASE_ASSIGN, assign_start)
 
-        # A real percentage, not just the status message _start_diarization
-        # sent during the overlap window (see its comment for why that one
-        # had to be status-only). By the time we're here both threads have
-        # already joined, so there is only one writer again and nothing
-        # stops a normal percent bump - without this the file-local
-        # percentage would silently sit at wherever transcribe() left it
-        # through all of diarization and assign_speakers, then jump straight
-        # to completion, which is not a monotonicity bug but is a real loss
-        # of feedback for a phase that can take a third of the audio's
-        # length (see hardware_detection.py's DIARIZATION_REALTIME_FACTOR).
+        # The percentage withheld during the overlap; one writer again now.
         emit_progress(("w_identifying_speakers", {}), FILE_LOCAL_SPEAKER_ID_END)
 
     except Exception as e:
@@ -1097,12 +871,8 @@ def _correct_hebrew(
     emit_progress: _Emitter,
     progress_queue: "multiprocessing.Queue",
 ) -> None:
-    """Fix misrecognised domain terms, in place.
-
-    A no-op unless the user has written a term list. Like diarization, any
-    failure here costs the correction and nothing else - the transcript is
-    already complete by this point and must not be put at risk by an optional
-    tidying step.
+    """Fix misrecognised domain terms in place; a no-op without a term list.
+    Any failure costs the correction and nothing else.
     """
     terms_file = options.terms_file
     if not terms_file or not segments:
