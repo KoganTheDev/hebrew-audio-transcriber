@@ -49,41 +49,13 @@ logger = logging.getLogger(__name__)
 
 
 def _model_is_downloaded(repo: str) -> bool:
-    """Best-effort guess at whether `repo` already sits in faster-whisper's
-    local download cache, so a model card can skip warning about a
-    download that has already happened.
+    """Best-effort guess at whether `repo` is in faster-whisper's cache, so a
+    card can skip its download warning.
 
-    This pokes directly at an IMPLEMENTATION DETAIL of a downstream
-    library - huggingface_hub's on-disk cache layout, a folder named
-    "models--<owner>--<repo>" per snapshot - not a documented, stable
-    contract. faster-whisper resolves a bare size like "tiny" to
-    "Systran/faster-whisper-tiny" before that layout is ever applied
-    (config.MODELS' "repo" field mirrors that: bare sizes for stock
-    Whisper, an explicit "owner/repo" for the ivrit.ai models), so this
-    has to redo that same resolution to compute the folder name it's
-    looking for.
-
-    Fail-safe in ONE direction only, deliberately: any doubt at all -
-    the folder's missing, a "snapshots" subfolder is missing or empty,
-    the path can't even be listed, a future huggingface_hub version
-    reshuffles this layout entirely - reports "not downloaded", never
-    the reverse. Getting this wrong one way just means an already-cached
-    model shows a redundant download-size note on its card (mildly
-    annoying). Getting it wrong the other way would tell someone a
-    multi-GB download isn't coming when it actually is, which is a wrong
-    claim about to cost them real time - see this function's caller for
-    where that asymmetry matters.
-
-    Reads config.MODEL_DOWNLOAD_ROOT - the same absolute, resolved-once path
-    core/transcriber.py hands WhisperModel's download_root - so this presence
-    check and the real download always agree on where to look. That used to
-    be two independent copies of the relative literal "./whisper_models",
-    which meant a model downloaded during one working-directory session
-    could read as "not downloaded" from another (the process's current
-    working directory decided where the literal resolved, both for the real
-    download and for this check). See config.MODEL_DOWNLOAD_ROOT's own
-    comment for the resolution order and why it had to move to config.py
-    rather than staying duplicated here.
+    Reads huggingface_hub's undocumented "models--owner--repo/snapshots"
+    layout under config.MODEL_DOWNLOAD_ROOT (the loader's own root). Fails
+    toward "not downloaded" on any doubt: a redundant note is mildly annoying,
+    but promising no multi-GB download when one is coming would cost real time.
     """
     try:
         repo_id = repo if "/" in repo else f"Systran/faster-whisper-{repo}"
@@ -237,16 +209,8 @@ class ModelSelectStep(QFrame):
         # keyboard-focus ring.
         # model_name -> "RECOMMENDED" QLabel (always created, shown/hidden)
         self._badges: dict[str, QLabel] = {}
-        # Computed once at construction, not re-checked per card render: a
-        # download completing mid-session (this app's own transcription run
-        # is the only thing that would trigger one) is already covered by a
-        # full model-select rebuild never happening without a restart, so
-        # there's no live event this would need to react to. See
-        # _model_is_downloaded's docstring for what "downloaded" means here
-        # and why it's guesswork, not a guarantee.
-        # str(): config.MODELS is a heterogeneous dict literal, so mypy
-        # infers its value type as `object` and "repo" arrives untyped here.
-        # Every entry is a string by construction (see config/models.py).
+        # Checked once: nothing downloads a model mid-session without a restart.
+        # str(): MODELS values type as object, but "repo" is always a string.
         self._downloaded = {
             name: _model_is_downloaded(str(info["repo"])) for name, info in config.MODELS.items()
         }
@@ -261,23 +225,14 @@ class ModelSelectStep(QFrame):
         self._syncing = False  # True while we're programmatically re-checking a radio
 
     def _build_page_layout(self) -> QVBoxLayout:
-        """The step's own vertical layout, on the page with the least room.
-
-        The card list, the speaker row and the error/calibration strips all
-        share 600px of height, so the spacing and margins here are set
-        tighter than either neighbouring step and are kept in one place
-        rather than tuned per widget.
+        """The step's layout, on the tightest page: cards, speaker row and the
+        error/calibration strips share 600 px, so spacing is tighter here.
         """
         layout = QVBoxLayout(self)
         # Tighter than steps 1/3 (XS, not SM) - every px of vertical gap
         # here is a px the card list's scroll area doesn't get.
         layout.setSpacing(Spacing.XS)
-        # Horizontal margin widened XL -> XXL like the other two steps (it
-        # costs no vertical room, which is the scarce resource on this
-        # page). Vertical margin pulled in to SM, tighter than before
-        # (was MD) to buy back some of the room the taller DISPLAY heading
-        # spends - see the title comment below on why step 2 stays
-        # conservative.
+        # Wide side margins (free), tight vertical ones (scarce here).
         layout.setContentsMargins(Spacing.XXL, Spacing.SM, Spacing.XXL, Spacing.SM)
 
         # No page title here any more - "Choose Model" is now carried by
@@ -333,15 +288,9 @@ class ModelSelectStep(QFrame):
 
     def _build_calibration_note(self, layout: QVBoxLayout) -> None:
         """The "these estimates are guesses so far" line under the banner."""
-        # Calibration note - every time estimate on this step is a
-        # placeholder (config.SPEED_FACTORS's guessed constants, see
-        # HardwareDetector.estimate_transcription_time) until the background
-        # benchmark that started in MainWindow.__init__ finishes. Hidden
-        # whenever hardware.tiny_seconds_per_audio_second is already known
-        # (the common case - calibration usually finishes well before the
-        # user reaches this step), shown otherwise; see
-        # _set_calibration_note, update_audio_duration and
-        # mark_calibration_unmeasured for the three states this can be in.
+        # Calibration note: estimates are placeholders until the background
+        # benchmark lands (usually before this step is reached). States in
+        # _set_calibration_note and mark_calibration_unmeasured.
         self._calibration_note_key: str | None = None
         self.calibration_note = make_label(font=Fonts.CAPTION, color="text_tertiary")
         self.calibration_note.setWordWrap(True)
@@ -399,19 +348,10 @@ class ModelSelectStep(QFrame):
         models_scroll.setFrameShape(QFrame.NoFrame)
         models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         models_scroll.setStyleSheet("background: transparent;")
-        # setWidgetResizable(True) re-fits the scrolled widget from
-        # QScrollArea's OWN resizeEvent, which fires when the scroll area
-        # changes size - not when the viewport alone shrinks because the
-        # vertical scrollbar just appeared. So a bar that shows up because
-        # the CONTENT grew (the common case here: _on_calibration_done
-        # rewrites every card's estimate once the background benchmark
-        # lands, and a longer line can wrap a card to a second row) narrows
-        # the viewport by the bar's 10px while leaving the container at its
-        # old width. The cards are then 10px wider than what's visible and,
-        # with horizontal scrolling off, their right border is simply
-        # clipped away - the card reads as an unfinished box open on one
-        # side. Watching the viewport's own resize closes that gap; see
-        # _sync_container_width.
+        # setWidgetResizable only re-fits on the scroll area's own resize, not
+        # when a scrollbar appears and narrows the viewport (e.g. once the
+        # calibration lengthens the estimates) - the cards then overflow and
+        # lose their right border. Watching the viewport's resize fixes that.
         viewport = models_scroll.viewport()
         if viewport is not None:
             viewport.installEventFilter(self)
@@ -480,13 +420,8 @@ class ModelSelectStep(QFrame):
         return panel, layout, header
 
     def _build_speakers_panel(self) -> QFrame:
-        """How many people are in the recording, as a - n + stepper.
-
-        Telling the clustering step exactly how many people are present is the
-        single biggest accuracy lever in diarization, so this is a count the
-        user sets, not a guess. Buttons rather than a spin box: the range is
-        small, and a spin box's free text could be typo'd into a value that
-        quietly degrades every label.
+        """The speaker count, as a - n + stepper: the exact count is the biggest
+        diarization accuracy lever, and buttons cannot be mistyped.
         """
         self.speakers_title = self._aligned_label(
             Fonts.BODY_BOLD, "text_primary", t("speakers_title")
@@ -714,18 +649,8 @@ class ModelSelectStep(QFrame):
                 self._user_touched_model = True
 
     def _apply_selection(self, name: str) -> None:
-        """Move the accent border, and the accent on the time estimate, to
-        whichever card's radio is currently picked.
-
-        Tried and dropped: a drop shadow on the selected card, matching the
-        result panel's. Screenshotted it (see the redesign notes) and it
-        was invisible - QGraphicsDropShadowEffect paints outside the
-        widget's own rect, and this card lives inside models_scroll's
-        QScrollArea with no margin reserved for a shadow to bleed into, so
-        the viewport clips it away entirely. All cost (still a candidate
-        repaint-artifact source per QGraphicsDropShadowEffect-in-a-
-        QScrollArea) and no visible benefit, so the accent border alone
-        carries "this one is selected" here.
+        """Accent the selected card's border and time estimate. (A drop shadow
+        was tried: the scroll area clips it, so it was invisible.)
         """
         for card_name, card in self._cards.items():
             selected = card_name == name
@@ -735,11 +660,8 @@ class ModelSelectStep(QFrame):
             )
 
     def _info_note(self, name: str) -> str:
-        """RAM (always) plus, for a model not yet cached locally, the full
-        "not downloaded yet" sentence - the words the caption's terse
-        "↓ {size}" arrow (see _desc_text) doesn't have room to spell out.
-        Shared by the card's tooltip and the radio's accessible description
-        so the two surfaces never drift out of sync with each other.
+        """RAM, plus the download sentence for an uncached model - shared by
+        the tooltip and the accessible description so they cannot drift.
         """
         info = config.MODELS[name]
         note = t("model_ram_tooltip", ram=info["ram_required"])
@@ -905,12 +827,8 @@ class ModelSelectStep(QFrame):
         return name_row
 
     def eventFilter(self, obj: QObject | None, event: QEvent | None) -> bool:
-        """Watches every model radio's own FocusIn/FocusOut (installed in
-        _build_card_radio), so the surrounding card can react to a focus
-        change that lands on its child rather than on itself - see
-        _sync_card_focus_ring for why that indirection is needed at all.
-        Never claims the event: Tab navigation and the radio's own focus
-        handling must proceed exactly as if this filter didn't exist.
+        """Forward each radio's focus changes to its card's focus ring (see
+        _sync_card_focus_ring). Never consumes the event.
         """
         if obj is None or event is None:
             return super().eventFilter(obj, event)
@@ -935,14 +853,8 @@ class ModelSelectStep(QFrame):
         return super().eventFilter(obj, event)
 
     def _sync_container_width(self) -> None:
-        """Keep the scrolled card container exactly as wide as the viewport.
-
-        Only the width: the height stays whatever the container's own layout
-        asked for, so this never fights setWidgetResizable's vertical half.
-        Narrowing can make a description wrap and the container grow taller,
-        which QScrollArea picks up through the layout request it already
-        listens for. The widths converge in one step, so the
-        resize -> scrollbar -> resize path cannot cycle.
+        """Keep the card container as wide as the viewport (width only, so the
+        layout's height is untouched; it converges in one step).
         """
         container = self._scroll_area.widget()
         viewport = self._scroll_area.viewport()
@@ -950,50 +862,20 @@ class ModelSelectStep(QFrame):
         # size against without a viewport, so bail rather than dereference.
         if container is None or viewport is None:
             return
-        # A ceiling, not just a resize. QScrollArea's own updateScrollBars()
-        # sizes the scrolled widget to the scroll area first and only then
-        # decides a bar is needed, and it does not go back and re-size the
-        # widget once that decision narrows the viewport - so a plain
-        # resize() here is undone again on the very next layout pass, and
-        # resizing back in a loop just trades the clipping for a fight with
-        # Qt. A maximum width is a constraint Qt honours inside its own
-        # pass, so the widget can never come back wider than what is
-        # actually visible.
+        # A maximum, not a resize: QScrollArea sizes the widget before adding
+        # the scrollbar and never re-sizes it, so a resize is undone next pass.
         container.setMaximumWidth(viewport.width())
         if container.width() > viewport.width():
             container.resize(viewport.width(), container.height())
 
     @staticmethod
     def _sync_card_focus_ring(card: QFrame, focused_in: bool) -> None:
-        """Stamp the model card's own [kbdFocus] property (see theme.card_qss)
-        from its RADIO's focus state, not the card's own - the radio is the
-        card's only focusable child, so Qt gives real focus to it, and
-        gui/focus.py's KeyboardFocusTracker only ever stamps the widget that
-        actually receives focus. Left alone, tabbing onto a card would ring
-        the small 18px indicator and leave the card itself - the thing a
-        sighted keyboard user is actually scanning for "where am I" - looking
-        identical to every other unselected card.
+        """Ring the card when its radio has keyboard focus - Qt focuses the
+        18 px radio, but the card is what a keyboard user scans for.
 
-        This does NOT reuse the radio's own kbdFocus property value, even
-        though the radio has one and it says the same thing eventually: by
-        the time this runs (from FocusIn, delivered synchronously before
-        KeyboardFocusTracker's focusChanged-driven update), the radio's own
-        property may not be written yet - see
-        KeyboardFocusTracker.is_keyboard_active's docstring for the exact
-        ordering reason. Re-deriving "is a keyboard driving this" from the
-        tracker's own live flag sidesteps that race instead of depending on
-        a signal-connection order that happens to work today.
-
-        Three-way distinction this has to preserve (see theme.card_qss):
-        selected cards keep the accent border, plain unselected cards keep
-        control_border, and this only ever overrides that with the focus
-        colour - never with accent - so a focused-but-unselected card reads
-        as "focused", not as "selected". A selected card that also gets
-        keyboard focus shows the focus colour too (overriding accent for as
-        long as focus stays there); that is an acceptable fourth state, not
-        one this method needs to keep apart from the other three, since
-        nothing above asks a selected+focused card to look distinct from a
-        focused one - only "not to look selected" is a live requirement.
+        Reads the tracker's live flag, not the radio's own property, which may
+        not be set yet at FocusIn (see is_keyboard_active). Uses the focus
+        colour, never the accent, so a focused card never reads as selected.
         """
         show_ring = False
         if focused_in:
@@ -1018,13 +900,8 @@ class ModelSelectStep(QFrame):
             self.calibration_note.show()
 
     def mark_calibration_unmeasured(self) -> None:
-        """Called from MainWindow._on_calibration_failed: the background
-        benchmark didn't just take a while, it actively failed, so
-        hardware.tiny_seconds_per_audio_second will stay None for the rest
-        of this run. Leaving the "still measuring" note up would keep
-        promising a real number that is never coming; this swaps it for a
-        resting message that states the permanent condition instead - the
-        estimates are rough, not provisional.
+        """The benchmark failed, so estimates stay rough for this run: replace
+        "still measuring" with a resting note.
         """
         self._set_calibration_note("calibration_unmeasured")
 
@@ -1048,17 +925,9 @@ class ModelSelectStep(QFrame):
         self._apply_recommendation(recommended_model)
 
     def showEvent(self, event: QShowEvent | None) -> None:
-        """Bring the recommended card into view whenever this step is shown.
-
-        In a short window the recommendation can start off below the fold
-        of the scroll area, and a user who doesn't scroll would never see it.
-
-        Also seeds Tab's starting point at the currently-selected model's
-        radio (see FileSelectStep.showEvent for why this doesn't paint a
-        ring on its own - the same reasoning applies here). Whichever radio
-        is actually checked, not necessarily the recommended one - a user
-        who already picked a different model on a previous visit to this
-        step shouldn't have Tab silently reset them to the recommendation.
+        """Scroll the recommended card into view, and put the first Tab stop on
+        the selected model's radio (whichever the user picked, not
+        necessarily the recommendation).
         """
         super().showEvent(event)
         self._scroll_to_recommended()
@@ -1102,12 +971,8 @@ class ModelSelectStep(QFrame):
 
     @staticmethod
     def _card_text_alignment() -> Qt.Alignment:
-        """Visual (absolute) alignment that puts card text next to the radio
-        button in the current language: right in Hebrew's mirrored layout,
-        left in English. AlignLeading doesn't work here - QLabel resolves
-        it against each label's own text direction, so Latin model names
-        and Hebrew descriptions end up on different sides (verified
-        empirically).
+        """Absolute alignment beside the radio: right in Hebrew, left in English.
+        Not AlignLeading, which follows each label's own text direction.
         """
         side: Qt.AlignmentFlag = (
             Qt.AlignmentFlag.AlignRight if is_rtl() else Qt.AlignmentFlag.AlignLeft
@@ -1170,13 +1035,8 @@ class ModelSelectStep(QFrame):
         self.term_chips.retranslate()
 
     def _apply_recommendation(self, recommended_model: str) -> None:
-        """Move the RECOMMENDED badge to recommended_model and, if the user
-        hasn't manually picked a model yet, follow it with the selection.
-
-        The accent border is a separate concept (see _apply_selection) -
-        it always tracks whichever card's radio is actually checked, not
-        the recommendation, so a manually-picked model stays highlighted
-        even after the recommendation moves elsewhere.
+        """Move the RECOMMENDED badge, and the selection too unless the user has
+        picked a model (the accent border follows the selection, not this).
         """
         if recommended_model == self._current_recommended:
             return
