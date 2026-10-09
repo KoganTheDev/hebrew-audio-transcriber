@@ -1,28 +1,9 @@
-"""Theme system for the Speech-to-Text Transcriber GUI.
+"""Theme: colours, fonts, spacing, radii and the QSS builders, in one place.
 
-Single source of truth for colors, fonts, spacing, and QSS (Qt stylesheet)
-generation, plus the radius/border/motion constants the QSS builders read
-instead of embedding literals - so a value-only redesign is a one-file
-change rather than a hunt through string literals in the builder bodies.
-
-Palette: Catppuccin Mocha, with peach as the accent. It has to match the
-HTML transcript the app produces, which is styled with Catppuccin (see
-core/assets/css/00-tokens.css), or the app and its own
-output read as two different products. Peach is the accent because it is
-the nearest Catppuccin color to the app's original copper (#C9814A) by
-measured RGB distance (92.9, versus 103.4 for the next closest, Mocha
-red) and the only close match in the same warm register. The one
-deliberate exception is the header title text, which uses a peach-toned
-gradient fill as a one-off brand accent (see gradient_text_pixmap).
-
-Ordering rule for the two stylesheet layers: app_stylesheet() is applied
-once on the QApplication and holds only defaults (e.g. QToolTip, the main
-window background). Per-widget setStyleSheet(...) calls made by
-MainWindow and the step widgets are applied afterward on top of it, and
-Qt's cascade means the more specific, later-applied per-widget sheet
-always wins over the app-wide one. So anything that needs to differ per
-widget instance (button variants, selected-card borders, etc.) stays a
-per-widget call - app_stylesheet() is not the place to fight it.
+Catppuccin Mocha with a peach accent, to match the HTML transcript the app
+writes (core/assets/css/00-tokens.css); peach is the nearest Catppuccin
+colour to the app's original copper. app_stylesheet() holds app-wide
+defaults only; per-widget setStyleSheet() calls are applied later and win.
 """
 
 import math
@@ -74,20 +55,9 @@ COLORS = {
 
 
 FONT_FAMILY = "Segoe UI"
-# Deliberately NOT "Segoe UI Variable Display", despite it being the more
-# current-looking face and despite it resolving cleanly on this machine.
-# Measured with QRawFont.supportsCharacter: Variable Display has zero
-# Hebrew glyph coverage (Latin/Greek/Cyrillic/Vietnamese only), while plain
-# Segoe UI covers Hebrew and Arabic too. QFontInfo would still report a
-# clean resolve for Variable Display, and Hebrew text would still render -
-# silently, per-glyph, falling back to whatever face Qt finds next - so the
-# failure doesn't show up as a missing font, it shows up as two different
-# faces sharing one line (e.g. a Latin model name in Variable Display next
-# to its Hebrew description in fallback-Segoe UI on the same card, in the
-# Hebrew UI only). That's a worse and harder-to-spot bug than just not
-# having the nicer face, so the modern feel is bought with weight instead
-# (see QFont.DemiBold below, which maps to the real "Segoe UI Semibold"
-# cut) rather than a family swap.
+# Not "Segoe UI Variable Display": it has no Hebrew glyphs, so Hebrew silently
+# falls back to another face mid-line. The modern feel comes from DemiBold
+# weights instead.
 
 # QFont.Weight values, named here because "62" and "75" read as noise at
 # every call site below. DemiBold - not Bold - is used for every heading
@@ -99,29 +69,12 @@ _DEMIBOLD = QFont.DemiBold
 
 
 class _FontsMeta(type):
-    """Builds each Fonts role on first use, not at class-definition time.
+    """Builds each Fonts role on first use - a correctness requirement.
 
-    This is not a style preference, it is a correctness requirement. A QFont
-    constructed before a QApplication exists resolves against an
-    uninitialised font database, and it keeps those wrong metrics
-    afterwards: QFontMetrics on such a font reports a 227px advance for the
-    header title where the same font built after QApplication reports 276px.
-    app.py imports this module at module level and only
-    constructs its QApplication inside main(), so class-body QFont literals
-    were always being built on the wrong side of that line.
-
-    Most of the app never noticed, because a widget you merely setFont() on
-    is re-resolved by Qt at paint time. What did notice is the one place
-    that measures a font by hand and allocates a canvas from the answer:
-    gradient_text_pixmap() sized the header title's pixmap from the
-    under-reported advance, so the text painted into it was wider than the
-    pixmap and lost a character off each end. The shortfall stays hidden
-    while it still fits inside the padding (it did at 12pt, not at 13pt),
-    which is what makes this class of bug latent rather than obvious.
-
-    Roles are cached once a QApplication exists, and deliberately NOT cached
-    before then, so an early access during import or test collection cannot
-    poison the cache with a badly-resolved font for the life of the process.
+    A QFont built before QApplication exists keeps wrong metrics (227 px vs
+    276 px for the title), which clipped gradient_text_pixmap's hand-sized
+    canvas. Roles are cached only once a QApplication exists, so an early
+    access cannot poison the cache.
     """
 
     _SPECS = {
@@ -149,23 +102,15 @@ class _FontsMeta(type):
 
 
 class Fonts(metaclass=_FontsMeta):
-    """Named font roles, resolved lazily by _FontsMeta - read its docstring
-    before adding one as a plain class attribute, which would reintroduce
-    the pre-QApplication resolution bug.
+    """Named font roles, built lazily by _FontsMeta (never add a plain QFont
+    class attribute). Sizes are spaced widely and weight shares the hierarchy.
 
-    Size gaps between roles are kept wide - a single point apart reads as
-    noise rather than hierarchy - and weight carries part of the hierarchy
-    too, so size is not the only lever (see _DEMIBOLD above).
-
-    Sizes and weights live in _FontsMeta._SPECS. What each role is FOR:
-      DISPLAY         step headings ("Specs", "Choose Model", "Transcribing")
-      SUBTITLE_BOLD   header title via gradient_text_pixmap, step-3 headline
-      BODY_BOLD       model card names, hardware values, drop zone lead line
+      DISPLAY         step headings
+      SUBTITLE_BOLD   header title, step-3 headline
+      BODY_BOLD       model names, hardware values, drop zone lead line
       BODY            default body text
-      BODY_BOLD_SMALL the step-3 live status line
-      CAPTION         captions, error banner, model card descriptions - 9pt
-                      is the floor, legible without eating step 2's tight
-                      vertical budget
+      BODY_BOLD_SMALL the step-3 status line
+      CAPTION         captions, banners, card descriptions (9 pt floor)
       CAPTION_BOLD    emphasis at caption size
     """
 
@@ -189,18 +134,9 @@ class Spacing:
 
 
 class Radius:
-    """Named corner radii (px), grouped by what the rounded element is - not
-    by size - so a later redesign can change one kind of surface without
-    guessing which literal belongs to which. The values match the HTML
-    transcript document's own --control-radius/--panel-radius system, so a
-    control looks like a control and a surface looks like a surface the
-    same way whether you're looking at the app or the document it produces.
-
-    CONTROL (14) is deliberately larger than PANEL (12), not a typo: small
-    interactive things (buttons, the progress bar) read as more current
-    with a rounder, almost-pill corner, while bigger static surfaces
-    (cards, panels) stay tighter so they read as "container" rather than
-    "control" at a glance.
+    """Corner radii by kind of element, matching the transcript's
+    --control-radius/--panel-radius. CONTROL (14) is rounder than PANEL (12)
+    on purpose: controls read as near-pills, containers as boxes.
     """
 
     # Small interactive controls: buttons, the progress bar (track and
@@ -248,13 +184,8 @@ class Border:
     # outline on purpose, so the eye catches the colored edge first as a
     # "this is an error" flag before reading the box outline.
     ERROR_ACCENT = 3
-    # A separator rather than an outline: the single line under the header
-    # and over the nav bar, and the tooltip's edge. Distinct from ERROR_BOX
-    # despite sharing a value today, because the two answer different
-    # questions - ERROR_BOX is "how thick is this box's outline", HAIRLINE
-    # is "how heavy is the line between two regions". A later step thickens
-    # control outlines without touching separators, and one shared constant
-    # would drag these along with them.
+    # Separators (under the header, over the nav bar, tooltip edge) - its own
+    # constant, so thickening outlines leaves separators alone.
     HAIRLINE = 1
 
 
@@ -375,26 +306,10 @@ def button_secondary_qss(padding: str = "8px 18px") -> str:
 
 
 def button_danger_qss() -> str:
-    """Armed-cancel treatment (see MainWindow._on_cancel_clicked): Cancel's
-    second press stops a possibly 40-minute-long run with no further
-    confirmation, so once armed the button itself should read as
-    dangerous rather than relying on the neighboring hint label's wording
-    alone - colour carries the warning even for a viewer who doesn't read
-    the label. Same shape as button_secondary_qss (transparent fill,
-    outlined) with COLORS['error'] standing in for control_border/accent
-    throughout, rather than button_primary_qss's filled shape - Cancel
-    should still read as the secondary action in the nav bar even while
-    armed; only its colour says "the next click is destructive".
-
-    Candidate labels that would explain the armed state in words
-    ("Press again to cancel" etc.) were measured against the fixed
-    130x36 nav button and all came out too wide to fit without either
-    clipping or shrinking the font - both worse than no confirmation at
-    all for a destructive action. So the label stays "Cancel" (it already
-    fits in both languages) and the explanation moves to
-    cancel_confirm_label, a plain text label beside the button with real
-    room for a sentence; this function is what makes the button itself
-    still carry part of that signal.
+    """Armed Cancel: the secondary button's outline shape in the error colour,
+    so the button itself warns that the next press stops the run. The label
+    stays "Cancel" (every longer one overflowed the 130x36 button in some
+    language); cancel_confirm_label beside it explains.
     """
     return f"""
     QPushButton {{
@@ -437,16 +352,9 @@ def text_qss(color_key: str, extra: str = "") -> str:
 
 
 def card_qss(object_name: str, selected: bool = False) -> str:
-    # ID selector (#name) - a bare 'QFrame {...}' selector would also match QLabel,
-    # since QLabel subclasses QFrame in Qt, leaking the border/background onto child text.
-    # 'selected' means this card's radio button is the one currently picked -
-    # not necessarily the recommended one, which gets its own separate badge.
-    # Unselected uses control_border, not the decorative 'border' hairline:
-    # each card is the visual boundary of a selectable radio option (it owns
-    # exactly one QRadioButton), so its outline answers "which of these can
-    # I pick" and needs the 3:1-clearing color even while unselected.
-    # 'border' fails that floor and reads as though only the selected,
-    # accent-outlined card were interactive at all.
+    # #name selector: a bare QFrame selector would also hit QLabel (a QFrame
+    # subclass). Unselected cards use control_border, not the decorative
+    # hairline: each card is a selectable option and needs a 3:1 outline.
     border_color = COLORS["accent"] if selected else COLORS["control_border"]
     return f"""
     QFrame#{object_name} {{
@@ -651,14 +559,8 @@ def term_row_qss(object_name: str) -> str:
 
 
 def result_panel_qss(object_name: str) -> str:
-    # Spacing.XL, not XXL - measured empirically (see TranscriptionStep's
-    # layout-spacing comment): at XXL padding the panel's own minimum
-    # height, added to the rest of the step's content, exceeded the 471px
-    # this step actually gets, and Qt's AlignCenter layout responded by
-    # compressing the panel down to a near-empty sliver instead of
-    # clipping the overflow. XL is the largest padding that stays clear of
-    # that while still giving the checkmark/message/path/button stack the
-    # breathing room step 3's large empty middle can afford.
+    # XL, not XXL: XXL padding falls into step 3's layout trap
+    # (TranscriptionStep._build_page_layout).
     return f"""
     QFrame#{object_name} {{
         background-color: {COLORS["bg_tertiary"]};
@@ -876,21 +778,12 @@ def _scroll_bar_qss() -> str:
 
 
 def app_stylesheet() -> str:
-    """Application-wide QSS, applied once on the QApplication instance. Holds
-    only defaults that every widget should inherit unless a more specific
-    per-widget setStyleSheet(...) call overrides it (see the ordering rule
-    in the module docstring) - so this stays deliberately small.
+    """App-wide QSS defaults, kept small (per-widget sheets override it).
 
-    QRadioButton, QCheckBox, QSpinBox and QScrollBar are drawn entirely by
-    the native Windows style when unstyled, which renders them as
-    light-blue Windows controls on top of the Catppuccin Mocha ground the
-    rest of the app uses. They are themed here rather than per-widget
-    because every instance of each control should look the same everywhere
-    it appears. The keyboard-focus ring (_focus_ring_qss) is app-wide for
-    the same reason; it is scoped to the [kbdFocus="true"] dynamic property
-    rather than the native :focus pseudo-state, which paints for default
-    and mouse-click focus too and so put a sapphire ring around the header
-    language toggle on every launch - see gui/focus.py.
+    Themes the natively drawn radio, checkbox, spin box and scrollbar, which
+    are light-blue Windows controls otherwise, and the focus ring - scoped to
+    [kbdFocus="true"], not :focus, which rings mouse and default focus too
+    (gui/focus.py).
     """
     return (
         f"{_main_window_qss()}{_tooltip_qss()}{_focus_ring_qss()}"
@@ -902,33 +795,12 @@ def app_stylesheet() -> str:
 def elevation_shadow(
     blur_radius: int = 32, y_offset: int = 10, alpha: int = 130
 ) -> QGraphicsDropShadowEffect:
-    """A soft drop shadow for the handful of static, non-scrolling surfaces
-    that should read as physically raised off the window's crust ground.
+    """A soft, wide shadow for static surfaces that should look raised.
 
-    Deliberately NOT used everywhere elevation could apply - two reasons,
-    both specific to this app's palette and layout rather than shadows in
-    general:
-
-    1. Catppuccin Mocha's crust/mantle/base ramp (#11111b / #181825 /
-       #1e1e2e - see the module docstring) is already a near-black-to-
-       less-black progression, so a shadow on top of it has very little
-       darkness left to add. A shadow that would read clearly on a white
-       or mid-gray ground is close to invisible here; this compensates
-       with a wider blur (soft ambient falloff reads even at low contrast)
-       rather than a tighter, more opaque shadow that would just look like
-       a hard dark smear at the surface's edge.
-    2. QGraphicsDropShadowEffect is a known source of repaint artifacts on
-       a widget living inside a QScrollArea, and it paints outside the
-       widget's own rect - clipped away entirely unless the parent layout
-       already has margin room for it to bleed into. That rules it out for
-       the model-select cards (see ModelSelectStep, which tried and
-       dropped it - repaint glitches on scroll, no clean way to reserve
-       the bleed margin inside the scroll viewport) even though a
-       "selected card" shadow was the first thing tried there.
-
-    So: applied only to the step-3 result panel and the step-2/3 error
-    banner - both static, both sitting in a plain QVBoxLayout with margin
-    to spare, neither ever inside a QScrollArea.
+    Used sparingly: on Mocha's near-black ramp a shadow has little darkness to
+    add (hence the wide blur), and QGraphicsDropShadowEffect paints outside its
+    widget and glitches inside a QScrollArea. So only the step-3 result panel
+    and the error banner, both static with room around them.
     """
     effect = QGraphicsDropShadowEffect()
     effect.setBlurRadius(blur_radius)
@@ -945,29 +817,14 @@ def gradient_text_pixmap(
     padding: int = 4,
     dpr: float = 1.0,
 ) -> QPixmap:
-    """Render text filled with a vertical linear gradient, as a QPixmap.
+    """Text filled with a vertical gradient, as a QPixmap - QSS cannot colour
+    text with a gradient. The header title only.
 
-    Qt stylesheets can't apply a gradient to text color (only to
-    background-color), so this paints the text as an alpha mask and
-    composites a gradient-filled pixmap into it. Used for the header title
-    only - a deliberate one-off brand accent, not the general theme.
-
-    dpr: devicePixelRatio of the screen/widget this will be shown on
-    (typically the MainWindow's - pass window.devicePixelRatioF()). The
-    backing stores are allocated at (logical size) * dpr, rounded up, and
-    tagged with setDevicePixelRatio(dpr) so the QLabel that displays this
-    draws it 1:1 instead of Qt (or Windows, pre-high-DPI-awareness)
-    stretching a 1x raster into something visibly soft. This is the app's
-    only hand-rasterized pixmap; everything else is drawn from vector QSS
-    or painted directly.
+    dpr: the target screen's ratio; the pixmap is allocated at size * dpr and
+    tagged with it, so it draws 1:1 instead of being stretched.
     """
-    # A device-aware QFontMetrics, not the bare single-argument form: the
-    # single-argument form resolves metrics against the application's
-    # default font database, which has no idea this pixmap is destined for
-    # a higher-dpr screen and under-measures accordingly, which clips the
-    # title. A throwaway 1x1 QPixmap carrying the real dpr gives
-    # QFontMetrics a paint device to measure against that matches what
-    # will actually be rendered below.
+    # Metrics from a paint device carrying the real dpr: the plain form
+    # under-measures on scaled screens and clips the title.
     device = QPixmap(1, 1)
     device.setDevicePixelRatio(dpr)
     metrics = QFontMetrics(font, device)
