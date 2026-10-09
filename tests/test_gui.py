@@ -2739,12 +2739,18 @@ class TestTranscriptionStepStages:
         assert step.stage_list.active is Stage.TRANSCRIBE
         assert self._states(step)[-1] == "pending"
 
-    def test_a_first_percentage_ends_the_model_load(self, step):
+    def test_loading_percentages_do_not_end_the_model_load(self, step):
+        """The worker reports small percentages while it initializes and
+        loads the model - before any audio is touched. Only a phase report
+        means work on the audio has begun.
+        """
+        from core.progress_scale import BATCH_INIT_PERCENT, TRANSCRIBER_LOAD_START_PERCENT
         from gui.steps.run_progress import Stage
 
         step.start()
-        step.update_progress("w_transcribing", {}, 5)
-        assert step.stage_list.active is Stage.TRANSCRIBE
+        step.update_progress("w_initializing", {}, BATCH_INIT_PERCENT)
+        step.update_progress("w_loading_model", {"model": "x"}, TRANSCRIBER_LOAD_START_PERCENT)
+        assert step.stage_list.active is Stage.LOAD
 
     def test_finishing_turns_the_bar_green_and_hands_over_to_the_result(self, step):
         from gui.steps.run_progress import BarMode

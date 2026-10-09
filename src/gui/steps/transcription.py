@@ -758,10 +758,6 @@ class TranscriptionStep(QFrame):
                 self._paint_batch_segments(current_index=i)
 
         if percentage != STATUS_ONLY_PERCENT:
-            # Transcription's first percentage also ends the model load, for
-            # a run whose phase reports arrive late or not at all.
-            if percentage > 0 and self._running and self.stage_list.active is Stage.LOAD:
-                self._enter_stage(Stage.TRANSCRIBE)
             if percentage != self._last_percentage:
                 self._animate_progress_to(percentage)
             self._last_percentage = percentage
