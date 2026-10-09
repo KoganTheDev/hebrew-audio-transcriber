@@ -21,16 +21,15 @@ themselves has to mirror by hand: the marker's side, and which way the
 dashes drift.
 """
 
-from enum import Enum
-
 from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt5.QtGui import QColor, QHideEvent, QPainter, QPaintEvent, QPen, QPixmap, QShowEvent
+from PyQt5.QtGui import QColor, QHideEvent, QPainter, QPaintEvent, QPen, QShowEvent
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 
 from gui import motion, theme
 from gui.i18n import t
-from gui.icons import ICONS, svg_to_pixmap
+from gui.icons import cached_pixmap
 from gui.motion import LONG_AGO, ease_out_cubic, mix, now_ms, pop_scale, progress, with_alpha
+from gui.step_state import STATUS_KEYS, StepState
 from gui.steps import Step
 from gui.theme import COLORS, Fonts, Motion, Spacing
 
@@ -58,19 +57,6 @@ _LINE_WIDTH = 2
 _CONNECTOR_MIN_WIDTH = 16
 
 
-class _State(Enum):
-    PENDING = "pending"
-    CURRENT = "current"
-    DONE = "done"
-
-
-_STATUS_KEYS = {
-    _State.PENDING: "step_status_pending",
-    _State.CURRENT: "step_status_current",
-    _State.DONE: "step_status_done",
-}
-
-
 class _StepPill(QWidget):
     """One step: marker (number or check), then the step's name."""
 
@@ -78,11 +64,10 @@ class _StepPill(QWidget):
         super().__init__(parent)
         self.number = number
         self.text = ""
-        self.state = _State.PENDING
+        self.state = StepState.PENDING
         # Clock time this pill became DONE, for the pop and the cross-fade.
         self.since = LONG_AGO
         self._alpha = 1.0
-        self._check_cache: dict[float, QPixmap] = {}
         self.setFont(Fonts.CAPTION_BOLD)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
@@ -104,20 +89,12 @@ class _StepPill(QWidget):
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
-    def _check(self) -> QPixmap:
-        dpr = self.devicePixelRatioF()
-        pixmap = self._check_cache.get(dpr)
-        if pixmap is None:
-            pixmap = svg_to_pixmap(ICONS["check"], _MARKER, COLORS["success"], dpr=dpr)
-            self._check_cache[dpr] = pixmap
-        return pixmap
-
     def paintEvent(self, a0: QPaintEvent | None) -> None:
         now = now_ms()
-        if self.state is _State.CURRENT:
+        if self.state is StepState.CURRENT:
             body = with_alpha("accent", self._alpha)
             ink = QColor(COLORS["accent_text"])
-        elif self.state is _State.DONE:
+        elif self.state is StepState.DONE:
             # Cross-fade from the current step's look into the done tint, so
             # the step visibly turns into "finished" instead of swapping.
             f = ease_out_cubic(progress(now, self.since, Motion.CONNECTOR_FILL_MS))
@@ -138,12 +115,15 @@ class _StepPill(QWidget):
         rtl = self.layoutDirection() == Qt.LayoutDirection.RightToLeft
         h = float(self.height())
         marker_x = self.width() - _PAD_MARKER_SIDE - _MARKER if rtl else _PAD_MARKER_SIDE
-        if self.state is _State.DONE:
+        if self.state is StepState.DONE:
             scale = pop_scale(now, self.since)
             painter.save()
             painter.translate(marker_x + _MARKER / 2, h / 2)
             painter.scale(scale, scale)
-            painter.drawPixmap(QPointF(-_MARKER / 2, -_MARKER / 2), self._check())
+            painter.drawPixmap(
+                QPointF(-_MARKER / 2, -_MARKER / 2),
+                cached_pixmap("check", _MARKER, COLORS["success"], self.devicePixelRatioF()),
+            )
             painter.restore()
         else:
             painter.setPen(ink)
@@ -168,7 +148,7 @@ class _Connector(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.state = _State.PENDING
+        self.state = StepState.PENDING
         self.since = LONG_AGO
         self._alpha = 1.0
         self._offset_px = 0.0
@@ -208,7 +188,7 @@ class _Connector(QWidget):
             painter.setPen(pen)
             painter.drawLine(QPointF(a, y), QPointF(b, y))
 
-        if self.state is _State.DONE:
+        if self.state is StepState.DONE:
             f = ease_out_cubic(progress(now_ms(), self.since, Motion.CONNECTOR_FILL_MS))
             mid = start + (end - start) * f
             if f < 1:
@@ -217,7 +197,7 @@ class _Connector(QWidget):
                 solid = QPen(QColor(COLORS["success"]), _LINE_WIDTH)
                 solid.setCapStyle(Qt.PenCapStyle.FlatCap)
                 segment(solid, start, mid)
-        elif self.state is _State.CURRENT:
+        elif self.state is StepState.CURRENT:
             # A shrinking dash offset slides the pattern forward along the
             # line, toward the next step.
             period = sum(Motion.DASH_PATTERN)
@@ -277,7 +257,7 @@ class StepIndicator(QFrame):
         """Re-render label text and per-state accessible names (live language toggle)."""
         for pill, (_, key) in zip(self._pills, _STEP_LABELS):
             pill.set_text(t(key))
-            name = f"{t(key)} - {t(_STATUS_KEYS[pill.state])}"
+            name = f"{t(key)} - {t(STATUS_KEYS[pill.state])}"
             pill.setAccessibleName(name)
         self._paint_frame()
 
@@ -291,8 +271,14 @@ class StepIndicator(QFrame):
         now = now_ms()
 
         def place(item: _StepPill | _Connector, i: int) -> None:
-            state = _State.DONE if i < index else _State.CURRENT if i == index else _State.PENDING
-            if state is _State.DONE and item.state is not _State.DONE:
+            state = (
+                StepState.DONE
+                if i < index
+                else StepState.CURRENT
+                if i == index
+                else StepState.PENDING
+            )
+            if state is StepState.DONE and item.state is not StepState.DONE:
                 item.since = now if animate else LONG_AGO
             item.state = state
 

@@ -8,7 +8,7 @@ svg_to_pixmap().
 import math
 
 from PyQt5.QtCore import QByteArray, Qt
-from PyQt5.QtGui import QPainter, QPixmap
+from PyQt5.QtGui import QPainter, QPixmap, QPixmapCache
 from PyQt5.QtSvg import QSvgRenderer
 
 _SVG_HEADER = (
@@ -120,4 +120,19 @@ def svg_to_pixmap(
     renderer.render(painter)
     painter.end()
     pixmap.setDevicePixelRatio(dpr)
+    return pixmap
+
+
+def cached_pixmap(name: str, size: int, color: str, dpr: float) -> QPixmap:
+    """svg_to_pixmap for an ICONS entry, rasterized once per (size, colour, dpr).
+
+    For icons drawn in paintEvent, which runs on every animation frame. Held in
+    QPixmapCache rather than a Python-level cache: Qt owns that one and frees it
+    before QApplication goes, where pixmaps outliving the app crash on exit.
+    """
+    key = f"icon:{name}:{size}:{color}:{dpr}"
+    pixmap = QPixmapCache.find(key)
+    if pixmap is None or pixmap.isNull():
+        pixmap = svg_to_pixmap(ICONS[name], size, color, dpr=dpr)
+        QPixmapCache.insert(key, pixmap)
     return pixmap

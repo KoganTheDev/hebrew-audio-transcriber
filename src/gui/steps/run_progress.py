@@ -8,13 +8,14 @@ import time
 from enum import Enum
 
 from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt5.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPaintEvent, QPixmap
+from PyQt5.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPaintEvent
 from PyQt5.QtWidgets import QProgressBar, QSizePolicy, QWidget
 
 from core.formatting import format_mmss
 from gui.i18n import t
-from gui.icons import ICONS, svg_to_pixmap
+from gui.icons import cached_pixmap
 from gui.motion import LONG_AGO, ease_out_cubic, mix, now_ms, pop_scale, progress, with_alpha
+from gui.step_state import STATUS_KEYS, StepState
 from gui.theme import COLORS, Fonts, Motion
 
 
@@ -119,6 +120,13 @@ class Stage(Enum):
     FINISH = "stage_finishing"
 
 
+_INK = {
+    StepState.CURRENT: COLORS["text_primary"],
+    StepState.DONE: COLORS["text_secondary"],
+    StepState.PENDING: COLORS["text_tertiary"],
+}
+
+
 class StageChecklist(QWidget):
     """One row per stage: marker, name, and how long it took.
 
@@ -148,7 +156,6 @@ class StageChecklist(QWidget):
         self._done_since: dict[Stage, float] = {}
         self.animating = False
         self.breath_alpha = 1.0
-        self._check_cache: dict[float, QPixmap] = {}
         # Seconds, for the stage times; swappable so tests can drive it.
         self.clock = time.monotonic
 
@@ -195,13 +202,15 @@ class StageChecklist(QWidget):
                 now - self._active_since
             )
 
-    def state_of(self, stage: Stage) -> str:
+    def state_of(self, stage: Stage) -> StepState:
         if self.finished:
-            return "done"
+            return StepState.DONE
         if self.active is None:
-            return "pending"
+            return StepState.PENDING
         i, a = self.stages.index(stage), self.stages.index(self.active)
-        return "done" if i < a else "current" if i == a else "pending"
+        if i < a:
+            return StepState.DONE
+        return StepState.CURRENT if i == a else StepState.PENDING
 
     def seconds_in(self, stage: Stage) -> float | None:
         spent = self._spent.get(stage)
@@ -210,11 +219,7 @@ class StageChecklist(QWidget):
         return spent
 
     def _refresh_accessible(self) -> None:
-        status = {"done": "step_status_done", "current": "step_status_current"}
-        parts = [
-            f"{t(s.value)} - {t(status.get(self.state_of(s), 'step_status_pending'))}"
-            for s in self.stages
-        ]
+        parts = [f"{t(s.value)} - {t(STATUS_KEYS[self.state_of(s)])}" for s in self.stages]
         self.setAccessibleName(t("stages_name"))
         self.setAccessibleDescription(", ".join(parts))
 
@@ -228,14 +233,6 @@ class StageChecklist(QWidget):
 
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
-
-    def _check(self) -> QPixmap:
-        dpr = self.devicePixelRatioF()
-        pixmap = self._check_cache.get(dpr)
-        if pixmap is None:
-            pixmap = svg_to_pixmap(ICONS["check"], self._MARKER, COLORS["success"], dpr=dpr)
-            self._check_cache[dpr] = pixmap
-        return pixmap
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
         painter = QPainter(self)
@@ -251,35 +248,36 @@ class StageChecklist(QWidget):
             state = self.state_of(stage)
             cy = top + self.ROW_HEIGHT / 2
 
-            if state == "current":
+            if state is StepState.CURRENT:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(COLORS["bg_tertiary"]))
                 painter.drawRoundedRect(row, 10, 10)
 
             marker_x = w - self._PAD - self._MARKER if rtl else self._PAD
             mx = marker_x + self._MARKER / 2
-            if state == "done":
+            if state is StepState.DONE:
                 scale = pop_scale(now, self._done_since.get(stage, LONG_AGO))
                 painter.save()
                 painter.translate(mx, cy)
                 painter.scale(scale, scale)
-                painter.drawPixmap(QPointF(-self._MARKER / 2, -self._MARKER / 2), self._check())
+                painter.drawPixmap(
+                    QPointF(-self._MARKER / 2, -self._MARKER / 2),
+                    cached_pixmap(
+                        "check", self._MARKER, COLORS["success"], self.devicePixelRatioF()
+                    ),
+                )
                 painter.restore()
             else:
                 dot = (
                     with_alpha("accent", self.breath_alpha)
-                    if state == "current"
+                    if state is StepState.CURRENT
                     else QColor(COLORS["surface_hover"])
                 )
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(dot)
                 painter.drawEllipse(QPointF(mx, cy), self._DOT / 2, self._DOT / 2)
 
-            ink = {
-                "current": COLORS["text_primary"],
-                "done": COLORS["text_secondary"],
-                "pending": COLORS["text_tertiary"],
-            }[state]
+            ink = _INK[state]
             label_w = w - 2 * self._PAD - self._MARKER - self._GAP
             if rtl:
                 label = QRectF(self._PAD, top, label_w, self.ROW_HEIGHT)
@@ -294,7 +292,7 @@ class StageChecklist(QWidget):
             painter.drawText(label, label_align | Qt.AlignmentFlag.AlignVCenter, t(stage.value))
 
             seconds = self.seconds_in(stage)
-            if seconds is not None and (state != "done" or seconds >= 0.5):
+            if seconds is not None and (state is not StepState.DONE or seconds >= 0.5):
                 painter.setFont(caption)
                 painter.setPen(QColor(COLORS["text_tertiary"]))
                 painter.drawText(

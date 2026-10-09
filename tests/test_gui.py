@@ -2678,7 +2678,7 @@ class TestTranscriptionStepStages:
 
     @staticmethod
     def _states(step):
-        return [step.stage_list.state_of(s) for s in step.stage_list.stages]
+        return [step.stage_list.state_of(s).value for s in step.stage_list.stages]
 
     def _phase(self, step, name, seconds=1.0):
         step.update_phase(name, seconds, 0.0)
