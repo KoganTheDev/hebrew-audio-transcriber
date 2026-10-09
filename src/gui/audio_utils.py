@@ -9,29 +9,15 @@ logger = logging.getLogger(__name__)
 
 
 def get_audio_duration(file_path: str) -> tuple[int, bool]:
-    """Get the real audio/video duration in seconds by reading container
-    metadata - not an estimate.
+    """The audio/video duration in seconds, read from container metadata.
 
-    Uses PyAV (the 'av' package), which is already a required dependency of
-    faster-whisper, so no extra install is needed. This reads the container
-    header directly rather than decoding the file, so it's fast and exact
-    for essentially all formats faster-whisper/ffmpeg can handle. Falls back
-    to a rough file-size-based guess only if the file can't be opened at all
-    (e.g. corrupt/unsupported file) - that fallback is clearly logged as an
-    estimate, since it is one.
+    PyAV reads the header without decoding, so it is fast and exact. If the
+    file cannot be opened at all, falls back to a size-based guess.
 
     Returns:
-        (seconds, probed). `probed` is False when the container could not be
-        read and the duration is the size-based guess.
-
-        The flag matters because a file PyAV cannot open is usually one
-        faster-whisper cannot decode either, and this is the only point in the
-        app that learns it. Returning a bare int threw that away: the file was
-        accepted with an invented duration that also fed the batch time
-        estimate, and the failure surfaced inside the worker after the model
-        had loaded - minutes later for a single file, and as a bare "the
-        transcription failed" with no reason. Caller decides what to do; this
-        just stops discarding what it knows.
+        (seconds, probed). probed=False means the guess was used - and the
+        file is likely one faster-whisper cannot decode either, which the
+        caller can now flag instead of failing minutes later in the worker.
 
     """
     try:
@@ -55,15 +41,8 @@ def get_audio_duration(file_path: str) -> tuple[int, bool]:
     except Exception as e:
         logger.warning(f"Could not read exact duration via av, falling back to estimate: {e}")
 
-    # Last-resort fallback: a rough estimate from file size. Only reached if
-    # the file couldn't be opened/probed at all.
-    #
-    # Guarded, unlike the original: this sat OUTSIDE the try above, so a file
-    # that had gone between being selected and being probed raised OSError
-    # straight out of a function whose entire contract is to degrade rather
-    # than raise - and straight into the drop handler, taking the rest of the
-    # drop with it. A missing file has no size and no duration, and saying so
-    # is what marks it unreadable in the list.
+    # Size-based guess, guarded: a file deleted since it was selected must
+    # degrade like any unreadable file, not raise into the drop handler.
     try:
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
     except OSError as e:

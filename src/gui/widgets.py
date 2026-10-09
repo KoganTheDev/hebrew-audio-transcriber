@@ -24,28 +24,10 @@ def make_label(
     align: Qt.Alignment | Qt.AlignmentFlag | None = None,
     parent: QWidget | None = None,
 ) -> QLabel:
-    """Build a styled QLabel in one call instead of four statements.
-
-    Almost every label in this app is the same four-line shape - construct
-    with text, setFont(a Fonts constant), setStyleSheet(theme.text_qss(key)),
-    and often setAlignment. Repeated across the three steps and the main
-    window that came to 27 QLabel constructions and 22 text_qss calls, and
-    the cost was not just typing: with the font and the color key on
-    separate lines from the construction, a label that quietly lost its
-    setStyleSheet line looked exactly like one that never needed it, so
-    "does this label match its neighbours" was never readable at a glance.
-
-    Colors stay color KEYS routed through theme.text_qss - the same names
-    the call sites already used - rather than becoming a second vocabulary
-    for naming a color. Passing None for font, color or align skips that
-    call entirely, so a label built here is byte-identical to the hand-
-    written one it replaces, including which properties are left at Qt's
-    defaults.
-
-    Deliberately narrow: labels that only carry a pixmap, or that need word
-    wrap, a size policy or an object name, are still built by hand (or get
-    those extras set on the result). Widening this into a kitchen-sink
-    constructor would trade four honest lines for one line of keyword soup.
+    """Build a styled QLabel in one call: text, font, colour key (through
+    theme.text_qss) and alignment. None skips that call, so the result matches
+    a hand-built label exactly. Deliberately narrow - pixmaps, word wrap and
+    size policies are set on the result.
     """
     label = QLabel(text, parent)
     if font is not None:
@@ -58,29 +40,12 @@ def make_label(
 
 
 class DropZone(QFrame):
-    """Step 1's file drop target, made a first-class keyboard control.
+    """Step 1's drop target as a keyboard control: tab-stoppable, with
+    Space/Enter opening the file dialog. It is also the only browse button, so
+    without this a keyboard user could not use the app at all.
 
-    Before this it was a bare QFrame with mousePressEvent monkey-patched
-    onto the instance (see FileSelectStep._init_ui): clickable with a
-    mouse, but with no focus policy and no key handler at all. That made it
-    the single worst accessibility gap in the app, not just a papercut - the
-    drop zone is also the browse button (there is no separate "Browse..."
-    button anywhere), so a keyboard-only user could not select a file,
-    which means they could not use the app at all. Every other step is
-    unreachable without first getting past this one.
-
-    StrongFocus makes it tab-stoppable; Space and Enter/Return open the
-    same file dialog a mouse click does, mirroring the convention every
-    native Qt button already uses for those two keys.
-
-    Drag-and-drop and the mouse click are deliberately NOT handled here.
-    FileSelectStep still assigns dragEnterEvent/dragLeaveEvent/dropEvent/
-    mousePressEvent onto the instance exactly as before - moving that
-    wiring into this class would be a bigger change than this step calls
-    for, and tests/test_gui.py::TestDropZoneEventPath sends real Qt drag/
-    drop events through that exact path and has to keep passing unmodified.
-    This class only adds the pieces that were entirely missing: focus and
-    a key handler.
+    Drag, drop and click stay assigned onto the instance by FileSelectStep,
+    the path TestDropZoneEventPath drives with real events.
     """
 
     # Emitted on Space/Enter/Return. FileSelectStep connects this to the
@@ -93,18 +58,8 @@ class DropZone(QFrame):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def event(self, a0: QEvent | None) -> bool:
-        # A plain QShortcut for the window-level "Enter advances" binding
-        # (see MainWindow) would otherwise steal Return/Enter before this
-        # widget's own keyPressEvent ever saw it - Qt asks the focused
-        # widget for permission via ShortcutOverride before honouring any
-        # QShortcut, and a widget that doesn't accept it loses the key
-        # entirely. Accepting it here for the three keys this widget cares
-        # about is what lets "Enter opens the browse dialog while the drop
-        # zone is focused" win over "Enter advances to the next step"
-        # instead of the two racing.
-        # isinstance rather than a cast: only QKeyEvent carries key(), and
-        # a ShortcutOverride always is one. The None arm exists because the
-        # override signature permits it, not because Qt sends it.
+        # Accept ShortcutOverride for our keys, or the window's "Enter
+        # advances" QShortcut takes Enter before keyPressEvent sees it.
         if (
             a0 is not None
             and a0.type() == QEvent.Type.ShortcutOverride
@@ -133,17 +88,10 @@ class DropZone(QFrame):
 
 
 class IconTextButton(QPushButton):
-    """QPushButton that paints its icon and text itself, as one centered
-    group with an explicitly chosen VISUAL icon side.
-
-    Why this exists: a stock QPushButton welds the icon to the leading
-    edge of its layout direction, and Hebrew text only renders adjacent
-    to the icon when the button is RightToLeft - which makes "icon on the
-    visual left of Hebrew text" (the mirrored Next button) unreachable
-    with setIcon/setLayoutDirection combinations (verified empirically).
-    Here the QSS frame (background, border, hover/pressed/disabled
-    states) is still painted by the style; only the label content is
-    drawn manually, so placement is direction-independent.
+    """QPushButton that paints its icon and label itself, with an explicit
+    visual icon side. A stock button welds the icon to the leading edge, so
+    "icon on the left of Hebrew text" (the mirrored Next) is unreachable.
+    The QSS frame is still the style's; only the content is painted here.
     """
 
     GAP = 8  # px between icon and text
@@ -202,12 +150,8 @@ class IconTextButton(QPushButton):
         pixmap = None
         icon_span = 0
         if self._icon_name:
-            # dpr is part of the key, not just (icon, size, color): without
-            # it, whichever ratio painted first (e.g. 1x during an
-            # off-screen warmup) would get reused for every later repaint
-            # regardless of which screen the button actually ended up on -
-            # a cached 1x pixmap stretched to fill a 1.25x/1.5x button looks
-            # exactly like the un-cached bug this fixes, just intermittently.
+            # dpr in the key, or a pixmap painted at one ratio is reused,
+            # blurry, on a screen with another.
             dpr = self.devicePixelRatioF()
             cache_key = (self._icon_name, self._icon_px, color, dpr)
             pixmap = self._pixmap_cache.get(cache_key)

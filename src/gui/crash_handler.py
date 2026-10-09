@@ -1,24 +1,10 @@
 """Global exception hook, so nothing crashes silently.
 
-Without this, an exception raised after the event loop starts has nowhere to
-go: PyQt's C++ event loop catches exceptions raised inside slots/callbacks
-itself and just prints to stderr (invisible in a packaged, console-less
-build) rather than letting them reach sys.excepthook. The result was exactly
-the kind of report this module exists to prevent - a user hits a crash and
-has nothing usable to hand back, because the crash was never logged and
-never shown.
-
-install_global_exception_hook() covers the two ways an exception can now go
-uncaught:
-  - Outside the event loop (import-time errors after logging is configured,
-    a thread target that isn't a Qt slot) via sys.excepthook.
-  - Inside a Qt slot/event callback via DiagnosticApplication.notify(),
-    which routes back through the same sys.excepthook so there is one code
-    path for both.
-
-Either way, the exception is always logged with a full traceback first,
-before any UI work is attempted - so even if the crash dialog itself fails,
-the log file still has what happened.
+PyQt's event loop prints slot exceptions to stderr - invisible without a
+console - instead of raising them. Both paths now reach sys.excepthook:
+exceptions outside the loop directly, and those inside slots through
+DiagnosticApplication.notify(). Each is logged with a traceback before any UI
+is attempted, so the log has it even if the crash dialog fails.
 """
 
 import logging
@@ -40,12 +26,8 @@ def format_exception(
 
 
 class CrashSignalBridge(QObject):
-    """Carries an uncaught exception from wherever it was caught to the GUI thread.
-
-    sys.excepthook can fire from any thread; Qt widgets may only be touched
-    from the main thread. A signal/slot connection (Qt queues the emit onto
-    the receiver's thread) is what makes showing a dialog from here safe
-    regardless of which thread the exception happened on.
+    """Carries an uncaught exception to the GUI thread: excepthook can fire
+    on any thread, and a queued signal is the safe way to reach widgets.
     """
 
     crashed = pyqtSignal(str, str)  # (message, formatted traceback)
@@ -91,14 +73,9 @@ def _handle_uncaught(
 
 
 def install_global_exception_hook(app: QApplication | None) -> None:
-    """Install sys.excepthook, so any exception that would otherwise be lost is logged and shown.
-
-    Safe to call once, early in main(), right after the QApplication is
-    created and before app.exec_() starts. `app` is accepted (rather than
-    relying only on QApplication.instance() later) so the caller's intent is
-    explicit, even though _handle_uncaught re-resolves it at hook time -
-    the instance existing then is what actually matters, since this can
-    also catch failures during startup before app.exec_() runs.
+    """Install sys.excepthook so any otherwise-lost exception is logged and
+    shown. Call once, right after creating the QApplication - it also catches
+    startup failures before exec_().
     """
     global _previous_excepthook
     _previous_excepthook = sys.excepthook
@@ -106,13 +83,8 @@ def install_global_exception_hook(app: QApplication | None) -> None:
 
 
 class DiagnosticApplication(QApplication):
-    """QApplication that routes exceptions raised inside Qt slots/callbacks to sys.excepthook.
-
-    PyQt's event loop swallows exceptions raised inside notify() targets
-    (slots, event handlers) by default - they never reach sys.excepthook on
-    their own. Overriding notify() to catch and re-raise through
-    sys.excepthook is the standard fix, and keeps this as the one path
-    everything (event-loop exceptions and anything else) funnels through.
+    """QApplication whose notify() re-raises slot exceptions through
+    sys.excepthook, which PyQt's event loop would otherwise swallow.
     """
 
     def notify(self, receiver: QObject | None, event: QEvent | None) -> bool:

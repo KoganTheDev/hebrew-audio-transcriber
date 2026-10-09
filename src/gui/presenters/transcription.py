@@ -1,22 +1,8 @@
 """What a transcription run should be, decided without touching Qt.
 
-MainWindow._start_transcription used to interleave three unrelated jobs:
-widget work (switching to step 3, seeding focus, wiring signals, starting
-the QThread), the decisions that shape the run (what the file summary
-reads, which device to use, what TranscriptionOptions to build), and
-logging. Only the first genuinely needs Qt, but because the three lived in
-one method the decisions could only be exercised by building a real
-MainWindow against a live QApplication - which is a large part of why
-tests/test_gui.py is over 1,400 lines.
-
-This module owns the middle job and nothing else. It is a pure function
-over a dataclass: no hidden state, no I/O, no widgets. The view calls it
-first, then does only Qt work with the result.
-
-Translation arrives as a callable rather than by importing `t`: gui/i18n.py
-imports PyQt5 (QObject/QSettings back the language state), so importing it
-here would defeat the purpose. The view passes its own `t`; a test passes a
-stub and asserts on the key and params.
+The decisions (file summary, device, TranscriptionOptions) as a pure function,
+so they are testable without a MainWindow; the view does only the Qt work.
+Translation is passed in as a callable, since gui/i18n.py imports PyQt5.
 """
 
 import os
@@ -58,12 +44,8 @@ class TranscriptionRequest:
 
 
 def build_file_summary(files: Sequence[str], translate: Callable[..., str]) -> str:
-    """The step 3 header line for this selection.
-
-    One file is named outright - the filename is the most useful thing the
-    user can be shown, and it fits. A batch is not: the names would either
-    overflow the header or be truncated into uselessness, so it becomes a
-    count instead, translated because the surrounding UI may be Hebrew.
+    """The step 3 header: the filename for one file, a translated count for a
+    batch (names would overflow the header).
     """
     if len(files) == 1:
         return os.path.basename(files[0])
@@ -80,21 +62,11 @@ def build_transcription_request(
     num_speakers: int,
     translate: Callable[..., str],
 ) -> TranscriptionRequest:
-    """Turn the wizard's collected answers into one run description.
-
-    `durations` are the real PyAV-measured audio lengths gathered on step 1,
-    one per file in the same order, which is what makes the progress
-    percentages duration-weighted rather than file-counted.
+    """Turn the wizard's answers into one run description. `durations` (the
+    probed lengths, per file) make progress duration-weighted.
     """
-    # get_device_recommendation() was long dead code (hardware_detection.py
-    # can return "cuda", but nothing called it - a literal "cpu" was the
-    # only device value ever used). Wiring it in is UNTESTED on real GPU
-    # hardware: the development machine has no NVIDIA GPU at all (Intel
-    # Iris Xe only), so the "cuda" branch has never actually run here.
-    # Safety net if it's wrong: Transcriber.load_model() catches a CUDA init
-    # failure and retries on CPU (see its docstring) rather than failing the
-    # transcription outright - a live failure mode on any machine with a
-    # driver/CUDA-version mismatch.
+    # The CUDA branch is untested (no NVIDIA GPU on the development machine);
+    # Transcriber.load_model retries on CPU if CUDA fails to initialise.
     device, device_reason = hardware.get_device_recommendation()
 
     return TranscriptionRequest(

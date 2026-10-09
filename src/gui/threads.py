@@ -1,8 +1,6 @@
-"""Background QThreads used by MainWindow.
-
-Both threads exist purely to bridge a `multiprocessing.Process` (running in
-a separate OS process, per the DLL-conflict note below) back into Qt
-signals - neither does any heavy lifting itself.
+"""Background QThreads used by MainWindow: bridges from worker processes
+(see core/__init__.py for why those are separate) to Qt signals, plus a
+duration prober.
 """
 
 import logging
@@ -22,22 +20,14 @@ from gui.i18n import document_strings, t
 
 logger = logging.getLogger(__name__)
 
-# What the `phase` signal carries in place of core/progress_scale.py's
-# WORK_PHASE_STARTED. The worker says None, meaning "begun, duration unknown";
-# pyqtSignal's type list has no optional float, so the None is turned into a
-# sentinel here, at the one boundary that forces it, rather than letting an
-# Optional leak through the whole GUI. Negative because every real value on
-# this channel is a measured duration and so cannot be below zero.
+# The `phase` signal's stand-in for the worker's None ("begun, duration
+# unknown"): pyqtSignal has no optional float. Negative, since real values
+# are durations.
 PHASE_STARTED_SECONDS = -1.0
 
-# How long to keep listening after the worker process has exited before
-# calling the run failed. Queue.empty() is documented as unreliable, and this
-# is exactly the case it is unreliable in: the child puts its result and then
-# exits, so there is a window where the process is already gone and the result
-# has not yet crossed the pipe. Concluding "the worker exited" inside that
-# window reports a SUCCESSFUL run as a failure. Nothing is paid for this in
-# the normal path - the result is read and the loop returns long before the
-# process is noticed to be gone.
+# How long to keep listening after the worker exits: it puts its result and
+# then exits, so the result can still be in the pipe - and Queue.empty() is
+# unreliable exactly then. Calling it "exited" early fails a successful run.
 RESULT_GRACE_SECONDS = 2.0
 
 # How long to wait for a terminated process to actually die before giving up
@@ -47,16 +37,9 @@ TERMINATE_GRACE_SECONDS = 5.0
 
 
 def _terminate_and_reap(process: "multiprocessing.Process | None") -> None:
-    """Stop a worker process and wait for it, so nothing is left unreaped.
-
-    terminate() only asks. Every call site used to stop there, which leaves a
-    zombie on POSIX and an open process handle on Windows until the Process
-    object is garbage collected. join() is what actually reaps it.
-
-    kill() as a last resort: terminate() is SIGTERM, and a child wedged inside
-    a native call - ctranslate2 or onnxruntime mid-inference - can outlive it.
-    A daemon child would not block interpreter exit either way, but leaving it
-    running means it keeps burning cores for a result nobody will read.
+    """Terminate and join a worker process, so nothing is left unreaped;
+    kill() if it ignores terminate (a child wedged in native inference would
+    keep burning cores).
     """
     if process is None or not process.is_alive():
         return
@@ -69,13 +52,8 @@ def _terminate_and_reap(process: "multiprocessing.Process | None") -> None:
 
 
 class TranscriptionThread(QThread):
-    """Worker thread for transcription.
-
-    Runs the actual transcription in a separate OS process (see
-    core.worker) rather than in-process, and just relays
-    progress/results as Qt signals. See worker.py for why: ctranslate2 and
-    PyQt5 each bundle their own MSVCP140.dll on Windows, and loading both in
-    one process causes an intermittent native crash.
+    """Runs the transcription in a worker process (core.worker) and relays
+    its progress and result as Qt signals.
     """
 
     # progress/error carry (i18n key, format params) rather than rendered
@@ -84,15 +62,9 @@ class TranscriptionThread(QThread):
     progress = pyqtSignal(str, dict, int)
     finished = pyqtSignal(str)
     error = pyqtSignal(str, dict)
-    # The time estimate's two inputs: audio-seconds decoded against the batch
-    # total, and one named phase's measured wall clock. Separate signals from
-    # `progress` because they are measurements in their own units rather than a
-    # position on the bar - see core/progress_scale.py's work-stream section for
-    # why a percentage is the wrong thing to project time from.
-    #
-    # `phase` sends -1.0 for "this phase has begun, duration not known yet".
-    # The worker sends None there; pyqtSignal cannot carry an optional float, so
-    # the sentinel is applied at exactly this boundary and nowhere else.
+    # The time estimate's inputs (see core/progress_scale.py), separate from
+    # `progress`: measurements, not a bar position. `phase` uses
+    # PHASE_STARTED_SECONDS for "begun".
     work = pyqtSignal(float, float, float)
     phase = pyqtSignal(str, float, float)
     # 1-based index of a file the batch could not transcribe. Its own signal
@@ -146,13 +118,8 @@ class TranscriptionThread(QThread):
         """Launch the worker process and relay its progress/result as signals."""
         logger.info("TranscriptionThread started")
         try:
-            # Kept below run_transcription_process's own first emission
-            # (BATCH_INIT_PERCENT, see core/progress_scale.py) so the bar
-            # only ever moves forward - see that module's phase breakdown.
-            # Not expressed as BATCH_INIT_PERCENT - 1: nothing else derives
-            # from this number, it only has to be smaller, and a bare 1 says
-            # "before the worker process has said anything at all" more
-            # plainly than a formula would.
+            # Below the worker's first report (BATCH_INIT_PERCENT), so the bar
+            # only moves forward.
             self.progress.emit("w_starting_thread", {}, 1)
             output_file = self._get_output_path()
 
@@ -167,14 +134,8 @@ class TranscriptionThread(QThread):
             self._process.start()
 
             while self._is_running:
-                # Drain every progress message currently queued (not just
-                # one) before checking for a result. Otherwise, if the
-                # worker process finishes quickly, several trailing
-                # messages (e.g. "Saving output file...", 97 then
-                # "Complete!", 100) can already be sitting in the queue
-                # alongside the "finished" result - relaying only the first
-                # one and then returning left the bar visibly stuck below
-                # 100% even though the run had actually completed.
+                # Drain every queued message before checking for a result, or
+                # a fast run's last reports (to 100%) are lost behind it.
                 got_any = False
                 while True:
                     try:
@@ -200,12 +161,7 @@ class TranscriptionThread(QThread):
                     return
 
                 if not self._process.is_alive():
-                    # NOT `and result_queue.empty()`: empty() is documented as
-                    # unreliable, and the child putting its result immediately
-                    # before exiting is the case it is unreliable in. Give the
-                    # result one last chance to arrive, with a real blocking
-                    # wait, before calling a run that may well have succeeded
-                    # a failure. See RESULT_GRACE_SECONDS.
+                    # Not result_queue.empty() - see RESULT_GRACE_SECONDS.
                     if self._drain_final_result(progress_queue, result_queue):
                         return
                     self.error.emit("err_worker_exited", {})
@@ -224,11 +180,8 @@ class TranscriptionThread(QThread):
         progress_queue: "multiprocessing.Queue",
         result_queue: "multiprocessing.Queue",
     ) -> bool:
-        """After the child has exited, relay what is left and emit its result.
-
-        Returns whether a result actually arrived. False means the process
-        really did die without reporting one, which is the genuine
-        err_worker_exited case the caller then reports.
+        """After the child exits, relay what is left and emit its result.
+        False means it died without one (err_worker_exited).
         """
         while True:
             try:
@@ -256,25 +209,12 @@ class TranscriptionThread(QThread):
             self.error.emit(key, params)
 
     def _relay_progress_message(self, kind: str, payload: list) -> None:
-        """Relay one progress_queue message as the progress signal.
+        """Relay one progress_queue message as a signal; no text, no arithmetic.
 
-        "progress" messages carry a real percentage. "status" messages (see
-        core.worker._RetryStatusLogHandler) only describe background
-        activity - e.g. faster-whisper retrying a hard-to-decode segment at
-        a higher temperature - without a known percentage yet, so they're
-        emitted with percent=STATUS_ONLY_PERCENT as a sentinel meaning
-        "update the status text, but don't move the bar" (see
-        TranscriptionStep.update_progress).
-
-        "work" and "phase" carry no text at all - they are the measurements
-        the time estimate is computed from (see core/progress_scale.py). They
-        get their own signals rather than riding on `progress` so that a
-        message which moves the bar and a message which moves the clock stay
-        independently routable; the bar's percentage and the clock's
-        audio-seconds answer different questions and are not derivable from
-        one another.
-
-        This thread only relays; it renders no text and does no arithmetic.
+        "progress" carries a percentage; "status" is text only, sent with
+        STATUS_ONLY_PERCENT ("update the text, not the bar"). "work" and
+        "phase" go to their own signals: the bar and the clock answer
+        different questions.
         """
         if kind == "progress":
             key, params, percent = payload
@@ -304,18 +244,9 @@ class TranscriptionThread(QThread):
 class DurationProbeThread(QThread):
     """Reads audio durations off the GUI thread, one file at a time.
 
-    get_audio_duration opens the container with PyAV, which is a few
-    milliseconds for a local file and arbitrarily long for one OneDrive has
-    left as a cloud-only placeholder: opening it blocks until Windows has
-    hydrated the file, which can mean pulling hundreds of megabytes down
-    first. Run inline in the drop handler - which is where it used to be -
-    that freezes the whole window, once per dropped file, with nothing on
-    screen to say why.
-
-    Deliberately a plain QThread with no subprocess behind it, unlike the two
-    below. The DLL conflict this module exists to work around is PyQt5 against
-    ctranslate2 (see the module docstring); PyAV is neither, and
-    gui/audio_utils.py has always imported it in this process.
+    Opening a OneDrive cloud-only file blocks until Windows downloads it, which
+    froze the window per dropped file. A plain QThread: PyAV is safe in this
+    process.
     """
 
     # path, duration in seconds, whether that duration was really probed
@@ -348,13 +279,8 @@ class DurationProbeThread(QThread):
 
 
 class CalibrationThread(QThread):
-    """Runs the one-time hardware calibration benchmark in the background.
-
-    Only actually benchmarks on first run - HardwareDetector already loads
-    a cached result synchronously if one exists, in which case MainWindow
-    won't even start this thread. Same subprocess-isolation reasoning as
-    TranscriptionThread: this loads faster-whisper, so it can't safely share
-    a process with PyQt5.
+    """Runs the first-run calibration benchmark in a worker process (it loads
+    faster-whisper). Not started when a cached result exists.
     """
 
     calibrated = pyqtSignal(float)
@@ -405,15 +331,8 @@ class CalibrationThread(QThread):
             _terminate_and_reap(self._process)
 
     def stop(self):
-        """Stop the thread and terminate the benchmark process if running.
-
-        Same shape as TranscriptionThread.stop() above, and needed for the
-        same reason even though the benchmark process is daemonic and so
-        would never hold up interpreter exit on its own: what matters is
-        the QThread and its two signals, which will happily deliver a
-        result into slots whose widgets are already being destroyed (see
-        MainWindow._detach_calibration_thread, and gui/focus.py for the
-        one time this repo watched that happen).
+        """Stop the thread and terminate the benchmark, so no result reaches
+        slots whose widgets are being destroyed.
         """
         self._is_running = False
         _terminate_and_reap(self._process)

@@ -35,12 +35,8 @@ def _format_duration(seconds: int) -> str:
 
 
 def _required_ram_gb(model_size: str, default: int = 5) -> int:
-    """Parse a model's RAM requirement out of config.MODELS ("3 GB" -> 3).
-
-    config stores it as display text because that's what the model cards show.
-    Parsing it here keeps a single source of truth; an unparseable or unknown
-    entry falls back to the mid-range default rather than raising, since a
-    wrong estimate is much better than a crashed hardware probe.
+    """A model's RAM requirement from config.MODELS ("3 GB" -> 3); unparseable
+    means the mid-range default - a wrong estimate beats a crashed probe.
     """
     entry = config.MODELS.get(model_size)
     if not entry:
@@ -72,14 +68,8 @@ class HardwareDetector:
         self.gpu_name = self._get_gpu_name()
         self.os_name = platform.system()
 
-        # Real measured transcription speed on this machine (seconds of tiny-
-        # model processing per second of audio), used by
-        # estimate_transcription_time instead of guessed constants. None
-        # until a calibration benchmark has run - see set_calibration() and
-        # core.calibration. Keyed by device as well as core
-        # count: a GPU and a CPU measurement of the same tiny model are not
-        # comparable, so a recommendation change (e.g. this machine gaining
-        # or losing a GPU) must not reuse the other device's cached number.
+        # Measured tiny-model seconds per audio second (core.calibration), or
+        # None until calibrated. Cached per device and core count.
         self.tiny_seconds_per_audio_second: float | None = load_cached_tiny_rtf(
             self.cpu_count, self.get_device_recommendation()[0]
         )
@@ -136,22 +126,7 @@ class HardwareDetector:
             return None
 
     def get_device_recommendation(self) -> tuple[str, str]:
-        """Recommend optimal device (CPU or GPU) based on available hardware.
-
-        Prioritizes NVIDIA GPU if available; falls back to CPU with core count information.
-        This recommendation is used to configure faster-whisper's execution backend.
-
-        Returns:
-            (device_string, reason_string)
-            - device_string: "cuda" (for NVIDIA GPU) or "cpu" (for CPU processing)
-            - reason_string: Human-readable explanation with hardware details
-
-        Example:
-            device, reason = hardware.get_device_recommendation()
-            # Returns: ("cuda", "NVIDIA GPU detected: NVIDIA A100 40GB")
-            # Or: ("cpu", "Using CPU (8 cores, 32.0GB RAM)")
-
-        """
+        """("cuda" | "cpu", reason): an NVIDIA GPU if present, else the CPU."""
         if self.has_gpu and self.gpu_name and "NVIDIA" in self.gpu_name:
             return ("cuda", f"NVIDIA GPU detected: {self.gpu_name}")
         return ("cpu", f"Using CPU ({self.cpu_count} cores, {self.ram_gb:.1f}GB RAM)")
@@ -182,33 +157,14 @@ class HardwareDetector:
 
         return True, f"✓ System has enough RAM ({self.ram_gb:.1f}GB)"
 
-    # Absolute wall-clock ceiling we're willing to let the recommended model
-    # take, once a real audio duration + calibrated speed are known. Fixed
-    # (not a multiplier of the audio's own length) so the recommendation
-    # actually depends on file length: short files can afford the most
-    # accurate model since it'll still finish quickly in absolute terms,
-    # while long files get pushed toward faster models to stay under the
-    # same ceiling.
+    # A fixed ceiling, not a multiple of the audio length, so long files are
+    # pushed toward faster models while short ones get the most accurate.
     RECOMMENDED_TIME_BUDGET_SECONDS = 2 * 3600  # 2 hours
 
     def recommend_model(self, audio_duration_seconds: int = 0) -> tuple[str, str]:
-        """Recommend the highest-accuracy model this machine (and, once known,
-        this specific file) can realistically handle.
-
-        Walks models from highest to lowest accuracy_score and returns the
-        first one that (a) fits in available RAM (can_run_model) and, once
-        we have a real audio duration and a calibrated per-machine speed
-        (see core.calibration), (b) is estimated to finish within
-        RECOMMENDED_TIME_BUDGET_SECONDS. The timing estimate this leans on
-        (estimate_transcription_time) is itself calibrated against whichever
-        device get_device_recommendation() picked for this machine, so a GPU
-        machine's estimate - and therefore this recommendation - already
-        reflects GPU speed where available.
-
-        Before a file is picked or before calibration finishes, real timing
-        can't be evaluated yet, so the choice falls back to RAM fit only.
-
-        Returns: (model_size, reason)
+        """The most accurate model that fits in RAM and, once a duration and a
+        calibrated speed are known, finishes within RECOMMENDED_TIME_BUDGET_SECONDS.
+        Returns (model_size, reason).
         """
         have_real_timing = (
             audio_duration_seconds > 0 and self.tiny_seconds_per_audio_second is not None
@@ -254,23 +210,9 @@ class HardwareDetector:
         model_size: str,
         identify_speakers: bool = False,
     ) -> tuple[int, str]:
-        """Estimate transcription time based on audio duration, model, and hardware.
-
-        Uses a real measured benchmark (self.tiny_seconds_per_audio_second,
-        from core.calibration) scaled to the requested model
-        size by relative parameter count, rather than guessed constants. That
-        benchmark is calibrated against get_device_recommendation()'s device
-        choice (see CalibrationThread/__init__ above), so this already
-        reflects GPU speed on a machine where transcription will actually
-        run on GPU.
-
-        Args:
-            audio_duration_seconds: Length of audio in seconds
-            model_size: A config.MODELS key, or a raw Whisper size such as "tiny"
-
-        Returns:
-            (estimated_seconds, reason_string)
-
+        """(seconds, reason) for a file: the calibrated benchmark scaled by the
+        model's relative cost. model_size is a config.MODELS key or a raw
+        Whisper size.
         """
         if self.tiny_seconds_per_audio_second is not None:
             # Unknown models are costed as the slowest card, so an estimate
