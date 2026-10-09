@@ -269,11 +269,8 @@ class Motion:
     # Budget for small, frequent state changes that should feel instant.
     FAST_MS = 160
 
-    # The "you are here" breath shared by the current step pill and the
-    # dashed connector after it: one full in-and-out cycle, and how far the
-    # fill's opacity dips at the bottom of it. Not lower than 0.75 - the
-    # pill's ink stays opaque, but the fill it sits on must still read as
-    # the accent, not as a faded-out step.
+    # The current step's breath: one cycle, and how far its fill dips. Below
+    # 0.75 the fill stops reading as the accent and looks like a faded step.
     BREATH_MS = 2200
     PULSE_MIN_ALPHA = 0.75
     # The connector toward the next step: dashes drift toward it at this
@@ -286,12 +283,8 @@ class Motion:
     POP_MS = 220
     CONNECTOR_FILL_MS = 350
 
-    # Step 3's progress bar. Before any percentage exists (the model is
-    # loading) a soft band sweeps the empty groove once per SHIMMER_MS;
-    # while work runs, a gleam travels over the filled part so the bar never
-    # sits frozen between progress bursts or through stages with no
-    # percentage of their own. On completion the fill turns green over
-    # FINISH_MS.
+    # Step 3's bar: a shimmer while the model loads, a gleam over the fill
+    # while work runs (so it never looks frozen), green on completion.
     SHIMMER_MS = 1400
     GLEAM_SPEED_PX_S = 160
     FINISH_MS = 450

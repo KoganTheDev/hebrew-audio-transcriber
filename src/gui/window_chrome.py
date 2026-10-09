@@ -1,16 +1,9 @@
-"""Paint every window's Windows title bar in the app's own colours.
+"""Paint every window's Windows title bar in the app's header colour.
 
-Left alone, Windows draws a bright white title bar above a dark app - the
-lightest thing on screen, sitting directly on top of the header. Windows 11
-lets an app pick its caption colours through DwmSetWindowAttribute while
-keeping the native bar, and keeping the native bar is the point: dragging,
-edge resize, snapping, the Snap Layouts flyout, the window shadow and the
-buttons' screen-reader roles all stay Windows' own. A frameless window with
-a hand-drawn bar would have to rebuild every one of those.
-
-Windows 10 has no caption-colour attribute, only the dark-mode switch, so
-there the bar comes out near-black rather than this exact colour. Anywhere
-else this does nothing.
+Through DwmSetWindowAttribute rather than a frameless window, so dragging,
+resize, snapping, Snap Layouts, the shadow and accessibility stay Windows'
+own. Windows 10 only has dark mode (near-black, not this colour); other
+platforms are untouched.
 """
 
 import ctypes
@@ -70,11 +63,8 @@ def apply_title_bar_colors(window: QWidget) -> None:
 class TitleBarColorizer(QObject):
     """Colours each top-level window's title bar the first time it is shown.
 
-    One app-wide filter rather than a call in every window class, so a
-    dialog added later - or a QMessageBox - gets the same bar without
-    anyone remembering to ask for it. Applied at Show, after Qt has created
-    the native window, and once per window: DWM keeps the setting for the
-    window's lifetime.
+    App-wide, so dialogs and message boxes get it without asking. Once per
+    window, at Show (the native window exists by then); DWM keeps it.
     """
 
     _DONE = "_titleBarColored"

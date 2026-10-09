@@ -630,19 +630,16 @@ class ModelSelectStep(QFrame):
         self.error_banner.hide()
 
     def _reveal_banner(self) -> None:
-        """Open the banner downward instead of popping it in: its height grows
-        from nothing, pushing the cards down smoothly, while the message fades
-        in. The fade is the label's ink alpha rather than an opacity effect,
-        because the banner already holds its drop shadow and a widget can
-        carry only one QGraphicsEffect.
+        """Grow the banner open while its message fades in.
+
+        The fade is the label's ink alpha, not an opacity effect: the banner
+        already holds its drop shadow, and a widget carries one effect.
         """
         self._end_banner_reveal()
         if not motion.animations_enabled():
             return
-        # The height the banner will really get: its message wraps, so it is
-        # a function of the width the page gives it. sizeHint() alone is the
-        # unwrapped height, which the layout then caps - the grow would hit
-        # that cap halfway and stop instead of easing in.
+        # The wrapped height at the page's width; sizeHint() is unwrapped and
+        # taller, so the grow would stall at the layout's cap.
         margins = self.layout().contentsMargins()
         width = self.width() - margins.left() - margins.right()
         height = (

@@ -220,12 +220,10 @@ class TranscriptionStep(QFrame):
         layout.addWidget(self.time_label)
 
     def _build_stage_checklist(self, layout: QVBoxLayout) -> None:
-        """Which stage the run is in, and how long each one took.
+        """Which stage the run is in, and how long each took.
 
-        Shown only while a run is going. The finished page belongs to the
-        result panel: with both on screen, step 3 would outgrow the window's
-        minimum height (see config's GUI_WINDOW_MIN_HEIGHT), and the panel
-        already says the run is done.
+        Hidden once the result panel shows: both together outgrow the
+        window's minimum height, and the panel already says it is done.
         """
         self.stage_list = StageChecklist()
         layout.addWidget(self.stage_list, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -820,8 +818,7 @@ class TranscriptionStep(QFrame):
         if self.start_time is not None:
             self._took_seconds = time.time() - self.start_time
             self._refresh_time_label(self._took_seconds)
-        # The finish: the bar turns green while the result panel takes the
-        # checklist's place (see _build_stage_checklist).
+        # The bar turns green; the result panel takes the checklist's place.
         self._set_motion(True)
         self.progress_bar.set_mode(BarMode.DONE)
         self.stage_list.finish()

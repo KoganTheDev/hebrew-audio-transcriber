@@ -31,9 +31,8 @@ class BarMode(Enum):
 
 
 class RunProgressBar(QProgressBar):
-    """A QProgressBar that paints itself, so its fill can shimmer and change
-    colour. Still a real QProgressBar: value(), the value animation and
-    accessibility all work as before.
+    """A self-painted QProgressBar: its fill can shimmer and change colour,
+    and value(), the value animation and accessibility still work.
     """
 
     # No percentage is drawn inside: no ink is legible on both the peach fill
@@ -135,12 +134,9 @@ _INK = {
 
 
 class StageChecklist(QWidget):
-    """One row per stage: marker, name, and how long it took.
+    """One row per stage: marker, name, and the time measured in it.
 
-    The times are the GUI's own clock between stage changes, which happen
-    on the worker's phase reports - measured, never predicted. A stage the
-    run passed straight through (a two-speaker channel split has no separate
-    speaker pass) gets its check but no time, since none was spent there.
+    A stage the run passed straight through gets its check but no time.
     """
 
     ROW_HEIGHT = 26

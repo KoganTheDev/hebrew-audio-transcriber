@@ -181,10 +181,8 @@ class FileSelectStep(QFrame):
 
         self._build_drop_zone_contents()
 
-        # Room for the halo (see gui/halo.py) on the two sides where the zone
-        # has neighbours, so the glow fades out before the heading above and
-        # the summary line below instead of washing over them. Together with
-        # the layout's own XS gap, the gap is exactly halo.CLEARANCE.
+        # Keep the halo (gui/halo.py) off the heading and summary line:
+        # with the layout's XS gap these make exactly HALO_CLEARANCE.
         layout.addSpacing(HALO_CLEARANCE - Spacing.XS)
         layout.addWidget(self.drop_zone, 1)
         layout.addSpacing(HALO_CLEARANCE - Spacing.XS)
@@ -200,14 +198,8 @@ class FileSelectStep(QFrame):
             config.GUI_DROP_ZONE_PADDING,
         )
 
-        # Folder icon - the zone's focal point. A QLabel showing nothing but
-        # a pixmap sizes to it, so no maximumHeight is needed here.
-        #
-        # Drawn at 72px with a thinner line: Tabler draws a 2-unit line on a
-        # 24-unit grid, so the line scales with the icon - 4px at 48px, but
-        # a heavy 6px at 72px, which is what makes a scaled-up outline icon
-        # look clumsy. Keeping the line at 4px lets the icon grow and stay
-        # light.
+        # Tabler's 2-unit line scales with the icon (6px at 72px reads
+        # clumsy), so the stroke is thinned to keep the line at 4px.
         icon_px = _FOLDER_ICON_PX
         stroke = _FOLDER_ICON_LINE_PX * 24 / icon_px
         icon_svg = ICONS["folder"].replace('stroke-width="2"', f'stroke-width="{stroke:.3f}"')

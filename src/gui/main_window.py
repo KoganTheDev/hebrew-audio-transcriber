@@ -712,14 +712,11 @@ class MainWindow(QMainWindow):
         logger.debug(f"Navigated to: {step}")
 
     def _slide_page_in(self, forward: bool) -> None:
-        """Fade the page just made current in, drifting from the side it came
-        from: the next-step side going forward, which is the left in Hebrew.
+        """Fade the new page in from the side it came from (mirrored in Hebrew).
 
-        Purely visual - the page is already current, focused and laid out,
-        so nothing waits on this. The opacity effect is removed when the
-        animation ends: a page can hold only one QGraphicsEffect, and leaving
-        one on would keep every repaint of the page going through an
-        offscreen pixmap for nothing.
+        Visual only - the page is already current and focused. The opacity
+        effect comes off at the end, or every repaint of the page would keep
+        going through an offscreen pixmap.
         """
         self._end_page_slide()
         if not motion.animations_enabled() or not self.isVisible():

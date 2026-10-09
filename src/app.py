@@ -97,12 +97,8 @@ def _reexec_into_project_venv() -> None:
     if not os.path.isfile(venv_python):
         return
 
-    # Either of the venv's two interpreters IS the venv. pythonw.exe is the
-    # same Python without a console, and it is what the launchers start.
-    # Checking python.exe alone treated every launcher start as "the wrong
-    # interpreter" and re-ran the app on python.exe - which opened the very
-    # console window pythonw exists to avoid, for the app's whole lifetime.
-    #
+    # Either venv interpreter is the venv: the launchers start pythonw.exe,
+    # and re-running that on python.exe would open a console.
     # samefile, not string comparison: the same interpreter reaches us spelled
     # differently via symlinks, 8.3 short names and case.
     try:
@@ -112,8 +108,7 @@ def _reexec_into_project_venv() -> None:
     except OSError:
         return
 
-    # Keep a console-less start console-less: a windowed interpreter hops to
-    # the venv's windowed one.
+    # A console-less start stays console-less.
     windowed = os.path.basename(sys.executable).lower() == "pythonw.exe"
     target = venv_pythonw if windowed and os.path.isfile(venv_pythonw) else venv_python
 
