@@ -49,6 +49,7 @@ from gui.steps import FileSelectStep, ModelSelectStep, Step, TranscriptionStep
 from gui.theme import COLORS, Fonts, Motion
 from gui.threads import CalibrationThread, TranscriptionThread
 from gui.widgets import IconTextButton, make_label
+from gui.window_chrome import TitleBarColorizer
 from hardware_detection import HardwareDetector
 
 logger = logging.getLogger(__name__)
@@ -1164,6 +1165,10 @@ def configure_application(app: QApplication) -> None:
         # QApplication has no such attribute in the stubs, by construction:
         # this is the dynamic attribute the comment above describes.
         app._kbd_focus_tracker = KeyboardFocusTracker(app)  # type: ignore[attr-defined]
+    # Dark title bars for every window - see gui/window_chrome.py. Guarded
+    # the same way, so a second call doesn't install a second filter.
+    if getattr(app, "_title_bar_colorizer", None) is None:
+        app._title_bar_colorizer = TitleBarColorizer(app)  # type: ignore[attr-defined]
 
 
 def main() -> None:
