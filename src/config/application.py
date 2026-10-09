@@ -65,7 +65,7 @@ REQUIRED_PACKAGES = {
 GUI_WINDOW_WIDTH = 650  # Main window default width (px)
 GUI_WINDOW_HEIGHT = 720  # Main window default height (px) - see note above
 GUI_WINDOW_MIN_WIDTH = 600  # Minimum resizable width (px)
-GUI_WINDOW_MIN_HEIGHT = 656  # Minimum resizable height (px) - measured content floor is 613px
+GUI_WINDOW_MIN_HEIGHT = 656  # Minimum resizable height (px) - content floor is 617px, see above
 
 GUI_DROP_ZONE_HEIGHT = 170  # Drop zone MINIMUM height (px). Its own content (icon +
 # three lines) floors at ~172px, so a larger value here is a

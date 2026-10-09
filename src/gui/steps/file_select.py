@@ -62,6 +62,11 @@ def _size_mb(path: str) -> float:
 # Minimum height of a single file row, paired with _sync_rows_height().
 ROW_MIN_HEIGHT = 26
 
+# The drop zone's folder icon, and the line weight it keeps at that size -
+# see _build_drop_zone_contents.
+_FOLDER_ICON_PX = 72
+_FOLDER_ICON_LINE_PX = 4
+
 
 class FileSelectStep(QFrame):
     """Step 1: File Selection with drag-and-drop, accepting one or many files."""
@@ -198,13 +203,20 @@ class FileSelectStep(QFrame):
             config.GUI_DROP_ZONE_PADDING,
         )
 
-        # Folder icon. The pixmap itself is still rasterized at a fixed
-        # 48px (svg_to_pixmap's `size` arg controls the actual glyph, not
-        # this label's box), so no maximumHeight is needed here - a QLabel
-        # showing nothing but a pixmap already sizes to that pixmap.
+        # Folder icon - the zone's focal point. A QLabel showing nothing but
+        # a pixmap sizes to it, so no maximumHeight is needed here.
+        #
+        # Drawn at 72px with a thinner line: Tabler draws a 2-unit line on a
+        # 24-unit grid, so the line scales with the icon - 4px at 48px, but
+        # a heavy 6px at 72px, which is what makes a scaled-up outline icon
+        # look clumsy. Keeping the line at 4px lets the icon grow and stay
+        # light.
+        icon_px = _FOLDER_ICON_PX
+        stroke = _FOLDER_ICON_LINE_PX * 24 / icon_px
+        icon_svg = ICONS["folder"].replace('stroke-width="2"', f'stroke-width="{stroke:.3f}"')
         icon_label = QLabel()
         icon_pixmap = svg_to_pixmap(
-            ICONS["folder"], 48, COLORS["accent"], dpr=self.devicePixelRatioF()
+            icon_svg, icon_px, COLORS["accent"], dpr=self.devicePixelRatioF()
         )
         icon_label.setPixmap(icon_pixmap)
         icon_label.setStyleSheet("background: transparent;")
