@@ -35,13 +35,10 @@ PowerShell launcher and a path-resolution branch all target it), alongside pytes
     ruff check src tests tools                # lint, including a McCabe complexity ceiling of 10
     ruff format --check src tests tools       # formatting
     lint-imports                              # the two architecture contracts - see ARCHITECTURE.md §1
-    mypy -p core -p config -p gui.presenters -m hardware_detection
+    mypy -p config -p core -p gui -m hardware_detection
 
-That mypy invocation is deliberately scoped. Those packages are at zero errors
-under `disallow_untyped_defs` and CI fails if that changes. The whole-package
-run is reported but not gated, because `gui/` still carries errors that are
-PyQt5 shipping no type information rather than defects. See Coverage below
-for the branch coverage gate.
+mypy gates the whole package at zero errors. See Coverage below for the
+branch coverage gate.
 
 ## Levels
 

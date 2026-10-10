@@ -42,19 +42,8 @@ jobs:
           PYTHONPATH: src
         run: lint-imports
 
-      - name: Types (mypy, blocking where it is clean)
-        # core/, config/, the presenters and hardware_detection are at zero and
-        # must stay there - this step FAILS the build. They are the parts held
-        # to disallow_untyped_defs, and the parts where a type error costs a
-        # real transcription run.
-        run: mypy -p core -p config -p gui.presenters -m hardware_detection
-
-      - name: Types (mypy, everything, advisory)
-        # gui/ still reports 10, nearly all of them PyQt5 shipping no type
-        # information rather than defects ("Item 'None' of 'QClipboard | None'
-        # has no attribute 'setText'"). Reported so the number is visible and
-        # can be driven down, not gated, so the gate above stays meaningful.
-        continue-on-error: true
+      - name: Types (mypy)
+        # The whole package is at zero errors and must stay there.
         run: mypy -p config -p core -p gui -m hardware_detection
 
       - name: Tests
