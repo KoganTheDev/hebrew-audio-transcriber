@@ -1,156 +1,91 @@
+<div align="center">
+
+<img src="docs/icon.png" alt="" width="72">
+
 # Hebrew Audio Transcriber
 
+**Hebrew audio and video in, a speaker-labelled, timestamped, editable transcript out. Fully offline.**
+
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![PyQt5](https://img.shields.io/badge/PyQt5-GUI-orange)
-![Speech to Text](https://img.shields.io/badge/speech--to--text-transcription-blueviolet)
+![PyQt5](https://img.shields.io/badge/GUI-PyQt5-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-A desktop application that transcribes Hebrew audio and video into timestamped, speaker-labelled text, using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (a CTranslate2 reimplementation of OpenAI's Whisper) with Hebrew-specialised models, behind a PyQt5 GUI. Everything runs locally: no audio ever leaves your machine, and no account is needed.
+[Features](#features) · [Getting started](#getting-started) · [Models](#models) · [The transcript](#the-transcript) · [Development](#development)
 
-## Screenshots
+![The three steps: pick files, pick a model, transcribe](docs/screenshot-app.png)
 
-|              | File Selection                                            | Model Picking                                           |
-| ------------ | --------------------------------------------------------- | ------------------------------------------------------ |
-| English      | ![File selection screen](docs/screenshot-file-select.png) | ![Model picking screen](docs/screenshot-model-picking.png) |
-| Hebrew (RTL) | ![File selection screen in Hebrew](docs/screenshot-file-select-he.png) | ![Model picking screen in Hebrew](docs/screenshot-model-picking-he.png) |
+</div>
 
-### The transcript you get
-
-Every run produces one self-contained HTML file: speaker-labelled cards with
-their own timestamps, an editable body, a speaker roster you can rename and
-recolour, search, a plain-text view and an audio player - all offline, in one
-file you can email.
-
-|            |                                                                    |
-| ---------- | ------------------------------------------------------------------ |
-| Dark       | ![Transcript document, dark](docs/screenshot-transcript-dark.jpg)   |
-| Light      | ![Transcript document, light](docs/screenshot-transcript-light.jpg) |
-| Fixing a word | ![An uncertain word's fix menu, open below it](docs/screenshot-transcript-fix.jpg) |
-
-The dialogue in those two is invented, and no transcription ran to produce
-them - `tools/render_demo_transcript.py` hands a written-out conversation
-straight to the renderer, so the screenshots never contain anyone's real
-recording.
-
-## Flow Chart
-
-![Architecture diagram](docs/architecture.jpg)
+A desktop app built on [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper. No audio leaves your machine and no account is needed.
 
 ## Features
 
-Point it at one or more audio/video files (or drop a whole folder), and it walks you through a 3-step wizard: pick the file(s), pick a model, and transcribe.
+- **Hebrew-tuned models** - far fewer mistakes on Hebrew than stock Whisper, which is trained mostly on English.
+- **Who said what, and when** - speaker identification and a timestamp on every turn.
+- **Batch runs** - pick several files or drop a folder; one model load, one combined document.
+- **Fits your hardware** - estimates each model's time on your CPU/GPU and pre-selects the best one that will finish in reasonable time.
+- **Custom terms** - names and jargon the model gets wrong are corrected where it was unsure.
+- **Bilingual UI** - English or a fully mirrored Hebrew layout, one click or `Ctrl+Shift+L` away.
 
-- **Hebrew-specialised models** - uses [ivrit.ai](https://www.ivrit.ai)'s Hebrew fine-tunes of Whisper, not stock Whisper (trained overwhelmingly on English).
-- **Timestamped, speaker-labelled turns** - each block shows its position in the audio and, where identifiable, who's speaking.
-- **Batch transcription** - select several files or drop a folder, and get back one combined document from a single model load.
-- **Bilingual interface (English / עברית)** - a full, mirrored right-to-left Hebrew layout, one click or `Ctrl+Shift+L` away.
-- **Hardware-aware model recommendations** - based on your actual CPU/RAM/GPU and the total duration of everything selected.
-- **Saves automatically** next to the source file(s) - see [Working with the transcript](#working-with-the-transcript).
+## Getting started
 
-## Installation
-
-**Requirements:** Python 3.10+, pip, Windows (primary target platform).
+Requires Windows and Python 3.10+.
 
 ```bash
 git clone https://github.com/KoganTheDev/hebrew-audio-transcriber.git
 cd hebrew-audio-transcriber
-
-python -m venv .venv
-.venv\Scripts\activate
-
-python -m pip install --upgrade pip
-pip install -e .
 ```
 
-The `pip` upgrade is not optional on Windows. A new venv carries the pip
-that shipped with your interpreter, and on Python 3.11.0 that is pip 22.3,
-which aborts long installs with `OSError: [Errno 2] No such file or
-directory: '...\pip-build-tracker-...'`. This project downloads ~120 MB of
-wheels, so it hits that reliably.
-
-`pip install -e .` installs the **dependencies only**. The app itself runs
-from `src/` rather than from `site-packages`: its modules are `config`,
-`core` and `gui`, names too generic to publish into a shared environment, so
-`pyproject.toml` declares no packages. The launchers put `src/` on the path
-for you.
-
-### NVIDIA GPU acceleration (optional)
-
-This app detects an NVIDIA GPU automatically and uses it for transcription -
-no setting to flip. It also needs the cuBLAS/cuDNN runtime, which
-faster-whisper's backend doesn't bundle on its own:
-
-```bash
-pip install -e ".[gpu]"
-```
-
-Without it, the GPU is still detected and selected, but the first
-transcription falls back to CPU when it can't find `libcublas`/`libcudnn`.
-No CUDA toolkit needed - just this pip extra.
-
-## Usage
-
-Double-click **`run.bat`** (or `run.ps1`). That is the whole thing - on a
-machine with no `.venv` yet it offers to do the one-time setup first, then
-starts the app.
+Then double-click **`run.bat`**. On first launch it offers to create `.venv` and install everything, then starts the app.
 
 <details>
-<summary>Running it directly instead</summary>
+<summary>Manual setup</summary>
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -e .
 python src\app.py
 ```
 
-This works from any interpreter: if the project's `.venv` exists, `app.py`
-notices it is running somewhere else and restarts itself on it, so you cannot
-accidentally run against a Python that lacks the dependencies. With no `.venv`
-at all it stops and tells you to run the launcher.
-
-`run.ps1 -Setup` (or `run.bat setup`) does the setup without the prompt.
+- Upgrade pip first: the pip bundled with older interpreters (22.3 on Python 3.11.0) aborts long installs with `OSError: [Errno 2] ... pip-build-tracker`.
+- `pip install -e .` installs the dependencies only. The app runs from `src/`, and `app.py` restarts itself on `.venv` when launched from another interpreter.
+- `run.bat setup` (or `run.ps1 -Setup`) runs the setup without the prompt.
 
 </details>
 
-**Workflow:**
-1. **Select file(s)** - drag in audio/video files or a whole folder; your CPU/RAM/GPU and the total duration selected are shown alongside.
-2. **Choose a model** - one of the two below. Each card shows its estimated time for your files, its memory needs and whether it still has to download. The app pre-selects the more accurate one when it will still finish in reasonable time on your hardware. The same screen holds how many people are speaking and your custom terms.
-3. **Transcribe** - watch live progress, then open the finished transcript straight from the app.
+> [!TIP]
+> **NVIDIA GPU:** the app detects and uses it automatically, but needs the cuBLAS/cuDNN runtime. Install it with `pip install -e ".[gpu]"`; without it, transcription falls back to CPU. No CUDA toolkit required.
 
-### Models
+## Models
 
-| Model | Description | RAM | First-use download |
+| Model | Best for | RAM | First download |
 |---|---|---|---|
-| **Ivrit Turbo** | **Hebrew-tuned, fast and accurate (default)** | **3 GB** | **1.6 GB** |
-| Ivrit Large | Hebrew-tuned, highest accuracy, slow | 8 GB | 3.1 GB |
+| **Ivrit Turbo** | Almost every recording. Hebrew-tuned and about 5x faster than Large | 3 GB | 1.6 GB |
+| Ivrit Large | Hard-to-hear or critical recordings, when you can wait | 8 GB | 3.1 GB |
 
-Both are [ivrit.ai](https://www.ivrit.ai/en/2025/02/13/training-whisper/) fine-tunes of Whisper trained on hundreds of hours of transcribed Hebrew, and make considerably fewer mistakes on Hebrew than stock Whisper. Ivrit Turbo's reduced decoder makes it about 5x faster than Ivrit Large for a small accuracy cost, so Large is worth it mainly for hard-to-hear recordings.
+Time estimates come from a one-time benchmark on your hardware at first launch, scaled by model, audio length and whether speakers are identified.
 
-Stock Whisper sizes (Tiny to Large) are no longer offered: the app always transcribes as Hebrew, and on Hebrew each of them was less accurate than Ivrit Turbo. If you used one in an earlier version, its download is still in `whisper_models/` and can be deleted (any `models--Systran--faster-whisper-*` folder except `-tiny`, which the speed benchmark uses).
+> [!NOTE]
+> Stock Whisper sizes are no longer offered: on Hebrew each was less accurate than Ivrit Turbo. Old downloads in `whisper_models/` can be deleted, except `models--Systran--faster-whisper-tiny`, which the benchmark uses.
 
-Actual processing time isn't fixed: it's estimated from a one-time benchmark run on your own hardware the first time the app launches, then scaled by model size, the file's real duration, and whether speaker identification is on.
+## The transcript
 
-## Working with the transcript
+![The transcript page in light and dark themes](docs/screenshot-transcript-themes.png)
 
-The output of a run is a single, self-contained HTML file - not a `.txt` -
-so a Hebrew line's right-to-left direction can be *declared* rather than
-guessed by whatever program opens it. Open it in any browser to read it, and
-edit it right there: click into any turn to fix the text, rename and
-recolour speakers from the sidebar, or search across every file with `/`.
+Each run writes one self-contained HTML file next to the audio. Open it in any browser to:
 
-One thing worth knowing before you start editing: **edits save instantly to
-your browser's local storage, not back to the file on disk.** Press
-**"Save a copy"** (or `Ctrl+S`) to download a fresh HTML file with your edits
-baked in - that's the one to keep or send to someone else.
+- edit any turn in place, and rename or recolour speakers
+- search across every file (`/`), or switch to a plain-text view
+- play the audio from any timestamp
+- review highlighted uncertain words: pick a term, type a fix, or keep it
 
-Speaker identification is on by default: set how many people are in the
-recording on the model screen, or 1 to skip it. Names, places and jargon the model gets wrong go in **Custom terms**
-on the same screen; the app corrects them where the model was unsure. In the
-transcript, every uncertain word is highlighted - click one to pick a term,
-type the right word, or keep it.
+> [!IMPORTANT]
+> Edits save to your browser's local storage, not to the file. Press **Save a copy** (`Ctrl+S`) to download an HTML file with your edits in it; that is the one to keep or send.
 
-See **[docs/USING_THE_TRANSCRIPT.md](docs/USING_THE_TRANSCRIPT.md)** for the
-full guide: editing, speaker renaming, fixing uncertain words, audio playback,
-and exactly how speaker identification and term correction each work.
+Full guide: [docs/USING_THE_TRANSCRIPT.md](docs/USING_THE_TRANSCRIPT.md). The screenshot uses invented dialogue rendered by `tools/render_demo_transcript.py`, not a real recording.
 
 ## Development
 
@@ -159,11 +94,4 @@ pip install -e ".[dev]"
 pytest
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module layout and
-the two structural rules enforced by tests and `import-linter`, and
-[docs/TESTING.md](docs/TESTING.md) for test levels, coverage policy, CI
-checks, and the jsdom front-end suite.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the module layout and the two import rules CI enforces; [docs/TESTING.md](docs/TESTING.md) covers test levels, coverage and the CI checks.
