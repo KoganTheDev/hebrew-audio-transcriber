@@ -7,8 +7,8 @@ frame of a breath that never stops. Only the ring band repaints.
 
 import math
 
-from PyQt5.QtCore import QObject, QRectF, Qt
-from PyQt5.QtGui import QColor, QPainter, QPen, QRegion
+from PyQt5.QtCore import QEvent, QObject, QRect, QRectF, Qt
+from PyQt5.QtGui import QColor, QMoveEvent, QPainter, QPen, QRegion, QResizeEvent
 from PyQt5.QtWidgets import QWidget
 
 from gui import motion
@@ -36,6 +36,7 @@ class DropZoneHalo(QObject):
         self._drag_over = False
         self._loop = motion.breath_loop(self)
         self._loop.valueChanged.connect(self._repaint)
+        zone.installEventFilter(self)
 
     def set_empty(self, empty: bool) -> None:
         """Whether the zone still has nothing in it - no glow once it does."""
@@ -75,8 +76,20 @@ class DropZoneHalo(QObject):
             return Motion.HALO_MAX_ALPHA * level, "accent"
         return Motion.HALO_MAX_ALPHA * _STILL, "accent"
 
+    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
+        # The glow is the page's own paint, so when the zone moves or shrinks
+        # (files arriving) nothing else erases the band around where it was.
+        if isinstance(a1, QResizeEvent):
+            self._page.update(self._band(QRect(self._zone.pos(), a1.oldSize())))
+        elif isinstance(a1, QMoveEvent):
+            self._page.update(self._band(QRect(a1.oldPos(), self._zone.size())))
+        return False
+
     def _repaint(self, value: object = None) -> None:
-        zone = self._zone.geometry()
+        self._page.update(self._band(self._zone.geometry()))
+
+    @staticmethod
+    def _band(zone: QRect) -> QRegion:
         reach = Motion.HALO_BLUR_PX + 2
         band = QRegion(zone.adjusted(-reach, -reach, reach, reach)) - QRegion(zone)
         # The rounded corners are see-through, so they repaint with the band.
@@ -88,7 +101,7 @@ class DropZoneHalo(QObject):
             (zone.right() - r + 1, zone.bottom() - r + 1),
         ):
             band = band.united(QRegion(x, y, r, r))
-        self._page.update(band)
+        return band
 
     def paint(self) -> None:
         """Draw the glow; call from the page's paintEvent, after its own."""

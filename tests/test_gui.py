@@ -2871,6 +2871,25 @@ class TestDropZoneHalo:
         step.reset()
         assert step.halo.is_breathing()
 
+    def test_a_shrinking_zone_repaints_the_band_it_leaves(self, step, monkeypatch):
+        """The glow is the page's own paint, so nothing else erases the band
+        around the zone's old geometry; left alone it stays as stale strips
+        beside the file list once files shrink the zone.
+        """
+        from PyQt5.QtCore import QPoint, QRect
+
+        step.resize(600, 500)
+        step.show()
+        old = QRect(40, 40, 400, 300)
+        step.drop_zone.setGeometry(old)
+        regions = []
+        monkeypatch.setattr(step, "update", lambda region=None: regions.append(region))
+
+        step.drop_zone.setGeometry(QRect(40, 40, 400, 150))
+
+        old_band_only = QPoint(old.left() - 5, old.bottom() - 5)
+        assert any(r is not None and r.contains(old_band_only) for r in regions)
+
     def test_still_but_present_when_windows_animations_are_off(self, step, monkeypatch):
         from gui import motion
 
