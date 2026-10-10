@@ -13,7 +13,7 @@
 
 [Features](#features) · [Getting started](#getting-started) · [Models](#models) · [The transcript](#the-transcript) · [Development](#development)
 
-![The three steps: pick files, pick a model (Hebrew UI), transcribe](docs/screenshot-app.png)
+![The three steps: pick files, pick a model, transcribe](docs/screenshot-app.png)
 
 </div>
 
