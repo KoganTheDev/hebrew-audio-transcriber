@@ -2,7 +2,7 @@
 recordings where both parties share one channel.
 
 sherpa-onnx rather than pyannote.audio: the same model family through
-onnxruntime, ~36 MB with no torch (~2.5 GB) and no HuggingFace account - this
+onnxruntime, ~110 MB with no torch (~2.5 GB) and no HuggingFace account - this
 app runs offline with no login. It also clusters into a known speaker count,
 the biggest accuracy lever: inferring the count fragments speakers.
 
@@ -71,9 +71,9 @@ def models_present() -> bool:
 def ensure_models(progress: Callable[[int, int], None] | None = None) -> None:
     """Download the ONNX models on first use.
 
-    sherpa-onnx ships no weights of its own, so this has to happen once. ~36 MB
-    total, so the progress callback is a courtesy - but a silent multi-second
-    stall in a desktop app reads as a freeze.
+    sherpa-onnx ships no weights of its own, so this has to happen once. ~110 MB
+    total, mostly the TitaNet embedding model, so the progress callback matters:
+    a silent stall that long in a desktop app reads as a freeze.
     """
     if models_present():
         return

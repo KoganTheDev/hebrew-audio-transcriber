@@ -663,8 +663,8 @@ STRINGS = {
     },
     "w_identifying_speakers": {"en": "Identifying speakers...", "he": "מזהה דוברים..."},
     "w_downloading_diarization": {
-        "en": "Downloading speaker models (one time, ~36 MB)...",
-        "he": "מוריד מודלים לזיהוי דוברים (חד-פעמי, כ-" + _LRI + "36 MB" + _PDI + ")...",
+        "en": "Downloading speaker models (one time, ~110 MB)...",
+        "he": "מוריד מודלים לזיהוי דוברים (חד-פעמי, כ-" + _LRI + "110 MB" + _PDI + ")...",
     },
     # Shown when diarization failed. The transcript itself is fine, so this is
     # phrased as a missing extra rather than an error.

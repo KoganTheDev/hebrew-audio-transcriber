@@ -83,7 +83,7 @@ Each run writes one self-contained HTML file next to the audio. Open it in any b
 - review highlighted uncertain words: pick a term, type a fix, or keep it
 
 > [!IMPORTANT]
-> Edits save to your browser's local storage, not to the file. Press **Save a copy** (`Ctrl+S`) to download an HTML file with your edits in it; that is the one to keep or send.
+> Edits save to your browser's local storage first, not to the file. In Chrome or Edge, **Save** (`Ctrl+S`) writes them into the HTML file itself; in Firefox, **Save a copy** downloads a new HTML file with your edits in it. Until you save, the file on disk has none of them.
 
 Full guide: [docs/USING_THE_TRANSCRIPT.md](docs/USING_THE_TRANSCRIPT.md). The screenshot uses invented dialogue rendered by `tools/render_demo_transcript.py`, not a real recording.
 
