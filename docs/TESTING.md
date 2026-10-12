@@ -38,7 +38,8 @@ PowerShell launcher and a path-resolution branch all target it), alongside pytes
     mypy -p config -p core -p gui -m hardware_detection
 
 mypy gates the whole package at zero errors. See Coverage below for the
-branch coverage gate.
+branch coverage gate. A last step runs `tools/doc_density.py` against
+`docs/doc-density-baseline.json`; it reports, and never fails the build.
 
 ## Levels
 
@@ -56,11 +57,11 @@ reader would otherwise have to be told:
 - **`test_layering.py`** - `core/` must never import PyQt5 or `gui.i18n`. Walks
   every module with `pkgutil` and reads the AST's import nodes, so it cannot be
   fooled by a string. `import-linter` checks the same rule at lint time.
-- **`test_packaging.py`** - every shipped CSS/JS/webp/ico asset is reached by a
-  `package-data` glob, the console script resolves to a real function, `tests/`
-  is not shipped, and `requirements*.txt` stay thin pointers at `pyproject.toml`.
-  Without it a wheel installs cleanly and only fails later, when a user renders
-  an unstyled transcript.
+- **`test_packaging.py`** - every CSS/JS/webp/ico asset sits under a directory
+  the code actually reads from, no packages or console script are declared
+  (the app runs from `src/`, nothing is installed), and `requirements*.txt`
+  stay thin pointers at `pyproject.toml`. Without it a moved asset directory
+  imports fine and only fails later, when a user renders an unstyled transcript.
 - **`test_asset_order.py`** - the JS fragments share one IIFE scope, so filename
   order is correctness. Guards that `00-preamble.js` sorts first and
   `99-init.js` last, that every fragment is numbered, and that no two share a
@@ -157,8 +158,8 @@ shipping a change to `core/assets/`.
 
 ## Coverage
 
-Branch coverage, gated in CI at **83%** against a measured 83.47%. The gate
-ratchets upward and must never be lowered to make a change fit.
+Branch coverage, gated in CI at **83%** against a measured 87% (`core/` alone:
+89%). The gate ratchets upward and must never be lowered to make a change fit.
 
 It had drifted three ways at once: CI enforced 80, this line said 76, and the
 suite measured 83. Worse, `pytest.ini` was missing `--cov-branch` while CI
@@ -169,8 +170,8 @@ the ratchet has one number to move.
 
 Coverage is not uniform by design: `core/` carries the logic a wrong answer
 actually costs something, and is held higher than `gui/` construction code.
-`app.py` sits near 22% because it is process bootstrap that a subprocess test
-exercises end to end rather than line by line.
+`app.py` is not measured at all: it is process bootstrap that `test_main.py`
+exercises end to end in a subprocess, where coverage cannot follow.
 
 ## Markers
 

@@ -149,8 +149,8 @@ section 10 below for the sidebar itself.
       confidence described the model's output, not what you just typed.
 - [ ] Toggle off. No leftover markup, no stray spacing.
 
-Click-to-fix (needs a term list with a name the model got wrong; the demo page from
-`.mockups/terms/real_transcript_shots.py` has one of each kind):
+Click-to-fix (needs a transcript with each kind of mark: a highlighted uncertain word,
+one auto-corrected from the term list, and one with term suggestions):
 
 - [ ] Click an uncertain word. A menu opens **directly below it**, never above and never over the
       word, aligned to the word's start edge - right edge in Hebrew.

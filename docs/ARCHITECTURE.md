@@ -62,24 +62,35 @@ src/                            on sys.path at run time; nothing is installed in
     log_bidi.py                   visual-order console logging for Hebrew log lines
     keep_awake.py                 keeps the machine awake for the length of a run
     dependencies.py               installs missing runtime dependencies on first launch
+    browser_open.py               opens the transcript in Chrome, then Firefox, then Edge, not the .html default
     segments.py                   Word / Segment / TranscriptDocument - shared vocabulary
     run_options.py                settings for one run, passed to the worker process
     formatting/                   renders those into the self-contained HTML transcript
     assets/css|js                 the transcript's own front-end, concatenated in order
   gui/                          PyQt5. Runs in the main process.
     presenters/                   decisions, with NO Qt import - see below
+      transcription.py              file summary, device choice, TranscriptionOptions
+      time_estimate.py              "Est. remaining" from the worker's measurements
+      run_stages.py                 which stage step 3's checklist shows
     main_window.py                the 3-step wizard shell, navigation, thread wiring
     steps/                        file select, model select, transcription
+      run_progress.py               step 3's painted progress bar and stage checklist
     terms_dialog.py               the Custom terms editor, opened from the model step
     widgets.py                    DropZone, IconTextButton, and the make_label factory
+    halo.py                       the breathing glow around step 1's empty drop zone
+    motion.py                     shared clock-at-paint-time machinery for animated widgets
     theme.py                      Catppuccin palette + QSS builders
     checkbox_style.py             QProxyStyle that paints the checkbox indicator
     focus.py                      keyboard-vs-pointer focus-ring gate
     icons.py                      Tabler icon SVGs, rendered to QPixmap
     stepper.py                    3-step wizard indicator shown above the stacked widget
+    step_state.py                 the StepState enum the stepper and checklist share
+    window_chrome.py              paints the Windows title bar via DWM
     audio_utils.py                real audio/video duration probing (via PyAV)
     i18n.py                       English/Hebrew strings and RTL handling
     threads.py                    QThread wrappers that own the worker subprocess
+    crash_handler.py              global exception hook, so nothing crashes silently
+    crash_dialog.py               last-resort dialog for an unhandled crash
 ```
 
 Outside `src/`: `tests/` holds the pytest suite plus `tests/js/` (jsdom) and
@@ -88,9 +99,12 @@ holds three maintenance scripts (`build_vistas.py` downscales the transcript's
 backdrop photos, `doc_density.py` measures prose-vs-code ratio per file,
 `render_demo_transcript.py` renders the README's demo page from invented
 dialogue); and
-`docs/` holds this file, `TESTING.md`, the architecture diagram's editable
-`.drawio` source and rendered `.jpg`, and `transcript-manual-checks.md` (the
-manual QA checklist for what neither test suite can cover - see TESTING.md).
+`docs/` holds this file, `TESTING.md`, `USING_THE_TRANSCRIPT.md` (the user
+guide to the output file), `DIARIZATION_TUNING.md` (the measurements behind
+`config/diarization.py`), `transcript-manual-checks.md` (the manual QA
+checklist for what neither test suite can cover - see TESTING.md),
+`doc-density-baseline.json` (what `doc_density.py` diffs against), and the
+README's icon and screenshots.
 
 The dependency direction is one-way: `gui/` may import `core/`, never the
 reverse. `core/segments.py` is the shared vocabulary both sides agree on, and it
@@ -172,5 +186,6 @@ enforces this. Gaps in the numbering (00, 08, 16 ...) are insertion headroom.
 
 **Failure policy.** An optional or partial failure costs only itself.
 Diarization failing leaves an unlabelled but complete transcript; one bad file
-in a batch does not cost the other nine. This is why `core/` carries 23
-`except Exception` sites, each with a written justification at the call site.
+in a batch does not cost the other nine. This is why `core/` carries about
+thirty `except Exception` sites, each scoped to one step and logged or
+commented where it swallows.

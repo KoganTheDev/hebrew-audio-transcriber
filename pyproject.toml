@@ -3,26 +3,27 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "speech-to-text-transcriber"
+name = "hebrew-audio-transcriber"
 version = "2.0.0"
-description = "Professional GUI application for audio transcription"
+description = "Offline Windows desktop app that turns Hebrew audio and video into a speaker-labelled, timestamped, editable HTML transcript, using ivrit.ai's Hebrew Whisper models via faster-whisper and sherpa-onnx diarization."
 readme = "README.md"
 # 3.10, not 3.9. Python 3.9 reached end of life in October 2025, and nothing
 # in this toolchain can verify a 3.9 claim any more: mypy 2.x refuses to
 # analyse anything below 3.10 outright, so the type checker and the metadata
 # were asserting different things. Raising the floor makes them agree.
 requires-python = ">=3.10"
-authors = [{name = "Development Team", email = "dev@example.com"}]
+authors = [{name = "Yuval Kogan"}]
 license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
+    "Natural Language :: Hebrew",
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
-    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 
 # The single source of truth for what this project depends on.
@@ -79,9 +80,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/speech-to-text"
-Repository = "https://github.com/example/speech-to-text.git"
-Issues = "https://github.com/example/speech-to-text/issues"
+Homepage = "https://github.com/KoganTheDev/hebrew-audio-transcriber"
+Repository = "https://github.com/KoganTheDev/hebrew-audio-transcriber.git"
+Issues = "https://github.com/KoganTheDev/hebrew-audio-transcriber/issues"
 
 [tool.setuptools]
 # Dependencies only, no modules. `config`, `core` and `gui` are too generic to

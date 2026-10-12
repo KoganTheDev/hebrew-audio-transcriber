@@ -235,7 +235,7 @@ class TestDiarizationModelsRoot:
     wherever the process happened to start. run.bat and run.ps1 cd to the
     project first, which hid it - but nothing forces a launch to start
     there, so the app started from anywhere else
-    re-downloaded 36 MB into that directory, or failed on a read-only one.
+    re-downloaded ~110 MB into that directory, or failed on a read-only one.
     The Whisper cache had the same bug and was fixed; this half was missed.
     """
 

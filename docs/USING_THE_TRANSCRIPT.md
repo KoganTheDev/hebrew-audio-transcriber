@@ -92,7 +92,7 @@ the count is considerably more reliable than letting the app infer it.
 Two paths, chosen automatically:
 
 - **One speaker per channel** (some phone and VoIP call recorders): each channel is transcribed separately, so attribution is exact. Detection is strict, since most stereo audio is really a duplicated mono mix. This roughly doubles transcription time.
-- **Single microphone**: neural diarization via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), running offline with no account required. Model weights (~36 MB) download once on first use. Adds roughly a third of the audio's duration to processing time.
+- **Single microphone**: neural diarization via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), running offline with no account required. Model weights (~110 MB) download once on first use. Adds roughly a third of the audio's duration to processing time.
 
 If speaker identification fails for any reason, the transcript is still saved - just without labels.
 
@@ -120,8 +120,9 @@ and the transcript's fix menu can restore any of them.
 What to expect, measured on three real recordings with human transcripts:
 Ivrit Turbo, the default, already wrote almost every name right, and the few
 it missed it missed confidently - out of reach of any correction afterwards.
-On the smaller models, whose mistakes are more often uncertain ones, the same
-list fixed six names and broke no correct word.
+On stock Whisper Small (no longer offered, but a stand-in for a model whose
+mistakes are more often uncertain ones), the same list fixed six names and
+broke no correct word.
 `tests/eval/compare_term_correction.py` reruns the measurement.
 
 This is not a spell checker, and adding ordinary vocabulary makes it worse

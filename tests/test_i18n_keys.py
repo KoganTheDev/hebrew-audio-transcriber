@@ -165,7 +165,7 @@ _ISOLATED_HEBREW_QUANTITIES = {
     "model_ram_tooltip": "{ram}",
     "model_download_fact": "{size}",
     "model_download_tooltip": "{size}",
-    "w_downloading_diarization": "36 MB",
+    "w_downloading_diarization": "110 MB",
 }
 
 
